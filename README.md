@@ -4,7 +4,7 @@
 NeuralArc Trader is a free and open-source Java Swing desktop trading utility designed as an MVP that is safe-by-default (mock/paper mode), broker-agnostic, and extensible for future broker and analytics backend integrations.
 
 ## Features
-- Java 17+ desktop app using Swing
+- Java 22 desktop app using Swing
 - Broker abstraction (`TradingApi`) with `MockTradingApi` and `AlpacaTradingApi` stub
 - Rule-based strategy engine with 5 rules
 - Paper trading ON by default
@@ -24,8 +24,8 @@ Duplicate triggers are prevented through strategy state tracking and rule flags.
 
 ## How to run
 ```bash
-mvn clean test
-mvn exec:java -Dexec.mainClass=com.neuralarc.MainApp
+./gradlew test
+./gradlew run
 ```
 
 ## How paper trading works

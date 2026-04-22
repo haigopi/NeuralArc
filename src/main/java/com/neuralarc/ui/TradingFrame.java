@@ -5,67 +5,56 @@ import com.neuralarc.api.TradingApi;
 import com.neuralarc.api.TradingApiFactory;
 import com.neuralarc.model.*;
 import com.neuralarc.rules.RuleEvaluationService;
-import com.neuralarc.security.CredentialManager;
 import com.neuralarc.service.PricePoller;
+import com.neuralarc.service.StrategyPersistenceManager;
+import com.neuralarc.service.StrategyPersistenceManager.StrategyEntry;
 import com.neuralarc.service.TradingStrategyService;
 import com.neuralarc.service.UserIdentityService;
 
 import javax.swing.*;
-import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
+import javax.swing.table.AbstractTableModel;
+import javax.swing.table.TableCellEditor;
+import javax.swing.table.TableCellRenderer;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
-import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
-import java.math.BigDecimal;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.function.IntConsumer;
 
 public class TradingFrame extends JFrame {
     private static final Font BASE_FONT = createBaseFont();
     private static final int OUTER_PADDING = 16;
 
-    private final JTextField emailField = new JTextField(20);
-    private final JLabel userIdLabel = new JLabel("-");
-    private final JTextField apiKeyField = new JTextField(16);
-    private final JPasswordField apiSecretField = new JPasswordField(16);
-    private final JComboBox<BrokerType> brokerBox = new JComboBox<>(BrokerType.values());
-    private final JCheckBox saveCreds = new JCheckBox("Save credentials locally");
-    private final JCheckBox paperMode = new JCheckBox("Paper trading mode", true);
-
-    private final JTextField symbolField = new JTextField("NEO", 8);
-    private final JTextField basePriceField = new JTextField("8.00", 8);
-    private final JTextField baseQtyField = new JTextField("10", 8);
-    private final JTextField stopActivationField = new JTextField("9.00", 8);
-    private final JTextField sellTriggerField = new JTextField("10.00", 8);
-    private final JTextField loss1PriceField = new JTextField("7.00", 8);
-    private final JTextField loss1QtyField = new JTextField("5", 8);
-    private final JTextField loss2PriceField = new JTextField("6.00", 8);
-    private final JTextField loss2QtyField = new JTextField("5", 8);
-    private final JTextField pollingField = new JTextField("2", 8);
-
     private final JCheckBox telemetryConsent = new JCheckBox("I consent to telemetry/analytics");
     private final JLabel positionSummary = new JLabel("Position: -");
     private final JLabel ruleState = new JLabel("Rules: -");
     private final JTextArea eventLog = new JTextArea(12, 80);
-    private final JButton startButton = new JButton("Start");
-    private final JButton stopButton = new JButton("Stop");
     private final JButton testConnectionButton = new JButton("Test Connection");
+    private final JButton addStrategyButton = new JButton("Add New Stock Strategy");
     private final JButton settingsButton = new JButton("Settings");
 
     private final UserIdentityService identityService = new UserIdentityService();
-    private final CredentialManager credentialManager = new CredentialManager();
+    private final List<ManagedStrategy> strategies = new ArrayList<>();
+    private final StrategyTableModel strategyTableModel = new StrategyTableModel();
+    private final JTable strategyTable = new JTable(strategyTableModel);
+
     private TradingApi tradingApi;
-    private TradingStrategyService strategyService;
-    private PricePoller poller;
     private AnalyticsPublisher analyticsPublisher;
-    private SettingsDialog settingsDialog;
+    private final SettingsDialog settingsDialog;
+    private StrategyPersistenceManager persistenceManager;
     private boolean connectionOk;
+    private boolean appLaunchedPublished;
 
     public TradingFrame() {
         setTitle("NeuralArc Trader Application");
@@ -74,31 +63,24 @@ public class TradingFrame extends JFrame {
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
         settingsDialog = new SettingsDialog(this);
 
-        JPanel inputPanel = new JPanel(new GridLayout(0, 4, 10, 10));
-        inputPanel.setBorder(new EmptyBorder(0, 0, 12, 0));
-        inputPanel.add(new JLabel("User email")); inputPanel.add(emailField);
-        inputPanel.add(new JLabel("Unique user ID")); inputPanel.add(userIdLabel);
-        inputPanel.add(new JLabel("API key")); inputPanel.add(apiKeyField);
-        inputPanel.add(new JLabel("API secret")); inputPanel.add(apiSecretField);
-        inputPanel.add(new JLabel("Broker")); inputPanel.add(brokerBox);
-        inputPanel.add(saveCreds); inputPanel.add(paperMode);
-        inputPanel.add(new JLabel("Symbol")); inputPanel.add(symbolField);
-        inputPanel.add(new JLabel("Base buy price")); inputPanel.add(basePriceField);
-        inputPanel.add(new JLabel("Base buy quantity")); inputPanel.add(baseQtyField);
-        inputPanel.add(new JLabel("Stop activation price")); inputPanel.add(stopActivationField);
-        inputPanel.add(new JLabel("Sell trigger price")); inputPanel.add(sellTriggerField);
-        inputPanel.add(new JLabel("Loss buy level 1 price")); inputPanel.add(loss1PriceField);
-        inputPanel.add(new JLabel("Loss buy level 1 qty")); inputPanel.add(loss1QtyField);
-        inputPanel.add(new JLabel("Loss buy level 2 price")); inputPanel.add(loss2PriceField);
-        inputPanel.add(new JLabel("Loss buy level 2 qty")); inputPanel.add(loss2QtyField);
-        inputPanel.add(new JLabel("Polling interval seconds")); inputPanel.add(pollingField);
-
-        JPanel controlPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JPanel controlPanel = new JPanel(new BorderLayout());
         controlPanel.setBorder(new EmptyBorder(8, 0, 8, 0));
-        controlPanel.add(testConnectionButton);
-        controlPanel.add(startButton);
-        controlPanel.add(stopButton);
-        controlPanel.add(settingsButton);
+        JPanel leftControls = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        leftControls.add(addStrategyButton);
+        JPanel rightControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        rightControls.add(testConnectionButton);
+        rightControls.add(settingsButton);
+        controlPanel.add(leftControls, BorderLayout.WEST);
+        controlPanel.add(rightControls, BorderLayout.EAST);
+
+        strategyTable.setRowHeight(32);
+        strategyTable.setFillsViewportHeight(true);
+        strategyTable.getColumnModel().getColumn(4).setCellRenderer(new ButtonRenderer());
+        strategyTable.getColumnModel().getColumn(4).setCellEditor(new ButtonEditor(this::editStrategy));
+        strategyTable.getColumnModel().getColumn(5).setCellRenderer(new ButtonRenderer());
+        strategyTable.getColumnModel().getColumn(5).setCellEditor(new ButtonEditor(this::togglePauseResume));
+        JScrollPane strategyGrid = new JScrollPane(strategyTable);
+        strategyGrid.setBorder(BorderFactory.createTitledBorder("Stock Strategies"));
 
         JPanel disclosurePanel = new JPanel(new GridLayout(0, 1, 0, 6));
         disclosurePanel.setBorder(new EmptyBorder(8, 0, 0, 0));
@@ -110,21 +92,26 @@ public class TradingFrame extends JFrame {
         eventLog.setBorder(new EmptyBorder(8, 8, 8, 8));
         applyUiPolish();
 
-        add(inputPanel, BorderLayout.NORTH);
+        add(controlPanel, BorderLayout.NORTH);
         add(new JScrollPane(eventLog), BorderLayout.CENTER);
         JPanel south = new JPanel(new BorderLayout());
         south.setBorder(new EmptyBorder(10, 0, 0, 0));
-        south.add(controlPanel, BorderLayout.NORTH);
+        south.add(strategyGrid, BorderLayout.CENTER);
         JPanel statusPanel = new JPanel(new GridLayout(0, 1, 0, 6));
         statusPanel.add(positionSummary);
         statusPanel.add(ruleState);
         statusPanel.add(disclosurePanel);
-        south.add(statusPanel, BorderLayout.CENTER);
+        south.add(statusPanel, BorderLayout.SOUTH);
         add(south, BorderLayout.SOUTH);
 
         wireEvents();
-        startButton.setEnabled(false);
-        stopButton.setEnabled(false);
+        strategyTable.getSelectionModel().addListSelectionListener(e -> refreshPanels());
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                shutdownAllStrategies();
+            }
+        });
         setExtendedState(getExtendedState() | JFrame.MAXIMIZED_BOTH);
         setLocationRelativeTo(null);
     }
@@ -132,27 +119,8 @@ public class TradingFrame extends JFrame {
     private void applyUiPolish() {
         applyFontRecursively(this);
 
-        Border fieldBorder = BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(210, 210, 210), 1, true),
-                new EmptyBorder(8, 10, 8, 10)
-        );
-        styleField(emailField, fieldBorder);
-        styleField(apiKeyField, fieldBorder);
-        styleField(apiSecretField, fieldBorder);
-        styleField(symbolField, fieldBorder);
-        styleField(basePriceField, fieldBorder);
-        styleField(baseQtyField, fieldBorder);
-        styleField(stopActivationField, fieldBorder);
-        styleField(sellTriggerField, fieldBorder);
-        styleField(loss1PriceField, fieldBorder);
-        styleField(loss1QtyField, fieldBorder);
-        styleField(loss2PriceField, fieldBorder);
-        styleField(loss2QtyField, fieldBorder);
-        styleField(pollingField, fieldBorder);
-
         styleButton(testConnectionButton);
-        styleButton(startButton);
-        styleButton(stopButton);
+        styleButton(addStrategyButton);
         styleButton(settingsButton);
     }
 
@@ -165,11 +133,6 @@ public class TradingFrame extends JFrame {
         }
     }
 
-    private void styleField(JComponent field, Border border) {
-        field.setBorder(border);
-        field.setPreferredSize(new Dimension(field.getPreferredSize().width, 36));
-    }
-
     private void styleButton(JButton button) {
         button.setFocusPainted(false);
         button.setBorder(BorderFactory.createCompoundBorder(
@@ -179,15 +142,15 @@ public class TradingFrame extends JFrame {
     }
 
     private static Font createBaseFont() {
-        if (isFontAvailable("Poppins")) {
+        if (isPoppinsAvailable()) {
             return new Font("Poppins", Font.PLAIN, 14);
         }
         return new Font("SansSerif", Font.PLAIN, 14);
     }
 
-    private static boolean isFontAvailable(String fontName) {
+    private static boolean isPoppinsAvailable() {
         for (String family : GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames()) {
-            if (fontName.equalsIgnoreCase(family)) {
+            if ("Poppins".equalsIgnoreCase(family)) {
                 return true;
             }
         }
@@ -195,107 +158,276 @@ public class TradingFrame extends JFrame {
     }
 
     private void wireEvents() {
-        emailField.addCaretListener(e -> updateUserId());
         testConnectionButton.addActionListener(e -> testConnection());
-        startButton.addActionListener(e -> startStrategy());
-        stopButton.addActionListener(e -> stopStrategy());
-        settingsButton.addActionListener(e -> settingsDialog.setVisible(true));
+        addStrategyButton.addActionListener(e -> addStrategy());
+        settingsButton.addActionListener(e -> openSettingsDialog());
     }
 
-    private void updateUserId() {
-        String id = identityService.generateUserId(emailField.getText());
-        userIdLabel.setText(identityService.shortUserId(id));
-        startButton.setEnabled(isValidInput() && connectionOk);
-    }
-
-    private boolean isValidInput() {
-        return !emailField.getText().isBlank()
-                && !symbolField.getText().isBlank()
-                && !apiKeyField.getText().isBlank()
-                && apiSecretField.getPassword().length > 0;
-    }
-
-    private void testConnection() {
-        tradingApi = TradingApiFactory.create((BrokerType) brokerBox.getSelectedItem());
-        String secret = new String(apiSecretField.getPassword());
-        tradingApi.authenticate(apiKeyField.getText(), secret);
-        connectionOk = tradingApi.testConnection();
-        log("Connection test: " + (connectionOk ? "SUCCESS" : "FAILED"));
-        startButton.setEnabled(isValidInput() && connectionOk);
-
-        if (saveCreds.isSelected() || settingsDialog.saveCredentials()) {
-            credentialManager.save(apiKeyField.getText(), apiSecretField.getPassword(),
-                    Path.of(System.getProperty("user.home"), ".neuralarc", "credentials.properties"),
-                    identityService.generateUserId(emailField.getText()).substring(0, 16));
+    public void promptForRequiredSettings() {
+        if (!settingsDialog.hasRequiredSettings()) {
+            openSettingsDialog();
         }
     }
 
-    private void startStrategy() {
-        TelemetryConfig telemetryConfig = new TelemetryConfig(
-                telemetryConsent.isSelected() || settingsDialog.telemetryEnabled(),
-                settingsDialog.getEndpoint(),
-                null,
-                "1.0.0"
-        );
-        analyticsPublisher = new HttpAnalyticsPublisher(telemetryConfig,
-                new AnalyticsQueue(Path.of(System.getProperty("user.home"), ".neuralarc", "analytics-queue.log")));
-        analyticsPublisher.publish(new AnalyticsEvent("APP_LAUNCHED")
-                .put("userId", identityService.generateUserId(emailField.getText()))
-                .put("sessionId", UUID.randomUUID().toString())
-                .put("paperTrading", paperMode.isSelected()));
+    private void openSettingsDialog() {
+        settingsDialog.setVisible(true);
+        connectionOk = false;
+    }
 
-        StrategyConfig config = new StrategyConfig(
-                symbolField.getText().trim(),
-                new BigDecimal(basePriceField.getText().trim()),
-                Integer.parseInt(baseQtyField.getText().trim()),
-                new BigDecimal(stopActivationField.getText().trim()),
-                new BigDecimal(sellTriggerField.getText().trim()),
-                new BigDecimal(loss1PriceField.getText().trim()),
-                Integer.parseInt(loss1QtyField.getText().trim()),
-                new BigDecimal(loss2PriceField.getText().trim()),
-                Integer.parseInt(loss2QtyField.getText().trim()),
-                Integer.parseInt(pollingField.getText().trim()),
-                paperMode.isSelected()
-        );
 
-        strategyService = new TradingStrategyService(
+    private void testConnection() {
+        BrokerType brokerType = settingsDialog.brokerType();
+        if (brokerType == null) {
+            log("Connection test: FAILED (broker not set in Settings)");
+            return;
+        }
+
+        tradingApi = TradingApiFactory.create(brokerType);
+        tradingApi.authenticate(settingsDialog.getApiKey(), settingsDialog.getApiSecret());
+        connectionOk = tradingApi.testConnection();
+        log("Connection test: " + (connectionOk ? "SUCCESS" : "FAILED"));
+
+        if (connectionOk) {
+            initPersistenceAndRestore();
+        }
+    }
+
+    private void initPersistenceAndRestore() {
+        if (persistenceManager != null) {
+            return; // already initialized this session
+        }
+        String passphrase = buildPassphrase();
+        persistenceManager = new StrategyPersistenceManager(
+                Path.of(System.getProperty("user.home"), ".neuralarc", "strategies.dat"),
+                passphrase
+        );
+        ensureAnalyticsPublisher();
+        restoreStrategies();
+    }
+
+    private String buildPassphrase() {
+        return identityService.generateUserId(settingsDialog.getUserEmail()).substring(0, 16);
+    }
+
+    private void restoreStrategies() {
+        List<StrategyEntry> entries = persistenceManager.load();
+        if (entries.isEmpty()) {
+            return;
+        }
+        for (StrategyEntry entry : entries) {
+            if (findStrategy(entry.config().symbol()) != null) {
+                continue; // already exists in current session (shouldn't happen, but guard)
+            }
+            String userId = identityService.generateUserId(settingsDialog.getUserEmail());
+            TradingStrategyService service = new TradingStrategyService(
+                    tradingApi,
+                    new RuleEvaluationService(),
+                    analyticsPublisher,
+                    this::log,
+                    userId
+            );
+            service.configure(entry.config());
+            ManagedStrategy managed = new ManagedStrategy(entry.config(), service);
+            managed.paused = entry.paused();
+            strategies.add(managed);
+            if (!managed.paused) {
+                startStrategy(managed, "STRATEGY_RESUMED");
+                log("Restored and resumed strategy for " + entry.config().symbol());
+            } else {
+                log("Restored strategy for " + entry.config().symbol() + " (paused)");
+            }
+        }
+        strategyTableModel.fireTableDataChanged();
+        if (!strategies.isEmpty()) {
+            strategyTable.setRowSelectionInterval(0, 0);
+        }
+    }
+
+    private void addStrategy() {
+        if (!connectionOk || tradingApi == null) {
+            JOptionPane.showMessageDialog(this, "Please complete Settings and Test Connection before adding a strategy.", "Connection Required", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        StrategyDialog dialog = new StrategyDialog(this, null);
+        StrategyConfig config = dialog.showDialog();
+        if (config == null) {
+            return;
+        }
+
+        if (findStrategy(config.symbol()) != null) {
+            JOptionPane.showMessageDialog(this, "A strategy for this symbol already exists. Use Edit on the grid row.", "Duplicate Symbol", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        ensureAnalyticsPublisher();
+
+        String userId = identityService.generateUserId(settingsDialog.getUserEmail());
+        TradingStrategyService service = new TradingStrategyService(
                 tradingApi,
                 new RuleEvaluationService(),
                 analyticsPublisher,
                 this::log,
-                identityService.generateUserId(emailField.getText())
+                userId
         );
-        strategyService.configure(config);
-        poller = new PricePoller();
-        poller.start(config.pollingSeconds(), () -> {
-            strategyService.onPriceTick();
-            SwingUtilities.invokeLater(this::refreshPanels);
-        });
-        log("Strategy started for symbol " + config.symbol());
-        analyticsPublisher.publish(new AnalyticsEvent("STRATEGY_STARTED").put("symbol", config.symbol()));
-        startButton.setEnabled(false);
-        stopButton.setEnabled(true);
+        service.configure(config);
+
+        ManagedStrategy entry = new ManagedStrategy(config, service);
+        strategies.add(entry);
+        startStrategy(entry, "STRATEGY_STARTED");
+        persistStrategies();
+        strategyTableModel.fireTableDataChanged();
+        strategyTable.setRowSelectionInterval(strategies.size() - 1, strategies.size() - 1);
     }
 
-    private void stopStrategy() {
-        if (poller != null) {
-            poller.stop();
+    private void editStrategy(int row) {
+        if (row < 0 || row >= strategies.size()) {
+            return;
         }
+
+        ManagedStrategy entry = strategies.get(row);
+        StrategyDialog dialog = new StrategyDialog(this, entry.config);
+        StrategyConfig updated = dialog.showDialog();
+        if (updated == null) {
+            return;
+        }
+
+        ManagedStrategy duplicate = findStrategy(updated.symbol());
+        if (duplicate != null && duplicate != entry) {
+            JOptionPane.showMessageDialog(this, "A strategy for this symbol already exists.", "Duplicate Symbol", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        boolean wasPaused = entry.paused;
+        stopPoller(entry);
+        entry.config = updated;
+        entry.service.configure(updated);
+        if (!wasPaused) {
+            startStrategy(entry, "STRATEGY_RESUMED");
+        } else {
+            entry.paused = true;
+        }
+
+        persistStrategies();
+        strategyTableModel.fireTableDataChanged();
+        refreshPanels();
+    }
+
+    private void togglePauseResume(int row) {
+        if (row < 0 || row >= strategies.size()) {
+            return;
+        }
+
+        ManagedStrategy entry = strategies.get(row);
+        if (entry.paused) {
+            startStrategy(entry, "STRATEGY_RESUMED");
+        } else {
+            stopPoller(entry);
+            entry.paused = true;
+            log("Strategy paused for symbol " + entry.config.symbol());
+            if (analyticsPublisher != null) {
+                analyticsPublisher.publish(new AnalyticsEvent("STRATEGY_PAUSED").put("symbol", entry.config.symbol()));
+            }
+        }
+        persistStrategies();
+        strategyTableModel.fireTableRowsUpdated(row, row);
+        refreshPanels();
+    }
+
+    private void startStrategy(ManagedStrategy entry, String eventType) {
+        stopPoller(entry);
+        entry.paused = false;
+        entry.poller = new PricePoller();
+        entry.poller.start(entry.config.pollingSeconds(), () -> {
+            entry.service.onPriceTick();
+            SwingUtilities.invokeLater(this::refreshPanels);
+        });
+        log(("STRATEGY_RESUMED".equals(eventType) ? "Strategy resumed for symbol " : "Strategy started for symbol ") + entry.config.symbol());
         if (analyticsPublisher != null) {
-            analyticsPublisher.publish(new AnalyticsEvent("STRATEGY_STOPPED"));
-            analyticsPublisher.shutdown();
+            analyticsPublisher.publish(new AnalyticsEvent(eventType).put("symbol", entry.config.symbol()));
         }
-        log("Strategy stopped");
-        startButton.setEnabled(connectionOk);
-        stopButton.setEnabled(false);
+    }
+
+    private void stopPoller(ManagedStrategy entry) {
+        if (entry.poller != null) {
+            entry.poller.stop();
+            entry.poller = null;
+        }
     }
 
     private void refreshPanels() {
-        Position p = tradingApi.getPosition(symbolField.getText().trim());
+        int row = strategyTable.getSelectedRow();
+        if (row < 0) {
+            if (strategies.isEmpty() || tradingApi == null) {
+                positionSummary.setText("Position: -");
+                ruleState.setText("Rules: -");
+                return;
+            }
+            row = 0;
+        }
+
+        ManagedStrategy entry = strategies.get(row);
+        Position p = tradingApi.getPosition(entry.config.symbol());
         positionSummary.setText(String.format(
-                "Position: shares=%d avgCost=%s marketValue=%s invested=%s realized=%s unrealized=%s",
+                "Position[%s]: shares=%d avgCost=%s marketValue=%s invested=%s realized=%s unrealized=%s",
+                entry.config.symbol(),
                 p.getTotalShares(), p.getAverageCost(), p.marketValue(), p.totalInvested(), p.getRealizedPnl(), p.unrealizedPnl()));
-        ruleState.setText("Rules triggered: " + strategyService.getState().triggeredRules());
+        ruleState.setText("Rules triggered: " + entry.service.getState().triggeredRules() + " | Status: " + (entry.paused ? "PAUSED" : "RUNNING"));
+    }
+
+    private ManagedStrategy findStrategy(String symbol) {
+        for (ManagedStrategy strategy : strategies) {
+            if (strategy.config.symbol().equalsIgnoreCase(symbol)) {
+                return strategy;
+            }
+        }
+        return null;
+    }
+
+    private void persistStrategies() {
+        if (persistenceManager == null) {
+            return;
+        }
+        List<StrategyEntry> entries = strategies.stream()
+                .map(s -> new StrategyEntry(s.config, s.paused))
+                .toList();
+        try {
+            persistenceManager.save(entries);
+        } catch (Exception e) {
+            log("Warning: failed to persist strategies – " + e.getMessage());
+        }
+    }
+
+    private void ensureAnalyticsPublisher() {
+        if (analyticsPublisher == null) {
+            TelemetryConfig telemetryConfig = new TelemetryConfig(
+                    telemetryConsent.isSelected() || settingsDialog.telemetryEnabled(),
+                    settingsDialog.getEndpoint(),
+                    null,
+                    "1.0.0"
+            );
+            analyticsPublisher = new HttpAnalyticsPublisher(telemetryConfig,
+                    new AnalyticsQueue(Path.of(System.getProperty("user.home"), ".neuralarc", "analytics-queue.log")));
+        }
+
+        if (!appLaunchedPublished) {
+            analyticsPublisher.publish(new AnalyticsEvent("APP_LAUNCHED")
+                    .put("userId", identityService.generateUserId(settingsDialog.getUserEmail()))
+                    .put("sessionId", UUID.randomUUID().toString())
+                    .put("paperTrading", true));
+            appLaunchedPublished = true;
+        }
+    }
+
+    private void shutdownAllStrategies() {
+        persistStrategies();
+        for (ManagedStrategy strategy : strategies) {
+            stopPoller(strategy);
+        }
+        if (analyticsPublisher != null) {
+            analyticsPublisher.publish(new AnalyticsEvent("APP_EXIT"));
+            analyticsPublisher.shutdown();
+        }
     }
 
     private void log(String message) {
@@ -303,5 +435,100 @@ public class TradingFrame extends JFrame {
             eventLog.append(message + System.lineSeparator());
             eventLog.setCaretPosition(eventLog.getDocument().getLength());
         });
+    }
+
+    private final class StrategyTableModel extends AbstractTableModel {
+        private static final String[] COLUMNS = {
+                "Symbol", "Status", "Polling (s)", "Mode", "Edit", "Pause/Resume"
+        };
+
+        @Override
+        public int getRowCount() {
+            return strategies.size();
+        }
+
+        @Override
+        public int getColumnCount() {
+            return COLUMNS.length;
+        }
+
+        @Override
+        public String getColumnName(int column) {
+            return COLUMNS[column];
+        }
+
+        @Override
+        public Object getValueAt(int rowIndex, int columnIndex) {
+            ManagedStrategy entry = strategies.get(rowIndex);
+            return switch (columnIndex) {
+                case 0 -> entry.config.symbol();
+                case 1 -> entry.paused ? "Paused" : "Running";
+                case 2 -> entry.config.pollingSeconds();
+                case 3 -> entry.config.paperTrading() ? "Paper" : "Live";
+                case 4 -> "Edit";
+                case 5 -> entry.paused ? "Resume" : "Pause";
+                default -> "";
+            };
+        }
+
+        @Override
+        public boolean isCellEditable(int rowIndex, int columnIndex) {
+            return columnIndex == 4 || columnIndex == 5;
+        }
+    }
+
+    private static final class ManagedStrategy {
+        private StrategyConfig config;
+        private final TradingStrategyService service;
+        private PricePoller poller;
+        private boolean paused;
+
+        private ManagedStrategy(StrategyConfig config, TradingStrategyService service) {
+            this.config = config;
+            this.service = service;
+            this.paused = true;
+        }
+    }
+
+    private static final class ButtonRenderer extends JButton implements TableCellRenderer {
+        private ButtonRenderer() {
+            setOpaque(true);
+            setFocusPainted(false);
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+            setText(value == null ? "" : value.toString());
+            return this;
+        }
+    }
+
+    private static final class ButtonEditor extends AbstractCellEditor implements TableCellEditor {
+        private final JButton button = new JButton();
+        private final IntConsumer onClick;
+        private int row = -1;
+        private String text = "";
+
+        private ButtonEditor(IntConsumer onClick) {
+            this.onClick = onClick;
+            button.setFocusPainted(false);
+            button.addActionListener(e -> fireEditingStopped());
+        }
+
+        @Override
+        public Object getCellEditorValue() {
+            if (row >= 0) {
+                onClick.accept(row);
+            }
+            return text;
+        }
+
+        @Override
+        public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
+            this.row = row;
+            this.text = value == null ? "" : value.toString();
+            button.setText(text);
+            return button;
+        }
     }
 }

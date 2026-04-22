@@ -1,6 +1,5 @@
 package com.neuralarc.util;
 
-import java.time.Instant;
 import java.util.function.Consumer;
 
 public class TradeLogger {
@@ -11,6 +10,6 @@ public class TradeLogger {
     }
 
     public void log(String message) {
-        sink.accept("[" + Instant.now() + "] " + message);
+        sink.accept(message);
     }
 }

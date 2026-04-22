@@ -1,8 +1,8 @@
 # AGENTS.md
 
 ## Scope and stack
-- This is a Maven Java desktop app (Swing), entrypoint `src/main/java/com/neuralarc/MainApp.java`.
-- Build targets are Java 22 (`pom.xml`), even though `README.md` mentions Java 17+.
+- This is a Gradle Java desktop app (Swing), entrypoint `src/main/java/com/neuralarc/MainApp.java`.
+- Build targets are Java 22 (`build.gradle`).
 - Core behavior is local-first and safe-by-default: use `BrokerType.MOCK` and paper trading unless explicitly changed.
 
 ## Architecture map (read these first)
@@ -27,8 +27,8 @@
 - The Alpaca path is currently a stub (`AlpacaTradingApi` returns failed/empty behavior); treat MOCK as the only working broker.
 
 ## Developer workflows
-- Run tests: `mvn clean test`.
-- Launch app: `mvn exec:java -Dexec.mainClass=com.neuralarc.MainApp`.
+- Run tests: `./gradlew test`.
+- Launch app: `./gradlew run`.
 - Tests are small unit tests in `src/test/java/com/neuralarc/...` and assert deterministic rule/math/identity behavior.
 - If you change strategy logic, update `RuleEvaluationServiceTest` first; if you change P&L math, update `PositionTest`.
 - If you change telemetry schema/serialization, update `AnalyticsEventTest` and `examples/analytics-payloads.json`.

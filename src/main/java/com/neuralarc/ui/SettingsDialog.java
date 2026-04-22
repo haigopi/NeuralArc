@@ -5,6 +5,7 @@ import com.neuralarc.security.CredentialManager;
 import com.neuralarc.service.UserIdentityService;
 
 import javax.swing.*;
+import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
 import java.awt.*;
@@ -16,6 +17,10 @@ import java.util.Properties;
 public class SettingsDialog extends JDialog {
     private static final Path SETTINGS_FILE = Path.of(System.getProperty("user.home"), ".neuralarc", "settings.properties");
     private static final Path CREDENTIALS_FILE = Path.of(System.getProperty("user.home"), ".neuralarc", "credentials.properties");
+    private static final int OUTER_PADDING = 16;
+    private static final int SECTION_GAP = 12;
+    private static final int FIELD_GAP = 10;
+    private static final int SECTION_INNER_PADDING = 10;
 
     private final JTextField emailField = new JTextField(25);
     private final JTextField apiKeyField = new JTextField(25);
@@ -29,19 +34,19 @@ public class SettingsDialog extends JDialog {
 
     public SettingsDialog(JFrame owner) {
         super(owner, "Settings", true);
-        setLayout(new BorderLayout(10, 10));
+        setLayout(new BorderLayout(SECTION_GAP, SECTION_GAP));
 
         JPanel content = new JPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-        content.setBorder(new EmptyBorder(12, 12, 12, 12));
+        content.setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, 0, OUTER_PADDING));
 
-        JPanel userPanel = new JPanel(new GridLayout(0, 2, 8, 8));
-        userPanel.setBorder(new TitledBorder("User Details"));
+        JPanel userPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        userPanel.setBorder(withInnerPadding(new TitledBorder("User Details")));
         userPanel.add(new JLabel("User email:"));
         userPanel.add(emailField);
 
-        JPanel apiPanel = new JPanel(new GridLayout(0, 2, 8, 8));
-        apiPanel.setBorder(new TitledBorder("API Details"));
+        JPanel apiPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        apiPanel.setBorder(withInnerPadding(new TitledBorder("API Details")));
         apiPanel.add(new JLabel("Broker:"));
         apiPanel.add(brokerBox);
         apiPanel.add(new JLabel("API key:"));
@@ -51,25 +56,26 @@ public class SettingsDialog extends JDialog {
         apiPanel.add(new JLabel(""));
         apiPanel.add(saveCredentials);
 
-        JPanel telemetryPanel = new JPanel(new GridLayout(0, 1, 8, 8));
-        telemetryPanel.setBorder(new TitledBorder("Telemetry"));
+        JPanel telemetryPanel = new JPanel(new GridLayout(0, 1, FIELD_GAP, FIELD_GAP));
+        telemetryPanel.setBorder(withInnerPadding(new TitledBorder("Telemetry")));
         telemetryPanel.add(new JLabel("Analytics Endpoint URL:"));
         telemetryPanel.add(endpointField);
         telemetryPanel.add(telemetryEnabled);
 
         content.add(userPanel);
-        content.add(Box.createVerticalStrut(10));
+        content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(apiPanel);
-        content.add(Box.createVerticalStrut(10));
+        content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(telemetryPanel);
 
         add(content, BorderLayout.CENTER);
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        actions.setBorder(new EmptyBorder(0, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
         JButton encryptSave = new JButton("Encrypt & Save");
         encryptSave.addActionListener(e -> saveAll());
         JButton close = new JButton("Close");
-        close.addActionListener(e -> setVisible(false));
+        close.addActionListener(e -> closeDialog());
         actions.add(encryptSave);
         actions.add(close);
         add(actions, BorderLayout.SOUTH);
@@ -86,6 +92,11 @@ public class SettingsDialog extends JDialog {
     public String getUserEmail() { return emailField.getText().trim(); }
     public String getApiKey() { return apiKeyField.getText().trim(); }
     public String getApiSecret() { return new String(apiSecretField.getPassword()); }
+    public boolean hasRequiredSettings() {
+        return !getUserEmail().isBlank()
+                && !getApiKey().isBlank()
+                && !getApiSecret().isBlank();
+    }
 
     private void saveAll() {
         String email = getUserEmail();
@@ -141,5 +152,13 @@ public class SettingsDialog extends JDialog {
 
     private String buildPassphrase(String email) {
         return identityService.generateUserId(email).substring(0, 16);
+    }
+
+    private void closeDialog() {
+        setVisible(false);
+    }
+
+    private static Border withInnerPadding(Border border) {
+        return BorderFactory.createCompoundBorder(border, new EmptyBorder(SECTION_INNER_PADDING, SECTION_INNER_PADDING, SECTION_INNER_PADDING, SECTION_INNER_PADDING));
     }
 }
