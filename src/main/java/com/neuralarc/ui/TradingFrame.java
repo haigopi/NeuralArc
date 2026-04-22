@@ -28,7 +28,6 @@ import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
-import java.awt.RenderingHints;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.nio.file.Path;
@@ -211,13 +210,6 @@ public class TradingFrame extends JFrame {
     }
 
     private void applyUiPolish() {
-        // Enable LCD sub-pixel anti-aliasing globally for smooth Poppins rendering
-        System.setProperty("awt.useSystemAAFontSettings", "lcd");
-        System.setProperty("swing.aatext", "true");
-
-        UIManager.put("RenderingHints.KEY_TEXT_ANTIALIASING",
-                RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
-
         applyFontRecursively(this);
 
         styleButton(testConnectionButton);
