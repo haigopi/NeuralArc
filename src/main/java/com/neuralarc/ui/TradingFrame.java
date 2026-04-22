@@ -11,12 +11,25 @@ import com.neuralarc.service.TradingStrategyService;
 import com.neuralarc.service.UserIdentityService;
 
 import javax.swing.*;
-import java.awt.*;
+import javax.swing.border.Border;
+import javax.swing.border.EmptyBorder;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.GraphicsEnvironment;
+import java.awt.GridLayout;
 import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.util.UUID;
 
 public class TradingFrame extends JFrame {
+    private static final Font BASE_FONT = createBaseFont();
+    private static final int OUTER_PADDING = 16;
+
     private final JTextField emailField = new JTextField(20);
     private final JLabel userIdLabel = new JLabel("-");
     private final JTextField apiKeyField = new JTextField(16);
@@ -55,12 +68,14 @@ public class TradingFrame extends JFrame {
     private boolean connectionOk;
 
     public TradingFrame() {
-        setTitle("NeuralArc Swing Trader");
+        setTitle("NeuralArc Trader Application");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
+        ((JComponent) getContentPane()).setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
         settingsDialog = new SettingsDialog(this);
 
-        JPanel inputPanel = new JPanel(new GridLayout(0, 4, 6, 6));
+        JPanel inputPanel = new JPanel(new GridLayout(0, 4, 10, 10));
+        inputPanel.setBorder(new EmptyBorder(0, 0, 12, 0));
         inputPanel.add(new JLabel("User email")); inputPanel.add(emailField);
         inputPanel.add(new JLabel("Unique user ID")); inputPanel.add(userIdLabel);
         inputPanel.add(new JLabel("API key")); inputPanel.add(apiKeyField);
@@ -79,22 +94,28 @@ public class TradingFrame extends JFrame {
         inputPanel.add(new JLabel("Polling interval seconds")); inputPanel.add(pollingField);
 
         JPanel controlPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        controlPanel.setBorder(new EmptyBorder(8, 0, 8, 0));
         controlPanel.add(testConnectionButton);
         controlPanel.add(startButton);
         controlPanel.add(stopButton);
         controlPanel.add(settingsButton);
 
-        JPanel disclosurePanel = new JPanel(new GridLayout(0, 1));
+        JPanel disclosurePanel = new JPanel(new GridLayout(0, 1, 0, 6));
+        disclosurePanel.setBorder(new EmptyBorder(8, 0, 0, 0));
         disclosurePanel.add(telemetryConsent);
         disclosurePanel.add(new JLabel("If enabled, this app sends limited trading activity and performance events to the publisher analytics API."));
         disclosurePanel.add(new JLabel("Paper trading is recommended before live trading."));
 
         eventLog.setEditable(false);
+        eventLog.setBorder(new EmptyBorder(8, 8, 8, 8));
+        applyUiPolish();
+
         add(inputPanel, BorderLayout.NORTH);
         add(new JScrollPane(eventLog), BorderLayout.CENTER);
         JPanel south = new JPanel(new BorderLayout());
+        south.setBorder(new EmptyBorder(10, 0, 0, 0));
         south.add(controlPanel, BorderLayout.NORTH);
-        JPanel statusPanel = new JPanel(new GridLayout(0, 1));
+        JPanel statusPanel = new JPanel(new GridLayout(0, 1, 0, 6));
         statusPanel.add(positionSummary);
         statusPanel.add(ruleState);
         statusPanel.add(disclosurePanel);
@@ -104,8 +125,73 @@ public class TradingFrame extends JFrame {
         wireEvents();
         startButton.setEnabled(false);
         stopButton.setEnabled(false);
-        setSize(1100, 700);
+        setExtendedState(getExtendedState() | JFrame.MAXIMIZED_BOTH);
         setLocationRelativeTo(null);
+    }
+
+    private void applyUiPolish() {
+        applyFontRecursively(this);
+
+        Border fieldBorder = BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(210, 210, 210), 1, true),
+                new EmptyBorder(8, 10, 8, 10)
+        );
+        styleField(emailField, fieldBorder);
+        styleField(apiKeyField, fieldBorder);
+        styleField(apiSecretField, fieldBorder);
+        styleField(symbolField, fieldBorder);
+        styleField(basePriceField, fieldBorder);
+        styleField(baseQtyField, fieldBorder);
+        styleField(stopActivationField, fieldBorder);
+        styleField(sellTriggerField, fieldBorder);
+        styleField(loss1PriceField, fieldBorder);
+        styleField(loss1QtyField, fieldBorder);
+        styleField(loss2PriceField, fieldBorder);
+        styleField(loss2QtyField, fieldBorder);
+        styleField(pollingField, fieldBorder);
+
+        styleButton(testConnectionButton);
+        styleButton(startButton);
+        styleButton(stopButton);
+        styleButton(settingsButton);
+    }
+
+    private void applyFontRecursively(Component component) {
+        component.setFont(BASE_FONT);
+        if (component instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                applyFontRecursively(child);
+            }
+        }
+    }
+
+    private void styleField(JComponent field, Border border) {
+        field.setBorder(border);
+        field.setPreferredSize(new Dimension(field.getPreferredSize().width, 36));
+    }
+
+    private void styleButton(JButton button) {
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(200, 200, 200), 1, true),
+                new EmptyBorder(8, 14, 8, 14)
+        ));
+    }
+
+    private static Font createBaseFont() {
+        if (isFontAvailable("Poppins")) {
+            return new Font("Poppins", Font.PLAIN, 14);
+        }
+        return new Font("SansSerif", Font.PLAIN, 14);
+    }
+
+    private static boolean isFontAvailable(String fontName) {
+        for (String family : GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames()) {
+            if (fontName.equalsIgnoreCase(family)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void wireEvents() {
