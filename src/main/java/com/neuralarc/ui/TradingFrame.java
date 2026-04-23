@@ -45,7 +45,8 @@ public class TradingFrame extends JFrame {
     private static final DateTimeFormatter LOG_DATE_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM");
     private static final DateTimeFormatter LOG_TIME_FORMAT = DateTimeFormatter.ofPattern("h:mm a");
 
-    private final JLabel positionSummary = new JLabel("Position: -");    private final JLabel ruleState = new JLabel("Rules: -");
+    private final JLabel positionSummary = new JLabel("Position: -");
+    private final JLabel ruleState = new JLabel("Rules: -");
     private final JLabel statusBar = new JLabel(" ● Not connected");
     private final JLabel statusStrategyCount = new JLabel("");
     private final JLabel headerStatus = new JLabel("Status: waiting for settings");
@@ -56,8 +57,6 @@ public class TradingFrame extends JFrame {
     private final JButton testConnectionButton = new JButton("📡 Test Connection");
     private final JButton addStrategyButton = new JButton("📊 Add New Stock Strategy");
     private final JButton settingsButton = new JButton("⚙️ Settings");
-    private final JButton contactUsButton = new JButton("Contact Us");
-    private final JButton submitFeedbackButton = new JButton("Submit Feedback");
 
     private final UserIdentityService identityService = new UserIdentityService();
     private final List<ManagedStrategy> strategies = new ArrayList<>();
@@ -105,8 +104,9 @@ public class TradingFrame extends JFrame {
         killSwitchButton.setOpaque(true);
         killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(120, 10, 10), 1, true),
-                new EmptyBorder(6, 12, 6, 12)
+                new EmptyBorder(8, 14, 8, 14)
         ));
+        killSwitchButton.setMargin(new java.awt.Insets(8, 14, 8, 14));
         killSwitchButton.addActionListener(e -> killAllStrategies());
         rightControls.add(killSwitchButton);
         headerPanel.add(leftControls, BorderLayout.WEST);
@@ -143,24 +143,18 @@ public class TradingFrame extends JFrame {
         statusStrategyCount.setBorder(new EmptyBorder(0, 0, 0, 12));
 
         JButton faqsButton = new JButton("? Faqs");
-        faqsButton.setFocusPainted(false);
-        faqsButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 12f));
-        faqsButton.setForeground(new Color(220, 220, 255));
-        faqsButton.setBackground(new Color(60, 60, 90));
-        faqsButton.setOpaque(true);
-        faqsButton.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(100, 100, 160), 1, true),
-                new EmptyBorder(4, 12, 4, 12)
-        ));
+        styleStatusActionButton(faqsButton);
         faqsButton.addActionListener(e -> new HelpDialog(this).setVisible(true));
-        contactUsButton.setFocusPainted(false);
-        contactUsButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 12f));
-        contactUsButton.addActionListener(e -> new ContactUsDialog(this).setVisible(true));
-        submitFeedbackButton.setFocusPainted(false);
-        submitFeedbackButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 12f));
-        submitFeedbackButton.addActionListener(e -> new SubmitFeedbackDialog(this).setVisible(true));
 
-        JLabel appLabel = new JLabel("NeuralArc Trader  v1.0");
+        JButton submitFeatureButton = new JButton("+ Request New Feature");
+        styleStatusActionButton(submitFeatureButton);
+        submitFeatureButton.addActionListener(e -> openFeedbackDialog("Request New Feature"));
+
+        JButton contactUsButton = new JButton("@ Contact Us");
+        styleStatusActionButton(contactUsButton);
+        contactUsButton.addActionListener(e -> openFeedbackDialog("Contact Us"));
+
+        JLabel appLabel = new JLabel("NeuralArc Trader  © 2026  v1.0");
         appLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         appLabel.setForeground(new Color(160, 160, 170));
         appLabel.setVerticalAlignment(SwingConstants.CENTER);
@@ -168,18 +162,31 @@ public class TradingFrame extends JFrame {
 
         JPanel statusLeft = new JPanel(new GridBagLayout());
         statusLeft.setOpaque(false);
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.anchor = GridBagConstraints.CENTER;
-        gbc.insets = new java.awt.Insets(0, 0, 0, 0);
-        statusLeft.add(statusBar, gbc);
-        statusLeft.add(statusStrategyCount, gbc);
+        GridBagConstraints leftGbc = new GridBagConstraints();
+        leftGbc.gridy = 0;
+        leftGbc.anchor = GridBagConstraints.CENTER;
+        leftGbc.insets = new java.awt.Insets(0, 0, 0, 10);
+        leftGbc.gridx = 0;
+        statusLeft.add(statusBar, leftGbc);
+        leftGbc.gridx = 1;
+        leftGbc.insets = new java.awt.Insets(0, 0, 0, 0);
+        statusLeft.add(statusStrategyCount, leftGbc);
 
         JPanel statusRight = new JPanel(new GridBagLayout());
         statusRight.setOpaque(false);
-        statusRight.add(appLabel, gbc);
-        statusRight.add(contactUsButton, gbc);
-        statusRight.add(submitFeedbackButton, gbc);
-        statusRight.add(faqsButton, gbc);
+        GridBagConstraints rightGbc = new GridBagConstraints();
+        rightGbc.gridy = 0;
+        rightGbc.anchor = GridBagConstraints.CENTER;
+        rightGbc.insets = new java.awt.Insets(0, 0, 0, 10);
+        rightGbc.gridx = 0;
+        statusRight.add(appLabel, rightGbc);
+        rightGbc.gridx = 1;
+        statusRight.add(submitFeatureButton, rightGbc);
+        rightGbc.gridx = 2;
+        statusRight.add(contactUsButton, rightGbc);
+        rightGbc.gridx = 3;
+        rightGbc.insets = new java.awt.Insets(0, 0, 0, 0);
+        statusRight.add(faqsButton, rightGbc);
 
         JPanel statusBarPanel = new JPanel(new BorderLayout());
         statusBarPanel.setBackground(new Color(35, 35, 45));
@@ -196,6 +203,7 @@ public class TradingFrame extends JFrame {
         eventLog.setLineWrap(true);
         eventLog.setWrapStyleWord(false);
         applyUiPolish();
+        applyDataViewFonts();
 
         // Put event log and strategy grid in a vertical split so both are always visible
         JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
@@ -238,10 +246,16 @@ public class TradingFrame extends JFrame {
         styleHeaderButton(addStrategyButton);
         styleHeaderButton(settingsButton);
 
-        // Buttons with emoji: use Poppins for text (emoji rendered by system fallback)
-        applyEmojiFontToButton(testConnectionButton, 14f);
-        applyEmojiFontToButton(addStrategyButton, 14f);
-        applyEmojiFontToButton(settingsButton, 14f);
+        // Buttons with emoji: use app font for text (emoji rendered by system fallback)
+        applyEmojiFontToButton(testConnectionButton, 12f);
+        applyEmojiFontToButton(addStrategyButton, 12f);
+        applyEmojiFontToButton(settingsButton, 12f);
+    }
+
+    private void applyDataViewFonts() {
+        eventLog.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        strategyTable.setFont(FontLoader.ui(Font.PLAIN, 12f));
+        strategyTable.getTableHeader().setFont(FontLoader.ui(Font.BOLD, 12f));
     }
 
     private void applyEmojiFontToButton(JButton button, float size) {
@@ -269,8 +283,34 @@ public class TradingFrame extends JFrame {
         ));
     }
 
+    private void styleStatusActionButton(JButton button) {
+        button.setFocusPainted(false);
+        button.setFont(BASE_FONT.deriveFont(Font.BOLD, 12f));
+        button.setForeground(new Color(220, 220, 255));
+        button.setBackground(new Color(60, 60, 90));
+        button.setOpaque(true);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(100, 100, 160), 1, true),
+                new EmptyBorder(5, 12, 5, 12)
+        ));
+        button.setMargin(new java.awt.Insets(5, 12, 5, 12));
+    }
+
+    private void openFeedbackDialog(String type) {
+        FeedbackDialog dialog = new FeedbackDialog(this, type);
+        FeedbackDialog.FeedbackData data = dialog.showDialog();
+        if (data == null) {
+            return;
+        }
+        log("[" + type + "] Received feedback from " + data.phoneNumber());
+        JOptionPane.showMessageDialog(this,
+                type + " submitted successfully.",
+                "Submitted",
+                JOptionPane.INFORMATION_MESSAGE);
+    }
+
     private static Font createBaseFont() {
-        return FontLoader.ui(Font.PLAIN, 14);
+        return FontLoader.ui(Font.PLAIN, 12);
     }
 
     private void wireEvents() {
