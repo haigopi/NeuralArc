@@ -82,12 +82,15 @@ public class TradingFrame extends JFrame {
 
         headerStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 12f));
         headerStatus.setForeground(new Color(220, 220, 255));
+        headerStatus.setVerticalAlignment(SwingConstants.CENTER);
 
         JPanel leftControls = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         leftControls.setOpaque(false);
+        leftControls.setAlignmentY(Component.CENTER_ALIGNMENT);
         leftControls.add(headerStatus);
         JPanel rightControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         rightControls.setOpaque(false);
+        rightControls.setAlignmentY(Component.CENTER_ALIGNMENT);
         rightControls.add(addStrategyButton);
         rightControls.add(settingsButton);
 
@@ -356,14 +359,14 @@ public class TradingFrame extends JFrame {
         log((manualTrigger ? "Connection test: " : "Auto connection test: ") + (connectionOk ? "SUCCESS" : "FAILED"));
         if (connectionOk) {
             setStatus("Connected — broker " + brokerType.name() + " ready.", STATUS_OK);
-            headerStatus.setText("Status: connected to " + brokerType.name());
+            headerStatus.setText(connectionModeStatus(brokerType));
             settingsDialog.markConnectionStatus(true, "Connected to " + brokerType.name());
             updateStatusBar();
             initPersistenceAndRestore();
             return new SettingsDialog.ConnectionResult(true, "Connected to " + brokerType.name());
         } else {
             setStatus("Connection failed — check API credentials in Settings.", STATUS_ERR);
-            headerStatus.setText("Status: connection failed");
+            headerStatus.setText(connectionModeStatus(brokerType));
             settingsDialog.markConnectionStatus(false, "Connection failed");
             updateStatusBar();
             return new SettingsDialog.ConnectionResult(false, "Connection failed");
@@ -577,6 +580,13 @@ public class TradingFrame extends JFrame {
             statusBar.setText(" ● " + message);
             statusBar.setForeground(color);
         });
+    }
+
+    private String connectionModeStatus(BrokerType brokerType) {
+        if (brokerType == BrokerType.ALPACA) {
+            return "Status: LIVE Mode";
+        }
+        return "Status: MOCK Mode";
     }
 
     private void updateStatusBar() {

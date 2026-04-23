@@ -29,7 +29,7 @@ public class SettingsDialog extends JDialog {
     private final JTextField endpointField = new JTextField("http://localhost:8080/events", 25);
     private final JCheckBox telemetryEnabled = new JCheckBox("Enable telemetry", false);
     private final JCheckBox saveCredentials = new JCheckBox("Save credentials locally", false);
-    private final JButton verifyConnectionButton = new JButton("Verify Alpaca Connection");
+    private final JButton verifyConnectionButton = new JButton("Verify Connection");
     private final JLabel connectionStatus = new JLabel("Connection not verified");
     private final JComboBox<BrokerType> brokerBox = new JComboBox<>(BrokerType.values());
     private final CredentialManager credentialManager = new CredentialManager();
