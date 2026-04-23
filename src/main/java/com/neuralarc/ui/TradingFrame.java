@@ -16,7 +16,6 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
-import javax.swing.table.TableCellEditor;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableRowSorter;
 import java.awt.BorderLayout;
@@ -35,9 +34,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.function.IntConsumer;
 
 public class TradingFrame extends JFrame {
     private static final Font BASE_FONT = createBaseFont();
@@ -54,7 +51,6 @@ public class TradingFrame extends JFrame {
     private static final Color STATUS_WARN = new Color(180, 100, 0);
     private static final Color STATUS_ERR = new Color(180, 30, 30);
     private final JTextArea eventLog = new JTextArea(12, 80);
-    private final JButton testConnectionButton = new JButton("📡 Test Connection");
     private final JButton addStrategyButton = new JButton("📊 Add New Stock Strategy");
     private final JButton settingsButton = new JButton("⚙️ Settings");
 
@@ -93,7 +89,6 @@ public class TradingFrame extends JFrame {
         JPanel rightControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         rightControls.setOpaque(false);
         rightControls.add(addStrategyButton);
-        rightControls.add(testConnectionButton);
         rightControls.add(settingsButton);
 
         JButton killSwitchButton = new JButton("⚠️ KILL SWITCH");
@@ -115,15 +110,12 @@ public class TradingFrame extends JFrame {
         strategyTable.setRowHeight(32);
         strategyTable.setFillsViewportHeight(true);
         strategyTable.setDefaultRenderer(Object.class, new StatusRowRenderer());
-        strategyTable.getColumnModel().getColumn(7).setCellRenderer(new ButtonRenderer());
-        strategyTable.getColumnModel().getColumn(7).setCellEditor(new ButtonEditor(this::editStrategy));
-        strategyTable.getColumnModel().getColumn(8).setCellRenderer(new ButtonRenderer());
-        strategyTable.getColumnModel().getColumn(8).setCellEditor(new ButtonEditor(this::togglePauseResume));
+        strategyTable.getColumnModel().getColumn(7).setCellRenderer(new ActionsRenderer());
+        strategyTable.getColumnModel().getColumn(7).setCellEditor(new ActionsEditor());
 
         // Make table sortable — click column headers to sort
         TableRowSorter<StrategyTableModel> sorter = new TableRowSorter<>(strategyTableModel);
-        sorter.setSortable(7, false); // Edit button column — not sortable
-        sorter.setSortable(8, false); // Pause/Resume column — not sortable
+        sorter.setSortable(7, false); // Actions button column — not sortable
         strategyTable.setRowSorter(sorter);
 
         JScrollPane strategyGrid = new JScrollPane(strategyTable);
@@ -228,6 +220,7 @@ public class TradingFrame extends JFrame {
         add(southWrapper, BorderLayout.SOUTH);
 
         wireEvents();
+        settingsDialog.setConnectionVerifier(request -> runConnectionTest(request.brokerType(), request.apiKey(), request.apiSecret(), true));
         strategyTable.getSelectionModel().addListSelectionListener(e -> refreshPanels());
         addWindowListener(new WindowAdapter() {
             @Override
@@ -242,12 +235,10 @@ public class TradingFrame extends JFrame {
     private void applyUiPolish() {
         applyFontRecursively(this);
 
-        styleHeaderButton(testConnectionButton);
         styleHeaderButton(addStrategyButton);
         styleHeaderButton(settingsButton);
 
         // Buttons with emoji: use app font for text (emoji rendered by system fallback)
-        applyEmojiFontToButton(testConnectionButton, 12f);
         applyEmojiFontToButton(addStrategyButton, 12f);
         applyEmojiFontToButton(settingsButton, 12f);
     }
@@ -274,9 +265,12 @@ public class TradingFrame extends JFrame {
 
     private void styleHeaderButton(JButton button) {
         button.setFocusPainted(false);
+        button.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
         button.setForeground(new Color(230, 230, 255));
         button.setBackground(new Color(60, 60, 90));
         button.setOpaque(true);
+        button.setContentAreaFilled(true);
+        button.setRolloverEnabled(true);
         button.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(100, 100, 160), 1, true),
                 new EmptyBorder(7, 12, 7, 12)
@@ -285,6 +279,7 @@ public class TradingFrame extends JFrame {
 
     private void styleStatusActionButton(JButton button) {
         button.setFocusPainted(false);
+        button.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
         button.setFont(BASE_FONT.deriveFont(Font.BOLD, 12f));
         button.setForeground(new Color(220, 220, 255));
         button.setBackground(new Color(60, 60, 90));
@@ -314,7 +309,6 @@ public class TradingFrame extends JFrame {
     }
 
     private void wireEvents() {
-        testConnectionButton.addActionListener(e -> testConnection());
         addStrategyButton.addActionListener(e -> addStrategy());
         settingsButton.addActionListener(e -> openSettingsDialog());
     }
@@ -324,49 +318,55 @@ public class TradingFrame extends JFrame {
             openSettingsDialog();
             return;
         }
-        autoInitializeConnection();
+        if (!autoInitializeConnection()) {
+            openSettingsDialog();
+        }
     }
 
     private void openSettingsDialog() {
         settingsDialog.setVisible(true);
         connectionOk = false;
-        setStatus("Not connected — re-run Test Connection after changing settings.", STATUS_WARN);
+        setStatus("Not connected — verify connection in Settings after changes.", STATUS_WARN);
         updateStatusBar();
         if (settingsDialog.hasRequiredSettings()) {
             autoInitializeConnection();
         }
     }
 
-
-    private void testConnection() {
-        runConnectionTest(true);
+    private boolean autoInitializeConnection() {
+        SettingsDialog.ConnectionResult result = runConnectionTest(
+                settingsDialog.brokerType(),
+                settingsDialog.getApiKey(),
+                settingsDialog.getApiSecret(),
+                false
+        );
+        return result.connected();
     }
 
-    private void autoInitializeConnection() {
-        runConnectionTest(false);
-    }
-
-    private void runConnectionTest(boolean manualTrigger) {
-        BrokerType brokerType = settingsDialog.brokerType();
+    private SettingsDialog.ConnectionResult runConnectionTest(BrokerType brokerType, String apiKey, String apiSecret, boolean manualTrigger) {
         if (brokerType == null) {
             log("Connection test: FAILED (broker not set in Settings)");
             headerStatus.setText("Status: broker not configured");
-            return;
+            return new SettingsDialog.ConnectionResult(false, "Broker not configured");
         }
 
         tradingApi = TradingApiFactory.create(brokerType);
-        tradingApi.authenticate(settingsDialog.getApiKey(), settingsDialog.getApiSecret());
+        tradingApi.authenticate(apiKey, apiSecret);
         connectionOk = tradingApi.testConnection();
         log((manualTrigger ? "Connection test: " : "Auto connection test: ") + (connectionOk ? "SUCCESS" : "FAILED"));
         if (connectionOk) {
             setStatus("Connected — broker " + brokerType.name() + " ready.", STATUS_OK);
             headerStatus.setText("Status: connected to " + brokerType.name());
+            settingsDialog.markConnectionStatus(true, "Connected to " + brokerType.name());
             updateStatusBar();
             initPersistenceAndRestore();
+            return new SettingsDialog.ConnectionResult(true, "Connected to " + brokerType.name());
         } else {
             setStatus("Connection failed — check API credentials in Settings.", STATUS_ERR);
             headerStatus.setText("Status: connection failed");
+            settingsDialog.markConnectionStatus(false, "Connection failed");
             updateStatusBar();
+            return new SettingsDialog.ConnectionResult(false, "Connection failed");
         }
     }
 
@@ -425,7 +425,7 @@ public class TradingFrame extends JFrame {
 
     private void addStrategy() {
         if (!connectionOk || tradingApi == null) {
-            JOptionPane.showMessageDialog(this, "Please complete Settings and Test Connection before adding a strategy.", "Connection Required", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Please complete Settings and verify the connection before adding a strategy.", "Connection Required", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
@@ -711,7 +711,7 @@ public class TradingFrame extends JFrame {
 
     private final class StrategyTableModel extends AbstractTableModel {
         private static final String[] COLUMNS = {
-                "Symbol", "Status", "Shares", "Avg Cost", "Unrealized P&L", "Polling (s)", "Mode", "Edit", "Pause/Resume"
+                "Symbol", "Status", "Shares", "Avg Cost", "Unrealized P&L", "Polling (s)", "Mode", "Actions"
         };
 
         @Override public int getRowCount()    { return strategies.size(); }
@@ -738,15 +738,14 @@ public class TradingFrame extends JFrame {
                 case 4 -> "-";
                 case 5 -> entry.config.pollingSeconds();
                 case 6 -> entry.config.paperTrading() ? "Paper" : "Live";
-                case 7 -> "Edit";
-                case 8 -> entry.paused ? "Resume" : "Pause";
+                case 7 -> entry.paused ? "Paused" : "Running";
                 default -> "";
             };
         }
 
         @Override
         public boolean isCellEditable(int rowIndex, int columnIndex) {
-            return columnIndex == 7 || columnIndex == 8;
+            return columnIndex == 7;
         }
     }
 
@@ -789,45 +788,86 @@ public class TradingFrame extends JFrame {
         }
     }
 
-    private static final class ButtonRenderer extends JButton implements TableCellRenderer {
-        private ButtonRenderer() {
+    private final class ActionsRenderer extends JPanel implements TableCellRenderer {
+        private final JButton editButton = new JButton("Edit");
+        private final JButton toggleButton = new JButton();
+
+        private ActionsRenderer() {
+            super(new FlowLayout(FlowLayout.CENTER, 6, 2));
             setOpaque(true);
-            setFocusPainted(false);
+            styleActionButton(editButton, new Color(63, 81, 181));
+            editButton.setEnabled(false);
+            styleActionButton(toggleButton, new Color(198, 40, 40));
+            toggleButton.setEnabled(false);
+            add(editButton);
+            add(toggleButton);
         }
 
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
-            setText(value == null ? "" : value.toString());
+            int modelRow = table.convertRowIndexToModel(row);
+            boolean paused = strategies.get(modelRow).paused;
+            toggleButton.setText(paused ? "Resume" : "Pause");
+            styleActionButton(toggleButton, paused ? new Color(46, 125, 50) : new Color(198, 40, 40));
+            if (isSelected) {
+                setBackground(new Color(210, 218, 246));
+            } else {
+                setBackground(table.getBackground());
+            }
             return this;
         }
     }
 
-    private static final class ButtonEditor extends AbstractCellEditor implements TableCellEditor {
-        private final JButton button = new JButton();
-        private final IntConsumer onClick;
-        private int row = -1;
-        private String text = "";
+    private final class ActionsEditor extends AbstractCellEditor implements javax.swing.table.TableCellEditor {
+        private final JPanel panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 6, 2));
+        private final JButton editButton = new JButton("Edit");
+        private final JButton toggleButton = new JButton();
+        private int viewRow = -1;
 
-        private ButtonEditor(IntConsumer onClick) {
-            this.onClick = onClick;
-            button.setFocusPainted(false);
-            button.addActionListener(e -> fireEditingStopped());
+        private ActionsEditor() {
+            panel.setOpaque(true);
+            styleActionButton(editButton, new Color(63, 81, 181));
+            styleActionButton(toggleButton, new Color(198, 40, 40));
+            editButton.addActionListener(e -> {
+                fireEditingStopped();
+                editStrategy(viewRow);
+            });
+            toggleButton.addActionListener(e -> {
+                fireEditingStopped();
+                togglePauseResume(viewRow);
+            });
+            panel.add(editButton);
+            panel.add(toggleButton);
         }
 
         @Override
         public Object getCellEditorValue() {
-            if (row >= 0) {
-                onClick.accept(row);
-            }
-            return text;
+            return "";
         }
 
         @Override
         public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
-            this.row = row;
-            this.text = value == null ? "" : value.toString();
-            button.setText(text);
-            return button;
+            this.viewRow = row;
+            int modelRow = table.convertRowIndexToModel(row);
+            boolean paused = strategies.get(modelRow).paused;
+            toggleButton.setText(paused ? "Resume" : "Pause");
+            styleActionButton(toggleButton, paused ? new Color(46, 125, 50) : new Color(198, 40, 40));
+            panel.setBackground(new Color(210, 218, 246));
+            return panel;
         }
+    }
+
+    private void styleActionButton(JButton button, Color background) {
+        button.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        button.setMargin(new java.awt.Insets(3, 8, 3, 8));
+        button.setFocusPainted(false);
+        button.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+        button.setForeground(Color.WHITE);
+        button.setBackground(background);
+        button.setOpaque(true);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(background.darker(), 1, true),
+                new EmptyBorder(2, 6, 2, 6)
+        ));
     }
 }
