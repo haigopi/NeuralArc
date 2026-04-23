@@ -18,18 +18,26 @@ import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableRowSorter;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.SimpleAttributeSet;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
-import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.math.BigDecimal;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -44,15 +52,34 @@ public class TradingFrame extends JFrame {
 
     private final JLabel positionSummary = new JLabel("Position: -");
     private final JLabel ruleState = new JLabel("Rules: -");
+    private final JLabel paperUnrealizedSummary = new JLabel("Paper Unrealized P&L Total: -");
+    private final JLabel headerTotalsSeparator = new JLabel("|");
+    private final JLabel liveUnrealizedSummary = new JLabel("Live Unrealized P&L Total: -");
+    private final JLabel positionSectionTitle = new JLabel("Position");
+    private final JLabel rulesSectionTitle = new JLabel("Rules Triggered");
     private final JLabel statusBar = new JLabel(" ● Not connected");
     private final JLabel statusStrategyCount = new JLabel("");
     private final JLabel headerStatus = new JLabel("Status: waiting for settings");
     private static final Color STATUS_OK = new Color(34, 139, 34);
     private static final Color STATUS_WARN = new Color(180, 100, 0);
     private static final Color STATUS_ERR = new Color(180, 30, 30);
-    private final JTextArea eventLog = new JTextArea(12, 80);
+    private static final Color TABLE_SELECTION_BG = new Color(192, 166, 240);
+    private static final Color STATUS_TEXT_RUNNING = new Color(46, 125, 50);
+    private static final Color STATUS_TEXT_PAUSED = new Color(180, 100, 0);
+    private static final Color LOG_LINE_EVEN = new Color(63, 72, 82);
+    private static final Color LOG_LINE_ODD = new Color(110, 118, 128);
+    private static final Color HEADER_STATUS_DEFAULT = new Color(220, 220, 255);
+    private static final Color HEADER_STATUS_LIVE_ALERT = new Color(255, 82, 82);
+    private static final Color HEADER_STATUS_LIVE_ALERT_DIM = new Color(255, 205, 210);
+    private static final Color HEADER_STATUS_LIVE_ACTIVE = new Color(46, 125, 50);
+    private static final Color HEADER_STATUS_LIVE_ACTIVE_DIM = Color.WHITE;
+    private final JTextPane eventLog = new JTextPane();
     private final JButton addStrategyButton = new JButton("📊 Add New Stock Strategy");
     private final JButton settingsButton = new JButton("⚙️ Settings");
+    private final Timer liveModeBlinkTimer;
+    private final Timer logFlushTimer;
+    private final Path appLogFile = Path.of(System.getProperty("user.home"), ".neuralarc", "app.log");
+    private final StringBuilder pendingLogWrites = new StringBuilder();
 
     private final UserIdentityService identityService = new UserIdentityService();
     private final List<ManagedStrategy> strategies = new ArrayList<>();
@@ -65,8 +92,20 @@ public class TradingFrame extends JFrame {
     private StrategyPersistenceManager persistenceManager;
     private boolean connectionOk;
     private boolean appLaunchedPublished;
+    private String selectedStrategySymbol;
+    private BrokerType currentBrokerType = BrokerType.MOCK;
+    private boolean preservingSelection;
+    private Color liveBlinkPrimary = HEADER_STATUS_DEFAULT;
+    private Color liveBlinkSecondary = HEADER_STATUS_DEFAULT;
+    private boolean liveBlinkPrimaryActive;
+    private int logLineCount;
 
     public TradingFrame() {
+        liveModeBlinkTimer = new Timer(500, e -> toggleLiveHeaderBlink());
+        liveModeBlinkTimer.setInitialDelay(0);
+        logFlushTimer = new Timer(10000, e -> flushLogsToFile());
+        logFlushTimer.setInitialDelay(10000);
+        logFlushTimer.start();
         setTitle("NeuralArc Trader Application");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
@@ -81,18 +120,43 @@ public class TradingFrame extends JFrame {
         ));
 
         headerStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 12f));
-        headerStatus.setForeground(new Color(220, 220, 255));
+        headerStatus.setForeground(HEADER_STATUS_DEFAULT);
         headerStatus.setVerticalAlignment(SwingConstants.CENTER);
+        headerStatus.setBorder(new EmptyBorder(0, 0, 0, 12));
+        paperUnrealizedSummary.setBorder(new EmptyBorder(0, 8, 0, 8));
+        headerTotalsSeparator.setBorder(new EmptyBorder(0, 2, 0, 2));
+        liveUnrealizedSummary.setBorder(new EmptyBorder(0, 8, 0, 8));
 
-        JPanel leftControls = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        JPanel leftControls = new JPanel(new GridBagLayout());
         leftControls.setOpaque(false);
-        leftControls.setAlignmentY(Component.CENTER_ALIGNMENT);
-        leftControls.add(headerStatus);
-        JPanel rightControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        GridBagConstraints headerLeftGbc = new GridBagConstraints();
+        headerLeftGbc.gridx = 0;
+        headerLeftGbc.gridy = 0;
+        headerLeftGbc.anchor = GridBagConstraints.CENTER;
+        leftControls.add(headerStatus, headerLeftGbc);
+
+        JPanel headerTotalsPanel = new JPanel(new GridBagLayout());
+        headerTotalsPanel.setOpaque(false);
+        GridBagConstraints totalsGbc = new GridBagConstraints();
+        totalsGbc.gridy = 0;
+        totalsGbc.anchor = GridBagConstraints.CENTER;
+        totalsGbc.gridx = 0;
+        headerTotalsPanel.add(paperUnrealizedSummary, totalsGbc);
+        totalsGbc.gridx = 1;
+        headerTotalsPanel.add(headerTotalsSeparator, totalsGbc);
+        totalsGbc.gridx = 2;
+        headerTotalsPanel.add(liveUnrealizedSummary, totalsGbc);
+
+        JPanel rightControls = new JPanel(new GridBagLayout());
         rightControls.setOpaque(false);
-        rightControls.setAlignmentY(Component.CENTER_ALIGNMENT);
-        rightControls.add(addStrategyButton);
-        rightControls.add(settingsButton);
+        GridBagConstraints rightControlsGbc = new GridBagConstraints();
+        rightControlsGbc.gridy = 0;
+        rightControlsGbc.anchor = GridBagConstraints.CENTER;
+        rightControlsGbc.insets = new java.awt.Insets(0, 0, 0, 8);
+        rightControlsGbc.gridx = 0;
+        rightControls.add(addStrategyButton, rightControlsGbc);
+        rightControlsGbc.gridx = 1;
+        rightControls.add(settingsButton, rightControlsGbc);
 
         JButton killSwitchButton = new JButton("⚠️ KILL SWITCH");
         killSwitchButton.setFocusPainted(false);
@@ -106,19 +170,30 @@ public class TradingFrame extends JFrame {
         ));
         killSwitchButton.setMargin(new java.awt.Insets(8, 14, 8, 14));
         killSwitchButton.addActionListener(e -> killAllStrategies());
-        rightControls.add(killSwitchButton);
+        rightControlsGbc.gridx = 2;
+        rightControlsGbc.insets = new java.awt.Insets(0, 0, 0, 0);
+        rightControls.add(killSwitchButton, rightControlsGbc);
         headerPanel.add(leftControls, BorderLayout.WEST);
+        headerPanel.add(headerTotalsPanel, BorderLayout.CENTER);
         headerPanel.add(rightControls, BorderLayout.EAST);
 
-        strategyTable.setRowHeight(32);
+        strategyTable.setRowHeight(34);
         strategyTable.setFillsViewportHeight(true);
+        strategyTable.setRowSelectionAllowed(true);
+        strategyTable.setColumnSelectionAllowed(false);
+        strategyTable.setCellSelectionEnabled(false);
+        strategyTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        strategyTable.setSelectionBackground(TABLE_SELECTION_BG);
+        strategyTable.setSelectionForeground(new Color(20, 20, 30));
         strategyTable.setDefaultRenderer(Object.class, new StatusRowRenderer());
-        strategyTable.getColumnModel().getColumn(7).setCellRenderer(new ActionsRenderer());
-        strategyTable.getColumnModel().getColumn(7).setCellEditor(new ActionsEditor());
+        strategyTable.getColumnModel().getColumn(8).setCellRenderer(new ActionsRenderer());
+        strategyTable.getColumnModel().getColumn(8).setCellEditor(new ActionsEditor());
+        strategyTable.getColumnModel().getColumn(8).setPreferredWidth(270);
+        strategyTable.getColumnModel().getColumn(8).setMinWidth(270);
 
         // Make table sortable — click column headers to sort
         TableRowSorter<StrategyTableModel> sorter = new TableRowSorter<>(strategyTableModel);
-        sorter.setSortable(7, false); // Actions button column — not sortable
+        sorter.setSortable(8, false); // Actions button column — not sortable
         strategyTable.setRowSorter(sorter);
 
         JScrollPane strategyGrid = new JScrollPane(strategyTable);
@@ -195,8 +270,7 @@ public class TradingFrame extends JFrame {
 
         eventLog.setEditable(false);
         eventLog.setBorder(new EmptyBorder(8, 8, 8, 8));
-        eventLog.setLineWrap(true);
-        eventLog.setWrapStyleWord(false);
+        eventLog.setBackground(new Color(248, 249, 252));
         applyUiPolish();
         applyDataViewFonts();
 
@@ -207,10 +281,18 @@ public class TradingFrame extends JFrame {
         splitPane.setDividerSize(6);
         splitPane.setBorder(null);
 
-        JPanel statusPanel = new JPanel(new GridLayout(0, 1, 0, 6));
-        statusPanel.setBorder(new EmptyBorder(8, 0, 0, 0));
-        statusPanel.add(positionSummary);
-        statusPanel.add(ruleState);
+        JPanel positionSection = createDetailSection(positionSectionTitle, positionSummary);
+        JPanel rulesSection = createDetailSection(rulesSectionTitle, ruleState);
+
+        JPanel detailSectionsPanel = new JPanel(new GridLayout(0, 1, 0, 8));
+        detailSectionsPanel.setOpaque(false);
+        detailSectionsPanel.add(positionSection);
+        detailSectionsPanel.add(rulesSection);
+
+        JPanel statusPanel = new JPanel(new BorderLayout(0, 10));
+        statusPanel.setOpaque(false);
+        statusPanel.setBorder(new EmptyBorder(8, 0, 14, 0));
+        statusPanel.add(detailSectionsPanel, BorderLayout.CENTER);
 
         add(headerPanel, BorderLayout.NORTH);
         add(splitPane, BorderLayout.CENTER);
@@ -224,7 +306,18 @@ public class TradingFrame extends JFrame {
 
         wireEvents();
         settingsDialog.setConnectionVerifier(request -> runConnectionTest(request.brokerType(), request.apiKey(), request.apiSecret(), true));
-        strategyTable.getSelectionModel().addListSelectionListener(e -> refreshPanels());
+        strategyTable.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                if (preservingSelection) {
+                    return;
+                }
+                if (strategyTable.getSelectedRow() < 0) {
+                    return;
+                }
+                updateSelectedStrategy();
+                refreshPanels();
+            }
+        });
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
@@ -250,11 +343,41 @@ public class TradingFrame extends JFrame {
         eventLog.setFont(FontLoader.ui(Font.PLAIN, 10f));
         strategyTable.setFont(FontLoader.ui(Font.PLAIN, 12f));
         strategyTable.getTableHeader().setFont(FontLoader.ui(Font.BOLD, 12f));
+        paperUnrealizedSummary.setFont(FontLoader.ui(Font.BOLD, 10f));
+        liveUnrealizedSummary.setFont(FontLoader.ui(Font.BOLD, 10f));
+        headerTotalsSeparator.setFont(FontLoader.ui(Font.BOLD, 10f));
+        paperUnrealizedSummary.setForeground(new Color(220, 230, 255));
+        liveUnrealizedSummary.setForeground(new Color(220, 230, 255));
+        headerTotalsSeparator.setForeground(new Color(180, 190, 215));
+        paperUnrealizedSummary.setHorizontalAlignment(SwingConstants.CENTER);
+        liveUnrealizedSummary.setHorizontalAlignment(SwingConstants.CENTER);
+        positionSectionTitle.setFont(FontLoader.ui(Font.BOLD, 10f));
+        rulesSectionTitle.setFont(FontLoader.ui(Font.BOLD, 10f));
+        positionSummary.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        ruleState.setFont(FontLoader.ui(Font.PLAIN, 10f));
     }
 
     private void applyEmojiFontToButton(JButton button, float size) {
         // Use Poppins for the text; the JVM's composite font handles emoji glyph fallback
         button.setFont(FontLoader.ui(Font.PLAIN, size));
+    }
+
+    private JPanel createDetailSection(JLabel titleLabel, JLabel contentLabel) {
+        titleLabel.setForeground(new Color(70, 70, 90));
+        contentLabel.setForeground(new Color(35, 35, 45));
+        contentLabel.setVerticalAlignment(SwingConstants.TOP);
+        contentLabel.setBorder(new EmptyBorder(2, 0, 0, 0));
+
+        JPanel section = new JPanel(new BorderLayout(0, 2));
+        section.setOpaque(true);
+        section.setBackground(new Color(248, 249, 252));
+        section.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(210, 214, 223), 1, true),
+                new EmptyBorder(10, 12, 10, 12)
+        ));
+        section.add(titleLabel, BorderLayout.NORTH);
+        section.add(contentLabel, BorderLayout.CENTER);
+        return section;
     }
 
     private void applyFontRecursively(Component component) {
@@ -330,6 +453,7 @@ public class TradingFrame extends JFrame {
         settingsDialog.setVisible(true);
         connectionOk = false;
         setStatus("Not connected — verify connection in Settings after changes.", STATUS_WARN);
+        updateHeaderModeStatus(currentBrokerType);
         updateStatusBar();
         if (settingsDialog.hasRequiredSettings()) {
             autoInitializeConnection();
@@ -349,24 +473,26 @@ public class TradingFrame extends JFrame {
     private SettingsDialog.ConnectionResult runConnectionTest(BrokerType brokerType, String apiKey, String apiSecret, boolean manualTrigger) {
         if (brokerType == null) {
             log("Connection test: FAILED (broker not set in Settings)");
+            updateHeaderModeStatus(null);
             headerStatus.setText("Status: broker not configured");
             return new SettingsDialog.ConnectionResult(false, "Broker not configured");
         }
 
         tradingApi = TradingApiFactory.create(brokerType);
+        currentBrokerType = brokerType;
         tradingApi.authenticate(apiKey, apiSecret);
         connectionOk = tradingApi.testConnection();
         log((manualTrigger ? "Connection test: " : "Auto connection test: ") + (connectionOk ? "SUCCESS" : "FAILED"));
         if (connectionOk) {
             setStatus("Connected — broker " + brokerType.name() + " ready.", STATUS_OK);
-            headerStatus.setText(connectionModeStatus(brokerType));
+            updateHeaderModeStatus(brokerType);
             settingsDialog.markConnectionStatus(true, "Connected to " + brokerType.name());
             updateStatusBar();
             initPersistenceAndRestore();
             return new SettingsDialog.ConnectionResult(true, "Connected to " + brokerType.name());
         } else {
             setStatus("Connection failed — check API credentials in Settings.", STATUS_ERR);
-            headerStatus.setText(connectionModeStatus(brokerType));
+            updateHeaderModeStatus(brokerType);
             settingsDialog.markConnectionStatus(false, "Connection failed");
             updateStatusBar();
             return new SettingsDialog.ConnectionResult(false, "Connection failed");
@@ -393,6 +519,7 @@ public class TradingFrame extends JFrame {
     private void restoreStrategies() {
         List<StrategyEntry> entries = persistenceManager.load();
         if (entries.isEmpty()) {
+            refreshPanels();
             return;
         }
         for (StrategyEntry entry : entries) {
@@ -419,10 +546,13 @@ public class TradingFrame extends JFrame {
                 log("[" + restoredConfig.symbol() + "] Restored (paused).");
             }
         }
-        strategyTableModel.fireTableDataChanged();
+        refreshStrategyTableData();
         if (!strategies.isEmpty()) {
             strategyTable.setRowSelectionInterval(0, 0);
         }
+        updateSelectedStrategy();
+        updateHeaderModeStatus(currentBrokerType);
+        refreshPanels();
         updateStatusBar();
     }
 
@@ -457,10 +587,16 @@ public class TradingFrame extends JFrame {
 
         ManagedStrategy entry = new ManagedStrategy(config, service);
         strategies.add(entry);
+        updateHeaderModeStatus(currentBrokerType);
         startStrategy(entry, "STRATEGY_STARTED");
         persistStrategies();
-        strategyTableModel.fireTableDataChanged();
-        strategyTable.setRowSelectionInterval(strategies.size() - 1, strategies.size() - 1);
+        refreshStrategyTableData();
+        int addedViewRow = strategyTable.convertRowIndexToView(strategies.size() - 1);
+        if (addedViewRow >= 0) {
+            strategyTable.setRowSelectionInterval(addedViewRow, addedViewRow);
+        }
+        updateSelectedStrategy();
+        refreshPanels();
     }
 
     private void editStrategy(int viewRow) {
@@ -492,8 +628,9 @@ public class TradingFrame extends JFrame {
             entry.paused = true;
         }
 
+        updateHeaderModeStatus(currentBrokerType);
         persistStrategies();
-        strategyTableModel.fireTableDataChanged();
+        refreshStrategyTableData();
         refreshPanels();
     }
 
@@ -515,7 +652,51 @@ public class TradingFrame extends JFrame {
             }
         }
         persistStrategies();
-        strategyTableModel.fireTableRowsUpdated(row, row);
+        refreshStrategyTableRow(row);
+        updateStatusBar();
+        refreshPanels();
+    }
+
+    private void deleteStrategy(int viewRow) {
+        int row = strategyTable.convertRowIndexToModel(viewRow);
+        if (row < 0 || row >= strategies.size()) {
+            return;
+        }
+
+        ManagedStrategy entry = strategies.get(row);
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                "Delete strategy for " + entry.config.symbol() + "? This will stop it and remove it from saved strategies.",
+                "Delete Strategy",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (choice != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        stopPoller(entry);
+        strategies.remove(row);
+        log("Deleted strategy for symbol " + entry.config.symbol());
+        if (analyticsPublisher != null) {
+            analyticsPublisher.publish(new AnalyticsEvent("STRATEGY_DELETED").put("symbol", entry.config.symbol()));
+        }
+
+        if (strategies.isEmpty()) {
+            selectedStrategySymbol = null;
+        } else {
+            int nextModelRow = Math.min(row, strategies.size() - 1);
+            selectedStrategySymbol = strategies.get(nextModelRow).config.symbol();
+        }
+
+        updateHeaderModeStatus(currentBrokerType);
+        persistStrategies();
+        refreshStrategyTableData();
+        if (selectedStrategySymbol != null) {
+            restoreSelectedRow();
+        } else {
+            strategyTable.clearSelection();
+        }
         updateStatusBar();
         refreshPanels();
     }
@@ -524,13 +705,22 @@ public class TradingFrame extends JFrame {
         stopPoller(entry);
         entry.paused = false;
         entry.poller = new PricePoller();
-        entry.poller.start(entry.config.pollingSeconds(), () -> {
-            entry.service.onPriceTick();
-            SwingUtilities.invokeLater(() -> {
-                strategyTableModel.fireTableDataChanged(); // refresh position columns
-                refreshPanels();
+        try {
+            entry.poller.start(entry.config.pollingSeconds(), () -> {
+                entry.service.onPriceTick();
+                SwingUtilities.invokeLater(() -> {
+                    refreshStrategyTableContent(); // refresh position columns without dropping selection
+                    refreshPanels();
+                });
             });
-        });
+        } catch (IllegalStateException ex) {
+            entry.paused = true;
+            entry.poller = null;
+            log("[" + entry.config.symbol() + "] Could not start strategy thread: " + ex.getMessage());
+            updateStatusBar();
+            refreshPanels();
+            return;
+        }
         log(("STRATEGY_RESUMED".equals(eventType) ? "Strategy resumed for symbol " : "Strategy started for symbol ") + entry.config.symbol());
         if (analyticsPublisher != null) {
             analyticsPublisher.publish(new AnalyticsEvent(eventType).put("symbol", entry.config.symbol()));
@@ -546,24 +736,138 @@ public class TradingFrame extends JFrame {
     }
 
     private void refreshPanels() {
-        int viewRow = strategyTable.getSelectedRow();
-        int row = (viewRow >= 0) ? strategyTable.convertRowIndexToModel(viewRow) : -1;
-        if (row < 0) {
-            if (strategies.isEmpty() || tradingApi == null) {
-                positionSummary.setText("Position: -");
-                ruleState.setText("Rules: -");
-                return;
-            }
-            row = 0;
+        updateUnrealizedSummaries();
+        ManagedStrategy entry = selectedManagedStrategy();
+        if (entry == null) {
+            positionSummary.setText("Position: -");
+            ruleState.setText("Rules: -");
+            return;
         }
 
-        ManagedStrategy entry = strategies.get(row);
+        if (strategyTable.getSelectedRow() < 0) {
+            SwingUtilities.invokeLater(this::restoreSelectedRow);
+        }
+
         Position p = tradingApi.getPosition(entry.config.symbol());
         positionSummary.setText(String.format(
-                "Position[%s]: shares=%d avgCost=%s marketValue=%s invested=%s realized=%s unrealized=%s",
+                "[%s]: shares=%d avgCost=%s marketValue=%s invested=%s realized=%s unrealized=%s",
                 entry.config.symbol(),
                 p.getTotalShares(), p.getAverageCost(), p.marketValue(), p.totalInvested(), p.getRealizedPnl(), p.unrealizedPnl()));
-        ruleState.setText("Rules triggered: " + entry.service.getState().triggeredRules() + " | Status: " + (entry.paused ? "PAUSED" : "RUNNING"));
+        ruleState.setText("Rules Inflight: " + entry.service.getState().triggeredRules() + " | Status: " + (entry.paused ? "PAUSED" : "RUNNING"));
+    }
+
+    private void updateUnrealizedSummaries() {
+        if (strategies.isEmpty() || tradingApi == null) {
+            paperUnrealizedSummary.setText("Paper Unrealized P&L Total: -");
+            liveUnrealizedSummary.setText("Live Unrealized P&L Total: -");
+            applyHeaderTotalsVisibility();
+            return;
+        }
+
+        BigDecimal paperTotal = BigDecimal.ZERO;
+        BigDecimal liveTotal = BigDecimal.ZERO;
+        for (ManagedStrategy strategy : strategies) {
+            Position position = tradingApi.getPosition(strategy.config.symbol());
+            BigDecimal unrealized = position.unrealizedPnl();
+            if (strategy.config.paperTrading()) {
+                paperTotal = paperTotal.add(unrealized);
+            } else {
+                liveTotal = liveTotal.add(unrealized);
+            }
+        }
+        paperUnrealizedSummary.setText("Paper Unrealized P&L Total: " + paperTotal.toPlainString());
+        liveUnrealizedSummary.setText("Live Unrealized P&L Total: " + liveTotal.toPlainString());
+        applyHeaderTotalsVisibility();
+    }
+
+    private void applyHeaderTotalsVisibility() {
+        boolean showLiveTotal = currentBrokerType == BrokerType.ALPACA;
+        liveUnrealizedSummary.setVisible(showLiveTotal);
+        headerTotalsSeparator.setVisible(showLiveTotal);
+    }
+
+    private void updateSelectedStrategy() {
+        int viewRow = strategyTable.getSelectedRow();
+        if (viewRow < 0) {
+            return;
+        }
+        int modelRow = strategyTable.convertRowIndexToModel(viewRow);
+        if (modelRow >= 0 && modelRow < strategies.size()) {
+            selectedStrategySymbol = strategies.get(modelRow).config.symbol();
+        }
+    }
+
+    private void restoreSelectedRow() {
+        if (selectedStrategySymbol == null || strategies.isEmpty()) {
+            return;
+        }
+        preservingSelection = true;
+        int modelRow = -1;
+        for (int i = 0; i < strategies.size(); i++) {
+            if (strategies.get(i).config.symbol().equalsIgnoreCase(selectedStrategySymbol)) {
+                modelRow = i;
+                break;
+            }
+        }
+        if (modelRow < 0) {
+            selectedStrategySymbol = null;
+            strategyTable.clearSelection();
+            preservingSelection = false;
+            return;
+        }
+        int viewRow = strategyTable.convertRowIndexToView(modelRow);
+        if (viewRow >= 0 && strategyTable.getSelectedRow() != viewRow) {
+            strategyTable.setRowSelectionInterval(viewRow, viewRow);
+        }
+        preservingSelection = false;
+    }
+
+    private void rememberSelectedStrategy() {
+        int viewRow = strategyTable.getSelectedRow();
+        if (viewRow < 0 || strategyTable.isEditing()) {
+            return;
+        }
+        int modelRow = strategyTable.convertRowIndexToModel(viewRow);
+        if (modelRow >= 0 && modelRow < strategies.size()) {
+            selectedStrategySymbol = strategies.get(modelRow).config.symbol();
+        }
+    }
+
+    private ManagedStrategy selectedManagedStrategy() {
+        if (selectedStrategySymbol == null) {
+            return null;
+        }
+        return findStrategy(selectedStrategySymbol);
+    }
+
+    private void refreshStrategyTableData() {
+        rememberSelectedStrategy();
+        preservingSelection = true;
+        strategyTableModel.fireTableDataChanged();
+        preservingSelection = false;
+        SwingUtilities.invokeLater(this::restoreSelectedRow);
+    }
+
+    private void refreshStrategyTableRow(int modelRow) {
+        rememberSelectedStrategy();
+        preservingSelection = true;
+        strategyTableModel.fireTableRowsUpdated(modelRow, modelRow);
+        preservingSelection = false;
+        SwingUtilities.invokeLater(this::restoreSelectedRow);
+    }
+
+    private void refreshStrategyTableContent() {
+        if (strategies.isEmpty()) {
+            return;
+        }
+        rememberSelectedStrategy();
+        preservingSelection = true;
+        strategyTableModel.fireTableRowsUpdated(0, strategies.size() - 1);
+        preservingSelection = false;
+        SwingUtilities.invokeLater(() -> {
+            restoreSelectedRow();
+            strategyTable.repaint();
+        });
     }
 
     private ManagedStrategy findStrategy(String symbol) {
@@ -600,7 +904,7 @@ public class TradingFrame extends JFrame {
             } else if (running > 0) {
                 statusBar.setText(" ● Connected");
                 statusBar.setForeground(STATUS_OK);
-                statusStrategyCount.setText(running + " running" +
+                statusStrategyCount.setText(running + " stock strategies running" +
                         (paused > 0 ? ",  " + paused + " paused" : ""));
             } else if (paused > 0) {
                 statusBar.setText(" ● Connected — idle");
@@ -651,9 +955,12 @@ public class TradingFrame extends JFrame {
 
     private void shutdownAllStrategies() {
         persistStrategies();
+        logFlushTimer.stop();
+        flushLogsToFile();
         for (ManagedStrategy strategy : strategies) {
             stopPoller(strategy);
         }
+        PricePoller.shutdownExecutor();
         if (analyticsPublisher != null) {
             analyticsPublisher.publish(new AnalyticsEvent("APP_EXIT"));
             analyticsPublisher.shutdown();
@@ -677,7 +984,7 @@ public class TradingFrame extends JFrame {
         }
 
         persistStrategies();
-        strategyTableModel.fireTableDataChanged();
+        refreshStrategyTableData();
         updateStatusBar();
         refreshPanels();
 
@@ -688,13 +995,95 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    private void updateHeaderModeStatus(BrokerType brokerType) {
+        BrokerType effectiveBroker = brokerType == null ? BrokerType.MOCK : brokerType;
+        headerStatus.setText(connectionModeStatus(effectiveBroker));
+        if (effectiveBroker != BrokerType.ALPACA) {
+            liveModeBlinkTimer.stop();
+            headerStatus.setForeground(HEADER_STATUS_DEFAULT);
+            return;
+        }
+
+        if (!connectionOk) {
+            liveBlinkPrimary = HEADER_STATUS_LIVE_ALERT;
+            liveBlinkSecondary = HEADER_STATUS_LIVE_ALERT_DIM;
+            liveBlinkPrimaryActive = true;
+            headerStatus.setForeground(liveBlinkPrimary);
+            if (!liveModeBlinkTimer.isRunning()) {
+                liveModeBlinkTimer.start();
+            }
+            return;
+        }
+
+        if (hasAnyRealTradingStrategy()) {
+            liveBlinkPrimary = HEADER_STATUS_LIVE_ACTIVE;
+            liveBlinkSecondary = HEADER_STATUS_LIVE_ACTIVE_DIM;
+            liveBlinkPrimaryActive = true;
+            headerStatus.setForeground(liveBlinkPrimary);
+            if (!liveModeBlinkTimer.isRunning()) {
+                liveModeBlinkTimer.start();
+            }
+            return;
+        }
+
+        liveModeBlinkTimer.stop();
+        headerStatus.setForeground(HEADER_STATUS_DEFAULT);
+    }
+
+    private void toggleLiveHeaderBlink() {
+        if (!"Status: LIVE Mode".equals(headerStatus.getText())) {
+            headerStatus.setForeground(HEADER_STATUS_DEFAULT);
+            liveModeBlinkTimer.stop();
+            return;
+        }
+        liveBlinkPrimaryActive = !liveBlinkPrimaryActive;
+        headerStatus.setForeground(liveBlinkPrimaryActive ? liveBlinkPrimary : liveBlinkSecondary);
+    }
+
+    private boolean hasAnyRealTradingStrategy() {
+        return strategies.stream().anyMatch(s -> !s.config.paperTrading());
+    }
+
     private void log(String message) {
         String timestamp = formatLogTimestamp();
         SwingUtilities.invokeLater(() -> {
             String logEntry = "[" + timestamp + "] " + message + System.lineSeparator();
-            eventLog.append(logEntry);
-            eventLog.setCaretPosition(eventLog.getDocument().getLength());
+            appendLogEntry(logEntry);
+            pendingLogWrites.append(logEntry);
         });
+    }
+
+    private void appendLogEntry(String logEntry) {
+        StyledDocument document = eventLog.getStyledDocument();
+        SimpleAttributeSet attributes = new SimpleAttributeSet();
+        StyleConstants.setForeground(attributes, (logLineCount % 2 == 0) ? LOG_LINE_EVEN : LOG_LINE_ODD);
+        StyleConstants.setFontFamily(attributes, eventLog.getFont().getFamily());
+        StyleConstants.setFontSize(attributes, eventLog.getFont().getSize());
+        try {
+            document.insertString(document.getLength(), logEntry, attributes);
+            logLineCount++;
+        } catch (BadLocationException e) {
+            throw new IllegalStateException("Failed to append log entry", e);
+        }
+        eventLog.setCaretPosition(document.getLength());
+    }
+
+    private void flushLogsToFile() {
+        if (pendingLogWrites.isEmpty()) {
+            return;
+        }
+        try {
+            Files.createDirectories(appLogFile.getParent());
+            Files.writeString(
+                    appLogFile,
+                    pendingLogWrites.toString(),
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND
+            );
+            pendingLogWrites.setLength(0);
+        } catch (Exception e) {
+            // Keep the in-memory buffer intact and continue running.
+        }
     }
 
     private String formatLogTimestamp() {
@@ -721,7 +1110,7 @@ public class TradingFrame extends JFrame {
 
     private final class StrategyTableModel extends AbstractTableModel {
         private static final String[] COLUMNS = {
-                "Symbol", "Status", "Shares", "Avg Cost", "Unrealized P&L", "Polling (s)", "Mode", "Actions"
+                "Symbol", "Status", "Shares", "Avg Cost", "Market Value", "Unrealized P&L", "Polling (s)", "Mode", "Actions"
         };
 
         @Override public int getRowCount()    { return strategies.size(); }
@@ -731,12 +1120,13 @@ public class TradingFrame extends JFrame {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             ManagedStrategy entry = strategies.get(rowIndex);
-            if (columnIndex >= 2 && columnIndex <= 4 && tradingApi != null) {
+            if (columnIndex >= 2 && columnIndex <= 5 && tradingApi != null) {
                 Position p = tradingApi.getPosition(entry.config.symbol());
                 return switch (columnIndex) {
                     case 2 -> p.getTotalShares();
                     case 3 -> p.getTotalShares() > 0 ? p.getAverageCost().toPlainString() : "-";
-                    case 4 -> p.getTotalShares() > 0 ? p.unrealizedPnl().toPlainString() : "-";
+                    case 4 -> p.getTotalShares() > 0 ? p.marketValue().toPlainString() : "-";
+                    case 5 -> p.getTotalShares() > 0 ? p.unrealizedPnl().toPlainString() : "-";
                     default -> "";
                 };
             }
@@ -746,16 +1136,17 @@ public class TradingFrame extends JFrame {
                 case 2 -> "-";
                 case 3 -> "-";
                 case 4 -> "-";
-                case 5 -> entry.config.pollingSeconds();
-                case 6 -> entry.config.paperTrading() ? "Paper" : "Live";
-                case 7 -> entry.paused ? "Paused" : "Running";
+                case 5 -> "-";
+                case 6 -> entry.config.pollingSeconds();
+                case 7 -> entry.config.paperTrading() ? "Paper" : "Live";
+                case 8 -> entry.paused ? "Paused" : "Running";
                 default -> "";
             };
         }
 
         @Override
         public boolean isCellEditable(int rowIndex, int columnIndex) {
-            return columnIndex == 7;
+            return columnIndex == 8;
         }
     }
 
@@ -772,13 +1163,7 @@ public class TradingFrame extends JFrame {
         }
     }
 
-    /** Colors table rows based on strategy running/paused status. */
     private final class StatusRowRenderer extends DefaultTableCellRenderer {
-        private static final Color COLOR_RUNNING      = new Color(230, 248, 230); // soft green
-        private static final Color COLOR_RUNNING_SEL  = new Color(180, 225, 180);
-        private static final Color COLOR_PAUSED       = new Color(255, 248, 220); // soft amber
-        private static final Color COLOR_PAUSED_SEL   = new Color(240, 220, 160);
-
         @Override
         public Component getTableCellRendererComponent(
                 JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
@@ -787,11 +1172,14 @@ public class TradingFrame extends JFrame {
             if (modelRow >= 0 && modelRow < strategies.size()) {
                 boolean paused = strategies.get(modelRow).paused;
                 if (isSelected) {
-                    setBackground(paused ? COLOR_PAUSED_SEL : COLOR_RUNNING_SEL);
+                    setBackground(TABLE_SELECTION_BG);
+                    setForeground(new Color(30, 30, 30));
                 } else {
-                    setBackground(paused ? COLOR_PAUSED : COLOR_RUNNING);
+                    setBackground(table.getBackground());
+                    setForeground(column == 1
+                            ? (paused ? STATUS_TEXT_PAUSED : STATUS_TEXT_RUNNING)
+                            : table.getForeground());
                 }
-                setForeground(new Color(30, 30, 30));
             }
             setHorizontalAlignment(CENTER);
             return this;
@@ -801,16 +1189,17 @@ public class TradingFrame extends JFrame {
     private final class ActionsRenderer extends JPanel implements TableCellRenderer {
         private final JButton editButton = new JButton("Edit");
         private final JButton toggleButton = new JButton();
+        private final JButton deleteButton = new JButton("Delete");
 
         private ActionsRenderer() {
-            super(new FlowLayout(FlowLayout.CENTER, 6, 2));
+            super(new GridLayout(1, 3, 6, 0));
             setOpaque(true);
             styleActionButton(editButton, new Color(63, 81, 181));
-            editButton.setEnabled(false);
             styleActionButton(toggleButton, new Color(198, 40, 40));
-            toggleButton.setEnabled(false);
+            styleActionButton(deleteButton, new Color(156, 39, 39));
             add(editButton);
             add(toggleButton);
+            add(deleteButton);
         }
 
         @Override
@@ -819,25 +1208,23 @@ public class TradingFrame extends JFrame {
             boolean paused = strategies.get(modelRow).paused;
             toggleButton.setText(paused ? "Resume" : "Pause");
             styleActionButton(toggleButton, paused ? new Color(46, 125, 50) : new Color(198, 40, 40));
-            if (isSelected) {
-                setBackground(new Color(210, 218, 246));
-            } else {
-                setBackground(table.getBackground());
-            }
+            setBackground(selectionAwareRowColor(isSelected, table));
             return this;
         }
     }
 
     private final class ActionsEditor extends AbstractCellEditor implements javax.swing.table.TableCellEditor {
-        private final JPanel panel = new JPanel(new FlowLayout(FlowLayout.CENTER, 6, 2));
+        private final JPanel panel = new JPanel(new GridLayout(1, 3, 6, 0));
         private final JButton editButton = new JButton("Edit");
         private final JButton toggleButton = new JButton();
+        private final JButton deleteButton = new JButton("Delete");
         private int viewRow = -1;
 
         private ActionsEditor() {
             panel.setOpaque(true);
             styleActionButton(editButton, new Color(63, 81, 181));
             styleActionButton(toggleButton, new Color(198, 40, 40));
+            styleActionButton(deleteButton, new Color(156, 39, 39));
             editButton.addActionListener(e -> {
                 fireEditingStopped();
                 editStrategy(viewRow);
@@ -846,8 +1233,13 @@ public class TradingFrame extends JFrame {
                 fireEditingStopped();
                 togglePauseResume(viewRow);
             });
+            deleteButton.addActionListener(e -> {
+                fireEditingStopped();
+                deleteStrategy(viewRow);
+            });
             panel.add(editButton);
             panel.add(toggleButton);
+            panel.add(deleteButton);
         }
 
         @Override
@@ -858,26 +1250,59 @@ public class TradingFrame extends JFrame {
         @Override
         public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
             this.viewRow = row;
+            if (table.getSelectedRow() != row) {
+                table.setRowSelectionInterval(row, row);
+            }
             int modelRow = table.convertRowIndexToModel(row);
             boolean paused = strategies.get(modelRow).paused;
             toggleButton.setText(paused ? "Resume" : "Pause");
             styleActionButton(toggleButton, paused ? new Color(46, 125, 50) : new Color(198, 40, 40));
-            panel.setBackground(new Color(210, 218, 246));
+            panel.setBackground(selectionAwareRowColor(true, table));
             return panel;
         }
     }
 
+    private Color selectionAwareRowColor(boolean selected, JTable table) {
+        return selected ? TABLE_SELECTION_BG : table.getBackground();
+    }
+
     private void styleActionButton(JButton button, Color background) {
         button.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
-        button.setMargin(new java.awt.Insets(3, 8, 3, 8));
+        button.setMargin(new java.awt.Insets(4, 8, 4, 8));
         button.setFocusPainted(false);
         button.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
-        button.setForeground(Color.WHITE);
-        button.setBackground(background);
         button.setOpaque(true);
+        button.setContentAreaFilled(true);
+        button.setHorizontalAlignment(SwingConstants.CENTER);
+        button.setRolloverEnabled(true);
+        button.setForeground(Color.WHITE);
+        button.putClientProperty("actionButtonBase", background);
+        button.putClientProperty("actionButtonHover", background.brighter());
+        updateActionButtonColor(button, background);
         button.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(background.darker(), 1, true),
                 new EmptyBorder(2, 6, 2, 6)
         ));
+        if (!Boolean.TRUE.equals(button.getClientProperty("actionButtonHoverInstalled"))) {
+            button.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    if (button.isEnabled()) {
+                        updateActionButtonColor(button, (Color) button.getClientProperty("actionButtonHover"));
+                    }
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    updateActionButtonColor(button, (Color) button.getClientProperty("actionButtonBase"));
+                }
+            });
+            button.putClientProperty("actionButtonHoverInstalled", Boolean.TRUE);
+        }
+    }
+
+    private void updateActionButtonColor(JButton button, Color background) {
+        button.setBackground(background);
+        button.setForeground(Color.WHITE);
     }
 }

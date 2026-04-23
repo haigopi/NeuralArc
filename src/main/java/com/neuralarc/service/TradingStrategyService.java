@@ -50,13 +50,16 @@ public class TradingStrategyService {
             if (!state.markTriggered(rule)) {
                 continue;
             }
-            handleRule(rule, position);
+            handleRule(rule, position, price);
         }
         publishPosition(position, price);
     }
 
-    private void handleRule(RuleType rule, Position position) {
-        logger.log("Triggered: " + rule);
+    private void handleRule(RuleType rule, Position position, BigDecimal marketPrice) {
+        BigDecimal ruleValue = ruleConfiguredValue(rule);
+        logger.log("Triggered: " + rule.name() +
+                " | Rule Value: " + ruleValue.toPlainString() +
+                " | Market Price: " + marketPrice.toPlainString());
         analyticsPublisher.publish(baseEvent("RULE_TRIGGERED").put("ruleType", rule.name()));
         switch (rule) {
             case BUY_RULE -> submitBuy(config.baseBuyQty());
@@ -73,6 +76,16 @@ public class TradingStrategyService {
             logger.log("Strategy reset after full exit");
             analyticsPublisher.publish(baseEvent("POSITION_CLOSED"));
         }
+    }
+
+    private BigDecimal ruleConfiguredValue(RuleType rule) {
+        return switch (rule) {
+            case BUY_RULE -> config.baseBuyPrice();
+            case LOSS_BUY_RULE -> config.lossBuyLevel1Price();
+            case LOSS_INVESTMENT_BUY_RULE -> config.lossBuyLevel2Price();
+            case SELL_RULE -> config.sellTriggerPrice();
+            case STOP_LOSS_RULE -> config.stopActivationPrice();
+        };
     }
 
     private void submitBuy(int qty) {
