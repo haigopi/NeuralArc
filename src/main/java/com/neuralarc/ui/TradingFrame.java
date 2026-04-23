@@ -26,6 +26,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -78,6 +79,7 @@ public class TradingFrame extends JFrame {
     private final JButton settingsButton = new JButton("⚙️ Settings");
     private final Timer liveModeBlinkTimer;
     private final Timer logFlushTimer;
+    private final Timer pollingIndicatorTimer;
     private final Path appLogFile = Path.of(System.getProperty("user.home"), ".neuralarc", "app.log");
     private final StringBuilder pendingLogWrites = new StringBuilder();
 
@@ -106,6 +108,9 @@ public class TradingFrame extends JFrame {
         logFlushTimer = new Timer(10000, e -> flushLogsToFile());
         logFlushTimer.setInitialDelay(10000);
         logFlushTimer.start();
+        pollingIndicatorTimer = new Timer(250, e -> strategyTable.repaint());
+        pollingIndicatorTimer.setInitialDelay(250);
+        pollingIndicatorTimer.start();
         setTitle("NeuralArc Trader Application");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
@@ -185,19 +190,31 @@ public class TradingFrame extends JFrame {
         strategyTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         strategyTable.setSelectionBackground(TABLE_SELECTION_BG);
         strategyTable.setSelectionForeground(new Color(20, 20, 30));
-        strategyTable.setDefaultRenderer(Object.class, new StatusRowRenderer());
+        strategyTable.setShowGrid(false);
+        strategyTable.setIntercellSpacing(new Dimension(0, 6));
+        StatusRowRenderer statusRowRenderer = new StatusRowRenderer();
+        strategyTable.setDefaultRenderer(Object.class, statusRowRenderer);
+        strategyTable.setDefaultRenderer(Number.class, statusRowRenderer);
+        strategyTable.getColumnModel().getColumn(6).setCellRenderer(new PollingBarRenderer());
         strategyTable.getColumnModel().getColumn(8).setCellRenderer(new ActionsRenderer());
         strategyTable.getColumnModel().getColumn(8).setCellEditor(new ActionsEditor());
+        strategyTable.getColumnModel().getColumn(6).setPreferredWidth(180);
+        strategyTable.getColumnModel().getColumn(6).setMinWidth(180);
         strategyTable.getColumnModel().getColumn(8).setPreferredWidth(270);
         strategyTable.getColumnModel().getColumn(8).setMinWidth(270);
 
         // Make table sortable — click column headers to sort
         TableRowSorter<StrategyTableModel> sorter = new TableRowSorter<>(strategyTableModel);
+        sorter.setSortable(6, false); // Polling countdown bar column — not sortable
         sorter.setSortable(8, false); // Actions button column — not sortable
         strategyTable.setRowSorter(sorter);
 
         JScrollPane strategyGrid = new JScrollPane(strategyTable);
-        strategyGrid.setBorder(BorderFactory.createTitledBorder("Stock Strategies"));
+        strategyGrid.setViewportBorder(new EmptyBorder(8, 10, 8, 10));
+        strategyGrid.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder("Stock Strategies"),
+                new EmptyBorder(8, 10, 8, 10)
+        ));
 
 
         // ── Status bar ─────────────────────────────────────────────────────────
@@ -538,6 +555,7 @@ public class TradingFrame extends JFrame {
             service.configure(restoredConfig);
             ManagedStrategy managed = new ManagedStrategy(restoredConfig, service);
             managed.paused = entry.paused();
+            resetPollingCountdown(managed);
             strategies.add(managed);
             if (!managed.paused) {
                 startStrategy(managed, "STRATEGY_RESUMED");
@@ -587,6 +605,7 @@ public class TradingFrame extends JFrame {
 
         ManagedStrategy entry = new ManagedStrategy(config, service);
         strategies.add(entry);
+        resetPollingCountdown(entry);
         updateHeaderModeStatus(currentBrokerType);
         startStrategy(entry, "STRATEGY_STARTED");
         persistStrategies();
@@ -622,10 +641,12 @@ public class TradingFrame extends JFrame {
         stopPoller(entry);
         entry.config = updated;
         entry.service.configure(updated);
+        resetPollingCountdown(entry);
         if (!wasPaused) {
             startStrategy(entry, "STRATEGY_RESUMED");
         } else {
             entry.paused = true;
+            stopPollingCountdown(entry);
         }
 
         updateHeaderModeStatus(currentBrokerType);
@@ -646,6 +667,7 @@ public class TradingFrame extends JFrame {
         } else {
             stopPoller(entry);
             entry.paused = true;
+            stopPollingCountdown(entry);
             log("Strategy paused for symbol " + entry.config.symbol());
             if (analyticsPublisher != null) {
                 analyticsPublisher.publish(new AnalyticsEvent("STRATEGY_PAUSED").put("symbol", entry.config.symbol()));
@@ -676,6 +698,7 @@ public class TradingFrame extends JFrame {
         }
 
         stopPoller(entry);
+        stopPollingCountdown(entry);
         strategies.remove(row);
         log("Deleted strategy for symbol " + entry.config.symbol());
         if (analyticsPublisher != null) {
@@ -704,11 +727,13 @@ public class TradingFrame extends JFrame {
     private void startStrategy(ManagedStrategy entry, String eventType) {
         stopPoller(entry);
         entry.paused = false;
+        startPollingCountdown(entry);
         entry.poller = new PricePoller();
         try {
             entry.poller.start(entry.config.pollingSeconds(), () -> {
                 entry.service.onPriceTick();
                 SwingUtilities.invokeLater(() -> {
+                    markPollingCycleCompleted(entry);
                     refreshStrategyTableContent(); // refresh position columns without dropping selection
                     refreshPanels();
                 });
@@ -733,6 +758,7 @@ public class TradingFrame extends JFrame {
             entry.poller.stop();
             entry.poller = null;
         }
+        stopPollingCountdown(entry);
     }
 
     private void refreshPanels() {
@@ -879,6 +905,45 @@ public class TradingFrame extends JFrame {
         return null;
     }
 
+    private void resetPollingCountdown(ManagedStrategy entry) {
+        entry.pollIntervalMillis = Math.max(1L, entry.config.pollingSeconds()) * 1000L;
+        entry.nextPollDueAtMillis = 0L;
+        entry.countdownActive = false;
+    }
+
+    private void startPollingCountdown(ManagedStrategy entry) {
+        resetPollingCountdown(entry);
+        entry.countdownActive = true;
+        entry.nextPollDueAtMillis = System.currentTimeMillis() + entry.pollIntervalMillis;
+    }
+
+    private void markPollingCycleCompleted(ManagedStrategy entry) {
+        entry.pollIntervalMillis = Math.max(1L, entry.config.pollingSeconds()) * 1000L;
+        entry.countdownActive = true;
+        entry.nextPollDueAtMillis = System.currentTimeMillis() + entry.pollIntervalMillis;
+    }
+
+    private void stopPollingCountdown(ManagedStrategy entry) {
+        entry.countdownActive = false;
+        entry.nextPollDueAtMillis = 0L;
+    }
+
+    private int pollingProgressPercent(ManagedStrategy entry) {
+        if (!entry.countdownActive || entry.pollIntervalMillis <= 0L) {
+            return 0;
+        }
+        long remainingMillis = Math.max(0L, entry.nextPollDueAtMillis - System.currentTimeMillis());
+        return (int) Math.min(100L, Math.round((remainingMillis * 100.0d) / entry.pollIntervalMillis));
+    }
+
+    private long pollingSecondsRemaining(ManagedStrategy entry) {
+        if (!entry.countdownActive || entry.pollIntervalMillis <= 0L) {
+            return 0L;
+        }
+        long remainingMillis = Math.max(0L, entry.nextPollDueAtMillis - System.currentTimeMillis());
+        return (long) Math.ceil(remainingMillis / 1000.0d);
+    }
+
     private void setStatus(String message, Color color) {
         SwingUtilities.invokeLater(() -> {
             statusBar.setText(" ● " + message);
@@ -956,6 +1021,7 @@ public class TradingFrame extends JFrame {
     private void shutdownAllStrategies() {
         persistStrategies();
         logFlushTimer.stop();
+        pollingIndicatorTimer.stop();
         flushLogsToFile();
         for (ManagedStrategy strategy : strategies) {
             stopPoller(strategy);
@@ -978,6 +1044,7 @@ public class TradingFrame extends JFrame {
             if (!strategy.paused) {
                 stopPoller(strategy);
                 strategy.paused = true;
+                stopPollingCountdown(strategy);
                 log("[" + strategy.config.symbol() + "] EMERGENCY STOP");
                 stoppedCount++;
             }
@@ -1110,7 +1177,7 @@ public class TradingFrame extends JFrame {
 
     private final class StrategyTableModel extends AbstractTableModel {
         private static final String[] COLUMNS = {
-                "Symbol", "Status", "Shares", "Avg Cost", "Market Value", "Unrealized P&L", "Polling (s)", "Mode", "Actions"
+                "Symbol", "Status", "Shares", "Avg Cost", "Market Value", "Unrealized P&L", "Polling", "Mode", "Actions"
         };
 
         @Override public int getRowCount()    { return strategies.size(); }
@@ -1155,6 +1222,9 @@ public class TradingFrame extends JFrame {
         private final TradingStrategyService service;
         private PricePoller poller;
         private boolean paused;
+        private volatile long pollIntervalMillis;
+        private volatile long nextPollDueAtMillis;
+        private volatile boolean countdownActive;
 
         private ManagedStrategy(StrategyConfig config, TradingStrategyService service) {
             this.config = config;
@@ -1181,7 +1251,43 @@ public class TradingFrame extends JFrame {
                             : table.getForeground());
                 }
             }
+            setOpaque(true);
             setHorizontalAlignment(CENTER);
+            return this;
+        }
+    }
+
+    private final class PollingBarRenderer extends JPanel implements TableCellRenderer {
+        private final JProgressBar progressBar = new JProgressBar(0, 100);
+
+        private PollingBarRenderer() {
+            super(new BorderLayout());
+            setOpaque(true);
+            setBorder(new EmptyBorder(4, 8, 4, 8));
+            progressBar.setOpaque(true);
+            progressBar.setBorder(BorderFactory.createEmptyBorder());
+            progressBar.setStringPainted(true);
+            progressBar.setComponentOrientation(java.awt.ComponentOrientation.RIGHT_TO_LEFT);
+            progressBar.setForeground(new Color(94, 53, 177));
+            add(progressBar, BorderLayout.CENTER);
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+            int modelRow = table.convertRowIndexToModel(row);
+            ManagedStrategy strategy = strategies.get(modelRow);
+            int progress = pollingProgressPercent(strategy);
+            long secondsRemaining = pollingSecondsRemaining(strategy);
+            long totalSeconds = Math.max(1L, strategy.config.pollingSeconds());
+
+            setBackground(selectionAwareRowColor(isSelected, table));
+            progressBar.setValue(progress);
+            progressBar.setBackground(isSelected ? new Color(228, 217, 250) : new Color(232, 236, 242));
+            progressBar.setForeground(strategy.paused ? STATUS_TEXT_PAUSED : new Color(94, 53, 177));
+            progressBar.setString(strategy.paused ? "Paused" : secondsRemaining + "s / " + totalSeconds + "s");
+            progressBar.setToolTipText(strategy.paused
+                    ? "Polling paused"
+                    : secondsRemaining + " seconds remaining out of " + totalSeconds + " seconds");
             return this;
         }
     }
