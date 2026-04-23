@@ -64,9 +64,9 @@ public class HelpDialog extends JDialog {
             "To connect NeuralArc to Alpaca:\n" +
             "1. Sign up at alpaca.markets and create a Paper or Live account.\n" +
             "2. Generate an API Key and API Secret in the Alpaca dashboard.\n" +
-            "3. Enter them in Settings → API Details and press Encrypt & Save.\n" +
+            "3. Enter them in Settings → Alpaca API Details and press Encrypt & Save.\n" +
             "4. Select ALPACA as the broker.\n" +
-            "5. Click Test Connection — a green status confirms the API is reachable.\n\n" +
+            "5. Click Verify Alpaca Connection in the same section — a green status confirms the API is reachable.\n\n" +
             "Important: The ALPACA integration in this version is a stub — it compiles and routes calls " +
             "correctly but returns empty/mock responses. Full live Alpaca execution requires completing the " +
             "AlpacaTradingApi implementation with real HTTP calls to api.alpaca.markets.\n\n" +
@@ -77,7 +77,7 @@ public class HelpDialog extends JDialog {
             "When you add or modify a strategy, it is immediately saved to:\n" +
             "   ~/.neuralarc/strategies.dat\n\n" +
             "The file is AES-256-GCM encrypted using a key derived from your user email. On next launch, " +
-            "after you successfully run Test Connection, your strategies are automatically restored:\n\n" +
+            "after your saved connection is validated automatically, your strategies are restored:\n\n" +
             "• Strategies that were Running at close are auto-started.\n" +
             "• Strategies that were Paused at close are restored in paused state — you can resume them manually.\n\n" +
             "If the file is corrupt or the passphrase does not match (e.g., you changed your email), " +
@@ -176,4 +176,3 @@ public class HelpDialog extends JDialog {
         return panel;
     }
 }
-

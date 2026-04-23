@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
+import java.util.function.Function;
 
 public class SettingsDialog extends JDialog {
     private static final Path SETTINGS_FILE = Path.of(System.getProperty("user.home"), ".neuralarc", "settings.properties");
@@ -28,9 +29,12 @@ public class SettingsDialog extends JDialog {
     private final JTextField endpointField = new JTextField("http://localhost:8080/events", 25);
     private final JCheckBox telemetryEnabled = new JCheckBox("Enable telemetry", false);
     private final JCheckBox saveCredentials = new JCheckBox("Save credentials locally", false);
+    private final JButton verifyConnectionButton = new JButton("Verify Alpaca Connection");
+    private final JLabel connectionStatus = new JLabel("Connection not verified");
     private final JComboBox<BrokerType> brokerBox = new JComboBox<>(BrokerType.values());
     private final CredentialManager credentialManager = new CredentialManager();
     private final UserIdentityService identityService = new UserIdentityService();
+    private transient Function<ConnectionRequest, ConnectionResult> connectionVerifier;
 
     public SettingsDialog(JFrame owner) {
         super(owner, "Settings", true);
@@ -46,15 +50,20 @@ public class SettingsDialog extends JDialog {
         userPanel.add(emailField);
 
         JPanel apiPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
-        apiPanel.setBorder(withInnerPadding(new TitledBorder("API Details")));
+        apiPanel.setBorder(withInnerPadding(new TitledBorder("Alpaca API Details")));
         apiPanel.add(new JLabel("Broker:"));
         apiPanel.add(brokerBox);
         apiPanel.add(new JLabel("API key:"));
         apiPanel.add(apiKeyField);
         apiPanel.add(new JLabel("API secret:"));
         apiPanel.add(apiSecretField);
+        saveCredentials.setSelected(true);
+        saveCredentials.setEnabled(false);
         apiPanel.add(new JLabel(""));
         apiPanel.add(saveCredentials);
+        verifyConnectionButton.addActionListener(e -> verifyConnection());
+        apiPanel.add(connectionStatus);
+        apiPanel.add(verifyConnectionButton);
 
         JPanel telemetryPanel = new JPanel(new GridLayout(0, 1, FIELD_GAP, FIELD_GAP));
         telemetryPanel.setBorder(withInnerPadding(new TitledBorder("Telemetry")));
@@ -85,6 +94,10 @@ public class SettingsDialog extends JDialog {
         setLocationRelativeTo(owner);
     }
 
+    public void setConnectionVerifier(Function<ConnectionRequest, ConnectionResult> connectionVerifier) {
+        this.connectionVerifier = connectionVerifier;
+    }
+
     public String getEndpoint() { return endpointField.getText().trim(); }
     public boolean telemetryEnabled() { return telemetryEnabled.isSelected(); }
     public boolean saveCredentials() { return saveCredentials.isSelected(); }
@@ -96,6 +109,11 @@ public class SettingsDialog extends JDialog {
         return !getUserEmail().isBlank()
                 && !getApiKey().isBlank()
                 && !getApiSecret().isBlank();
+    }
+
+    public void markConnectionStatus(boolean connected, String message) {
+        connectionStatus.setText(message);
+        connectionStatus.setForeground(connected ? new Color(34, 139, 34) : new Color(180, 30, 30));
     }
 
     private void saveAll() {
@@ -111,15 +129,13 @@ public class SettingsDialog extends JDialog {
             settings.setProperty("userEmail", email);
             settings.setProperty("endpoint", getEndpoint());
             settings.setProperty("telemetryEnabled", String.valueOf(telemetryEnabled()));
-            settings.setProperty("saveCredentials", String.valueOf(saveCredentials()));
+            settings.setProperty("saveCredentials", "true");
             settings.setProperty("broker", brokerType() == null ? BrokerType.MOCK.name() : brokerType().name());
             try (var out = Files.newOutputStream(SETTINGS_FILE)) {
                 settings.store(out, "NeuralArc settings");
             }
 
-            if (saveCredentials()) {
-                credentialManager.save(getApiKey(), apiSecretField.getPassword(), CREDENTIALS_FILE, buildPassphrase(email));
-            }
+            credentialManager.save(getApiKey(), apiSecretField.getPassword(), CREDENTIALS_FILE, buildPassphrase(email));
             JOptionPane.showMessageDialog(this, "Settings saved successfully.", "Saved", JOptionPane.INFORMATION_MESSAGE);
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(this, "Failed to save settings.", "Error", JOptionPane.ERROR_MESSAGE);
@@ -134,7 +150,7 @@ public class SettingsDialog extends JDialog {
                 emailField.setText(settings.getProperty("userEmail", ""));
                 endpointField.setText(settings.getProperty("endpoint", endpointField.getText()));
                 telemetryEnabled.setSelected(Boolean.parseBoolean(settings.getProperty("telemetryEnabled", "false")));
-                saveCredentials.setSelected(Boolean.parseBoolean(settings.getProperty("saveCredentials", "false")));
+                saveCredentials.setSelected(true);
                 String broker = settings.getProperty("broker", BrokerType.MOCK.name());
                 brokerBox.setSelectedItem(BrokerType.valueOf(broker));
             } catch (Exception ignored) {
@@ -157,6 +173,19 @@ public class SettingsDialog extends JDialog {
     private void closeDialog() {
         setVisible(false);
     }
+
+    private void verifyConnection() {
+        if (connectionVerifier == null) {
+            markConnectionStatus(false, "Verification unavailable");
+            return;
+        }
+        ConnectionResult result = connectionVerifier.apply(new ConnectionRequest(brokerType(), getApiKey(), getApiSecret()));
+        markConnectionStatus(result.connected(), result.message());
+    }
+
+    public record ConnectionRequest(BrokerType brokerType, String apiKey, String apiSecret) {}
+
+    public record ConnectionResult(boolean connected, String message) {}
 
     private static Border withInnerPadding(Border border) {
         return BorderFactory.createCompoundBorder(border, new EmptyBorder(SECTION_INNER_PADDING, SECTION_INNER_PADDING, SECTION_INNER_PADDING, SECTION_INNER_PADDING));
