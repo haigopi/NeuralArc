@@ -48,6 +48,7 @@ public class TradingFrame extends JFrame {
     private final JLabel positionSummary = new JLabel("Position: -");    private final JLabel ruleState = new JLabel("Rules: -");
     private final JLabel statusBar = new JLabel(" ● Not connected");
     private final JLabel statusStrategyCount = new JLabel("");
+    private final JLabel headerStatus = new JLabel("Status: waiting for settings");
     private static final Color STATUS_OK = new Color(34, 139, 34);
     private static final Color STATUS_WARN = new Color(180, 100, 0);
     private static final Color STATUS_ERR = new Color(180, 30, 30);
@@ -77,11 +78,22 @@ public class TradingFrame extends JFrame {
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
         settingsDialog = new SettingsDialog(this);
 
-        JPanel controlPanel = new JPanel(new BorderLayout());
-        controlPanel.setBorder(new EmptyBorder(8, 0, 8, 0));
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(new Color(35, 35, 45));
+        headerPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(200, 200, 210)),
+                new EmptyBorder(6, 8, 6, 8)
+        ));
+
+        headerStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 12f));
+        headerStatus.setForeground(new Color(220, 220, 255));
+
         JPanel leftControls = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        leftControls.add(addStrategyButton);
+        leftControls.setOpaque(false);
+        leftControls.add(headerStatus);
         JPanel rightControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        rightControls.setOpaque(false);
+        rightControls.add(addStrategyButton);
         rightControls.add(testConnectionButton);
         rightControls.add(settingsButton);
 
@@ -97,8 +109,8 @@ public class TradingFrame extends JFrame {
         ));
         killSwitchButton.addActionListener(e -> killAllStrategies());
         rightControls.add(killSwitchButton);
-        controlPanel.add(leftControls, BorderLayout.WEST);
-        controlPanel.add(rightControls, BorderLayout.EAST);
+        headerPanel.add(leftControls, BorderLayout.WEST);
+        headerPanel.add(rightControls, BorderLayout.EAST);
 
         strategyTable.setRowHeight(32);
         strategyTable.setFillsViewportHeight(true);
@@ -197,7 +209,7 @@ public class TradingFrame extends JFrame {
         statusPanel.add(positionSummary);
         statusPanel.add(ruleState);
 
-        add(controlPanel, BorderLayout.NORTH);
+        add(headerPanel, BorderLayout.NORTH);
         add(splitPane, BorderLayout.CENTER);
 
         // Wrap status panels + status bar into one SOUTH panel
@@ -222,9 +234,9 @@ public class TradingFrame extends JFrame {
     private void applyUiPolish() {
         applyFontRecursively(this);
 
-        styleButton(testConnectionButton);
-        styleButton(addStrategyButton);
-        styleButton(settingsButton);
+        styleHeaderButton(testConnectionButton);
+        styleHeaderButton(addStrategyButton);
+        styleHeaderButton(settingsButton);
 
         // Buttons with emoji: use Poppins for text (emoji rendered by system fallback)
         applyEmojiFontToButton(testConnectionButton, 14f);
@@ -246,11 +258,14 @@ public class TradingFrame extends JFrame {
         }
     }
 
-    private void styleButton(JButton button) {
+    private void styleHeaderButton(JButton button) {
         button.setFocusPainted(false);
+        button.setForeground(new Color(230, 230, 255));
+        button.setBackground(new Color(60, 60, 90));
+        button.setOpaque(true);
         button.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(200, 200, 200), 1, true),
-                new EmptyBorder(8, 14, 8, 14)
+                BorderFactory.createLineBorder(new Color(100, 100, 160), 1, true),
+                new EmptyBorder(7, 12, 7, 12)
         ));
     }
 
@@ -267,7 +282,9 @@ public class TradingFrame extends JFrame {
     public void promptForRequiredSettings() {
         if (!settingsDialog.hasRequiredSettings()) {
             openSettingsDialog();
+            return;
         }
+        autoInitializeConnection();
     }
 
     private void openSettingsDialog() {
@@ -275,26 +292,40 @@ public class TradingFrame extends JFrame {
         connectionOk = false;
         setStatus("Not connected — re-run Test Connection after changing settings.", STATUS_WARN);
         updateStatusBar();
+        if (settingsDialog.hasRequiredSettings()) {
+            autoInitializeConnection();
+        }
     }
 
 
     private void testConnection() {
+        runConnectionTest(true);
+    }
+
+    private void autoInitializeConnection() {
+        runConnectionTest(false);
+    }
+
+    private void runConnectionTest(boolean manualTrigger) {
         BrokerType brokerType = settingsDialog.brokerType();
         if (brokerType == null) {
             log("Connection test: FAILED (broker not set in Settings)");
+            headerStatus.setText("Status: broker not configured");
             return;
         }
 
         tradingApi = TradingApiFactory.create(brokerType);
         tradingApi.authenticate(settingsDialog.getApiKey(), settingsDialog.getApiSecret());
         connectionOk = tradingApi.testConnection();
-        log("Connection test: " + (connectionOk ? "SUCCESS" : "FAILED"));
+        log((manualTrigger ? "Connection test: " : "Auto connection test: ") + (connectionOk ? "SUCCESS" : "FAILED"));
         if (connectionOk) {
             setStatus("Connected — broker " + brokerType.name() + " ready.", STATUS_OK);
+            headerStatus.setText("Status: connected to " + brokerType.name());
             updateStatusBar();
             initPersistenceAndRestore();
         } else {
             setStatus("Connection failed — check API credentials in Settings.", STATUS_ERR);
+            headerStatus.setText("Status: connection failed");
             updateStatusBar();
         }
     }
