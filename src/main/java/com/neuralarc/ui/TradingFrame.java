@@ -55,6 +55,8 @@ public class TradingFrame extends JFrame {
     private final JButton testConnectionButton = new JButton("📡 Test Connection");
     private final JButton addStrategyButton = new JButton("📊 Add New Stock Strategy");
     private final JButton settingsButton = new JButton("⚙️ Settings");
+    private final JButton contactUsButton = new JButton("Contact Us");
+    private final JButton submitFeedbackButton = new JButton("Submit Feedback");
 
     private final UserIdentityService identityService = new UserIdentityService();
     private final List<ManagedStrategy> strategies = new ArrayList<>();
@@ -139,6 +141,12 @@ public class TradingFrame extends JFrame {
                 new EmptyBorder(4, 12, 4, 12)
         ));
         faqsButton.addActionListener(e -> new HelpDialog(this).setVisible(true));
+        contactUsButton.setFocusPainted(false);
+        contactUsButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 12f));
+        contactUsButton.addActionListener(e -> new ContactUsDialog(this).setVisible(true));
+        submitFeedbackButton.setFocusPainted(false);
+        submitFeedbackButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 12f));
+        submitFeedbackButton.addActionListener(e -> new SubmitFeedbackDialog(this).setVisible(true));
 
         JLabel appLabel = new JLabel("NeuralArc Trader  v1.0");
         appLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
@@ -157,6 +165,8 @@ public class TradingFrame extends JFrame {
         JPanel statusRight = new JPanel(new GridBagLayout());
         statusRight.setOpaque(false);
         statusRight.add(appLabel, gbc);
+        statusRight.add(contactUsButton, gbc);
+        statusRight.add(submitFeedbackButton, gbc);
         statusRight.add(faqsButton, gbc);
 
         JPanel statusBarPanel = new JPanel(new BorderLayout());
