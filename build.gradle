@@ -18,6 +18,7 @@ repositories {
 
 dependencies {
     implementation 'com.mailjet:mailjet-client:5.2.5'
+    implementation 'net.jacobpeterson:alpaca-java:9.0.0'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
 }
 

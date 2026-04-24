@@ -31,6 +31,8 @@ import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
@@ -195,18 +197,18 @@ public class TradingFrame extends JFrame {
         StatusRowRenderer statusRowRenderer = new StatusRowRenderer();
         strategyTable.setDefaultRenderer(Object.class, statusRowRenderer);
         strategyTable.setDefaultRenderer(Number.class, statusRowRenderer);
-        strategyTable.getColumnModel().getColumn(6).setCellRenderer(new PollingBarRenderer());
-        strategyTable.getColumnModel().getColumn(8).setCellRenderer(new ActionsRenderer());
-        strategyTable.getColumnModel().getColumn(8).setCellEditor(new ActionsEditor());
-        strategyTable.getColumnModel().getColumn(6).setPreferredWidth(180);
-        strategyTable.getColumnModel().getColumn(6).setMinWidth(180);
-        strategyTable.getColumnModel().getColumn(8).setPreferredWidth(270);
-        strategyTable.getColumnModel().getColumn(8).setMinWidth(270);
+        strategyTable.getColumnModel().getColumn(7).setCellRenderer(new PollingBarRenderer());
+        strategyTable.getColumnModel().getColumn(9).setCellRenderer(new ActionsRenderer());
+        strategyTable.getColumnModel().getColumn(9).setCellEditor(new ActionsEditor());
+        strategyTable.getColumnModel().getColumn(7).setPreferredWidth(240);
+        strategyTable.getColumnModel().getColumn(7).setMinWidth(220);
+        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(270);
+        strategyTable.getColumnModel().getColumn(9).setMinWidth(270);
 
         // Make table sortable — click column headers to sort
         TableRowSorter<StrategyTableModel> sorter = new TableRowSorter<>(strategyTableModel);
-        sorter.setSortable(6, false); // Polling countdown bar column — not sortable
-        sorter.setSortable(8, false); // Actions button column — not sortable
+        sorter.setSortable(7, false); // Polling countdown bar column — not sortable
+        sorter.setSortable(9, false); // Actions button column — not sortable
         strategyTable.setRowSorter(sorter);
 
         JScrollPane strategyGrid = new JScrollPane(strategyTable);
@@ -241,7 +243,7 @@ public class TradingFrame extends JFrame {
         styleStatusActionButton(contactUsButton);
         contactUsButton.addActionListener(e -> openFeedbackDialog("Contact Us"));
 
-        JLabel appLabel = new JLabel("NeuralArc Trader  © 2026  v1.0");
+        JLabel appLabel = new JLabel("NeuralArc Trader  © 2026 - v1.0 - Patent Pending");
         appLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         appLabel.setForeground(new Color(160, 160, 170));
         appLabel.setVerticalAlignment(SwingConstants.CENTER);
@@ -299,6 +301,7 @@ public class TradingFrame extends JFrame {
         splitPane.setBorder(null);
 
         JPanel positionSection = createDetailSection(positionSectionTitle, positionSummary);
+        installCopyPopup(positionSection, positionSummary);
         JPanel rulesSection = createDetailSection(rulesSectionTitle, ruleState);
 
         JPanel detailSectionsPanel = new JPanel(new GridLayout(0, 1, 0, 8));
@@ -360,9 +363,9 @@ public class TradingFrame extends JFrame {
         eventLog.setFont(FontLoader.ui(Font.PLAIN, 10f));
         strategyTable.setFont(FontLoader.ui(Font.PLAIN, 12f));
         strategyTable.getTableHeader().setFont(FontLoader.ui(Font.BOLD, 12f));
-        paperUnrealizedSummary.setFont(FontLoader.ui(Font.BOLD, 10f));
-        liveUnrealizedSummary.setFont(FontLoader.ui(Font.BOLD, 10f));
-        headerTotalsSeparator.setFont(FontLoader.ui(Font.BOLD, 10f));
+        paperUnrealizedSummary.setFont(headerStatus.getFont());
+        liveUnrealizedSummary.setFont(headerStatus.getFont());
+        headerTotalsSeparator.setFont(headerStatus.getFont());
         paperUnrealizedSummary.setForeground(new Color(220, 230, 255));
         liveUnrealizedSummary.setForeground(new Color(220, 230, 255));
         headerTotalsSeparator.setForeground(new Color(180, 190, 215));
@@ -434,6 +437,37 @@ public class TradingFrame extends JFrame {
         button.setMargin(new java.awt.Insets(5, 12, 5, 12));
     }
 
+    /**
+     * Installs a right-click "Copy to Clipboard" popup on {@code panel} and its
+     * {@code contentLabel}.  The copied text is the current text of the label.
+     */
+    private void installCopyPopup(JPanel panel, JLabel contentLabel) {
+        JPopupMenu popup = new JPopupMenu();
+        JMenuItem copyItem = new JMenuItem("📋 Copy to Clipboard");
+        copyItem.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
+        copyItem.addActionListener(e -> {
+            String text = contentLabel.getText();
+            if (text != null && !text.isBlank()) {
+                Toolkit.getDefaultToolkit()
+                        .getSystemClipboard()
+                        .setContents(new StringSelection(text), null);
+            }
+        });
+        popup.add(copyItem);
+
+        MouseAdapter handler = new MouseAdapter() {
+            @Override public void mousePressed(MouseEvent e)  { maybeShow(e); }
+            @Override public void mouseReleased(MouseEvent e) { maybeShow(e); }
+            private void maybeShow(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    popup.show(e.getComponent(), e.getX(), e.getY());
+                }
+            }
+        };
+        panel.addMouseListener(handler);
+        contentLabel.addMouseListener(handler);
+    }
+
     private void openFeedbackDialog(String type) {
         FeedbackDialog dialog = new FeedbackDialog(this, type);
         FeedbackDialog.FeedbackData data = dialog.showDialog();
@@ -495,7 +529,8 @@ public class TradingFrame extends JFrame {
             return new SettingsDialog.ConnectionResult(false, "Broker not configured");
         }
 
-        tradingApi = TradingApiFactory.create(brokerType);
+        BrokerType previousBrokerType = currentBrokerType;
+        tradingApi = TradingApiFactory.create(brokerType, settingsDialog.applicationMode());
         currentBrokerType = brokerType;
         tradingApi.authenticate(apiKey, apiSecret);
         connectionOk = tradingApi.testConnection();
@@ -504,6 +539,7 @@ public class TradingFrame extends JFrame {
             setStatus("Connected — broker " + brokerType.name() + " ready.", STATUS_OK);
             updateHeaderModeStatus(brokerType);
             settingsDialog.markConnectionStatus(true, "Connected to " + brokerType.name());
+            pauseRunningMockStrategiesOnBrokerSwitch(previousBrokerType, brokerType);
             updateStatusBar();
             initPersistenceAndRestore();
             return new SettingsDialog.ConnectionResult(true, "Connected to " + brokerType.name());
@@ -727,6 +763,7 @@ public class TradingFrame extends JFrame {
     private void startStrategy(ManagedStrategy entry, String eventType) {
         stopPoller(entry);
         entry.paused = false;
+        entry.lastStartedBrokerType = currentBrokerType;
         startPollingCountdown(entry);
         entry.poller = new PricePoller();
         try {
@@ -776,9 +813,9 @@ public class TradingFrame extends JFrame {
 
         Position p = tradingApi.getPosition(entry.config.symbol());
         positionSummary.setText(String.format(
-                "[%s]: shares=%d avgCost=%s marketValue=%s invested=%s realized=%s unrealized=%s",
+                "[%s]: Shares=%d | Stock Price=%s | Avg Cost=%s | MarketValue=%s | Invested=%s | Realized=%s | Unrealized=%s",
                 entry.config.symbol(),
-                p.getTotalShares(), p.getAverageCost(), p.marketValue(), p.totalInvested(), p.getRealizedPnl(), p.unrealizedPnl()));
+                p.getTotalShares(), p.getLastPrice().toPlainString(), p.getAverageCost(), p.marketValue(), p.totalInvested(), p.getRealizedPnl(), p.unrealizedPnl()));
         ruleState.setText("Rules Inflight: " + entry.service.getState().triggeredRules() + " | Status: " + (entry.paused ? "PAUSED" : "RUNNING"));
     }
 
@@ -905,6 +942,34 @@ public class TradingFrame extends JFrame {
         return null;
     }
 
+    private void pauseRunningMockStrategiesOnBrokerSwitch(BrokerType previousBrokerType, BrokerType newBrokerType) {
+        if (previousBrokerType != BrokerType.MOCK || newBrokerType != BrokerType.ALPACA) {
+            return;
+        }
+
+        int pausedCount = 0;
+        for (ManagedStrategy strategy : strategies) {
+            if (!strategy.paused && strategy.lastStartedBrokerType == BrokerType.MOCK) {
+                stopPoller(strategy);
+                strategy.paused = true;
+                pausedCount++;
+                log("[" + strategy.config.symbol() + "] Auto-paused after broker switch MOCK -> ALPACA");
+                if (analyticsPublisher != null) {
+                    analyticsPublisher.publish(new AnalyticsEvent("STRATEGY_PAUSED")
+                            .put("symbol", strategy.config.symbol())
+                            .put("reason", "broker_switch"));
+                }
+            }
+        }
+
+        if (pausedCount > 0) {
+            persistStrategies();
+            refreshStrategyTableData();
+            refreshPanels();
+            log("[BROKER SWITCH] Auto-paused " + pausedCount + " strategy(ies) started under MOCK.");
+        }
+    }
+
     private void resetPollingCountdown(ManagedStrategy entry) {
         entry.pollIntervalMillis = Math.max(1L, entry.config.pollingSeconds()) * 1000L;
         entry.nextPollDueAtMillis = 0L;
@@ -952,10 +1017,9 @@ public class TradingFrame extends JFrame {
     }
 
     private String connectionModeStatus(BrokerType brokerType) {
-        if (brokerType == BrokerType.ALPACA) {
-            return "Status: LIVE Mode";
-        }
-        return "Status: MOCK Mode";
+        String broker = brokerType == BrokerType.ALPACA ? "Alpaca" : "Mock";
+        String mode = settingsDialog.applicationMode() == ApplicationMode.LIVE ? "Live" : "Paper";
+        return "Broker: " + broker + " | Mode: " + mode;
     }
 
     private void updateStatusBar() {
@@ -1065,7 +1129,8 @@ public class TradingFrame extends JFrame {
     private void updateHeaderModeStatus(BrokerType brokerType) {
         BrokerType effectiveBroker = brokerType == null ? BrokerType.MOCK : brokerType;
         headerStatus.setText(connectionModeStatus(effectiveBroker));
-        if (effectiveBroker != BrokerType.ALPACA) {
+        boolean blinkLiveAlpaca = effectiveBroker == BrokerType.ALPACA && settingsDialog.applicationMode() == ApplicationMode.LIVE;
+        if (!blinkLiveAlpaca) {
             liveModeBlinkTimer.stop();
             headerStatus.setForeground(HEADER_STATUS_DEFAULT);
             return;
@@ -1082,23 +1147,17 @@ public class TradingFrame extends JFrame {
             return;
         }
 
-        if (hasAnyRealTradingStrategy()) {
-            liveBlinkPrimary = HEADER_STATUS_LIVE_ACTIVE;
-            liveBlinkSecondary = HEADER_STATUS_LIVE_ACTIVE_DIM;
-            liveBlinkPrimaryActive = true;
-            headerStatus.setForeground(liveBlinkPrimary);
-            if (!liveModeBlinkTimer.isRunning()) {
-                liveModeBlinkTimer.start();
-            }
-            return;
+        liveBlinkPrimary = HEADER_STATUS_LIVE_ACTIVE;
+        liveBlinkSecondary = HEADER_STATUS_LIVE_ACTIVE_DIM;
+        liveBlinkPrimaryActive = true;
+        headerStatus.setForeground(liveBlinkPrimary);
+        if (!liveModeBlinkTimer.isRunning()) {
+            liveModeBlinkTimer.start();
         }
-
-        liveModeBlinkTimer.stop();
-        headerStatus.setForeground(HEADER_STATUS_DEFAULT);
     }
 
     private void toggleLiveHeaderBlink() {
-        if (!"Status: LIVE Mode".equals(headerStatus.getText())) {
+        if (!(currentBrokerType == BrokerType.ALPACA && settingsDialog.applicationMode() == ApplicationMode.LIVE)) {
             headerStatus.setForeground(HEADER_STATUS_DEFAULT);
             liveModeBlinkTimer.stop();
             return;
@@ -1177,7 +1236,7 @@ public class TradingFrame extends JFrame {
 
     private final class StrategyTableModel extends AbstractTableModel {
         private static final String[] COLUMNS = {
-                "Symbol", "Status", "Shares", "Avg Cost", "Market Value", "Unrealized P&L", "Polling", "Mode", "Actions"
+                "Symbol", "Status", "Shares", "Avg Cost", "Stock Price", "Market Value", "Unrealized P&L", "Polling", "Mode", "Actions"
         };
 
         @Override public int getRowCount()    { return strategies.size(); }
@@ -1187,13 +1246,14 @@ public class TradingFrame extends JFrame {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             ManagedStrategy entry = strategies.get(rowIndex);
-            if (columnIndex >= 2 && columnIndex <= 5 && tradingApi != null) {
+            if (columnIndex >= 2 && columnIndex <= 6 && tradingApi != null) {
                 Position p = tradingApi.getPosition(entry.config.symbol());
                 return switch (columnIndex) {
                     case 2 -> p.getTotalShares();
                     case 3 -> p.getTotalShares() > 0 ? p.getAverageCost().toPlainString() : "-";
-                    case 4 -> p.getTotalShares() > 0 ? p.marketValue().toPlainString() : "-";
-                    case 5 -> p.getTotalShares() > 0 ? p.unrealizedPnl().toPlainString() : "-";
+                    case 4 -> p.getLastPrice().compareTo(BigDecimal.ZERO) > 0 ? p.getLastPrice().toPlainString() : "-";
+                    case 5 -> p.getTotalShares() > 0 ? p.marketValue().toPlainString() : "-";
+                    case 6 -> p.getTotalShares() > 0 ? p.unrealizedPnl().toPlainString() : "-";
                     default -> "";
                 };
             }
@@ -1204,16 +1264,17 @@ public class TradingFrame extends JFrame {
                 case 3 -> "-";
                 case 4 -> "-";
                 case 5 -> "-";
-                case 6 -> entry.config.pollingSeconds();
-                case 7 -> entry.config.paperTrading() ? "Paper" : "Live";
-                case 8 -> entry.paused ? "Paused" : "Running";
+                case 6 -> "-";
+                case 7 -> entry.config.pollingSeconds();
+                case 8 -> entry.config.paperTrading() ? "Paper" : "Live";
+                case 9 -> entry.paused ? "Paused" : "Running";
                 default -> "";
             };
         }
 
         @Override
         public boolean isCellEditable(int rowIndex, int columnIndex) {
-            return columnIndex == 8;
+            return columnIndex == 9;
         }
     }
 
@@ -1222,6 +1283,7 @@ public class TradingFrame extends JFrame {
         private final TradingStrategyService service;
         private PricePoller poller;
         private boolean paused;
+        private BrokerType lastStartedBrokerType = BrokerType.MOCK;
         private volatile long pollIntervalMillis;
         private volatile long nextPollDueAtMillis;
         private volatile boolean countdownActive;
@@ -1259,17 +1321,24 @@ public class TradingFrame extends JFrame {
 
     private final class PollingBarRenderer extends JPanel implements TableCellRenderer {
         private final JProgressBar progressBar = new JProgressBar(0, 100);
+        private final JLabel countdownLabel = new JLabel();
 
         private PollingBarRenderer() {
             super(new BorderLayout());
             setOpaque(true);
             setBorder(new EmptyBorder(4, 8, 4, 8));
+            countdownLabel.setOpaque(false);
+            countdownLabel.setFont(FontLoader.ui(Font.PLAIN, 10f));
+            countdownLabel.setHorizontalAlignment(SwingConstants.LEFT);
+            countdownLabel.setBorder(new EmptyBorder(0, 8, 0, 0));
             progressBar.setOpaque(true);
             progressBar.setBorder(BorderFactory.createEmptyBorder());
-            progressBar.setStringPainted(true);
+            progressBar.setStringPainted(false);
+            progressBar.setPreferredSize(new Dimension(90, 12));
             progressBar.setComponentOrientation(java.awt.ComponentOrientation.RIGHT_TO_LEFT);
             progressBar.setForeground(new Color(94, 53, 177));
-            add(progressBar, BorderLayout.CENTER);
+            add(progressBar, BorderLayout.WEST);
+            add(countdownLabel, BorderLayout.CENTER);
         }
 
         @Override
@@ -1284,7 +1353,8 @@ public class TradingFrame extends JFrame {
             progressBar.setValue(progress);
             progressBar.setBackground(isSelected ? new Color(228, 217, 250) : new Color(232, 236, 242));
             progressBar.setForeground(strategy.paused ? STATUS_TEXT_PAUSED : new Color(94, 53, 177));
-            progressBar.setString(strategy.paused ? "Paused" : secondsRemaining + "s / " + totalSeconds + "s");
+            countdownLabel.setForeground(isSelected ? new Color(30, 30, 30) : table.getForeground());
+            countdownLabel.setText(strategy.paused ? "Paused" : secondsRemaining + "s / " + totalSeconds + "s");
             progressBar.setToolTipText(strategy.paused
                     ? "Polling paused"
                     : secondsRemaining + " seconds remaining out of " + totalSeconds + " seconds");
