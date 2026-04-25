@@ -15,12 +15,15 @@ import java.awt.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 public class SettingsDialog extends JDialog {
+    private static final Path APP_DATA_DIR = Path.of(System.getProperty("user.home"), ".neuralarc");
     private static final Path SETTINGS_FILE = Path.of(System.getProperty("user.home"), ".neuralarc", "settings.properties");
     private static final Path CREDENTIALS_FILE_PAPER = Path.of(System.getProperty("user.home"), ".neuralarc", "credentials-paper.properties");
     private static final Path CREDENTIALS_FILE_LIVE = Path.of(System.getProperty("user.home"), ".neuralarc", "credentials-live.properties");
@@ -36,6 +39,9 @@ public class SettingsDialog extends JDialog {
             ? UIManager.getColor("TextField.background")
             : Color.WHITE;
     private static final Color INPUT_BORDER = new Color(190, 190, 200);
+    private static final Color INPUT_DISABLED_BG = new Color(240, 242, 246);
+    private static final Color INPUT_DISABLED_BORDER = new Color(214, 218, 225);
+    private static final Color INPUT_DISABLED_TEXT = new Color(142, 148, 160);
     private static final Color TEXT_PRIMARY = UIManager.getColor("Label.foreground") != null
             ? UIManager.getColor("Label.foreground")
             : new Color(45, 45, 50);
@@ -50,7 +56,7 @@ public class SettingsDialog extends JDialog {
     private final JLabel apiKeyLabel = new JLabel("API key:");
     private final JLabel apiSecretLabel = new JLabel("API secret:");
     private final JTextField endpointField = new JTextField(AppMetadata.analyticsEndpointDefault(), 25);
-    private final JCheckBox telemetryEnabled = new JCheckBox("Enable telemetry", false);
+    private final JCheckBox telemetryEnabled = new JCheckBox("Enable telemetry", true);
     private final JCheckBox saveCredentials = new JCheckBox("Save credentials locally", false);
     private final JButton verifyConnectionButton = new JButton("Verify Connection");
     private final JLabel connectionStatus = new JLabel("Connection not verified");
@@ -100,22 +106,81 @@ public class SettingsDialog extends JDialog {
         apiPanel.add(connectionStatus);
         apiPanel.add(verifyConnectionButton);
 
-        JPanel telemetryPanel = new JPanel(new GridLayout(0, 1, FIELD_GAP, FIELD_GAP));
+        JPanel telemetryPanel = new JPanel(new GridBagLayout());
         telemetryPanel.setBorder(createSectionBorder("Telemetry"));
-        telemetryPanel.add(new JLabel("Analytics Endpoint URL:"));
-        telemetryPanel.add(endpointField);
-        telemetryPanel.add(telemetryEnabled);
+        telemetryPanel.setOpaque(false);
+        JLabel telemetryDescription = new JLabel(
+                "<html><div style='max-width:320px; width:320px; line-height:1.35;'>"
+                        + "To support auditing, fraud prevention, and anomaly detection, operational app telemetry "
+                        + "can be streamed to our servers.<br><br>"
+                        + "Telemetry remains anonymized and does not include personal user details."
+                        + "</div></html>"
+        );
+        telemetryDescription.setForeground(TEXT_MUTED);
+        telemetryDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
+
+        GridBagConstraints telemetryLabelConstraints = new GridBagConstraints();
+        telemetryLabelConstraints.gridx = 0;
+        telemetryLabelConstraints.gridy = 0;
+        telemetryLabelConstraints.weightx = 0.43;
+        telemetryLabelConstraints.fill = GridBagConstraints.HORIZONTAL;
+        telemetryLabelConstraints.anchor = GridBagConstraints.NORTHWEST;
+        telemetryLabelConstraints.insets = new Insets(0, 0, 0, FIELD_GAP);
+        telemetryPanel.add(new JLabel("Telemetry:"), telemetryLabelConstraints);
+
+        GridBagConstraints telemetryContentConstraints = new GridBagConstraints();
+        telemetryContentConstraints.gridx = 1;
+        telemetryContentConstraints.gridy = 0;
+        telemetryContentConstraints.weightx = 0.57;
+        telemetryContentConstraints.fill = GridBagConstraints.HORIZONTAL;
+        telemetryContentConstraints.anchor = GridBagConstraints.NORTHWEST;
+        telemetryContentConstraints.insets = new Insets(0, 0, 0, 0);
+
+        JPanel telemetryContent = new JPanel();
+        telemetryContent.setLayout(new BoxLayout(telemetryContent, BoxLayout.Y_AXIS));
+        telemetryContent.setOpaque(false);
+        telemetryContent.setBorder(new EmptyBorder(2, 0, 2, 0));
+        telemetryEnabled.setAlignmentX(Component.LEFT_ALIGNMENT);
+        telemetryDescription.setAlignmentX(Component.LEFT_ALIGNMENT);
+        telemetryContent.add(telemetryEnabled);
+        telemetryContent.add(Box.createVerticalStrut(10));
+        telemetryContent.add(telemetryDescription);
+        telemetryPanel.add(telemetryContent, telemetryContentConstraints);
+
+        JPanel dangerZonePanel = new JPanel(new GridLayout(0, 1, FIELD_GAP, FIELD_GAP));
+        dangerZonePanel.setBorder(createSectionBorder("Danger Zone"));
+        JButton deleteAllDataButton = new JButton("Delete All Data");
+        deleteAllDataButton.setForeground(new Color(180, 30, 30));
+        deleteAllDataButton.addActionListener(e -> deleteAllData());
+
+        JLabel dangerDescription = new JLabel("<html><div style='width:100%;color:#9AA0A8;'>"
+                + "Deletes local settings, saved credentials, strategies, and cached app data. This action cannot be undone."
+                + "</div></html>");
+        dangerDescription.setForeground(new Color(154, 160, 168));
+        dangerDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        dangerZonePanel.add(deleteAllDataButton);
+        dangerZonePanel.add(dangerDescription);
 
         content.add(userPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(apiPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(telemetryPanel);
+        content.add(Box.createVerticalStrut(SECTION_GAP));
+        content.add(dangerZonePanel);
 
-        add(content, BorderLayout.CENTER);
+        JScrollPane contentScroll = new JScrollPane(content);
+        contentScroll.setBorder(null);
+        contentScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        contentScroll.getVerticalScrollBar().setUnitIncrement(16);
+        contentScroll.getViewport().setBackground(DIALOG_BG);
+        contentScroll.setPreferredSize(new Dimension(760, 660));
+        add(contentScroll, BorderLayout.CENTER);
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         actions.setBorder(new EmptyBorder(0, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
+        JButton helpFaq = new JButton("Help & FAQ");
+        helpFaq.addActionListener(e -> new HelpDialog(owner).setVisible(true));
         JButton encryptSave = new JButton("Encrypt, Save and Close");
         encryptSave.addActionListener(e -> {
             if (saveAll()) {
@@ -124,6 +189,7 @@ public class SettingsDialog extends JDialog {
         });
         JButton close = new JButton("Close");
         close.addActionListener(e -> closeDialog());
+        actions.add(helpFaq);
         actions.add(encryptSave);
         actions.add(close);
         add(actions, BorderLayout.SOUTH);
@@ -133,6 +199,11 @@ public class SettingsDialog extends JDialog {
         loadAll();
         updateBrokerControlState();
         pack();
+        int minDialogWidth = 760;
+        int minDialogHeight = 660;
+        if (getWidth() < minDialogWidth || getHeight() < minDialogHeight) {
+            setSize(new Dimension(Math.max(getWidth(), minDialogWidth), Math.max(getHeight(), minDialogHeight)));
+        }
         setLocationRelativeTo(owner);
     }
 
@@ -238,7 +309,7 @@ public class SettingsDialog extends JDialog {
                 settings.load(in);
                 emailField.setText(settings.getProperty("userEmail", ""));
                 endpointField.setText(settings.getProperty("endpoint", endpointField.getText()));
-                telemetryEnabled.setSelected(Boolean.parseBoolean(settings.getProperty("telemetryEnabled", "false")));
+                telemetryEnabled.setSelected(Boolean.parseBoolean(settings.getProperty("telemetryEnabled", "true")));
                 saveCredentials.setSelected(true);
                 String broker = settings.getProperty("broker", BrokerType.MOCK.name());
                 brokerBox.setSelectedItem(BrokerType.valueOf(broker));
@@ -322,6 +393,59 @@ public class SettingsDialog extends JDialog {
         setVisible(false);
     }
 
+    private void deleteAllData() {
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                "Delete all local app data under ~/.neuralarc? This cannot be undone.",
+                "Confirm Delete All Data",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (choice != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        try {
+            deleteRecursively(APP_DATA_DIR);
+            credentialCache.clear();
+            emailField.setText("");
+            apiKeyField.setText("");
+            apiSecretField.setText("");
+            endpointField.setText(AppMetadata.analyticsEndpointDefault());
+            telemetryEnabled.setSelected(true);
+            brokerBox.setSelectedItem(BrokerType.MOCK);
+            appModeBox.setSelectedItem(ApplicationMode.PAPER);
+            displayedCredentialMode = ApplicationMode.PAPER;
+            connectionStatus.setText("All local data deleted");
+            connectionStatus.setForeground(mockStatusMutedColor);
+            updateBrokerControlState();
+            JOptionPane.showMessageDialog(this, "All local app data deleted.", "Deleted", JOptionPane.INFORMATION_MESSAGE);
+        } catch (IOException ex) {
+            JOptionPane.showMessageDialog(this, "Failed to delete all local data.", "Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void deleteRecursively(Path root) throws IOException {
+        if (!Files.exists(root)) {
+            return;
+        }
+        try (Stream<Path> stream = Files.walk(root)) {
+            stream.sorted(Comparator.reverseOrder())
+                    .forEach(path -> {
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (IOException ex) {
+                            throw new IllegalStateException("Failed to delete " + path, ex);
+                        }
+                    });
+        } catch (IllegalStateException ex) {
+            if (ex.getCause() instanceof IOException ioException) {
+                throw ioException;
+            }
+            throw ex;
+        }
+    }
+
     private void verifyConnection() {
         if (brokerType() == BrokerType.MOCK) {
             markConnectionStatus(true, "MOCK broker selected (no API verification required)");
@@ -341,6 +465,8 @@ public class SettingsDialog extends JDialog {
         apiSecretField.setEnabled(alpacaSelected);
         appModeBox.setEnabled(alpacaSelected);
         verifyConnectionButton.setEnabled(alpacaSelected);
+        applyInputEnabledState(apiKeyField, alpacaSelected);
+        applyInputEnabledState(apiSecretField, alpacaSelected);
         Color labelColor = alpacaSelected ? defaultApiLabelColor : TEXT_MUTED;
         applicationModeLabel.setForeground(labelColor);
         apiKeyLabel.setForeground(labelColor);
@@ -411,10 +537,21 @@ public class SettingsDialog extends JDialog {
         input.setBackground(INPUT_BG);
         input.setForeground(TEXT_PRIMARY);
         input.setCaretColor(TEXT_PRIMARY);
+        input.setDisabledTextColor(INPUT_DISABLED_TEXT);
         input.setSelectionColor(new Color(114, 130, 176));
         input.setSelectedTextColor(TEXT_PRIMARY);
         input.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(INPUT_BORDER, 1, true),
+                new EmptyBorder(4, 8, 4, 8)
+        ));
+    }
+
+    private void applyInputEnabledState(JTextField input, boolean enabled) {
+        input.setBackground(enabled ? INPUT_BG : INPUT_DISABLED_BG);
+        input.setForeground(enabled ? TEXT_PRIMARY : INPUT_DISABLED_TEXT);
+        input.setCaretColor(enabled ? TEXT_PRIMARY : INPUT_DISABLED_TEXT);
+        input.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(enabled ? INPUT_BORDER : INPUT_DISABLED_BORDER, 1, true),
                 new EmptyBorder(4, 8, 4, 8)
         ));
     }

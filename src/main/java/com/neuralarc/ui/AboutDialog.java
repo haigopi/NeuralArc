@@ -39,13 +39,15 @@ public class AboutDialog extends JDialog {
         version.setFont(FontLoader.bold(13f));
         version.setForeground(new Color(122, 128, 138));
 
-        JLabel copyright = new JLabel(AppMetadata.copyright(), SwingConstants.CENTER);
-        copyright.setFont(FontLoader.regular(12f));
-        copyright.setForeground(new Color(150, 156, 166));
-
-        JLabel patent = new JLabel(AppMetadata.patent(), SwingConstants.CENTER);
-        patent.setFont(FontLoader.regular(12f));
-        patent.setForeground(new Color(150, 156, 166));
+        JTextArea legal = new JTextArea(AppMetadata.copyright() + System.lineSeparator() + AppMetadata.patent());
+        legal.setEditable(false);
+        legal.setOpaque(false);
+        legal.setLineWrap(true);
+        legal.setWrapStyleWord(true);
+        legal.setFont(FontLoader.regular(12f));
+        legal.setForeground(new Color(150, 156, 166));
+        legal.setAlignmentX(Component.CENTER_ALIGNMENT);
+        legal.setBorder(new EmptyBorder(0, 6, 0, 6));
 
         JPanel textPanel = new JPanel();
         textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
@@ -55,9 +57,7 @@ public class AboutDialog extends JDialog {
         textPanel.add(Box.createVerticalStrut(8));
         textPanel.add(version);
         textPanel.add(Box.createVerticalStrut(10));
-        textPanel.add(copyright);
-        textPanel.add(Box.createVerticalStrut(4));
-        textPanel.add(patent);
+        textPanel.add(legal);
         for (Component component : textPanel.getComponents()) {
             if (component instanceof JComponent swingComponent) {
                 swingComponent.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -79,7 +79,7 @@ public class AboutDialog extends JDialog {
         footer.add(actions, BorderLayout.EAST);
         add(footer, BorderLayout.SOUTH);
 
-        setPreferredSize(new Dimension(520, 360));
+        setPreferredSize(new Dimension(560, 400));
         pack();
         setLocationRelativeTo(owner);
     }

@@ -19,110 +19,78 @@ public class HelpDialog extends JDialog {
     private static final String[][] FAQS = {
         {
             "⚙️  Settings — What goes in each field?",
-            "User Email: Your account identifier. A unique User ID is derived from it and used for analytics.\n\n" +
-            "API Key / API Secret: Credentials provided by your broker (e.g., Alpaca). These are encrypted " +
-            "with AES-256-GCM before being written to disk. Never share them.\n\n" +
-            "Broker: Choose MOCK for safe simulation without any real broker connection, or ALPACA to connect " +
-            "to a real Alpaca account.\n\n" +
-            "Save Credentials Locally: When checked, your API key and secret are stored encrypted at " +
-            "~/.neuralarc/credentials.properties and reloaded automatically next time you open the app.\n\n" +
-            "Analytics Endpoint: URL where anonymised trading events are sent (opt-in only). Leave blank or " +
-            "use the default if you are not hosting your own analytics server.\n\n" +
-            "Enable Telemetry: Must be explicitly checked before any data is transmitted. No data leaves " +
-            "your machine unless this is on."
+            "User Email: Used to identify your local app profile and derive the encryption key for saved settings.\n\n" +
+            "Broker: Choose MOCK for safe local simulation, or ALPACA to connect broker credentials.\n\n" +
+            "Application Mode: Use Paper to test with broker paper credentials, or Live for real trading credentials.\n\n" +
+            "API Key / API Secret: Broker credentials. They are encrypted before being saved locally.\n\n" +
+            "Telemetry: Operational events only. No personal secrets or API credentials are sent."
         },
         {
             "📄  Paper Trading Mode — What is it and when should I use it?",
-            "Paper Trading simulates buying and selling stocks without using real money or connecting to a " +
-            "live broker.\n\n" +
-            "• Orders are filled against a built-in mock price feed that oscillates predictably — ideal for " +
-            "testing strategy logic.\n" +
-            "• P&L figures (realized, unrealized, market value) are all virtual. No real funds are at risk.\n" +
-            "• Position state, average cost, and rule triggers behave exactly the same as in live mode, so " +
-            "you can validate your strategy parameters (base buy <= price, stop loss, sell trigger window, loss-buy <= levels) " +
-            "without consequences.\n\n" +
-            "Recommendation: Always run in Paper mode first until you are confident your strategy behaves as " +
-            "intended across multiple price cycles before switching to Live."
+            "Paper mode lets you test strategy behavior without risking real money.\n\n" +
+            "• Orders use the app's mock execution path.\n" +
+            "• P&L, positions, and rule triggers remain simulated.\n" +
+            "• It is the right place to validate buy levels, stop-loss behavior, sell triggers, and recovery buys.\n\n" +
+            "Recommendation: Prove the strategy in Paper first. Move to Live only after repeated stable runs."
         },
         {
             "📐  Strategy Rules — How are the thresholds interpreted?",
-            "NeuralArc evaluates strategy prices with explicit threshold semantics:\n\n" +
-            "• Base buy price: triggers when market price is less than or equal to your configured base buy value.\n" +
-            "• Stop Loss: activates risk handling once price reaches the configured stop-loss activation level.\n" +
-            "• Loss Buy Level 1 Price / Level 2 Price: each triggers when market price is less than or equal to that level.\n" +
-            "• Sell trigger price: sell starts at this value.\n" +
-            "• Profit Hold Option checkbox: when enabled, sell is suppressed once price reaches 10% above the sell trigger."
+            "NeuralArc uses direct threshold checks:\n\n" +
+            "• Base buy price: buys when price is less than or equal to the configured level.\n" +
+            "• Loss Buy Level 1 / 2: adds shares when price falls to or below those levels.\n" +
+            "• Stop Loss: activates downside protection after the configured level is reached.\n" +
+            "• Sell trigger price: profit-taking starts from this level.\n" +
+            "• Profit Hold: delays selling if price continues at least 10% higher than the sell trigger."
         },
         {
             "📈  Live Trading Mode — What changes and what risks exist?",
-            "Live mode routes real orders to your connected broker using the API credentials in Settings.\n\n" +
-            "• Real money is used. Losses are real.\n" +
-            "• Order fills depend on market liquidity and broker execution latency — fills may differ from the " +
-            "simulated mock prices.\n" +
-            "• Ensure your API key has order-placement permissions on the broker side.\n" +
-            "• Use the smallest quantities possible when first testing with real funds.\n" +
-            "• The app sends a STRATEGY_STARTED analytics event when a live strategy begins, if telemetry is " +
-            "enabled.\n\n" +
-            "The app does not handle margin, short selling, or fractional shares in the current version. " +
-            "All orders are whole-share market buys or sells."
+            "Live mode uses real broker credentials and real money.\n\n" +
+            "• Losses are real.\n" +
+            "• Market fills may differ from mock behavior because of liquidity and execution timing.\n" +
+            "• Start with small size.\n" +
+            "• Confirm your broker keys allow trading before enabling live strategies.\n\n" +
+            "Current limitation: the app works with whole-share long positions only."
         },
         {
             "🦙  Alpaca — What is it and how do I connect?",
-            "Alpaca (alpaca.markets) is a commission-free stock trading API designed for developers and " +
-            "algorithmic traders.\n\n" +
-            "To connect NeuralArc to Alpaca:\n" +
-            "1. Sign up at alpaca.markets and create a Paper or Live account.\n" +
-            "2. Generate an API Key and API Secret in the Alpaca dashboard.\n" +
-            "3. Enter them in Settings → Alpaca API Details and press Encrypt & Save.\n" +
-            "4. Select ALPACA as the broker.\n" +
-            "5. Click Verify Alpaca Connection in the same section — a green status confirms the API is reachable.\n\n" +
-            "Important: The ALPACA integration in this version is a stub — it compiles and routes calls " +
-            "correctly but returns empty/mock responses. Full live Alpaca execution requires completing the " +
-            "AlpacaTradingApi implementation with real HTTP calls to api.alpaca.markets.\n\n" +
-            "Use MOCK broker for all reliable testing until the Alpaca integration is fully implemented."
+            "Alpaca is the broker integration option for Paper and Live account modes.\n\n" +
+            "Quick setup:\n" +
+            "1. Create an Alpaca account.\n" +
+            "2. Generate Paper or Live API credentials in the Alpaca dashboard.\n" +
+            "3. Paste them into Settings → Alpaca API Details.\n" +
+            "4. Select ALPACA and click Verify Connection.\n\n" +
+            "Important: In the current app version, the Alpaca execution path is still limited. MOCK remains the safest path for full validation."
         },
         {
             "🛡️  Strategy Persistence — Where are my strategies saved?",
-            "When you add or modify a strategy, it is immediately saved to:\n" +
+            "Strategies are saved immediately to:\n" +
             "   ~/.neuralarc/strategies.dat\n\n" +
-            "The file is AES-256-GCM encrypted using a key derived from your user email. On next launch, " +
-            "after your saved connection is validated automatically, your strategies are restored:\n\n" +
-            "• Strategies that were Running at close are auto-started.\n" +
-            "• Strategies that were Paused at close are restored in paused state — you can resume them manually.\n\n" +
-            "If the file is corrupt or the passphrase does not match (e.g., you changed your email), " +
-            "strategies are not loaded and a clean slate is presented."
+            "The file is encrypted using a key derived from your user email.\n\n" +
+            "On next launch:\n" +
+            "• previously running strategies can be restored\n" +
+            "• paused strategies remain paused\n\n" +
+            "If the file cannot be decrypted, the app starts without loading saved strategies."
         },
         {
-            "🔒  Privacy — Nano Jetson Home-Deployed AI (Future)",
-            "Coming Soon: NeuralArc will support privacy-preserving on-device AI inference using NVIDIA Jetson Nano.\n\n" +
-            "Future Feature:\n" +
-            "• Deploy your trading models directly on a Jetson Nano running in your home — no cloud calls.\n" +
-            "• All price data, position updates, and AI predictions stay local on your device.\n" +
-            "• No sensitive trading information leaves your network.\n" +
-            "• Telemetry remains opt-in and can be disabled completely for maximum privacy.\n\n" +
-            "Status: Currently under development. Check back in future releases for full integration and setup " +
-            "instructions. In the meantime, use MOCK broker and Paper Trading to explore NeuralArc safely."
+            "🔒  Privacy & Telemetry",
+            "Telemetry is for operational insight such as app events, strategy state changes, and reliability signals.\n\n" +
+            "What is not sent:\n" +
+            "• API keys\n" +
+            "• API secrets\n" +
+            "• local credential files\n\n" +
+            "If you want the safest workflow, use MOCK broker and Paper mode while telemetry is disabled."
         },
         {
             "⚠️  KILL SWITCH — Emergency Stop for All Strategies",
-            "The red KILL SWITCH button in the top-right toolbar provides instant emergency stop capability.\n\n" +
-            "What It Does:\n" +
-            "• Stops ALL running strategies immediately (strategies already paused remain paused).\n" +
-            "• Marks stopped strategies as paused, preserving their configuration.\n" +
-            "• Saves all strategy state to the encrypted file automatically.\n" +
-            "• Does NOT close the app — you can inspect logs and resume strategies manually if needed.\n\n" +
-            "When to Use:\n" +
-            "• Market emergency or flash crash — need instant position exit.\n" +
-            "• Unexpected behavior detected in live trading.\n" +
-            "• Manual intervention required before strategies continue.\n\n" +
-            "What Happens After Kill Switch:\n" +
-            "1. All running strategies are paused in place.\n" +
-            "2. Event log shows '[SYMBOL] EMERGENCY STOP' for each stopped strategy.\n" +
-            "3. Status bar updates to show idle/paused count.\n" +
-            "4. Strategies remain in your grid and can be manually resumed later.\n" +
-            "5. A KILL_SWITCH_ACTIVATED analytics event is recorded (if telemetry enabled).\n\n" +
-            "Note: The Kill Switch stops polling and order execution, but does NOT sell existing positions. " +
-            "Use it for immediate halt while you assess the market."
+            "The KILL SWITCH immediately stops all running strategies.\n\n" +
+            "What it does:\n" +
+            "• stops polling and strategy execution\n" +
+            "• marks running strategies as paused\n" +
+            "• saves the updated strategy state\n\n" +
+            "What it does not do:\n" +
+            "• it does not close the app\n" +
+            "• it does not automatically liquidate positions\n\n" +
+            "Use it when strategy activity must stop immediately and you want to review the situation first."
         }
     };
 
