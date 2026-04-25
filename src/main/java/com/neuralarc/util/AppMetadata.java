@@ -39,6 +39,10 @@ public final class AppMetadata {
         }
     }
 
+    public static String analyticsEndpointDefault() {
+        return PROPERTIES.getProperty("app.analytics.endpoint.default", "http://localhost:8080/events").trim();
+    }
+
     private static Properties loadProperties() {
         Properties properties = new Properties();
         try (InputStream stream = AppMetadata.class.getClassLoader().getResourceAsStream("app.properties")) {

@@ -4,6 +4,7 @@ import com.neuralarc.model.BrokerType;
 import com.neuralarc.model.ApplicationMode;
 import com.neuralarc.security.CredentialManager;
 import com.neuralarc.service.UserIdentityService;
+import com.neuralarc.util.AppMetadata;
 import com.neuralarc.util.FontLoader;
 
 import javax.swing.*;
@@ -48,7 +49,7 @@ public class SettingsDialog extends JDialog {
     private final JLabel applicationModeLabel = new JLabel("Application mode:");
     private final JLabel apiKeyLabel = new JLabel("API key:");
     private final JLabel apiSecretLabel = new JLabel("API secret:");
-    private final JTextField endpointField = new JTextField("http://localhost:8080/events", 25);
+    private final JTextField endpointField = new JTextField(AppMetadata.analyticsEndpointDefault(), 25);
     private final JCheckBox telemetryEnabled = new JCheckBox("Enable telemetry", false);
     private final JCheckBox saveCredentials = new JCheckBox("Save credentials locally", false);
     private final JButton verifyConnectionButton = new JButton("Verify Connection");

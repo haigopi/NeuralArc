@@ -1,5 +1,8 @@
 $ErrorActionPreference = "Stop"
 
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectDir = Split-Path -Parent $ScriptDir
+
 $AppName = "NeuralArc"
 $MainClass = "com.neuralarc.NeuralArc"
 $VersionArg = $null
@@ -8,22 +11,24 @@ if ($args.Length -gt 0) {
 }
 
 if (-not $VersionArg) {
-    $VersionArg = (& .\gradlew.bat -q properties --property version | Select-Object -Last 1).Split()[-1]
+    $VersionArg = (& (Join-Path $ProjectDir "gradlew.bat") -q properties --property version | Select-Object -Last 1).Split()[-1]
 }
 
 if (-not (Get-Command jpackage -ErrorAction SilentlyContinue)) {
     throw "jpackage is required and was not found in PATH."
 }
 
-& .\gradlew.bat clean installDist
+Set-Location $ProjectDir
 
-$DistDir = Get-ChildItem "build\install" -Directory | Select-Object -First 1
+& (Join-Path $ProjectDir "gradlew.bat") clean installDist
+
+$DistDir = Get-ChildItem (Join-Path $ProjectDir "build\install") -Directory | Select-Object -First 1
 if (-not $DistDir) {
     throw "Unable to locate installDist output under build\install"
 }
 
 $InputDir = Join-Path $DistDir.FullName "lib"
-$DestDir = "build\installer\windows"
+$DestDir = Join-Path $ProjectDir "build\installer\windows"
 New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
 
 $MainJar = Get-ChildItem $InputDir -Filter *.jar | Where-Object { $_.Name -notlike "*-plain*" } | Select-Object -First 1

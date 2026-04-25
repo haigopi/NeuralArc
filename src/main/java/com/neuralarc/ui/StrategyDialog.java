@@ -26,18 +26,24 @@ public class StrategyDialog extends JDialog {
     private static final int FIELD_HEIGHT = 34;
     private static final String GRID_ROW_KEY = "strategyDialog.gridRow";
 
-    private static final Color DIALOG_BG = new Color(244, 246, 251);
-    private static final Color CARD_BG = Color.WHITE;
-    private static final Color CARD_BORDER = new Color(219, 224, 235);
-    private static final Color TITLE_COLOR = new Color(36, 44, 66);
-    private static final Color SUBTITLE_COLOR = new Color(109, 117, 138);
-    private static final Color HELP_TEXT_COLOR = new Color(110, 110, 130);
-    private static final Color INPUT_BG = new Color(251, 252, 255);
-    private static final Color INPUT_BORDER = new Color(196, 201, 214);
-    private static final Color PRIMARY_BUTTON_BG = new Color(76, 99, 210);
-    private static final Color PRIMARY_BUTTON_BORDER = new Color(56, 77, 175);
-    private static final Color SECONDARY_BUTTON_BG = new Color(236, 239, 246);
-    private static final Color SECONDARY_BUTTON_BORDER = new Color(199, 205, 221);
+    private static final Color DIALOG_BG = UIManager.getColor("Panel.background") != null
+            ? UIManager.getColor("Panel.background")
+            : Color.WHITE;
+    private static final Color CARD_BG = DIALOG_BG;
+    private static final Color CARD_BORDER = UIManager.getColor("Separator.foreground") != null
+            ? UIManager.getColor("Separator.foreground")
+            : new Color(205, 205, 205);
+    private static final Color TITLE_COLOR = UIManager.getColor("Label.foreground") != null
+            ? UIManager.getColor("Label.foreground")
+            : new Color(45, 45, 50);
+    private static final Color SUBTITLE_COLOR = UIManager.getColor("Label.disabledForeground") != null
+            ? UIManager.getColor("Label.disabledForeground")
+            : new Color(120, 120, 120);
+    private static final Color HELP_TEXT_COLOR = SUBTITLE_COLOR;
+    private static final Color INPUT_BG = UIManager.getColor("TextField.background") != null
+            ? UIManager.getColor("TextField.background")
+            : Color.WHITE;
+    private static final Color INPUT_BORDER = new Color(190, 190, 200);
     private static final String DEFAULT_CONFIG_RESOURCE = "mock-config.properties";
     private static final DialogDefaults DEFAULTS = loadDefaults();
 
@@ -52,8 +58,7 @@ public class StrategyDialog extends JDialog {
     private final JTextField loss2PriceField = new JTextField(12);
     private final JTextField loss2QtyField = new JTextField(12);
     private final JTextField pollingField = new JTextField(12);
-    private final JCheckBox holdAtTenPercentProfit = new JCheckBox(
-            "<html>Hold when price reaches +10% above Sell Trigger</html>", false);
+    private final JCheckBox holdAtTenPercentProfit = new JCheckBox("Enable +10% Profit Hold", false);
 
     private StrategyConfig result;
 
@@ -144,9 +149,12 @@ public class StrategyDialog extends JDialog {
     }
 
     private JPanel buildProfitHoldCard() {
-        JPanel card = createCard("Profit Hold Option", "Optional momentum filter for stronger upside moves.");
+        JPanel card = createCard("Profit Hold Option", "Optional momentum filter to avoid exiting too early during a strong breakout.");
         JPanel form = createFormPanel();
-        addRow(form, "Enable +10% Profit Hold", "", holdAtTenPercentProfit);
+        addRow(form, "Profit hold", "", holdAtTenPercentProfit);
+        addInlineHelp(form,
+                "When enabled, the strategy keeps holding the position after the sell trigger is reached if price continues moving at least 10% higher. " +
+                "Use this when you want to give strong upward momentum more room before taking profit.");
         card.add(form, BorderLayout.CENTER);
         return card;
     }
@@ -296,27 +304,11 @@ public class StrategyDialog extends JDialog {
     private void stylePrimaryButton(JButton button) {
         button.setFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
         button.setFocusPainted(false);
-        button.setOpaque(true);
-        button.setContentAreaFilled(true);
-        button.setForeground(Color.WHITE);
-        button.setBackground(PRIMARY_BUTTON_BG);
-        button.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(PRIMARY_BUTTON_BORDER, 1, true),
-                new EmptyBorder(6, 14, 6, 14)
-        ));
     }
 
     private void styleSecondaryButton(JButton button) {
         button.setFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
         button.setFocusPainted(false);
-        button.setOpaque(true);
-        button.setContentAreaFilled(true);
-        button.setForeground(TITLE_COLOR);
-        button.setBackground(SECONDARY_BUTTON_BG);
-        button.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(SECONDARY_BUTTON_BORDER, 1, true),
-                new EmptyBorder(6, 14, 6, 14)
-        ));
     }
 
     private void applyConfig(StrategyConfig config) {
