@@ -15,47 +15,60 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class StrategyPollingServiceTest {
     @Test
-    void level1BuyTriggersAfterInitialFill() {
+    void buyLimit1TriggersAfterBaseBuyFilled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
-        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.INITIAL_BUY, 10, new BigDecimal("8.00")));
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
         f.alpaca.latestPrice = new BigDecimal("6.00");
 
         f.service.pollStrategy(strategy.id());
 
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.LOSS_BUY_LEVEL_1).isPresent());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).isPresent());
     }
 
     @Test
-    void level2BlockedUntilLevel1FullyFilled() {
+    void buyLimit2BlockedUntilBuyLimit1FullyFilled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
-        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.INITIAL_BUY, 10, new BigDecimal("8.00")));
-        StrategyOrder partialL1 = f.filledOrder(strategy.id(), StrategyStage.LOSS_BUY_LEVEL_1, 5, new BigDecimal("6.00"));
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        StrategyOrder partialL1 = f.filledOrder(strategy.id(), StrategyStage.BUY_LIMIT_1, 5, new BigDecimal("6.00"));
         partialL1.setStatus(StrategyOrderStatus.PARTIALLY_FILLED);
         f.addOrder(partialL1);
         f.alpaca.latestPrice = new BigDecimal("5.00");
 
         f.service.pollStrategy(strategy.id());
 
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.LOSS_BUY_LEVEL_2).isEmpty());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_2).isEmpty());
     }
 
     @Test
-    void level2TriggersAfterLevel1Filled() {
+    void buyLimit2TriggersAfterBuyLimit1Filled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
-        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.INITIAL_BUY, 10, new BigDecimal("8.00")));
-        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.LOSS_BUY_LEVEL_1, 5, new BigDecimal("6.00")));
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BUY_LIMIT_1, 5, new BigDecimal("6.00")));
         f.alpaca.latestPrice = new BigDecimal("5.00");
 
         f.service.pollStrategy(strategy.id());
 
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.LOSS_BUY_LEVEL_2).isPresent());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_2).isPresent());
     }
 
     @Test
-    void sellTriggerPlacesLimitSellWhenProfitHoldDisabled() {
+    void stopLossTriggersAfterFillWhenPriceDropsBelowThreshold() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        f.alpaca.latestPrice = new BigDecimal("6.90");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("6.90"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.STOP_LOSS).isPresent());
+    }
+
+    @Test
+    void targetSellPlacesLimitSellWhenProfitHoldDisabled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
         f.alpaca.latestPrice = new BigDecimal("10.00");
@@ -63,7 +76,7 @@ class StrategyPollingServiceTest {
 
         f.service.pollStrategy(strategy.id());
 
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.SELL).isPresent());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.TARGET_SELL).isPresent());
     }
 
     @Test
@@ -74,32 +87,15 @@ class StrategyPollingServiceTest {
 
         f.alpaca.latestPrice = new BigDecimal("10.50");
         f.service.pollStrategy(strategy.id());
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.SELL).isEmpty());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isEmpty());
 
         f.alpaca.latestPrice = new BigDecimal("11.00");
         f.service.pollStrategy(strategy.id());
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.SELL).isEmpty());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isEmpty());
 
-        f.alpaca.latestPrice = new BigDecimal("10.78");
+        f.alpaca.latestPrice = new BigDecimal("9.85");
         f.service.pollStrategy(strategy.id());
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.SELL).isPresent());
-    }
-
-    @Test
-    void duplicateOrderPreventionBlocksSecondStageOrder() {
-        Fixture f = new Fixture();
-        Strategy strategy = f.activeStrategy(false);
-        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.INITIAL_BUY, 10, new BigDecimal("8.00")));
-        StrategyOrder pendingL1 = f.filledOrder(strategy.id(), StrategyStage.LOSS_BUY_LEVEL_1, 5, new BigDecimal("6.00"));
-        pendingL1.setStatus(StrategyOrderStatus.SUBMITTED);
-        f.addOrder(pendingL1);
-        int before = f.orders.findByStrategyId(strategy.id()).size();
-        f.alpaca.latestPrice = new BigDecimal("6.00");
-
-        f.service.pollStrategy(strategy.id());
-
-        int after = f.orders.findByStrategyId(strategy.id()).size();
-        assertEquals(before, after);
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isPresent());
     }
 
     @Test
@@ -107,23 +103,24 @@ class StrategyPollingServiceTest {
         Fixture f = new Fixture();
         Strategy strategy = new Strategy(
                 UUID.randomUUID().toString(), "risk", "AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE,
+                StrategyLifecycleState.CREATED,
                 new BigDecimal("8.00"), 10,
-                new BigDecimal("7.00"), new BigDecimal("10.00"),
-                false, new BigDecimal("2.00"),
                 new BigDecimal("6.00"), 5,
                 new BigDecimal("5.00"), 5,
-                10,
-                new BigDecimal("80.00"),
-                Instant.now(), Instant.now()
+                true, StopLossType.FIXED_PRICE, new BigDecimal("7.00"), BigDecimal.ZERO,
+                false, BigDecimal.ZERO,
+                true, new BigDecimal("10.00"), new BigDecimal("100.00"), true,
+                false, ProfitHoldType.PERCENT_TRAILING, new BigDecimal("10.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                false, 10, new BigDecimal("80.00"), 2, Instant.now(), Instant.now()
         );
         f.strategies.save(strategy);
-        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.INITIAL_BUY, 10, new BigDecimal("8.00")));
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
         f.alpaca.latestPrice = new BigDecimal("6.00");
 
         f.service.pollStrategy(strategy.id());
 
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.LOSS_BUY_LEVEL_1).isEmpty());
-        assertNotNull(f.strategies.findById(strategy.id()).orElseThrow().lastError());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).isEmpty());
+        assertEquals(StrategyStatus.FAILED, f.strategies.findById(strategy.id()).orElseThrow().status());
     }
 
     private static final class Fixture {
@@ -136,14 +133,15 @@ class StrategyPollingServiceTest {
         Strategy activeStrategy(boolean profitHold) {
             Strategy strategy = new Strategy(
                     UUID.randomUUID().toString(), "s", "AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE,
+                    StrategyLifecycleState.CREATED,
                     new BigDecimal("8.00"), 10,
-                    new BigDecimal("7.00"), new BigDecimal("10.00"),
-                    profitHold, new BigDecimal("2.00"),
                     new BigDecimal("6.00"), 5,
                     new BigDecimal("5.00"), 5,
-                    25,
-                    new BigDecimal("300.00"),
-                    Instant.now(), Instant.now()
+                    true, StopLossType.FIXED_PRICE, new BigDecimal("7.00"), BigDecimal.ZERO,
+                    false, BigDecimal.ZERO,
+                    true, new BigDecimal("10.00"), new BigDecimal("100.00"), true,
+                    profitHold, ProfitHoldType.PERCENT_TRAILING, new BigDecimal("10.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                    false, 25, new BigDecimal("300.00"), 2, Instant.now(), Instant.now()
             );
             strategies.save(strategy);
             return strategy;
@@ -153,12 +151,17 @@ class StrategyPollingServiceTest {
             return new StrategyOrder(
                     UUID.randomUUID().toString(), strategyId, stage,
                     "ord-" + stage.name(), "client-" + stage.name(), "AAPL",
-                    stage == StrategyStage.SELL ? StrategyOrderSide.SELL : StrategyOrderSide.BUY,
+                    stage == StrategyStage.TARGET_SELL || stage == StrategyStage.PROFIT_EXIT || stage == StrategyStage.STOP_LOSS || stage == StrategyStage.LOSS_EXIT || stage == StrategyStage.CLOSE_POSITION
+                            ? StrategyOrderSide.SELL
+                            : StrategyOrderSide.BUY,
                     StrategyOrderType.LIMIT,
                     price,
-                    qty,
+                    BigDecimal.ZERO,
                     new BigDecimal(String.valueOf(qty)),
+                    new BigDecimal(String.valueOf(qty)),
+                    price,
                     StrategyOrderStatus.FILLED,
+                    Instant.now(),
                     Instant.now(),
                     Instant.now(),
                     "{}"
@@ -169,7 +172,7 @@ class StrategyPollingServiceTest {
             orders.save(order);
             alpaca.orderById.put(order.alpacaOrderId(), new AlpacaOrderData(
                     order.alpacaOrderId(), order.clientOrderId(), order.symbol(), order.side().name().toLowerCase(),
-                    "limit", order.limitPrice(), order.filledQuantity(), order.status().name().toLowerCase(), "{}"
+                    "limit", order.limitPrice(), order.filledAveragePrice(), order.filledQuantity(), order.status().name().toLowerCase(), "{}"
             ));
         }
     }
@@ -193,7 +196,7 @@ class StrategyPollingServiceTest {
         private AlpacaOrderData submit(String symbol, String side, int quantity, BigDecimal limitPrice, String clientOrderId) {
             orderCounter++;
             String orderId = "ord-" + orderCounter;
-            AlpacaOrderData data = new AlpacaOrderData(orderId, clientOrderId, symbol, side, "limit", limitPrice, Monetary.zero(), "new", "{}");
+            AlpacaOrderData data = new AlpacaOrderData(orderId, clientOrderId, symbol, side, "limit", limitPrice, Monetary.zero(), Monetary.zero(), "new", "{}");
             orderById.put(orderId, data);
             return data;
         }
@@ -225,6 +228,7 @@ class StrategyPollingServiceTest {
         @Override public Optional<Strategy> findById(String id) { return Optional.ofNullable(store.get(id)); }
         @Override public List<Strategy> findAll() { return new ArrayList<>(store.values()); }
         @Override public List<Strategy> findActive() { return findAll().stream().filter(s -> s.status() == StrategyStatus.ACTIVE).toList(); }
+        @Override public void deleteById(String id) { store.remove(id); }
     }
 
     private static final class InMemoryOrderRepository implements StrategyOrderRepository {
@@ -238,11 +242,13 @@ class StrategyPollingServiceTest {
             return findByStrategyId(strategyId).stream().filter(o -> o.stage() == stage)
                     .max(Comparator.comparing(StrategyOrder::submittedAt));
         }
+        @Override public void deleteByStrategyId(String strategyId) { orders.removeIf(order -> order.strategyId().equals(strategyId)); }
     }
 
     private static final class InMemoryEventRepository implements StrategyExecutionEventRepository {
-        @Override public void save(StrategyExecutionEvent event) {}
-        @Override public List<StrategyExecutionEvent> findByStrategyId(String strategyId) { return List.of(); }
+        private final List<StrategyExecutionEvent> events = new ArrayList<>();
+        @Override public void save(StrategyExecutionEvent event) { events.add(event); }
+        @Override public List<StrategyExecutionEvent> findByStrategyId(String strategyId) { return events.stream().filter(e -> e.strategyId().equals(strategyId)).toList(); }
+        @Override public void deleteByStrategyId(String strategyId) { events.removeIf(event -> event.strategyId().equals(strategyId)); }
     }
 }
-

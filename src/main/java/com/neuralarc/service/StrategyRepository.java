@@ -13,5 +13,6 @@ public interface StrategyRepository {
     List<Strategy> findAll();
 
     List<Strategy> findActive();
-}
 
+    void deleteById(String id);
+}

@@ -15,16 +15,22 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class AlpacaTradingApi implements TradingApi {
     private static final Logger LOGGER = Logger.getLogger(AlpacaTradingApi.class.getName());
+    private static final long PRICE_CACHE_TTL_MILLIS = 5_000L;
+    private static final long POSITION_CACHE_TTL_MILLIS = 5_000L;
     private final String baseUrl;
     private final String dataUrl;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
+    private final Map<String, CacheEntry<BigDecimal>> latestPriceCache = new ConcurrentHashMap<>();
+    private final Map<String, CacheEntry<Position>> positionCache = new ConcurrentHashMap<>();
     private String apiKey;
     private String apiSecret;
 
@@ -74,11 +80,16 @@ public class AlpacaTradingApi implements TradingApi {
         if (symbol == null || symbol.isBlank()) {
             return Monetary.zero();
         }
+        String normalizedSymbol = symbol.toUpperCase();
         if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
             return Monetary.zero();
         }
+        CacheEntry<BigDecimal> cached = latestPriceCache.get(normalizedSymbol);
+        if (cached != null && !cached.isExpired(PRICE_CACHE_TTL_MILLIS)) {
+            return cached.value();
+        }
 
-        String endpoint = dataUrl + "/v2/stocks/" + URLEncoder.encode(symbol.toUpperCase(), StandardCharsets.UTF_8) + "/trades/latest";
+        String endpoint = dataUrl + "/v2/stocks/" + URLEncoder.encode(normalizedSymbol, StandardCharsets.UTF_8) + "/trades/latest";
         HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint))
                 .timeout(Duration.ofSeconds(10))
                 .header("APCA-API-KEY-ID", apiKey)
@@ -97,7 +108,9 @@ public class AlpacaTradingApi implements TradingApi {
             if (trade == null) {
                 return Monetary.zero();
             }
-            return parseMoney(String.valueOf(trade.opt("p")));
+            BigDecimal latestPrice = parseMoney(String.valueOf(trade.opt("p")));
+            latestPriceCache.put(normalizedSymbol, new CacheEntry<>(latestPrice));
+            return latestPrice;
         } catch (Exception ex) {
             logFailure("GET", endpoint, ex);
             return Monetary.zero();
@@ -180,12 +193,17 @@ public class AlpacaTradingApi implements TradingApi {
         if (symbol == null || symbol.isBlank()) {
             return new Position("UNKNOWN");
         }
+        String normalizedSymbol = symbol.toUpperCase();
         if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
-            return new Position(symbol.toUpperCase());
+            return new Position(normalizedSymbol);
+        }
+        CacheEntry<Position> cached = positionCache.get(normalizedSymbol);
+        if (cached != null && !cached.isExpired(POSITION_CACHE_TTL_MILLIS)) {
+            return cached.value().copy();
         }
 
         String endpoint = (baseUrl.endsWith("/") ? baseUrl + "positions/" : baseUrl + "/positions/")
-                + URLEncoder.encode(symbol.toUpperCase(), StandardCharsets.UTF_8);
+                + URLEncoder.encode(normalizedSymbol, StandardCharsets.UTF_8);
         HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint))
                 .timeout(Duration.ofSeconds(10))
                 .header("APCA-API-KEY-ID", apiKey)
@@ -197,12 +215,12 @@ public class AlpacaTradingApi implements TradingApi {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             logResponse("GET", endpoint, response.statusCode(), response.body());
             if (response.statusCode() == 404) {
-                Position empty = new Position(symbol.toUpperCase());
-                empty.setLastPrice(getLatestPrice(symbol));
+                Position empty = new Position(normalizedSymbol);
+                positionCache.put(normalizedSymbol, new CacheEntry<>(empty.copy()));
                 return empty;
             }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                return new Position(symbol.toUpperCase());
+                return new Position(normalizedSymbol);
             }
 
             JSONObject json = new JSONObject(response.body() == null ? "{}" : response.body());
@@ -210,18 +228,29 @@ public class AlpacaTradingApi implements TradingApi {
             BigDecimal avgEntry = parseMoney(json.optString("avg_entry_price", "0"));
             BigDecimal currentPrice = parseMoney(json.optString("current_price", "0"));
             if (currentPrice.compareTo(Monetary.zero()) <= 0) {
-                currentPrice = getLatestPrice(symbol);
+                currentPrice = getLatestPrice(normalizedSymbol);
             }
 
-            Position position = new Position(symbol.toUpperCase());
+            Position position = new Position(normalizedSymbol);
             if (qty > 0) {
                 position.applyBuy(qty, avgEntry);
             }
             position.setLastPrice(currentPrice);
+            positionCache.put(normalizedSymbol, new CacheEntry<>(position.copy()));
             return position;
         } catch (Exception ex) {
             logFailure("GET", endpoint, ex);
-            return new Position(symbol.toUpperCase());
+            return new Position(normalizedSymbol);
+        }
+    }
+
+    private record CacheEntry<T>(T value, long loadedAtMillis) {
+        private CacheEntry(T value) {
+            this(value, System.currentTimeMillis());
+        }
+
+        private boolean isExpired(long ttlMillis) {
+            return System.currentTimeMillis() - loadedAtMillis >= ttlMillis;
         }
     }
 
@@ -294,14 +323,14 @@ public class AlpacaTradingApi implements TradingApi {
             return;
         }
         String suffix = body == null || body.isBlank() ? "" : " body=" + abbreviate(body);
-        LOGGER.info(() -> "Alpaca API request: " + method + " " + endpoint + suffix);
+        LOGGER.info(() -> "Request: " + endpoint + suffix);
     }
 
     private void logResponse(String method, String endpoint, int statusCode, String body) {
         if (!LOGGER.isLoggable(Level.INFO)) {
             return;
         }
-        LOGGER.info(() -> "Alpaca API response: " + method + " " + endpoint
+        LOGGER.info(() -> " -> Response: " + endpoint
                 + " status=" + statusCode + " body=" + abbreviate(body));
     }
 
@@ -314,7 +343,7 @@ public class AlpacaTradingApi implements TradingApi {
             return "<empty>";
         }
         String flattened = body.replaceAll("\\s+", " ").trim();
-        return flattened.length() <= 300 ? flattened : flattened.substring(0, 300) + "...";
+        return flattened.length() <= 300 ? flattened : flattened.substring(0, 800) + "...";
     }
 
     private String extractErrorMessage(String responseBody, int statusCode) {

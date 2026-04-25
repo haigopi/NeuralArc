@@ -53,6 +53,12 @@ public class FileStrategyOrderRepository implements StrategyOrderRepository {
                 .max(Comparator.comparing(StrategyOrder::submittedAt));
     }
 
+    @Override
+    public synchronized void deleteByStrategyId(String strategyId) {
+        List<StrategyOrder> remaining = findAll().stream().filter(o -> !o.strategyId().equals(strategyId)).toList();
+        writeAll(remaining);
+    }
+
     private List<StrategyOrder> findAll() {
         if (!Files.exists(filePath)) {
             return new ArrayList<>();
@@ -71,12 +77,15 @@ public class FileStrategyOrderRepository implements StrategyOrderRepository {
                         o.getString("symbol"),
                         StrategyOrderSide.valueOf(o.getString("side")),
                         StrategyOrderType.valueOf(o.getString("orderType")),
-                        new BigDecimal(o.getString("limitPrice")),
-                        o.getInt("quantity"),
-                        new BigDecimal(o.optString("filledQuantity", "0.00")),
+                        decimal(o, "limitPrice", "0.00"),
+                        decimal(o, "stopPrice", "0.00"),
+                        decimal(o, "requestedQuantity", o.optString("quantity", "0")),
+                        decimal(o, "filledQuantity", "0.00"),
+                        decimal(o, "filledAveragePrice", "0.00"),
                         StrategyOrderStatus.valueOf(o.getString("status")),
                         Instant.parse(o.getString("submittedAt")),
-                        o.optString("filledAt", "").isBlank() ? null : Instant.parse(o.getString("filledAt")),
+                        parseInstant(o.optString("updatedAt", "")),
+                        parseInstant(o.optString("filledAt", "")),
                         o.optString("rawResponseJson", "{}")
                 ));
             }
@@ -99,10 +108,13 @@ public class FileStrategyOrderRepository implements StrategyOrderRepository {
             json.put("side", o.side().name());
             json.put("orderType", o.orderType().name());
             json.put("limitPrice", o.limitPrice().toPlainString());
-            json.put("quantity", o.quantity());
+            json.put("stopPrice", o.stopPrice().toPlainString());
+            json.put("requestedQuantity", o.requestedQuantity().toPlainString());
             json.put("filledQuantity", o.filledQuantity().toPlainString());
+            json.put("filledAveragePrice", o.filledAveragePrice().toPlainString());
             json.put("status", o.status().name());
             json.put("submittedAt", o.submittedAt().toString());
+            json.put("updatedAt", o.updatedAt() == null ? "" : o.updatedAt().toString());
             json.put("filledAt", o.filledAt() == null ? "" : o.filledAt().toString());
             json.put("rawResponseJson", o.rawResponseJson() == null ? "{}" : o.rawResponseJson());
             arr.put(json);
@@ -114,5 +126,19 @@ public class FileStrategyOrderRepository implements StrategyOrderRepository {
             throw new IllegalStateException("Failed to persist strategy orders", ex);
         }
     }
-}
 
+    private BigDecimal decimal(JSONObject object, String key, String fallback) {
+        try {
+            return new BigDecimal(object.optString(key, fallback));
+        } catch (NumberFormatException ex) {
+            return BigDecimal.ZERO;
+        }
+    }
+
+    private Instant parseInstant(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return Instant.parse(value);
+    }
+}

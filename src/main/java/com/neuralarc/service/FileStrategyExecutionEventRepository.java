@@ -30,6 +30,14 @@ public class FileStrategyExecutionEventRepository implements StrategyExecutionEv
         return findAll().stream().filter(e -> e.strategyId().equals(strategyId)).toList();
     }
 
+    @Override
+    public synchronized void deleteByStrategyId(String strategyId) {
+        List<StrategyExecutionEvent> remaining = findAll().stream()
+                .filter(event -> !event.strategyId().equals(strategyId))
+                .toList();
+        writeAll(remaining);
+    }
+
     private List<StrategyExecutionEvent> findAll() {
         if (!Files.exists(filePath)) {
             return new ArrayList<>();
@@ -74,4 +82,3 @@ public class FileStrategyExecutionEventRepository implements StrategyExecutionEv
         }
     }
 }
-

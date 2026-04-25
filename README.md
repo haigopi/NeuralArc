@@ -30,8 +30,9 @@ Duplicate triggers are prevented through strategy state tracking and rule flags.
 ```
 
 ## Safety warning
-This app is for personal testing/automation workflows and is **not investment advice software**.
-Default behavior is paper trading only.
+This app is for personal and paper trading use first. It is **not financial advice** and is not a managed brokerage platform.
+Live trading must be manually enabled by configuration and is used at the user’s own risk.
+Default behavior is Alpaca paper trading only.
 
 ## Alpaca paper mode configuration
 Set API key/secret in the app **Settings** dialog.
@@ -70,9 +71,13 @@ Use Settings dialog to set endpoint (example: `http://localhost:8080/events`) an
 3. Register implementation in `TradingApiFactory`
 4. Add any UI options/credentials you need
 
+## Strategy runtime
+Strategies are stored locally under `~/.neuralarc/` and reconciled on startup using local JSON state plus Alpaca REST polling.
+The app now uses one staged-buy state machine for base buy, staged averaging, stop loss, optional loss exit, target sell, profit hold, and restart-after-exit behavior.
+
 ## Future roadmap
-- Real Alpaca integration (auth, orders, market data)
 - Historical charts and richer analytics dashboard
+- SSE/event-stream order updates in addition to polling
 - Plugin-style rule definitions
 - Multi-symbol and portfolio strategies
 

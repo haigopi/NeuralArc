@@ -56,8 +56,34 @@ public class HttpAlpacaClient implements AlpacaClient {
 
     @Override
     public List<AlpacaOrderData> getOpenOrders(String symbol) {
-        String encodedSymbol = URLEncoder.encode((symbol == null ? "" : symbol).toUpperCase(), StandardCharsets.UTF_8);
-        String endpoint = tradingBaseUrl + "/v2/orders?status=open&direction=desc&limit=200&symbols=" + encodedSymbol;
+        String endpoint = buildOpenOrdersEndpoint(symbol);
+        return fetchOpenOrders(endpoint);
+    }
+
+    @Override
+    public List<AlpacaOrderData> getOpenOrders() {
+        return fetchOpenOrders(buildOpenOrdersEndpoint(null));
+    }
+
+    @Override
+    public boolean cancelOrder(String orderId) {
+        if (orderId == null || orderId.isBlank()) {
+            return false;
+        }
+        String endpoint = tradingBaseUrl + "/v2/orders/" + orderId;
+        HttpRequest request = baseRequest(endpoint).DELETE().build();
+        try {
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            return response.statusCode() >= 200 && response.statusCode() < 300;
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "Failed to cancel order " + orderId, ex);
+            return false;
+        }
+    }
+
+    @Override
+    public List<AlpacaPositionData> getPositions() {
+        String endpoint = tradingBaseUrl + "/v2/positions";
         HttpRequest request = baseRequest(endpoint).GET().build();
         Optional<String> body = executeBody(request);
         if (body.isEmpty()) {
@@ -75,7 +101,7 @@ public class HttpAlpacaClient implements AlpacaClient {
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Failed to parse open orders", ex);
         }
-        return result;
+        return List.of();
     }
 
     @Override
@@ -105,6 +131,35 @@ public class HttpAlpacaClient implements AlpacaClient {
             LOGGER.log(Level.WARNING, "Failed to read position", ex);
             return Optional.empty();
         }
+    }
+
+    @Override
+    public List<AlpacaPositionData> getPositions() {
+        String endpoint = tradingBaseUrl + "/v2/positions";
+        HttpRequest request = baseRequest(endpoint).GET().build();
+        Optional<String> body = executeBody(request);
+        if (body.isEmpty()) {
+            return List.of();
+        }
+        List<AlpacaPositionData> result = new ArrayList<>();
+        try {
+            JSONArray json = new JSONArray(body.get());
+            for (int i = 0; i < json.length(); i++) {
+                JSONObject item = json.optJSONObject(i);
+                if (item != null) {
+                    result.add(new AlpacaPositionData(
+                            item.optString("symbol", ""),
+                            parseMoney(item.optString("qty", "0")),
+                            parseMoney(item.optString("avg_entry_price", "0")),
+                            parseMoney(item.optString("current_price", "0")),
+                            item.toString()
+                    ));
+                }
+            }
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "Failed to parse positions", ex);
+        }
+        return result;
     }
 
     @Override
@@ -160,6 +215,7 @@ public class HttpAlpacaClient implements AlpacaClient {
                         "limit",
                         Monetary.round(limitPrice),
                         Monetary.zero(),
+                        Monetary.zero(),
                         "failed",
                         error.toString()
                 );
@@ -191,6 +247,35 @@ public class HttpAlpacaClient implements AlpacaClient {
         }
     }
 
+    private String buildOpenOrdersEndpoint(String symbol) {
+        String endpoint = tradingBaseUrl + "/v2/orders?status=open&direction=desc&limit=200";
+        if (symbol != null && !symbol.isBlank()) {
+            endpoint += "&symbols=" + URLEncoder.encode(symbol.toUpperCase(), StandardCharsets.UTF_8);
+        }
+        return endpoint;
+    }
+
+    private List<AlpacaOrderData> fetchOpenOrders(String endpoint) {
+        HttpRequest request = baseRequest(endpoint).GET().build();
+        Optional<String> body = executeBody(request);
+        if (body.isEmpty()) {
+            return List.of();
+        }
+        List<AlpacaOrderData> result = new ArrayList<>();
+        try {
+            JSONArray json = new JSONArray(body.get());
+            for (int i = 0; i < json.length(); i++) {
+                JSONObject item = json.optJSONObject(i);
+                if (item != null) {
+                    result.add(toOrderData(item));
+                }
+            }
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "Failed to parse open orders", ex);
+        }
+        return result;
+    }
+
     private Optional<JSONObject> executeJson(HttpRequest request) {
         return executeBody(request).map(this::parseObject);
     }
@@ -212,6 +297,7 @@ public class HttpAlpacaClient implements AlpacaClient {
                 json.optString("side", ""),
                 json.optString("type", ""),
                 parseMoney(json.optString("limit_price", "0")),
+                parseMoney(json.optString("filled_avg_price", "0")),
                 parseMoney(json.optString("filled_qty", "0")),
                 status,
                 json.toString()
@@ -237,4 +323,3 @@ public class HttpAlpacaClient implements AlpacaClient {
         return url;
     }
 }
-

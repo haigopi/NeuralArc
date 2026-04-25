@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.StrategyConfig;
 import com.neuralarc.util.FontLoader;
 
@@ -54,7 +55,10 @@ public class StrategyDialog extends JDialog {
     private final JTextField loss2PriceField = new JTextField(25);
     private final JTextField loss2QtyField = new JTextField(25);
     private final JTextField pollingField = new JTextField(25);
-    private final JCheckBox holdAtTenPercentProfit = new JCheckBox("Enable +10% Profit Hold", false);
+    private final JCheckBox profitHoldEnabled = new JCheckBox("Enable Profit Hold", false);
+    private final JComboBox<ProfitHoldType> profitHoldTypeBox = new JComboBox<>(ProfitHoldType.values());
+    private final JTextField profitHoldPercentField = new JTextField(25);
+    private final JTextField profitHoldAmountField = new JTextField(25);
 
     private final JTextArea highSeriesArea = new JTextArea(8, 22);
     private final JTextArea lowSeriesArea = new JTextArea(8, 22);
@@ -69,6 +73,7 @@ public class StrategyDialog extends JDialog {
 
         applyDialogDefaults();
         configureTooltips();
+        wireProfitHoldFields();
 
         tabs = new JTabbedPane();
         tabs.addTab("Current Strategy", buildCurrentStrategyTab());
@@ -136,8 +141,14 @@ public class StrategyDialog extends JDialog {
 
         JPanel profitHoldPanel = new JPanel(new BorderLayout(0, 8));
         profitHoldPanel.setBorder(createSectionBorder("Profit Hold Option"));
-        profitHoldPanel.add(holdAtTenPercentProfit, BorderLayout.NORTH);
-        JLabel help = new JLabel("<html>When enabled, hold after sell trigger if price continues at least 10% higher.</html>");
+        JPanel profitHoldFields = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        profitHoldFields.setOpaque(false);
+        addRow(profitHoldFields, "Enable:", profitHoldEnabled);
+        addRow(profitHoldFields, "Profit hold type:", profitHoldTypeBox);
+        addRow(profitHoldFields, "Trailing percent:", profitHoldPercentField);
+        addRow(profitHoldFields, "Trailing amount:", profitHoldAmountField);
+        profitHoldPanel.add(profitHoldFields, BorderLayout.NORTH);
+        JLabel help = new JLabel("<html>Use profit hold after the target sell trigger. Percent trailing follows gains by a percentage. Fixed amount trailing exits after a fixed dollar pullback from the highest observed price.</html>");
         help.setForeground(TEXT_MUTED);
         help.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
         profitHoldPanel.add(help, BorderLayout.CENTER);
@@ -300,6 +311,9 @@ public class StrategyDialog extends JDialog {
         loss1PriceField.setToolTipText("Loss Buy Level 1 triggers when price is less than or equal to this value.");
         loss2PriceField.setToolTipText("Loss Buy Level 2 triggers when price is less than or equal to this value.");
         pollingField.setToolTipText("How often the strategy evaluates prices, in seconds.");
+        profitHoldTypeBox.setToolTipText("Choose whether profit hold exits on a percent pullback or a fixed amount pullback.");
+        profitHoldPercentField.setToolTipText("Trailing percent below the highest observed price after the target trigger.");
+        profitHoldAmountField.setToolTipText("Trailing dollar amount below the highest observed price after the target trigger.");
     }
 
     private void styleInputs() {
@@ -313,11 +327,13 @@ public class StrategyDialog extends JDialog {
         styleInput(loss2PriceField);
         styleInput(loss2QtyField);
         styleInput(pollingField);
+        styleInput(profitHoldPercentField);
+        styleInput(profitHoldAmountField);
         styleInput(highSeriesArea);
         styleInput(lowSeriesArea);
 
         paperMode.setOpaque(false);
-        holdAtTenPercentProfit.setOpaque(false);
+        profitHoldEnabled.setOpaque(false);
     }
 
     private void styleInput(JTextField input) {
@@ -361,6 +377,10 @@ public class StrategyDialog extends JDialog {
             checkBox.setBackground(DIALOG_BG);
             checkBox.setForeground(TEXT_PRIMARY);
         }
+        if (component instanceof JComboBox<?> comboBox) {
+            comboBox.setBackground(INPUT_BG);
+            comboBox.setForeground(TEXT_PRIMARY);
+        }
         if (component instanceof JButton button) {
             button.setFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
         }
@@ -384,7 +404,15 @@ public class StrategyDialog extends JDialog {
         loss2PriceField.setText(config.lossBuyLevel2Price().toPlainString());
         loss2QtyField.setText(String.valueOf(config.lossBuyLevel2Qty()));
         pollingField.setText(String.valueOf(config.pollingSeconds()));
-        holdAtTenPercentProfit.setSelected(config.holdAtTenPercentProfit());
+        profitHoldEnabled.setSelected(config.profitHoldEnabled());
+        profitHoldTypeBox.setSelectedItem(config.profitHoldType());
+        profitHoldPercentField.setText(config.profitHoldPercent().compareTo(BigDecimal.ZERO) > 0
+                ? config.profitHoldPercent().toPlainString()
+                : "10");
+        profitHoldAmountField.setText(config.profitHoldAmount().compareTo(BigDecimal.ZERO) > 0
+                ? config.profitHoldAmount().toPlainString()
+                : "0.50");
+        updateProfitHoldFieldState();
     }
 
     private void applyDialogDefaults() {
@@ -399,7 +427,11 @@ public class StrategyDialog extends JDialog {
         loss2PriceField.setText(DEFAULTS.lossBuyLevel2Price());
         loss2QtyField.setText(DEFAULTS.lossBuyLevel2Qty());
         pollingField.setText(DEFAULTS.pollingSeconds());
-        holdAtTenPercentProfit.setSelected(DEFAULTS.holdAtTenPercentProfit());
+        profitHoldEnabled.setSelected(DEFAULTS.profitHoldEnabled());
+        profitHoldTypeBox.setSelectedItem(DEFAULTS.profitHoldType());
+        profitHoldPercentField.setText(DEFAULTS.profitHoldPercent());
+        profitHoldAmountField.setText(DEFAULTS.profitHoldAmount());
+        updateProfitHoldFieldState();
     }
 
     private void onSave() {
@@ -408,6 +440,32 @@ public class StrategyDialog extends JDialog {
             if (symbol.isBlank()) {
                 JOptionPane.showMessageDialog(this, "Symbol is required.", "Missing Symbol", JOptionPane.WARNING_MESSAGE);
                 return;
+            }
+
+            boolean profitHold = profitHoldEnabled.isSelected();
+            ProfitHoldType profitHoldType = (ProfitHoldType) profitHoldTypeBox.getSelectedItem();
+            BigDecimal profitHoldPercent = profitHoldPercentField.getText().trim().isBlank()
+                    ? BigDecimal.ZERO
+                    : new BigDecimal(profitHoldPercentField.getText().trim());
+            BigDecimal profitHoldAmount = profitHoldAmountField.getText().trim().isBlank()
+                    ? BigDecimal.ZERO
+                    : new BigDecimal(profitHoldAmountField.getText().trim());
+
+            if (profitHold) {
+                if (profitHoldType == ProfitHoldType.PERCENT_TRAILING && profitHoldPercent.compareTo(BigDecimal.ZERO) <= 0) {
+                    JOptionPane.showMessageDialog(this,
+                            "Trailing percent must be greater than zero when Percent Trailing is selected.",
+                            "Invalid Profit Hold",
+                            JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+                if (profitHoldType == ProfitHoldType.FIXED_AMOUNT_TRAILING && profitHoldAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                    JOptionPane.showMessageDialog(this,
+                            "Trailing amount must be greater than zero when Fixed Amount Trailing is selected.",
+                            "Invalid Profit Hold",
+                            JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
             }
 
             result = new StrategyConfig(
@@ -422,7 +480,10 @@ public class StrategyDialog extends JDialog {
                     Integer.parseInt(loss2QtyField.getText().trim()),
                     Integer.parseInt(pollingField.getText().trim()),
                     paperMode.isSelected(),
-                    holdAtTenPercentProfit.isSelected()
+                    profitHold,
+                    profitHoldType,
+                    profitHoldPercent,
+                    profitHoldAmount
             );
             setVisible(false);
         } catch (NumberFormatException ex) {
@@ -459,7 +520,10 @@ public class StrategyDialog extends JDialog {
                 property(properties, "lossBuyLevel2Price", "4.45"),
                 property(properties, "lossBuyLevel2Qty", "5"),
                 property(properties, "pollingSeconds", "2"),
-                parseBoolean(properties, "holdAtTenPercentProfit", false)
+                parseBoolean(properties, "holdAtTenPercentProfit", false),
+                parseProfitHoldType(properties, "profitHoldType", ProfitHoldType.PERCENT_TRAILING),
+                property(properties, "profitHoldPercent", "10"),
+                property(properties, "profitHoldAmount", "0.50")
         );
     }
 
@@ -479,6 +543,31 @@ public class StrategyDialog extends JDialog {
         return Boolean.parseBoolean(value.trim());
     }
 
+    private static ProfitHoldType parseProfitHoldType(Properties properties, String key, ProfitHoldType fallback) {
+        String value = properties.getProperty(key);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        try {
+            return ProfitHoldType.valueOf(value.trim());
+        } catch (IllegalArgumentException ex) {
+            return fallback;
+        }
+    }
+
+    private void wireProfitHoldFields() {
+        profitHoldEnabled.addActionListener(e -> updateProfitHoldFieldState());
+        profitHoldTypeBox.addActionListener(e -> updateProfitHoldFieldState());
+    }
+
+    private void updateProfitHoldFieldState() {
+        boolean enabled = profitHoldEnabled.isSelected();
+        ProfitHoldType selectedType = (ProfitHoldType) profitHoldTypeBox.getSelectedItem();
+        profitHoldTypeBox.setEnabled(enabled);
+        profitHoldPercentField.setEnabled(enabled && selectedType == ProfitHoldType.PERCENT_TRAILING);
+        profitHoldAmountField.setEnabled(enabled && selectedType == ProfitHoldType.FIXED_AMOUNT_TRAILING);
+    }
+
     private record DialogDefaults(
             String symbol,
             boolean paperTrading,
@@ -491,6 +580,9 @@ public class StrategyDialog extends JDialog {
             String lossBuyLevel2Price,
             String lossBuyLevel2Qty,
             String pollingSeconds,
-            boolean holdAtTenPercentProfit
+            boolean profitHoldEnabled,
+            ProfitHoldType profitHoldType,
+            String profitHoldPercent,
+            String profitHoldAmount
     ) {}
 }

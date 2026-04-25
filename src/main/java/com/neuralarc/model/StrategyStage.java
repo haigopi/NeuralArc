@@ -1,9 +1,12 @@
 package com.neuralarc.model;
 
 public enum StrategyStage {
-    INITIAL_BUY,
-    LOSS_BUY_LEVEL_1,
-    LOSS_BUY_LEVEL_2,
-    SELL
+    BASE_BUY,
+    BUY_LIMIT_1,
+    BUY_LIMIT_2,
+    STOP_LOSS,
+    TARGET_SELL,
+    LOSS_EXIT,
+    PROFIT_EXIT,
+    CLOSE_POSITION
 }
-

@@ -26,50 +26,75 @@ public class HelpDialog extends JDialog {
             "Telemetry: Operational events only. No personal secrets or API credentials are sent."
         },
         {
-            "📄  Paper Trading Mode — What is it and when should I use it?",
-            "Paper mode lets you test strategy behavior without risking real money.\n\n" +
-            "• Orders use the app's mock execution path.\n" +
-            "• P&L, positions, and rule triggers remain simulated.\n" +
-            "• It is the right place to validate buy levels, stop-loss behavior, sell triggers, and recovery buys.\n\n" +
-            "Recommendation: Prove the strategy in Paper first. Move to Live only after repeated stable runs."
+            "📋  Strategy Dialog — What does each section mean?",
+            "Strategy Parameters:\n" +
+            "• Symbol is the stock ticker.\n" +
+            "• Base buy price and quantity define the first limit buy.\n" +
+            "• Trading mode defaults to Paper.\n\n" +
+            "Risk Controls:\n" +
+            "• Stop Loss is the protection level after a position exists.\n" +
+            "• Sell trigger price is the level that starts profit-taking logic.\n" +
+            "• Loss Buy Level 1 and 2 are staged average-down buy levels.\n\n" +
+            "Profit Hold Option:\n" +
+            "• Enable Profit Hold keeps the strategy from selling immediately at the target.\n" +
+            "• Percent Trailing exits after a percentage pullback from the highest observed price.\n" +
+            "• Fixed Amount Trailing exits after a fixed dollar pullback from the highest observed price.\n\n" +
+            "Execution:\n" +
+            "• Polling interval seconds controls how often that strategy is evaluated."
         },
         {
-            "📐  Strategy Rules — How are the thresholds interpreted?",
-            "NeuralArc uses direct threshold checks:\n\n" +
-            "• Base buy price: buys when price is less than or equal to the configured level.\n" +
-            "• Loss Buy Level 1 / 2: adds shares when price falls to or below those levels.\n" +
-            "• Stop Loss: activates downside protection after the configured level is reached.\n" +
-            "• Sell trigger price: profit-taking starts from this level.\n" +
-            "• Profit Hold: delays selling if price continues at least 10% higher than the sell trigger."
+            "📐  Strategy Flow — How does one strategy run?",
+            "NeuralArc runs one staged state machine per strategy.\n\n" +
+            "1. Base buy places the first limit buy.\n" +
+            "2. Buy Limit 1 can be placed only after the base buy is fully filled.\n" +
+            "3. Buy Limit 2 can be placed only after Buy Limit 1 is fully filled.\n" +
+            "4. Stop loss protection is evaluated after a position exists.\n" +
+            "5. When the sell trigger is reached, the strategy either sells or enters profit hold.\n" +
+            "6. Profit hold tracks the highest observed price and exits on the configured pullback.\n\n" +
+            "Important: partial fills do not advance the strategy to the next buy stage."
+        },
+        {
+            "⏱️  Polling Interval — What does it control?",
+            "Polling interval is per strategy, not global.\n\n" +
+            "• It controls how often that strategy checks orders, position state, latest price, and exit conditions.\n" +
+            "• A strategy set to 40 seconds should be evaluated around every 40 seconds.\n" +
+            "• Paused strategies should not continue polling the broker for strategy evaluation.\n\n" +
+            "Use longer intervals to reduce API traffic. Use shorter intervals only when you need tighter reaction time."
+        },
+        {
+            "📄  Paper Trading Mode — What should I expect?",
+            "Paper mode is the default and should be your normal starting point.\n\n" +
+            "• It uses Alpaca Paper credentials, not Live credentials.\n" +
+            "• It lets you validate buy levels, staged buys, stop loss, sell trigger, and profit hold behavior.\n" +
+            "• It helps you measure request volume and timing safely before considering Live mode.\n\n" +
+            "Recommendation: prove the workflow in Paper first, then review order behavior and logs before any live use."
         },
         {
             "📈  Live Trading Mode — What changes and what risks exist?",
             "Live mode uses real broker credentials and real money.\n\n" +
             "• Losses are real.\n" +
-            "• Market fills may differ from mock behavior because of liquidity and execution timing.\n" +
+            "• Fills and timing can differ from paper behavior.\n" +
             "• Start with small size.\n" +
-            "• Confirm your broker keys allow trading before enabling live strategies.\n\n" +
-            "Current limitation: the app works with whole-share long positions only."
+            "• Confirm that live trading is explicitly enabled in configuration before using it.\n\n" +
+            "Live mode should be treated as opt-in and high risk."
         },
         {
-            "🦙  Alpaca — What is it and how do I connect?",
-            "Alpaca is the broker integration option for Paper and Live account modes.\n\n" +
-            "Quick setup:\n" +
-            "1. Create an Alpaca account.\n" +
-            "2. Generate Paper or Live API credentials in the Alpaca dashboard.\n" +
-            "3. Paste them into Settings → Alpaca API Details.\n" +
-            "4. Select ALPACA and click Verify Connection.\n\n" +
-            "Important: In the current app version, the Alpaca execution path is still limited. Use Paper mode for safe validation."
+            "🦙  Alpaca — What endpoints does the app use?",
+            "The app reads Alpaca endpoints from app.properties.\n\n" +
+            "• Paper Trading REST: https://paper-api.alpaca.markets\n" +
+            "• Live Trading REST: https://api.alpaca.markets\n" +
+            "• Market Data: https://data.alpaca.markets\n\n" +
+            "To connect:\n" +
+            "1. Generate Alpaca Paper or Live credentials.\n" +
+            "2. Paste them into Settings.\n" +
+            "3. Verify the connection.\n" +
+            "4. Keep Paper as the default unless you intentionally enable Live."
         },
         {
-            "🛡️  Strategy Persistence — Where are my strategies saved?",
-            "Strategies are saved immediately to:\n" +
-            "   ~/.neuralarc/strategies.dat\n\n" +
-            "The file is encrypted using a key derived from your user email.\n\n" +
-            "On next launch:\n" +
-            "• previously running strategies can be restored\n" +
-            "• paused strategies remain paused\n\n" +
-            "If the file cannot be decrypted, the app starts without loading saved strategies."
+            "🛡️  Strategy Persistence — Where is strategy state saved?",
+            "Strategies, orders, and execution events are stored locally under ~/.neuralarc/.\n\n" +
+            "This allows the app to restore strategies on startup and reconcile them with Alpaca.\n\n" +
+            "Paused strategies remain paused. Active strategies can continue from the saved local state after restart."
         },
         {
             "🔒  Privacy & Telemetry",

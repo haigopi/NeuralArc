@@ -1,6 +1,9 @@
 package com.neuralarc.service;
 
+import com.neuralarc.model.ProfitHoldType;
+import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
+import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
 import org.json.JSONArray;
@@ -54,39 +57,53 @@ public class FileStrategyRepository implements StrategyRepository {
             List<Strategy> result = new ArrayList<>();
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject o = arr.getJSONObject(i);
-                Strategy s = new Strategy(
+                Strategy strategy = new Strategy(
                         o.getString("id"),
                         o.optString("name", ""),
                         o.optString("symbol", ""),
                         StrategyMode.valueOf(o.optString("mode", "PAPER")),
                         StrategyStatus.valueOf(o.optString("status", "CREATED")),
-                        new BigDecimal(o.optString("initialBuyLimitPrice", "0.00")),
-                        o.optInt("initialBuyQuantity", 0),
-                        new BigDecimal(o.optString("stopLossPrice", "0.00")),
-                        new BigDecimal(o.optString("targetSellPrice", "0.00")),
+                        StrategyLifecycleState.valueOf(o.optString("currentState", "CREATED")),
+                        decimal(o, "baseBuyLimitPrice", o.optString("initialBuyLimitPrice", "0.00")),
+                        o.optInt("baseBuyQuantity", o.optInt("initialBuyQuantity", 0)),
+                        decimal(o, "buyLimit1Price", o.optString("lossBuyLevel1Price", "0.00")),
+                        o.optInt("buyLimit1Quantity", o.optInt("lossBuyLevel1Quantity", 0)),
+                        decimal(o, "buyLimit2Price", o.optString("lossBuyLevel2Price", "0.00")),
+                        o.optInt("buyLimit2Quantity", o.optInt("lossBuyLevel2Quantity", 0)),
+                        o.optBoolean("automatedStopLossEnabled", decimal(o, "stopLossPrice", "0.00").compareTo(BigDecimal.ZERO) > 0),
+                        StopLossType.valueOf(o.optString("stopLossType", "FIXED_PRICE")),
+                        decimal(o, "stopLossPrice", "0.00"),
+                        decimal(o, "stopLossPercent", "0.00"),
+                        o.optBoolean("optionalLossExitEnabled", false),
+                        decimal(o, "optionalLossExitPrice", "0.00"),
+                        o.optBoolean("targetSellEnabled", true),
+                        decimal(o, "targetSellPrice", "0.00"),
+                        decimal(o, "targetSellQuantityOrPercent", "100.00"),
+                        o.optBoolean("targetSellPercentBased", true),
                         o.optBoolean("profitHoldEnabled", false),
-                        new BigDecimal(o.optString("profitHoldPercentOrAmount", "0.00")),
-                        new BigDecimal(o.optString("lossBuyLevel1Price", "0.00")),
-                        o.optInt("lossBuyLevel1Quantity", 0),
-                        new BigDecimal(o.optString("lossBuyLevel2Price", "0.00")),
-                        o.optInt("lossBuyLevel2Quantity", 0),
+                        ProfitHoldType.valueOf(o.optString("profitHoldType", "PERCENT_TRAILING")),
+                        decimal(o, "profitHoldPercent", o.optString("profitHoldPercentOrAmount", "0.00")),
+                        decimal(o, "profitHoldAmount", "0.00"),
+                        decimal(o, "highestObservedPriceAfterTarget", o.optString("highestPriceAfterTarget", "0.00")),
+                        o.optBoolean("restartAfterExitEnabled", false),
                         o.optInt("maxTotalQuantity", 0),
-                        new BigDecimal(o.optString("maxCapitalAllowed", "0.00")),
+                        decimal(o, "maxCapitalAllowed", "0.00"),
+                        o.optInt("pollingIntervalSeconds", o.optInt("pollingSeconds", 10)),
                         Instant.parse(o.optString("createdAt", Instant.now().toString())),
                         Instant.parse(o.optString("updatedAt", Instant.now().toString()))
                 );
                 String lastPolledAt = o.optString("lastPolledAt", "");
                 if (!lastPolledAt.isBlank()) {
-                    s.setLastPolledAt(Instant.parse(lastPolledAt));
+                    strategy.setLastPolledAt(Instant.parse(lastPolledAt));
                 }
                 String lastError = o.optString("lastError", "");
                 if (!lastError.isBlank()) {
-                    s.setLastError(lastError);
+                    strategy.setLastError(lastError);
                 }
-                if (o.optBoolean("profitHoldArmed", false)) {
-                    s.armProfitHold(new BigDecimal(o.optString("highestPriceAfterTarget", "0.00")));
-                }
-                result.add(s);
+                strategy.setLastEvent(o.optString("lastEvent", ""));
+                strategy.setLatestOrderStatus(o.optString("latestOrderStatus", ""));
+                strategy.setLatestAlpacaOrderId(o.optString("latestAlpacaOrderId", ""));
+                result.add(strategy);
             }
             return result;
         } catch (Exception ex) {
@@ -99,6 +116,12 @@ public class FileStrategyRepository implements StrategyRepository {
         return findAll().stream().filter(s -> s.status() == StrategyStatus.ACTIVE).toList();
     }
 
+    @Override
+    public synchronized void deleteById(String id) {
+        List<Strategy> all = findAll().stream().filter(s -> !s.id().equals(id)).toList();
+        writeAll(all);
+    }
+
     private void writeAll(List<Strategy> strategies) {
         JSONArray arr = new JSONArray();
         for (Strategy s : strategies) {
@@ -108,24 +131,39 @@ public class FileStrategyRepository implements StrategyRepository {
             o.put("symbol", s.symbol());
             o.put("mode", s.mode().name());
             o.put("status", s.status().name());
-            o.put("initialBuyLimitPrice", s.initialBuyLimitPrice().toPlainString());
-            o.put("initialBuyQuantity", s.initialBuyQuantity());
+            o.put("currentState", s.currentState().name());
+            o.put("baseBuyLimitPrice", s.baseBuyLimitPrice().toPlainString());
+            o.put("baseBuyQuantity", s.baseBuyQuantity());
+            o.put("buyLimit1Price", s.buyLimit1Price().toPlainString());
+            o.put("buyLimit1Quantity", s.buyLimit1Quantity());
+            o.put("buyLimit2Price", s.buyLimit2Price().toPlainString());
+            o.put("buyLimit2Quantity", s.buyLimit2Quantity());
+            o.put("automatedStopLossEnabled", s.automatedStopLossEnabled());
+            o.put("stopLossType", s.stopLossType().name());
             o.put("stopLossPrice", s.stopLossPrice().toPlainString());
+            o.put("stopLossPercent", s.stopLossPercent().toPlainString());
+            o.put("optionalLossExitEnabled", s.optionalLossExitEnabled());
+            o.put("optionalLossExitPrice", s.optionalLossExitPrice().toPlainString());
+            o.put("targetSellEnabled", s.targetSellEnabled());
             o.put("targetSellPrice", s.targetSellPrice().toPlainString());
+            o.put("targetSellQuantityOrPercent", s.targetSellQuantityOrPercent().toPlainString());
+            o.put("targetSellPercentBased", s.targetSellPercentBased());
             o.put("profitHoldEnabled", s.profitHoldEnabled());
-            o.put("profitHoldPercentOrAmount", s.profitHoldPercentOrAmount().toPlainString());
-            o.put("lossBuyLevel1Price", s.lossBuyLevel1Price().toPlainString());
-            o.put("lossBuyLevel1Quantity", s.lossBuyLevel1Quantity());
-            o.put("lossBuyLevel2Price", s.lossBuyLevel2Price().toPlainString());
-            o.put("lossBuyLevel2Quantity", s.lossBuyLevel2Quantity());
+            o.put("profitHoldType", s.profitHoldType().name());
+            o.put("profitHoldPercent", s.profitHoldPercent().toPlainString());
+            o.put("profitHoldAmount", s.profitHoldAmount().toPlainString());
+            o.put("highestObservedPriceAfterTarget", s.highestObservedPriceAfterTarget().toPlainString());
+            o.put("restartAfterExitEnabled", s.restartAfterExitEnabled());
             o.put("maxTotalQuantity", s.maxTotalQuantity());
             o.put("maxCapitalAllowed", s.maxCapitalAllowed().toPlainString());
+            o.put("pollingIntervalSeconds", s.pollingIntervalSeconds());
             o.put("createdAt", s.createdAt().toString());
             o.put("updatedAt", s.updatedAt().toString());
             o.put("lastPolledAt", s.lastPolledAt() == null ? "" : s.lastPolledAt().toString());
             o.put("lastError", s.lastError() == null ? "" : s.lastError());
-            o.put("profitHoldArmed", s.profitHoldArmed());
-            o.put("highestPriceAfterTarget", s.highestPriceAfterTarget().toPlainString());
+            o.put("lastEvent", s.lastEvent() == null ? "" : s.lastEvent());
+            o.put("latestOrderStatus", s.latestOrderStatus() == null ? "" : s.latestOrderStatus());
+            o.put("latestAlpacaOrderId", s.latestAlpacaOrderId() == null ? "" : s.latestAlpacaOrderId());
             arr.put(o);
         }
         try {
@@ -135,5 +173,16 @@ public class FileStrategyRepository implements StrategyRepository {
             throw new IllegalStateException("Failed to persist strategies", ex);
         }
     }
-}
 
+    private BigDecimal decimal(JSONObject object, String key, String fallback) {
+        String value = object.optString(key, fallback);
+        if (value == null || value.isBlank()) {
+            value = fallback;
+        }
+        try {
+            return new BigDecimal(value);
+        } catch (NumberFormatException ex) {
+            return BigDecimal.ZERO;
+        }
+    }
+}

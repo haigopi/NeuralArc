@@ -1,14 +1,12 @@
 package com.neuralarc.service;
 
 import com.neuralarc.api.AlpacaClient;
-import com.neuralarc.api.AlpacaOrderData;
 import com.neuralarc.model.*;
-import com.neuralarc.util.Monetary;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
+import java.util.Optional;
 
 public class StrategyService {
     private final StrategyRepository strategyRepository;
@@ -17,6 +15,8 @@ public class StrategyService {
     private final AlpacaClient alpacaClient;
     private final StrategyValidator validator;
     private final boolean liveTradingEnabled;
+    private final StrategyStateMachine stateMachine;
+    private final StrategyEngine strategyEngine;
 
     public StrategyService(
             StrategyRepository strategyRepository,
@@ -32,6 +32,9 @@ public class StrategyService {
         this.alpacaClient = alpacaClient;
         this.validator = validator;
         this.liveTradingEnabled = liveTradingEnabled;
+        StrategyEventBus eventBus = new StrategyEventBus();
+        this.stateMachine = new StrategyStateMachine(eventRepository, eventBus);
+        this.strategyEngine = new StrategyEngine(strategyRepository, orderRepository, stateMachine, alpacaClient);
     }
 
     public StrategyCreationResult createAndActivate(Strategy strategy) {
@@ -39,92 +42,128 @@ public class StrategyService {
         if (strategy.mode() == StrategyMode.LIVE && !liveTradingEnabled) {
             errors.add("LIVE mode is disabled. Set trading.live.enabled=true to allow live trading.");
         }
-
         if (!errors.isEmpty()) {
             strategy.setStatus(StrategyStatus.FAILED);
+            strategy.setCurrentState(StrategyLifecycleState.FAILED);
             strategy.setLastError(String.join("; ", errors));
             strategyRepository.save(strategy);
-            eventRepository.save(event(strategy.id(), StrategyEventType.VALIDATION_FAILED, strategy.lastError(), "{}"));
+            stateMachine.transition(strategy, StrategyLifecycleState.FAILED, StrategyEventType.VALIDATION_FAILED, strategy.lastError(), "{}");
             return StrategyCreationResult.failed(strategy.lastError());
         }
 
-        String clientOrderId = buildClientOrderId(strategy.id(), StrategyStage.INITIAL_BUY);
-        AlpacaOrderData submitted = alpacaClient.submitLimitBuyOrder(
-                strategy.symbol(),
-                strategy.initialBuyQuantity(),
-                strategy.initialBuyLimitPrice(),
-                clientOrderId
-        );
-
-        StrategyOrderStatus initialStatus = mapOrderStatus(submitted.status());
-        StrategyOrder order = new StrategyOrder(
-                UUID.randomUUID().toString(),
-                strategy.id(),
-                StrategyStage.INITIAL_BUY,
-                submitted.orderId(),
-                clientOrderId,
-                strategy.symbol(),
-                StrategyOrderSide.BUY,
-                StrategyOrderType.LIMIT,
-                strategy.initialBuyLimitPrice(),
-                strategy.initialBuyQuantity(),
-                submitted.filledQuantity(),
-                initialStatus,
-                Instant.now(),
-                initialStatus == StrategyOrderStatus.FILLED ? Instant.now() : null,
-                submitted.rawJson()
-        );
-        orderRepository.save(order);
-
-        if (submitted.orderId().isBlank() || initialStatus == StrategyOrderStatus.FAILED || initialStatus == StrategyOrderStatus.REJECTED) {
-            strategy.setStatus(StrategyStatus.FAILED);
-            String error = "Failed to submit initial buy order";
-            strategy.setLastError(error);
-            strategyRepository.save(strategy);
-            eventRepository.save(event(strategy.id(), StrategyEventType.STRATEGY_FAILED, error, submitted.rawJson()));
-            return StrategyCreationResult.failed(error);
-        }
-
         strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.VALIDATED);
         strategy.clearLastError();
         strategyRepository.save(strategy);
-        eventRepository.save(event(strategy.id(), StrategyEventType.ORDER_SUBMITTED,
-                "Initial buy order submitted", submitted.rawJson()));
-        return StrategyCreationResult.success(strategy.id(), order.id(), submitted.orderId(), clientOrderId);
+        stateMachine.transition(strategy, StrategyLifecycleState.VALIDATED, StrategyEventType.STRATEGY_CREATED, "Strategy validated", "{}");
+
+        StrategyOrder order = strategyEngine.submitBaseBuy(strategy);
+        if (order == null || order.alpacaOrderId() == null || order.alpacaOrderId().isBlank()) {
+            strategy.setStatus(StrategyStatus.FAILED);
+            strategy.setCurrentState(StrategyLifecycleState.FAILED);
+            String error = strategy.lastError() == null || strategy.lastError().isBlank()
+                    ? "Failed to submit base buy order"
+                    : strategy.lastError();
+            strategy.setLastError(error);
+            strategyRepository.save(strategy);
+            stateMachine.transition(strategy, StrategyLifecycleState.FAILED, StrategyEventType.STRATEGY_FAILED, error, "{}");
+            return StrategyCreationResult.failed(error);
+        }
+        return StrategyCreationResult.success(strategy.id(), order.id(), order.alpacaOrderId(), order.clientOrderId());
+    }
+
+    public Optional<Strategy> updateStrategy(Strategy strategy) {
+        List<String> errors = validator.validate(strategy);
+        if (!errors.isEmpty()) {
+            strategy.setLastError(String.join("; ", errors));
+            strategyRepository.save(strategy);
+            return Optional.empty();
+        }
+        strategy.clearLastError();
+        strategyRepository.save(strategy);
+        stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.STRATEGY_UPDATED, "Strategy updated", "{}");
+        return Optional.of(strategy);
     }
 
     public void pause(String strategyId) {
         strategyRepository.findById(strategyId).ifPresent(strategy -> {
             strategy.setStatus(StrategyStatus.PAUSED);
+            strategy.setCurrentState(StrategyLifecycleState.PAUSED);
             strategyRepository.save(strategy);
-            eventRepository.save(event(strategy.id(), StrategyEventType.STRATEGY_PAUSED, "Strategy paused", "{}"));
+            stateMachine.transition(strategy, StrategyLifecycleState.PAUSED, StrategyEventType.STRATEGY_PAUSED, "Strategy paused", "{}");
         });
     }
 
     public void resume(String strategyId) {
         strategyRepository.findById(strategyId).ifPresent(strategy -> {
-            if (strategy.status() == StrategyStatus.PAUSED) {
-                strategy.setStatus(StrategyStatus.ACTIVE);
-                strategyRepository.save(strategy);
-                eventRepository.save(event(strategy.id(), StrategyEventType.STRATEGY_RESUMED, "Strategy resumed", "{}"));
+            strategy.setStatus(StrategyStatus.ACTIVE);
+            if (strategy.currentState() == StrategyLifecycleState.PAUSED) {
+                strategy.setCurrentState(StrategyLifecycleState.VALIDATED);
             }
+            strategyRepository.save(strategy);
+            stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.STRATEGY_RESUMED, "Strategy resumed", "{}");
         });
     }
 
     public void stop(String strategyId) {
         strategyRepository.findById(strategyId).ifPresent(strategy -> {
-            strategy.setStatus(StrategyStatus.COMPLETED);
+            strategy.setStatus(StrategyStatus.STOPPED);
+            strategy.setCurrentState(StrategyLifecycleState.STOPPED);
             strategyRepository.save(strategy);
-            eventRepository.save(event(strategy.id(), StrategyEventType.STRATEGY_COMPLETED, "Strategy stopped", "{}"));
+            stateMachine.transition(strategy, StrategyLifecycleState.STOPPED, StrategyEventType.STRATEGY_STOPPED, "Strategy stopped", "{}");
         });
     }
 
-    private StrategyEventType toFailureEvent(StrategyStatus status) {
-        return status == StrategyStatus.FAILED ? StrategyEventType.STRATEGY_FAILED : StrategyEventType.POLL_ERROR;
+    public void delete(String strategyId) {
+        stop(strategyId);
+        strategyRepository.deleteById(strategyId);
+        orderRepository.deleteByStrategyId(strategyId);
+        eventRepository.deleteByStrategyId(strategyId);
     }
 
-    private StrategyExecutionEvent event(String strategyId, StrategyEventType type, String message, String metadataJson) {
-        return new StrategyExecutionEvent(UUID.randomUUID().toString(), strategyId, type, message, metadataJson, Instant.now());
+    public StrategyCreationResult closePosition(String strategyId) {
+        Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
+        if (maybeStrategy.isEmpty()) {
+            return StrategyCreationResult.failed("Strategy not found");
+        }
+        Strategy strategy = maybeStrategy.get();
+        Optional<com.neuralarc.api.AlpacaPositionData> position = alpacaClient.getPosition(strategy.symbol());
+        if (position.isEmpty() || !position.get().exists()) {
+            return StrategyCreationResult.failed("No open position to close");
+        }
+        BigDecimal latestPrice = alpacaClient.getLatestPrice(strategy.symbol());
+        int quantity = position.get().quantity().setScale(0, java.math.RoundingMode.DOWN).intValue();
+        if (quantity <= 0) {
+            return StrategyCreationResult.failed("No open quantity to close");
+        }
+        String clientOrderId = buildClientOrderId(strategy.id(), StrategyStage.CLOSE_POSITION);
+        com.neuralarc.api.AlpacaOrderData submitted = alpacaClient.submitLimitSellOrder(strategy.symbol(), quantity, latestPrice, clientOrderId);
+        StrategyOrder order = new StrategyOrder(
+                java.util.UUID.randomUUID().toString(),
+                strategy.id(),
+                StrategyStage.CLOSE_POSITION,
+                submitted.orderId(),
+                clientOrderId,
+                strategy.symbol(),
+                StrategyOrderSide.SELL,
+                StrategyOrderType.LIMIT,
+                latestPrice,
+                BigDecimal.ZERO,
+                BigDecimal.valueOf(quantity),
+                submitted.filledQuantity(),
+                submitted.filledAveragePrice(),
+                mapOrderStatus(submitted.status()),
+                Instant.now(),
+                Instant.now(),
+                null,
+                submitted.rawJson()
+        );
+        orderRepository.save(order);
+        strategy.setLatestOrderStatus(order.status().name());
+        strategy.setLatestAlpacaOrderId(order.alpacaOrderId());
+        strategyRepository.save(strategy);
+        stateMachine.transition(strategy, StrategyLifecycleState.SELL_PLACED, StrategyEventType.ORDER_SUBMITTED, "Close position order submitted", submitted.rawJson());
+        return StrategyCreationResult.success(strategy.id(), order.id(), order.alpacaOrderId(), order.clientOrderId());
     }
 
     public static String buildClientOrderId(String strategyId, StrategyStage stage) {
@@ -155,4 +194,3 @@ public class StrategyService {
         }
     }
 }
-

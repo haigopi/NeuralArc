@@ -42,7 +42,10 @@ public class StrategyPersistenceManager {
               .append(c.lossBuyLevel2Qty()).append(",")
               .append(c.pollingSeconds()).append(",")
               .append(c.paperTrading()).append(",")
-              .append(c.holdAtTenPercentProfit()).append(",")
+              .append(c.profitHoldEnabled()).append(",")
+              .append(c.profitHoldType().name()).append(",")
+              .append(c.profitHoldPercent().toPlainString()).append(",")
+              .append(c.profitHoldAmount().toPlainString()).append(",")
               .append(entry.paused())
               .append(LINE_SEP);
         }
@@ -75,8 +78,18 @@ public class StrategyPersistenceManager {
                 if (p.length < 12) {
                     continue;
                 }
-                boolean holdAtTenPercentProfit = p.length >= 13 && Boolean.parseBoolean(p[11]);
-                int pausedIndex = p.length >= 13 ? 12 : 11;
+                boolean legacyFormat = p.length < 16;
+                boolean profitHoldEnabled = Boolean.parseBoolean(p[11]);
+                com.neuralarc.model.ProfitHoldType profitHoldType = legacyFormat
+                        ? com.neuralarc.model.ProfitHoldType.PERCENT_TRAILING
+                        : com.neuralarc.model.ProfitHoldType.valueOf(p[12]);
+                BigDecimal profitHoldPercent = legacyFormat
+                        ? (profitHoldEnabled ? new BigDecimal("10.00") : BigDecimal.ZERO)
+                        : new BigDecimal(p[13]);
+                BigDecimal profitHoldAmount = legacyFormat
+                        ? BigDecimal.ZERO
+                        : new BigDecimal(p[14]);
+                int pausedIndex = legacyFormat ? 12 : 15;
                 StrategyConfig config = new StrategyConfig(
                         p[0],
                         new BigDecimal(p[1]),
@@ -89,7 +102,10 @@ public class StrategyPersistenceManager {
                         Integer.parseInt(p[8]),
                         Integer.parseInt(p[9]),
                         Boolean.parseBoolean(p[10]),
-                        holdAtTenPercentProfit
+                        profitHoldEnabled,
+                        profitHoldType,
+                        profitHoldPercent,
+                        profitHoldAmount
                 );
                 boolean paused = Boolean.parseBoolean(p[pausedIndex]);
                 result.add(new StrategyEntry(config, paused));

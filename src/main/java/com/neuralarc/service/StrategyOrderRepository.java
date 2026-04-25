@@ -12,5 +12,6 @@ public interface StrategyOrderRepository {
     List<StrategyOrder> findByStrategyId(String strategyId);
 
     Optional<StrategyOrder> findLatestByStrategyStage(String strategyId, StrategyStage stage);
-}
 
+    void deleteByStrategyId(String strategyId);
+}

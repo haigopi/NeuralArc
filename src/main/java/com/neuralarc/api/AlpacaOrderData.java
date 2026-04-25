@@ -12,6 +12,7 @@ public record AlpacaOrderData(
         String side,
         String type,
         BigDecimal limitPrice,
+        BigDecimal filledAveragePrice,
         BigDecimal filledQuantity,
         String status,
         String rawJson
@@ -23,13 +24,13 @@ public record AlpacaOrderData(
         side = side == null ? "" : side;
         type = type == null ? "" : type;
         limitPrice = Monetary.round(limitPrice);
+        filledAveragePrice = Monetary.round(filledAveragePrice);
         filledQuantity = Monetary.round(filledQuantity);
         status = status == null ? "" : status;
         rawJson = rawJson == null ? "{}" : rawJson;
     }
 
     public static AlpacaOrderData failed(String message) {
-        return new AlpacaOrderData("", "", "", "", "", Monetary.zero(), Monetary.zero(), "failed", "{\"message\":\"" + Objects.requireNonNullElse(message, "") + "\"}");
+        return new AlpacaOrderData("", "", "", "", "", Monetary.zero(), Monetary.zero(), Monetary.zero(), "failed", "{\"message\":\"" + Objects.requireNonNullElse(message, "") + "\"}");
     }
 }
-

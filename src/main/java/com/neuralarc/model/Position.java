@@ -62,4 +62,13 @@ public class Position {
     public synchronized void setLastPrice(BigDecimal price) {
         this.lastPrice = Monetary.round(price);
     }
+
+    public synchronized Position copy() {
+        Position copy = new Position(symbol);
+        copy.totalShares = totalShares;
+        copy.averageCost = Monetary.round(averageCost);
+        copy.realizedPnl = Monetary.round(realizedPnl);
+        copy.lastPrice = Monetary.round(lastPrice);
+        return copy;
+    }
 }

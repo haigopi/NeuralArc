@@ -8,5 +8,6 @@ public interface StrategyExecutionEventRepository {
     void save(StrategyExecutionEvent event);
 
     List<StrategyExecutionEvent> findByStrategyId(String strategyId);
-}
 
+    void deleteByStrategyId(String strategyId);
+}
