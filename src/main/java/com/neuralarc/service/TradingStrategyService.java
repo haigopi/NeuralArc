@@ -62,12 +62,12 @@ public class TradingStrategyService {
                 " | Market Price: " + marketPrice.toPlainString());
         analyticsPublisher.publish(baseEvent("RULE_TRIGGERED").put("ruleType", rule.name()));
         switch (rule) {
-            case BUY_RULE -> submitBuy(config.baseBuyQty());
-            case LOSS_BUY_RULE -> submitBuy(config.lossBuyLevel1Qty());
-            case LOSS_INVESTMENT_BUY_RULE -> submitBuy(config.lossBuyLevel2Qty());
+            case BUY_RULE -> submitBuy(config.baseBuyQty(), marketPrice);
+            case LOSS_BUY_RULE -> submitBuy(config.lossBuyLevel1Qty(), marketPrice);
+            case LOSS_INVESTMENT_BUY_RULE -> submitBuy(config.lossBuyLevel2Qty(), marketPrice);
             case SELL_RULE, STOP_LOSS_RULE -> {
                 int qty = position.getTotalShares();
-                if (qty > 0) submitSell(qty);
+                if (qty > 0) submitSell(qty, marketPrice);
             }
         }
 
@@ -88,15 +88,15 @@ public class TradingStrategyService {
         };
     }
 
-    private void submitBuy(int qty) {
+    private void submitBuy(int qty, BigDecimal limitPrice) {
         analyticsPublisher.publish(baseEvent("ORDER_SUBMITTED").put("side", "BUY").put("orderQuantity", qty));
-        OrderResult result = api.placeBuyOrder(config.symbol(), qty);
+        OrderResult result = api.placeBuyOrder(config.symbol(), qty, limitPrice);
         publishOrderResult(result, "BUY");
     }
 
-    private void submitSell(int qty) {
+    private void submitSell(int qty, BigDecimal limitPrice) {
         analyticsPublisher.publish(baseEvent("ORDER_SUBMITTED").put("side", "SELL").put("orderQuantity", qty));
-        OrderResult result = api.placeSellOrder(config.symbol(), qty);
+        OrderResult result = api.placeSellOrder(config.symbol(), qty, limitPrice);
         publishOrderResult(result, "SELL");
     }
 

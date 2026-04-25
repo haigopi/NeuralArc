@@ -1,59 +1,65 @@
 package com.neuralarc.model;
 
+import com.neuralarc.util.Monetary;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 public class Position {
     private final String symbol;
     private int totalShares;
-    private BigDecimal averageCost = BigDecimal.ZERO;
-    private BigDecimal realizedPnl = BigDecimal.ZERO;
-    private BigDecimal lastPrice = BigDecimal.ZERO;
+    private BigDecimal averageCost = Monetary.zero();
+    private BigDecimal realizedPnl = Monetary.zero();
+    private BigDecimal lastPrice = Monetary.zero();
 
     public Position(String symbol) {
         this.symbol = symbol;
     }
 
     public synchronized void applyBuy(int qty, BigDecimal price) {
+        BigDecimal normalizedPrice = Monetary.round(price);
         BigDecimal oldCost = averageCost.multiply(BigDecimal.valueOf(totalShares));
-        BigDecimal newCost = price.multiply(BigDecimal.valueOf(qty));
+        BigDecimal newCost = normalizedPrice.multiply(BigDecimal.valueOf(qty));
         totalShares += qty;
         if (totalShares > 0) {
-            averageCost = oldCost.add(newCost).divide(BigDecimal.valueOf(totalShares), 6, RoundingMode.HALF_UP);
+            averageCost = Monetary.round(oldCost.add(newCost).divide(BigDecimal.valueOf(totalShares), 6, RoundingMode.HALF_UP));
         }
-        lastPrice = price;
+        lastPrice = normalizedPrice;
     }
 
     public synchronized void applySell(int qty, BigDecimal price) {
+        BigDecimal normalizedPrice = Monetary.round(price);
         if (qty > totalShares) {
             qty = totalShares;
         }
-        BigDecimal pnlPerShare = price.subtract(averageCost);
-        realizedPnl = realizedPnl.add(pnlPerShare.multiply(BigDecimal.valueOf(qty)));
+        BigDecimal pnlPerShare = normalizedPrice.subtract(averageCost);
+        realizedPnl = Monetary.round(realizedPnl.add(pnlPerShare.multiply(BigDecimal.valueOf(qty))));
         totalShares -= qty;
-        lastPrice = price;
+        lastPrice = normalizedPrice;
         if (totalShares == 0) {
-            averageCost = BigDecimal.ZERO;
+            averageCost = Monetary.zero();
         }
     }
 
     public synchronized BigDecimal marketValue() {
-        return lastPrice.multiply(BigDecimal.valueOf(totalShares));
+        return Monetary.round(lastPrice.multiply(BigDecimal.valueOf(totalShares)));
     }
 
     public synchronized BigDecimal unrealizedPnl() {
-        return lastPrice.subtract(averageCost).multiply(BigDecimal.valueOf(totalShares));
+        return Monetary.round(lastPrice.subtract(averageCost).multiply(BigDecimal.valueOf(totalShares)));
     }
 
     public synchronized BigDecimal totalInvested() {
-        return averageCost.multiply(BigDecimal.valueOf(totalShares));
+        return Monetary.round(averageCost.multiply(BigDecimal.valueOf(totalShares)));
     }
 
     public synchronized int getTotalShares() { return totalShares; }
-    public synchronized BigDecimal getAverageCost() { return averageCost; }
-    public synchronized BigDecimal getRealizedPnl() { return realizedPnl; }
-    public synchronized BigDecimal getLastPrice() { return lastPrice; }
+    public synchronized BigDecimal getAverageCost() { return Monetary.round(averageCost); }
+    public synchronized BigDecimal getRealizedPnl() { return Monetary.round(realizedPnl); }
+    public synchronized BigDecimal getLastPrice() { return Monetary.round(lastPrice); }
     public String getSymbol() { return symbol; }
 
-    public synchronized void setLastPrice(BigDecimal price) { this.lastPrice = price; }
+    public synchronized void setLastPrice(BigDecimal price) {
+        this.lastPrice = Monetary.round(price);
+    }
 }

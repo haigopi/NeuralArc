@@ -1,5 +1,7 @@
 package com.neuralarc.model;
 
+import com.neuralarc.util.Monetary;
+
 import java.math.BigDecimal;
 
 public record StrategyConfig(
@@ -15,4 +17,11 @@ public record StrategyConfig(
         int pollingSeconds,
         boolean paperTrading,
         boolean holdAtTenPercentProfit) {
+    public StrategyConfig {
+        baseBuyPrice = Monetary.round(baseBuyPrice);
+        stopLoss = Monetary.round(stopLoss);
+        sellTriggerPrice = Monetary.round(sellTriggerPrice);
+        lossBuyLevel1Price = Monetary.round(lossBuyLevel1Price);
+        lossBuyLevel2Price = Monetary.round(lossBuyLevel2Price);
+    }
 }

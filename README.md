@@ -1,13 +1,14 @@
 # NeuralArc Trader (Java Swing MVP)
 
 ## Project overview
-NeuralArc Trader is a free and open-source Java Swing desktop trading utility designed as an MVP that is safe-by-default (mock/paper mode), broker-agnostic, and extensible for future broker and analytics backend integrations.
+NeuralArc Trader is a Java Swing desktop trading utility designed to run paper-first with Alpaca and strict risk controls.
 
 ## Features
 - Java 22 desktop app using Swing
-- Broker abstraction (`TradingApi`) with `MockTradingApi` and `AlpacaTradingApi` stub
+- Broker abstraction (`TradingApi`) with Alpaca integration
 - Rule-based strategy engine with 5 rules
-- Paper trading ON by default
+- Strategy lifecycle services for initial order submission and staged order tracking
+- Paper trading ON by default (`alpaca.mode=PAPER`)
 - Optional encrypted local credential storage (AES-GCM + PBKDF2)
 - Opt-in telemetry publishing with queueing, retry, and graceful degradation
 - BigDecimal-based money/price/P&L computations
@@ -28,8 +29,23 @@ Duplicate triggers are prevented through strategy state tracking and rule flags.
 ./gradlew run
 ```
 
-## How paper trading works
-`MockTradingApi` simulates market data and fills, tracks in-memory positions, and enables safe local strategy testing.
+## Safety warning
+This app is for personal testing/automation workflows and is **not investment advice software**.
+Default behavior is paper trading only.
+
+## Alpaca paper mode configuration
+Set API key/secret in the app **Settings** dialog.
+
+Set these runtime defaults in `src/main/resources/app.properties` (or your packaged runtime config):
+
+```ini
+alpaca.baseUrl=https://paper-api.alpaca.markets
+alpaca.dataUrl=https://data.alpaca.markets
+alpaca.mode=PAPER
+trading.live.enabled=false
+```
+
+`LIVE` mode is blocked unless `trading.live.enabled=true` is explicitly set.
 
 ## How credentials are stored
 If enabled, credentials are encrypted using AES-GCM with a PBKDF2-derived key and written to:

@@ -2,6 +2,8 @@ package com.neuralarc.api;
 
 import com.neuralarc.model.OrderResult;
 import com.neuralarc.model.Position;
+import com.neuralarc.util.Monetary;
+import com.neuralarc.util.AppMetadata;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -18,8 +20,8 @@ import java.util.logging.Logger;
 
 public class AlpacaTradingApi implements TradingApi {
     private static final Logger LOGGER = Logger.getLogger(AlpacaTradingApi.class.getName());
-    private final Position emptyPosition = new Position("UNKNOWN");
     private final String baseUrl;
+    private final String dataUrl;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
@@ -32,6 +34,10 @@ public class AlpacaTradingApi implements TradingApi {
 
     public AlpacaTradingApi(String baseUrl) {
         this.baseUrl = baseUrl;
+        String configuredDataUrl = AppMetadata.alpacaDataUrl();
+        this.dataUrl = configuredDataUrl.endsWith("/")
+                ? configuredDataUrl.substring(0, configuredDataUrl.length() - 1)
+                : configuredDataUrl;
     }
 
     @Override
@@ -65,17 +71,47 @@ public class AlpacaTradingApi implements TradingApi {
 
     @Override
     public BigDecimal getLatestPrice(String symbol) {
-        return BigDecimal.ZERO;
+        if (symbol == null || symbol.isBlank()) {
+            return Monetary.zero();
+        }
+        if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
+            return Monetary.zero();
+        }
+
+        String endpoint = dataUrl + "/v2/stocks/" + URLEncoder.encode(symbol.toUpperCase(), StandardCharsets.UTF_8) + "/trades/latest";
+        HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint))
+                .timeout(Duration.ofSeconds(10))
+                .header("APCA-API-KEY-ID", apiKey)
+                .header("APCA-API-SECRET-KEY", apiSecret)
+                .GET()
+                .build();
+        try {
+            logRequest("GET", endpoint, null);
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            logResponse("GET", endpoint, response.statusCode(), response.body());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                return Monetary.zero();
+            }
+            JSONObject json = new JSONObject(response.body() == null ? "{}" : response.body());
+            JSONObject trade = json.optJSONObject("trade");
+            if (trade == null) {
+                return Monetary.zero();
+            }
+            return parseMoney(String.valueOf(trade.opt("p")));
+        } catch (Exception ex) {
+            logFailure("GET", endpoint, ex);
+            return Monetary.zero();
+        }
     }
 
     @Override
-    public OrderResult placeBuyOrder(String symbol, int qty) {
-        return submitOrder(symbol, qty, "buy");
+    public OrderResult placeBuyOrder(String symbol, int qty, BigDecimal limitPrice) {
+        return submitOrder(symbol, qty, limitPrice, "buy");
     }
 
     @Override
-    public OrderResult placeSellOrder(String symbol, int qty) {
-        return submitOrder(symbol, qty, "sell");
+    public OrderResult placeSellOrder(String symbol, int qty, BigDecimal limitPrice) {
+        return submitOrder(symbol, qty, limitPrice, "sell");
     }
 
     @Override
@@ -141,15 +177,75 @@ public class AlpacaTradingApi implements TradingApi {
 
     @Override
     public Position getPosition(String symbol) {
-        return emptyPosition;
+        if (symbol == null || symbol.isBlank()) {
+            return new Position("UNKNOWN");
+        }
+        if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
+            return new Position(symbol.toUpperCase());
+        }
+
+        String endpoint = (baseUrl.endsWith("/") ? baseUrl + "positions/" : baseUrl + "/positions/")
+                + URLEncoder.encode(symbol.toUpperCase(), StandardCharsets.UTF_8);
+        HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint))
+                .timeout(Duration.ofSeconds(10))
+                .header("APCA-API-KEY-ID", apiKey)
+                .header("APCA-API-SECRET-KEY", apiSecret)
+                .GET()
+                .build();
+        try {
+            logRequest("GET", endpoint, null);
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            logResponse("GET", endpoint, response.statusCode(), response.body());
+            if (response.statusCode() == 404) {
+                Position empty = new Position(symbol.toUpperCase());
+                empty.setLastPrice(getLatestPrice(symbol));
+                return empty;
+            }
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                return new Position(symbol.toUpperCase());
+            }
+
+            JSONObject json = new JSONObject(response.body() == null ? "{}" : response.body());
+            int qty = parseQuantity(json.optString("qty", "0"));
+            BigDecimal avgEntry = parseMoney(json.optString("avg_entry_price", "0"));
+            BigDecimal currentPrice = parseMoney(json.optString("current_price", "0"));
+            if (currentPrice.compareTo(Monetary.zero()) <= 0) {
+                currentPrice = getLatestPrice(symbol);
+            }
+
+            Position position = new Position(symbol.toUpperCase());
+            if (qty > 0) {
+                position.applyBuy(qty, avgEntry);
+            }
+            position.setLastPrice(currentPrice);
+            return position;
+        } catch (Exception ex) {
+            logFailure("GET", endpoint, ex);
+            return new Position(symbol.toUpperCase());
+        }
     }
 
-    private OrderResult submitOrder(String symbol, int qty, String side) {
+    private int parseQuantity(String value) {
+        if (value == null || value.isBlank() || "null".equalsIgnoreCase(value)) {
+            return 0;
+        }
+        try {
+            return new BigDecimal(value).intValue();
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
+    private OrderResult submitOrder(String symbol, int qty, BigDecimal limitPrice, String side) {
         if (symbol == null || symbol.isBlank()) {
             return OrderResult.fail(symbol, qty, "Symbol is required");
         }
         if (qty <= 0) {
             return OrderResult.fail(symbol, qty, "Quantity must be greater than zero");
+        }
+        BigDecimal normalizedLimit = Monetary.round(limitPrice);
+        if (normalizedLimit.compareTo(Monetary.zero()) <= 0) {
+            return OrderResult.fail(symbol, qty, "Limit price must be greater than zero");
         }
         if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
             return OrderResult.fail(symbol, qty, "Alpaca credentials are not configured");
@@ -160,8 +256,9 @@ public class AlpacaTradingApi implements TradingApi {
                 .put("symbol", symbol.toUpperCase())
                 .put("qty", qty)
                 .put("side", side)
-                .put("type", "market")
-                .put("time_in_force", "day");
+                .put("type", "limit")
+                .put("time_in_force", "day")
+                .put("limit_price", normalizedLimit.toPlainString());
 
         HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint))
                 .timeout(Duration.ofSeconds(15))
@@ -235,12 +332,12 @@ public class AlpacaTradingApi implements TradingApi {
 
     private BigDecimal parseMoney(String value) {
         if (value == null || value.isBlank() || "null".equalsIgnoreCase(value)) {
-            return BigDecimal.ZERO;
+            return Monetary.zero();
         }
         try {
-            return new BigDecimal(value);
+            return Monetary.round(new BigDecimal(value));
         } catch (NumberFormatException ex) {
-            return BigDecimal.ZERO;
+            return Monetary.zero();
         }
     }
 }

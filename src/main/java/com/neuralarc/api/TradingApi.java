@@ -12,9 +12,9 @@ public interface TradingApi {
 
     BigDecimal getLatestPrice(String symbol);
 
-    OrderResult placeBuyOrder(String symbol, int qty);
+    OrderResult placeBuyOrder(String symbol, int qty, BigDecimal limitPrice);
 
-    OrderResult placeSellOrder(String symbol, int qty);
+    OrderResult placeSellOrder(String symbol, int qty, BigDecimal limitPrice);
 
     boolean cancelOpenOrdersForSymbol(String symbol);
 

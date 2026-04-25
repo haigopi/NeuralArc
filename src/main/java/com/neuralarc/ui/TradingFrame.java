@@ -1,13 +1,20 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.analytics.*;
+import com.neuralarc.api.HttpAlpacaClient;
 import com.neuralarc.api.TradingApi;
 import com.neuralarc.api.TradingApiFactory;
 import com.neuralarc.model.*;
 import com.neuralarc.rules.RuleEvaluationService;
+import com.neuralarc.service.FileStrategyExecutionEventRepository;
+import com.neuralarc.service.FileStrategyOrderRepository;
+import com.neuralarc.service.FileStrategyRepository;
 import com.neuralarc.service.PricePoller;
 import com.neuralarc.service.StrategyPersistenceManager;
 import com.neuralarc.service.StrategyPersistenceManager.StrategyEntry;
+import com.neuralarc.service.StrategyPollingService;
+import com.neuralarc.service.StrategyService;
+import com.neuralarc.service.StrategyValidator;
 import com.neuralarc.service.TradingStrategyService;
 import com.neuralarc.service.UserIdentityService;
 import com.neuralarc.util.AppMetadata;
@@ -85,6 +92,7 @@ public class TradingFrame extends JFrame {
     private final Timer liveModeBlinkTimer;
     private final Timer logFlushTimer;
     private final Timer pollingIndicatorTimer;
+    private final Timer strategyPollingTimer;
     private final Path appLogFile = Path.of(System.getProperty("user.home"), ".neuralarc", "app.log");
     private final StringBuilder pendingLogWrites = new StringBuilder();
 
@@ -97,6 +105,9 @@ public class TradingFrame extends JFrame {
     private AnalyticsPublisher analyticsPublisher;
     private final SettingsDialog settingsDialog;
     private StrategyPersistenceManager persistenceManager;
+    private final FileStrategyRepository strategyRepository;
+    private final FileStrategyOrderRepository strategyOrderRepository;
+    private final FileStrategyExecutionEventRepository strategyEventRepository;
     private boolean connectionOk;
     private boolean appLaunchedPublished;
     private String selectedStrategySymbol;
@@ -107,6 +118,8 @@ public class TradingFrame extends JFrame {
     private boolean liveBlinkPrimaryActive;
     private int logLineCount;
     private boolean promptedDefaultStrategyDialog;
+    private StrategyService strategyService;
+    private StrategyPollingService strategyPollingService;
 
     public TradingFrame() {
         liveModeBlinkTimer = new Timer(500, e -> toggleLiveHeaderBlink());
@@ -122,6 +135,19 @@ public class TradingFrame extends JFrame {
         setLayout(new BorderLayout());
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
         settingsDialog = new SettingsDialog(this);
+        strategyRepository = new FileStrategyRepository(
+                Path.of(System.getProperty("user.home"), ".neuralarc", "strategies-v2.json")
+        );
+        strategyOrderRepository = new FileStrategyOrderRepository(
+                Path.of(System.getProperty("user.home"), ".neuralarc", "strategy-orders.json")
+        );
+        strategyEventRepository = new FileStrategyExecutionEventRepository(
+                Path.of(System.getProperty("user.home"), ".neuralarc", "strategy-events.json")
+        );
+        refreshStrategyRuntimeServices();
+        strategyPollingTimer = new Timer(10000, e -> strategyPollingService.pollActiveStrategies());
+        strategyPollingTimer.setInitialDelay(10000);
+        strategyPollingTimer.start();
 
         JPanel headerPanel = new JPanel(new BorderLayout());
         headerPanel.setBackground(new Color(35, 35, 45));
@@ -525,12 +551,41 @@ public class TradingFrame extends JFrame {
         return result.connected();
     }
 
+    private void refreshStrategyRuntimeServices() {
+        HttpAlpacaClient alpacaClient = new HttpAlpacaClient(
+                settingsDialog.getApiKey(),
+                settingsDialog.getApiSecret(),
+                AppMetadata.alpacaBaseUrl(),
+                AppMetadata.alpacaDataUrl()
+        );
+        strategyService = new StrategyService(
+                strategyRepository,
+                strategyOrderRepository,
+                strategyEventRepository,
+                alpacaClient,
+                new StrategyValidator(),
+                AppMetadata.liveTradingEnabled()
+        );
+        strategyPollingService = new StrategyPollingService(
+                strategyRepository,
+                strategyOrderRepository,
+                strategyEventRepository,
+                alpacaClient
+        );
+    }
+
     private SettingsDialog.ConnectionResult runConnectionTest(BrokerType brokerType, String apiKey, String apiSecret, boolean manualTrigger) {
         if (brokerType == null) {
             log("Connection test: FAILED (broker not set in Settings)");
             updateHeaderModeStatus(null);
             headerStatus.setText("Status: broker not configured");
             return new SettingsDialog.ConnectionResult(false, "Broker not configured");
+        }
+        if (settingsDialog.applicationMode() == ApplicationMode.LIVE && !AppMetadata.liveTradingEnabled()) {
+            String message = "LIVE mode is disabled. Set trading.live.enabled=true in app.properties.";
+            settingsDialog.markConnectionStatus(false, message);
+            setStatus(message, STATUS_ERR);
+            return new SettingsDialog.ConnectionResult(false, message);
         }
 
         tradingApi = TradingApiFactory.create(brokerType, settingsDialog.applicationMode());
@@ -539,6 +594,7 @@ public class TradingFrame extends JFrame {
         connectionOk = tradingApi.testConnection();
         log((manualTrigger ? "Connection test: " : "Auto connection test: ") + (connectionOk ? "SUCCESS" : "FAILED"));
         if (connectionOk) {
+            refreshStrategyRuntimeServices();
             setStatus("Connected — broker " + brokerType.name() + " ready.", STATUS_OK);
             updateHeaderModeStatus(brokerType);
             settingsDialog.markConnectionStatus(true, "Connected to " + brokerType.name());
@@ -646,6 +702,31 @@ public class TradingFrame extends JFrame {
             JOptionPane.showMessageDialog(this, "A strategy for this symbol already exists. Use Edit on the grid row.", "Duplicate Symbol", JOptionPane.WARNING_MESSAGE);
             return;
         }
+
+        Strategy strategy = Strategy.fromConfig(
+                UUID.randomUUID().toString(),
+                config.symbol() + " Strategy",
+                config,
+                settingsDialog.applicationMode() == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER
+        );
+        StrategyService.StrategyCreationResult creationResult = strategyService.createAndActivate(strategy);
+        if (!creationResult.success()) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Failed to submit initial Alpaca limit buy order: " + creationResult.error(),
+                    "Strategy Activation Failed",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            log("[" + config.symbol() + "] Strategy failed during initial order placement: " + creationResult.error());
+            return;
+        }
+        log("[" + config.symbol() + "] Initial order submitted. clientOrderId=" + creationResult.clientOrderId());
+        JOptionPane.showMessageDialog(
+                this,
+                "Initial Alpaca limit buy submitted successfully.\nOrder ID: " + creationResult.alpacaOrderId(),
+                "Strategy Activated",
+                JOptionPane.INFORMATION_MESSAGE
+        );
 
         ensureAnalyticsPublisher();
 
@@ -1113,6 +1194,7 @@ public class TradingFrame extends JFrame {
         persistStrategies();
         logFlushTimer.stop();
         pollingIndicatorTimer.stop();
+        strategyPollingTimer.stop();
         flushLogsToFile();
         for (ManagedStrategy strategy : strategies) {
             stopPoller(strategy);

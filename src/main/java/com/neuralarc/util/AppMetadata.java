@@ -48,6 +48,23 @@ public final class AppMetadata {
         return PROPERTIES.getProperty("app.analytics.endpoint.default", "http://localhost:8080/events").trim();
     }
 
+
+    public static String alpacaBaseUrl() {
+        return PROPERTIES.getProperty("alpaca.baseUrl", "https://paper-api.alpaca.markets").trim();
+    }
+
+    public static String alpacaDataUrl() {
+        return PROPERTIES.getProperty("alpaca.dataUrl", "https://data.alpaca.markets").trim();
+    }
+
+    public static String alpacaMode() {
+        return PROPERTIES.getProperty("alpaca.mode", "PAPER").trim();
+    }
+
+    public static boolean liveTradingEnabled() {
+        return Boolean.parseBoolean(PROPERTIES.getProperty("trading.live.enabled", "false").trim());
+    }
+
     private static Properties loadProperties() {
         Properties properties = new Properties();
         try (InputStream stream = AppMetadata.class.getClassLoader().getResourceAsStream("app.properties")) {
