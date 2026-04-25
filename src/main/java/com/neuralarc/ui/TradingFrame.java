@@ -1089,8 +1089,9 @@ public class TradingFrame extends JFrame {
 
     private void ensureAnalyticsPublisher() {
         if (analyticsPublisher == null) {
+            boolean analyticsAllowed = AppMetadata.analyticsEnabled() && settingsDialog.telemetryEnabled();
             TelemetryConfig telemetryConfig = new TelemetryConfig(
-                    settingsDialog.telemetryEnabled(),
+                    analyticsAllowed,
                     settingsDialog.getEndpoint(),
                     null,
                     "1.0.0"

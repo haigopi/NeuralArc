@@ -40,6 +40,10 @@ public final class AppMetadata {
         }
     }
 
+    public static boolean analyticsEnabled() {
+        return Boolean.parseBoolean(PROPERTIES.getProperty("app.analytics.enabled", "true").trim());
+    }
+
     public static String analyticsEndpointDefault() {
         return PROPERTIES.getProperty("app.analytics.endpoint.default", "http://localhost:8080/events").trim();
     }

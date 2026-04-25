@@ -106,15 +106,26 @@ public class SettingsDialog extends JDialog {
         JPanel telemetryPanel = new JPanel(new GridBagLayout());
         telemetryPanel.setBorder(createSectionBorder("Telemetry"));
         telemetryPanel.setOpaque(false);
+
+        boolean analyticsGloballyEnabled = AppMetadata.analyticsEnabled();
         JLabel telemetryDescription = new JLabel(
                 "<html><div style='max-width:320px; width:320px; line-height:1.35;'>"
-                        + "To support auditing, fraud prevention, and anomaly detection, operational app telemetry "
-                        + "can be streamed to our servers.<br><br>"
-                        + "Telemetry remains anonymized and does not include personal user details."
+                        + (analyticsGloballyEnabled
+                            ? "To support auditing, fraud prevention, and anomaly detection, operational app telemetry "
+                              + "can be streamed to our servers.<br><br>"
+                              + "Telemetry remains anonymized and does not include personal user details."
+                            : "<b>Analytics is currently disabled at the application level</b> "
+                              + "(<code>app.analytics.enabled=false</code> in app.properties).<br><br>"
+                              + "The checkbox below has no effect until analytics is re-enabled in app.properties.")
                         + "</div></html>"
         );
         telemetryDescription.setForeground(TEXT_MUTED);
         telemetryDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        if (!analyticsGloballyEnabled) {
+            telemetryEnabled.setEnabled(false);
+            telemetryEnabled.setSelected(false);
+            telemetryEnabled.setToolTipText("Analytics is disabled globally via app.analytics.enabled in app.properties");
+        }
 
         GridBagConstraints telemetryLabelConstraints = new GridBagConstraints();
         telemetryLabelConstraints.gridx = 0;
