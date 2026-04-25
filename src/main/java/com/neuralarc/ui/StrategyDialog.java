@@ -35,15 +35,15 @@ public class StrategyDialog extends JDialog {
         JPanel strategyPanel = section("Strategy Parameters");
         addRow(strategyPanel, "Symbol", symbolField);
         addRow(strategyPanel, "Trading mode", paperMode);
-        addRow(strategyPanel, "Base buy price", basePriceField);
+        addRow(strategyPanel, "Base buy price (less than or equals to)", basePriceField);
         addRow(strategyPanel, "Base buy quantity", baseQtyField);
 
         JPanel riskPanel = section("Risk Controls");
-        addRow(riskPanel, "Stop activation price", stopActivationField);
+        addRow(riskPanel, "Stop Loss", stopActivationField);
         addRow(riskPanel, "Sell trigger price", sellTriggerField);
-        addRow(riskPanel, "Loss buy level 1 price", loss1PriceField);
+        addRow(riskPanel, "Loss Buy Level 1 Price (less than or equals to)", loss1PriceField);
         addRow(riskPanel, "Loss buy level 1 qty", loss1QtyField);
-        addRow(riskPanel, "Loss buy level 2 price", loss2PriceField);
+        addRow(riskPanel, "Loss Buy Level 2 Price (less than or equals to)", loss2PriceField);
         addRow(riskPanel, "Loss buy level 2 qty", loss2QtyField);
 
         JPanel executionPanel = section("Execution");

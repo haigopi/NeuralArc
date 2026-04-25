@@ -31,4 +31,20 @@ class RuleEvaluationServiceTest {
         List<RuleType> rules = service.evaluate(new BigDecimal("8.00"), 0, config, state);
         assertFalse(rules.contains(RuleType.BUY_RULE));
     }
+
+    @Test
+    void sellRuleTriggersAtSellTriggerWhenWithinProfitWindow() {
+        RuleEvaluationService service = new RuleEvaluationService();
+        StrategyState state = new StrategyState();
+        List<RuleType> rules = service.evaluate(new BigDecimal("10.00"), 10, config, state);
+        assertTrue(rules.contains(RuleType.SELL_RULE));
+    }
+
+    @Test
+    void sellRuleDoesNotTriggerWhenPriceIsTenPercentAboveSellTrigger() {
+        RuleEvaluationService service = new RuleEvaluationService();
+        StrategyState state = new StrategyState();
+        List<RuleType> rules = service.evaluate(new BigDecimal("11.00"), 10, config, state);
+        assertFalse(rules.contains(RuleType.SELL_RULE));
+    }
 }

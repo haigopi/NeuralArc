@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class RuleEvaluationService {
+    private static final BigDecimal SELL_SUPPRESSION_MULTIPLIER = new BigDecimal("1.10");
+
     public List<RuleType> evaluate(BigDecimal price, int shares, StrategyConfig config, StrategyState state) {
         List<RuleType> triggered = new ArrayList<>();
 
@@ -25,7 +27,10 @@ public class RuleEvaluationService {
             triggered.add(RuleType.STOP_LOSS_RULE);
         }
 
-        if (shares > 0 && price.compareTo(config.sellTriggerPrice()) >= 0 && !state.isTriggered(RuleType.SELL_RULE)) {
+        BigDecimal sellSuppressionPrice = config.sellTriggerPrice().multiply(SELL_SUPPRESSION_MULTIPLIER);
+        boolean withinSellWindow = price.compareTo(config.sellTriggerPrice()) >= 0
+                && price.compareTo(sellSuppressionPrice) < 0;
+        if (shares > 0 && withinSellWindow && !state.isTriggered(RuleType.SELL_RULE)) {
             triggered.add(RuleType.SELL_RULE);
         }
 

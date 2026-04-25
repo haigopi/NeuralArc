@@ -69,6 +69,9 @@ public class TradingFrame extends JFrame {
     private static final Color TABLE_SELECTION_BG = new Color(192, 166, 240);
     private static final Color STATUS_TEXT_RUNNING = new Color(46, 125, 50);
     private static final Color STATUS_TEXT_PAUSED = new Color(180, 100, 0);
+    private static final Color MODE_TEXT_MOCK = new Color(97, 97, 97);
+    private static final Color MODE_TEXT_ALPACA_PAPER = new Color(25, 118, 210);
+    private static final Color MODE_TEXT_ALPACA_LIVE = new Color(183, 28, 28);
     private static final Color LOG_LINE_EVEN = new Color(63, 72, 82);
     private static final Color LOG_LINE_ODD = new Color(110, 118, 128);
     private static final Color HEADER_STATUS_DEFAULT = new Color(220, 220, 255);
@@ -1022,6 +1025,24 @@ public class TradingFrame extends JFrame {
         return "Broker: " + broker + " | Mode: " + mode;
     }
 
+    private String gridBrokerModeLabel() {
+        if (currentBrokerType != BrokerType.ALPACA) {
+            return "Mock";
+        }
+        return settingsDialog.applicationMode() == ApplicationMode.LIVE
+                ? "Alpaca Live"
+                : "Alpaca Paper Mode";
+    }
+
+    private Color gridBrokerModeColor() {
+        if (currentBrokerType != BrokerType.ALPACA) {
+            return MODE_TEXT_MOCK;
+        }
+        return settingsDialog.applicationMode() == ApplicationMode.LIVE
+                ? MODE_TEXT_ALPACA_LIVE
+                : MODE_TEXT_ALPACA_PAPER;
+    }
+
     private void updateStatusBar() {
         long running = strategies.stream().filter(s -> !s.paused).count();
         long paused  = strategies.stream().filter(s ->  s.paused).count();
@@ -1236,7 +1257,7 @@ public class TradingFrame extends JFrame {
 
     private final class StrategyTableModel extends AbstractTableModel {
         private static final String[] COLUMNS = {
-                "Symbol", "Status", "Shares", "Avg Cost", "Stock Price", "Market Value", "Unrealized P&L", "Polling", "Mode", "Actions"
+                "Symbol", "Status", "Shares", "Avg Cost", "Stock Price", "Market Value", "Unrealized P&L", "Polling", "Broker + Mode", "Actions"
         };
 
         @Override public int getRowCount()    { return strategies.size(); }
@@ -1266,7 +1287,7 @@ public class TradingFrame extends JFrame {
                 case 5 -> "-";
                 case 6 -> "-";
                 case 7 -> entry.config.pollingSeconds();
-                case 8 -> entry.config.paperTrading() ? "Paper" : "Live";
+                case 8 -> gridBrokerModeLabel();
                 case 9 -> entry.paused ? "Paused" : "Running";
                 default -> "";
             };
@@ -1308,9 +1329,13 @@ public class TradingFrame extends JFrame {
                     setForeground(new Color(30, 30, 30));
                 } else {
                     setBackground(table.getBackground());
-                    setForeground(column == 1
-                            ? (paused ? STATUS_TEXT_PAUSED : STATUS_TEXT_RUNNING)
-                            : table.getForeground());
+                    if (column == 1) {
+                        setForeground(paused ? STATUS_TEXT_PAUSED : STATUS_TEXT_RUNNING);
+                    } else if (column == 8) {
+                        setForeground(gridBrokerModeColor());
+                    } else {
+                        setForeground(table.getForeground());
+                    }
                 }
             }
             setOpaque(true);
