@@ -123,6 +123,37 @@ class StrategyPollingServiceTest {
         assertEquals(StrategyStatus.FAILED, f.strategies.findById(strategy.id()).orElseThrow().status());
     }
 
+    @Test
+    void pollingRecreatesBaseBuyWhenRemoteOrderIsMissing() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        StrategyOrder pendingBase = new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY,
+                "ord-missing", "client-missing", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT,
+                new BigDecimal("8.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO,
+                StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        );
+        f.orders.save(pendingBase);
+        f.alpaca.latestPrice = new BigDecimal("8.00");
+        f.alpaca.position = Optional.empty();
+        f.alpaca.orderById.clear();
+
+        f.service.pollStrategy(strategy.id());
+
+        List<StrategyOrder> strategyOrders = f.orders.findByStrategyId(strategy.id());
+        long submittedBaseOrders = strategyOrders.stream()
+                .filter(order -> order.stage() == StrategyStage.BASE_BUY)
+                .filter(order -> order.status() == StrategyOrderStatus.SUBMITTED || order.status() == StrategyOrderStatus.PENDING)
+                .count();
+        assertTrue(submittedBaseOrders >= 1);
+        assertTrue(strategyOrders.stream()
+                .filter(order -> "ord-missing".equals(order.alpacaOrderId()))
+                .allMatch(order -> order.status() == StrategyOrderStatus.CANCELED));
+    }
+
     private static final class Fixture {
         final InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         final InMemoryOrderRepository orders = new InMemoryOrderRepository();
@@ -212,8 +243,23 @@ class StrategyPollingServiceTest {
         }
 
         @Override
+        public List<AlpacaOrderData> getOpenOrders() {
+            return new ArrayList<>(orderById.values());
+        }
+
+        @Override
+        public boolean cancelOrder(String orderId) {
+            return orderById.remove(orderId) != null;
+        }
+
+        @Override
         public Optional<AlpacaPositionData> getPosition(String symbol) {
             return position;
+        }
+
+        @Override
+        public List<AlpacaPositionData> getPositions() {
+            return position.map(List::of).orElseGet(List::of);
         }
 
         @Override

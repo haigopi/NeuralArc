@@ -13,8 +13,13 @@ public interface AlpacaClient {
 
     List<AlpacaOrderData> getOpenOrders(String symbol);
 
+    List<AlpacaOrderData> getOpenOrders();
+
+    boolean cancelOrder(String orderId);
+
     Optional<AlpacaPositionData> getPosition(String symbol);
+
+    List<AlpacaPositionData> getPositions();
 
     BigDecimal getLatestPrice(String symbol);
 }
-

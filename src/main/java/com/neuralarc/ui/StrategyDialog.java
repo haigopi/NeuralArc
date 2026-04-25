@@ -2,6 +2,7 @@ package com.neuralarc.ui;
 
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.StrategyConfig;
+import com.neuralarc.util.AppMetadata;
 import com.neuralarc.util.FontLoader;
 
 import javax.swing.*;
@@ -468,6 +469,15 @@ public class StrategyDialog extends JDialog {
                 }
             }
 
+            int pollingSeconds = Integer.parseInt(pollingField.getText().trim());
+            if (pollingSeconds <= 0) {
+                JOptionPane.showMessageDialog(this,
+                        "Polling interval must be greater than zero seconds.",
+                        "Invalid Polling Interval",
+                        JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
             result = new StrategyConfig(
                     symbol,
                     new BigDecimal(basePriceField.getText().trim()),
@@ -478,7 +488,7 @@ public class StrategyDialog extends JDialog {
                     Integer.parseInt(loss1QtyField.getText().trim()),
                     new BigDecimal(loss2PriceField.getText().trim()),
                     Integer.parseInt(loss2QtyField.getText().trim()),
-                    Integer.parseInt(pollingField.getText().trim()),
+                    pollingSeconds,
                     paperMode.isSelected(),
                     profitHold,
                     profitHoldType,
@@ -519,7 +529,7 @@ public class StrategyDialog extends JDialog {
                 property(properties, "lossBuyLevel1Qty", "5"),
                 property(properties, "lossBuyLevel2Price", "4.45"),
                 property(properties, "lossBuyLevel2Qty", "5"),
-                property(properties, "pollingSeconds", "2"),
+                String.valueOf(AppMetadata.defaultStrategyPollingSeconds()),
                 parseBoolean(properties, "holdAtTenPercentProfit", false),
                 parseProfitHoldType(properties, "profitHoldType", ProfitHoldType.PERCENT_TRAILING),
                 property(properties, "profitHoldPercent", "10"),

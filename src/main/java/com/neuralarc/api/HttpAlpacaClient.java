@@ -82,29 +82,6 @@ public class HttpAlpacaClient implements AlpacaClient {
     }
 
     @Override
-    public List<AlpacaPositionData> getPositions() {
-        String endpoint = tradingBaseUrl + "/v2/positions";
-        HttpRequest request = baseRequest(endpoint).GET().build();
-        Optional<String> body = executeBody(request);
-        if (body.isEmpty()) {
-            return List.of();
-        }
-        List<AlpacaOrderData> result = new ArrayList<>();
-        try {
-            JSONArray json = new JSONArray(body.get());
-            for (int i = 0; i < json.length(); i++) {
-                JSONObject item = json.optJSONObject(i);
-                if (item != null) {
-                    result.add(toOrderData(item));
-                }
-            }
-        } catch (Exception ex) {
-            LOGGER.log(Level.WARNING, "Failed to parse open orders", ex);
-        }
-        return List.of();
-    }
-
-    @Override
     public Optional<AlpacaPositionData> getPosition(String symbol) {
         if (symbol == null || symbol.isBlank()) {
             return Optional.empty();

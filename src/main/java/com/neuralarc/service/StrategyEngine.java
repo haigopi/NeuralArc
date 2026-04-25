@@ -36,6 +36,11 @@ public class StrategyEngine {
         BigDecimal latestPrice = alpacaClient.getLatestPrice(strategy.symbol());
         Optional<AlpacaPositionData> position = alpacaClient.getPosition(strategy.symbol());
         List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
+        List<AlpacaOrderData> remoteOpenOrders = alpacaClient.getOpenOrders(strategy.symbol());
+
+        if (ensureRemoteOrderPresence(strategy, orders, remoteOpenOrders, position)) {
+            orders = orderRepository.findByStrategyId(strategy.id());
+        }
 
         if (position.isPresent() && position.get().exists()) {
             if (strategy.automatedStopLossEnabled()) {
@@ -61,6 +66,67 @@ public class StrategyEngine {
     public StrategyOrder submitBaseBuy(Strategy strategy) {
         return submitBuyOrder(strategy, StrategyStage.BASE_BUY, strategy.baseBuyQuantity(), strategy.baseBuyLimitPrice(),
                 StrategyLifecycleState.BASE_BUY_PLACED, "Base buy order submitted");
+    }
+
+    public void resumeStrategy(Strategy strategy) {
+        List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
+        List<AlpacaOrderData> remoteOpenOrders = alpacaClient.getOpenOrders(strategy.symbol());
+        Optional<AlpacaPositionData> position = alpacaClient.getPosition(strategy.symbol());
+
+        if (!remoteOpenOrders.isEmpty()) {
+            reconcile(strategy);
+            return;
+        }
+
+        if (position.isEmpty() || !position.get().exists()) {
+            if (!isStageFilled(orders, StrategyStage.BASE_BUY)) {
+                submitBaseBuy(strategy);
+                return;
+            }
+        }
+
+        reconcile(strategy);
+    }
+
+    private boolean ensureRemoteOrderPresence(
+            Strategy strategy,
+            List<StrategyOrder> orders,
+            List<AlpacaOrderData> remoteOpenOrders,
+            Optional<AlpacaPositionData> position
+    ) {
+        if (!remoteOpenOrders.isEmpty() || (position.isPresent() && position.get().exists())) {
+            return false;
+        }
+
+        boolean updatedLocalOrderState = false;
+        for (StrategyOrder order : orders) {
+            if (!order.isPending()) {
+                continue;
+            }
+            order.setStatus(StrategyOrderStatus.CANCELED);
+            orderRepository.save(order);
+            updatedLocalOrderState = true;
+        }
+
+        if (!isStageFilled(orders, StrategyStage.BASE_BUY)) {
+            submitBaseBuy(strategy);
+            return true;
+        }
+        if (isStageFilled(orders, StrategyStage.BASE_BUY)
+                && strategy.buyLimit1Quantity() > 0
+                && !isStageFilled(orders, StrategyStage.BUY_LIMIT_1)) {
+            submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_1, strategy.buyLimit1Quantity(), strategy.buyLimit1Price(),
+                    StrategyLifecycleState.BUY_LIMIT_1_PLACED, "Buy Limit 1 recreated after missing Alpaca order");
+            return true;
+        }
+        if (isStageFilled(orders, StrategyStage.BUY_LIMIT_1)
+                && strategy.buyLimit2Quantity() > 0
+                && !isStageFilled(orders, StrategyStage.BUY_LIMIT_2)) {
+            submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_2, strategy.buyLimit2Quantity(), strategy.buyLimit2Price(),
+                    StrategyLifecycleState.BUY_LIMIT_2_PLACED, "Buy Limit 2 recreated after missing Alpaca order");
+            return true;
+        }
+        return updatedLocalOrderState;
     }
 
     private void maybeSubmitBuyLimit1(Strategy strategy, BigDecimal latestPrice, List<StrategyOrder> orders) {

@@ -23,11 +23,11 @@ import java.util.function.Function;
 import java.util.stream.Stream;
 
 public class SettingsDialog extends JDialog {
-    private static final Path APP_DATA_DIR = Path.of(System.getProperty("user.home"), ".neuralarc");
-    private static final Path SETTINGS_FILE = Path.of(System.getProperty("user.home"), ".neuralarc", "settings.properties");
-    private static final Path CREDENTIALS_FILE_PAPER = Path.of(System.getProperty("user.home"), ".neuralarc", "credentials-paper.properties");
-    private static final Path CREDENTIALS_FILE_LIVE = Path.of(System.getProperty("user.home"), ".neuralarc", "credentials-live.properties");
-    private static final Path LEGACY_CREDENTIALS_FILE = Path.of(System.getProperty("user.home"), ".neuralarc", "credentials.properties");
+    private static final Path APP_DATA_DIR = AppMetadata.appDataDirectory();
+    private static final Path SETTINGS_FILE = APP_DATA_DIR.resolve("settings.properties");
+    private static final Path CREDENTIALS_FILE_PAPER = APP_DATA_DIR.resolve("credentials-paper.properties");
+    private static final Path CREDENTIALS_FILE_LIVE = APP_DATA_DIR.resolve("credentials-live.properties");
+    private static final Path LEGACY_CREDENTIALS_FILE = APP_DATA_DIR.resolve("credentials.properties");
     private static final int OUTER_PADDING = 16;
     private static final int SECTION_GAP = 12;
     private static final int FIELD_GAP = 10;
@@ -407,7 +407,7 @@ public class SettingsDialog extends JDialog {
     private void deleteAllData() {
         String message = "<html><body style='width:340px'>"
                 + "<b>Permanently delete all NeuralArc local data?</b><br><br>"
-                + "The following will be erased from <code>~/.neuralarc</code>:<br>"
+                + "The following will be erased from <code>" + APP_DATA_DIR + "</code>:<br>"
                 + "• User settings and preferences<br>"
                 + "• Saved API credentials (paper &amp; live)<br>"
                 + "• All saved trading strategies<br>"

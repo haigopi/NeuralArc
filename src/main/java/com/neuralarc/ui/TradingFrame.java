@@ -88,7 +88,7 @@ public class TradingFrame extends JFrame {
     private final Timer logFlushTimer;
     private final Timer pollingIndicatorTimer;
     private final Timer strategyPollingTimer;
-    private final Path appLogFile = Path.of(System.getProperty("user.home"), ".neuralarc", "app.log");
+    private final Path appLogFile = AppMetadata.appDataDirectory().resolve("app.log");
     private final StringBuilder pendingLogWrites = new StringBuilder();
 
     private final UserIdentityService identityService = new UserIdentityService();
@@ -131,13 +131,13 @@ public class TradingFrame extends JFrame {
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
         settingsDialog = new SettingsDialog(this);
         strategyRepository = new FileStrategyRepository(
-                Path.of(System.getProperty("user.home"), ".neuralarc", "strategies-v2.json")
+                AppMetadata.appDataDirectory().resolve("strategies-v2.json")
         );
         strategyOrderRepository = new FileStrategyOrderRepository(
-                Path.of(System.getProperty("user.home"), ".neuralarc", "strategy-orders.json")
+                AppMetadata.appDataDirectory().resolve("strategy-orders.json")
         );
         strategyEventRepository = new FileStrategyExecutionEventRepository(
-                Path.of(System.getProperty("user.home"), ".neuralarc", "strategy-events.json")
+                AppMetadata.appDataDirectory().resolve("strategy-events.json")
         );
         refreshStrategyRuntimeServices();
         strategyPollingTimer = new Timer(1000, e -> {
@@ -567,7 +567,8 @@ public class TradingFrame extends JFrame {
                 strategyEventRepository,
                 alpacaClient,
                 new StrategyValidator(),
-                AppMetadata.liveTradingEnabled()
+                AppMetadata.liveTradingEnabled(),
+                settingsDialog.applicationMode() == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER
         );
         strategyPollingService = new StrategyPollingService(
                 strategyRepository,
@@ -621,17 +622,22 @@ public class TradingFrame extends JFrame {
     private void restoreStrategies() {
         strategies.clear();
         List<Strategy> storedStrategies = strategyRepository.findAll();
-        if (storedStrategies.isEmpty()) {
-            refreshPanels();
-            updateStatusBar();
-            maybePromptForDefaultStrategy();
-            return;
-        }
+        List<Strategy> syncedRemoteStrategies = strategyService.syncRemoteStrategies();
+        storedStrategies = strategyRepository.findAll();
         for (Strategy strategy : storedStrategies) {
             ManagedStrategy managed = new ManagedStrategy(strategy);
             resetPollingCountdown(managed);
             strategies.add(managed);
             log("[" + strategy.symbol() + "] Restored (" + strategy.status().name() + ").");
+        }
+        for (Strategy strategy : syncedRemoteStrategies) {
+            log("[" + strategy.symbol() + "] Synced from Alpaca and resumed locally.");
+        }
+        if (storedStrategies.isEmpty()) {
+            refreshPanels();
+            updateStatusBar();
+            maybePromptForDefaultStrategy();
+            return;
         }
         refreshStrategyTableData();
         if (!strategies.isEmpty()) {
@@ -1122,7 +1128,7 @@ public class TradingFrame extends JFrame {
                     "1.0.0"
             );
             analyticsPublisher = new HttpAnalyticsPublisher(telemetryConfig,
-                    new AnalyticsQueue(Path.of(System.getProperty("user.home"), ".neuralarc", "analytics-queue.log")));
+                    new AnalyticsQueue(AppMetadata.appDataDirectory().resolve("analytics-queue.log")));
         }
 
         if (!appLaunchedPublished) {
