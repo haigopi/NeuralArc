@@ -84,7 +84,7 @@ public class TradingStrategyService {
             case LOSS_BUY_RULE -> config.lossBuyLevel1Price();
             case LOSS_INVESTMENT_BUY_RULE -> config.lossBuyLevel2Price();
             case SELL_RULE -> config.sellTriggerPrice();
-            case STOP_LOSS_RULE -> config.stopActivationPrice();
+            case STOP_LOSS_RULE -> config.stopLoss();
         };
     }
 

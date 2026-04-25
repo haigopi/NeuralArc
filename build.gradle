@@ -27,5 +27,21 @@ test {
 }
 
 application {
-    mainClass = 'com.neuralarc.MainApp'
+    mainClass = 'com.neuralarc.NeuralArc'
+}
+
+tasks.named('jar') {
+    manifest {
+        attributes(
+                'Main-Class': application.mainClass.get(),
+                'Implementation-Title': 'NeuralArc',
+                'Implementation-Version': project.version
+        )
+    }
+}
+
+tasks.named('processResources') {
+    filesMatching('app.properties') {
+        expand(version: project.version)
+    }
 }

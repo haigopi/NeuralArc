@@ -6,12 +6,13 @@ public record StrategyConfig(
         String symbol,
         BigDecimal baseBuyPrice,
         int baseBuyQty,
-        BigDecimal stopActivationPrice,
+        BigDecimal stopLoss,
         BigDecimal sellTriggerPrice,
         BigDecimal lossBuyLevel1Price,
         int lossBuyLevel1Qty,
         BigDecimal lossBuyLevel2Price,
         int lossBuyLevel2Qty,
         int pollingSeconds,
-        boolean paperTrading) {
+        boolean paperTrading,
+        boolean holdAtTenPercentProfit) {
 }

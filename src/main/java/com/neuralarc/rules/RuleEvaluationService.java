@@ -18,18 +18,18 @@ public class RuleEvaluationService {
             triggered.add(RuleType.BUY_RULE);
         }
 
-        if (shares > 0 && price.compareTo(config.stopActivationPrice()) >= 0) {
+        if (shares > 0 && price.compareTo(config.stopLoss()) >= 0) {
             state.setStopActivated(true);
         }
 
-        if (shares > 0 && state.isStopActivated() && price.compareTo(config.stopActivationPrice()) < 0
+        if (shares > 0 && state.isStopActivated() && price.compareTo(config.stopLoss()) < 0
                 && !state.isTriggered(RuleType.STOP_LOSS_RULE)) {
             triggered.add(RuleType.STOP_LOSS_RULE);
         }
 
         BigDecimal sellSuppressionPrice = config.sellTriggerPrice().multiply(SELL_SUPPRESSION_MULTIPLIER);
         boolean withinSellWindow = price.compareTo(config.sellTriggerPrice()) >= 0
-                && price.compareTo(sellSuppressionPrice) < 0;
+                && (!config.holdAtTenPercentProfit() || price.compareTo(sellSuppressionPrice) < 0);
         if (shares > 0 && withinSellWindow && !state.isTriggered(RuleType.SELL_RULE)) {
             triggered.add(RuleType.SELL_RULE);
         }

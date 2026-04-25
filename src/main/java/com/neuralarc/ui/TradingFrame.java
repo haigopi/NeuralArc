@@ -10,6 +10,7 @@ import com.neuralarc.service.StrategyPersistenceManager;
 import com.neuralarc.service.StrategyPersistenceManager.StrategyEntry;
 import com.neuralarc.service.TradingStrategyService;
 import com.neuralarc.service.UserIdentityService;
+import com.neuralarc.util.AppMetadata;
 import com.neuralarc.util.FontLoader;
 
 import javax.swing.*;
@@ -106,6 +107,7 @@ public class TradingFrame extends JFrame {
     private Color liveBlinkSecondary = HEADER_STATUS_DEFAULT;
     private boolean liveBlinkPrimaryActive;
     private int logLineCount;
+    private boolean promptedDefaultStrategyDialog;
 
     public TradingFrame() {
         liveModeBlinkTimer = new Timer(500, e -> toggleLiveHeaderBlink());
@@ -246,7 +248,7 @@ public class TradingFrame extends JFrame {
         styleStatusActionButton(contactUsButton);
         contactUsButton.addActionListener(e -> openFeedbackDialog("Contact Us"));
 
-        JLabel appLabel = new JLabel("NeuralArc Trader  © 2026 - v1.0 - Patent Pending");
+        JLabel appLabel = new JLabel(AppMetadata.name() + "  " + AppMetadata.version());
         appLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         appLabel.setForeground(new Color(160, 160, 170));
         appLabel.setVerticalAlignment(SwingConstants.CENTER);
@@ -576,6 +578,8 @@ public class TradingFrame extends JFrame {
         List<StrategyEntry> entries = persistenceManager.load();
         if (entries.isEmpty()) {
             refreshPanels();
+            updateStatusBar();
+            maybePromptForDefaultStrategy();
             return;
         }
         for (StrategyEntry entry : entries) {
@@ -611,6 +615,24 @@ public class TradingFrame extends JFrame {
         updateHeaderModeStatus(currentBrokerType);
         refreshPanels();
         updateStatusBar();
+    }
+
+    private void maybePromptForDefaultStrategy() {
+        if (promptedDefaultStrategyDialog) {
+            return;
+        }
+        promptedDefaultStrategyDialog = true;
+        SwingUtilities.invokeLater(this::openDefaultStrategyDialogOnEmptyState);
+    }
+
+    private void openDefaultStrategyDialogOnEmptyState() {
+        settingsDialog.selectBrokerAndMode(BrokerType.MOCK, ApplicationMode.PAPER);
+        SettingsDialog.ConnectionResult result = runConnectionTest(BrokerType.MOCK, "", "", false);
+        if (!result.connected()) {
+            log("Auto setup: failed to initialize MOCK broker for default strategy dialog.");
+            return;
+        }
+        addStrategy();
     }
 
     private void addStrategy() {

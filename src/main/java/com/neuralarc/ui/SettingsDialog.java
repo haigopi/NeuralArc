@@ -150,6 +150,19 @@ public class SettingsDialog extends JDialog {
     public String getUserEmail() { return emailField.getText().trim(); }
     public String getApiKey() { return apiKeyField.getText().trim(); }
     public String getApiSecret() { return new String(apiSecretField.getPassword()); }
+    public void selectBrokerAndMode(BrokerType brokerType, ApplicationMode mode) {
+        suppressModeSwitchHandling = true;
+        if (brokerType != null) {
+            brokerBox.setSelectedItem(brokerType);
+        }
+        if (mode != null) {
+            appModeBox.setSelectedItem(mode);
+        }
+        displayedCredentialMode = applicationMode();
+        applyModeCredentialsToFields(displayedCredentialMode);
+        suppressModeSwitchHandling = false;
+        updateBrokerControlState();
+    }
     public boolean hasRequiredSettings() {
         if (getUserEmail().isBlank()) {
             return false;

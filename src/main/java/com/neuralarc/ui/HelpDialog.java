@@ -39,10 +39,19 @@ public class HelpDialog extends JDialog {
             "testing strategy logic.\n" +
             "• P&L figures (realized, unrealized, market value) are all virtual. No real funds are at risk.\n" +
             "• Position state, average cost, and rule triggers behave exactly the same as in live mode, so " +
-            "you can validate your strategy parameters (buy price, stop activation, sell trigger, loss levels) " +
+            "you can validate your strategy parameters (base buy <= price, stop loss, sell trigger window, loss-buy <= levels) " +
             "without consequences.\n\n" +
             "Recommendation: Always run in Paper mode first until you are confident your strategy behaves as " +
             "intended across multiple price cycles before switching to Live."
+        },
+        {
+            "📐  Strategy Rules — How are the thresholds interpreted?",
+            "NeuralArc evaluates strategy prices with explicit threshold semantics:\n\n" +
+            "• Base buy price: triggers when market price is less than or equal to your configured base buy value.\n" +
+            "• Stop Loss: activates risk handling once price reaches the configured stop-loss activation level.\n" +
+            "• Loss Buy Level 1 Price / Level 2 Price: each triggers when market price is less than or equal to that level.\n" +
+            "• Sell trigger price: sell starts at this value.\n" +
+            "• Profit Hold Option checkbox: when enabled, sell is suppressed once price reaches 10% above the sell trigger."
         },
         {
             "📈  Live Trading Mode — What changes and what risks exist?",

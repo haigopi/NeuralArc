@@ -13,7 +13,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class RuleEvaluationServiceTest {
     private final StrategyConfig config = new StrategyConfig("NEO", new BigDecimal("8.00"), 10,
             new BigDecimal("9.00"), new BigDecimal("10.00"), new BigDecimal("7.00"), 5,
-            new BigDecimal("6.00"), 5, 2, true);
+            new BigDecimal("6.00"), 5, 2, true, true);
+
+    private final StrategyConfig configWithoutProfitHold = new StrategyConfig("NEO", new BigDecimal("8.00"), 10,
+            new BigDecimal("9.00"), new BigDecimal("10.00"), new BigDecimal("7.00"), 5,
+            new BigDecimal("6.00"), 5, 2, true, false);
 
     @Test
     void buyRuleTriggersAtOrBelowBase() {
@@ -46,5 +50,13 @@ class RuleEvaluationServiceTest {
         StrategyState state = new StrategyState();
         List<RuleType> rules = service.evaluate(new BigDecimal("11.00"), 10, config, state);
         assertFalse(rules.contains(RuleType.SELL_RULE));
+    }
+
+    @Test
+    void sellRuleTriggersWhenPriceIsTenPercentAboveSellTriggerIfProfitHoldDisabled() {
+        RuleEvaluationService service = new RuleEvaluationService();
+        StrategyState state = new StrategyState();
+        List<RuleType> rules = service.evaluate(new BigDecimal("11.00"), 10, configWithoutProfitHold, state);
+        assertTrue(rules.contains(RuleType.SELL_RULE));
     }
 }

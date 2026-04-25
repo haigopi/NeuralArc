@@ -31,7 +31,7 @@
 - Launch app: `./gradlew run`.
 - Tests are small unit tests in `src/test/java/com/neuralarc/...` and assert deterministic rule/math/identity behavior.
 - If you change strategy logic, update `RuleEvaluationServiceTest` first; if you change P&L math, update `PositionTest`.
-- If you change telemetry schema/serialization, update `AnalyticsEventTest` and `examples/analytics-payloads.json`.
+- If you change telemetry schema/serialization, update `AnalyticsEventTest` and `src/main/resources/analytics-payloads.json`.
 
 ## Integration and privacy constraints
 - Telemetry is opt-in only (`TradingFrame` checkbox + `SettingsDialog`, `PRIVACY.md`).

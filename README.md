@@ -13,10 +13,10 @@ NeuralArc Trader is a free and open-source Java Swing desktop trading utility de
 - BigDecimal-based money/price/P&L computations
 
 ## How rule engine works
-For default strategy (NEO):
+For default strategy (NIO):
 1. Buy 10 at/under 8.00
 2. Activate stop logic at/above 9.00
-3. Sell all if price falls below 9.00 after stop activation
+3. Sell all if price falls below 9.00 after stop loss activation
 4. Sell all at/above 10.00
 5. Buy +5 at/under 7.00 and +5 at/under 6.00 once each
 

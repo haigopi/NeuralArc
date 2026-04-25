@@ -2,7 +2,9 @@ package com.neuralarc.util;
 
 import java.awt.Font;
 import java.awt.GraphicsEnvironment;
+import java.awt.RenderingHints;
 import java.io.InputStream;
+import javax.swing.UIManager;
 
 /**
  * Loads and registers the bundled Inter font family from project resources,
@@ -10,6 +12,8 @@ import java.io.InputStream;
  *   Inter (bundled) → Segoe UI → Arial
  */
 public final class FontLoader {
+    public static final float DEFAULT_UI_SIZE = 14f;
+    public static final float SMALL_UI_SIZE = 10f;
 
     private static final String[] INTER_VARIANTS = {
             "/fonts/Inter-Regular.ttf",
@@ -56,6 +60,41 @@ public final class FontLoader {
     /** Returns a font using the resolved family with the given style and size (pt). */
     public static Font ui(int style, float sizePt) {
         return new Font(resolvedFamily(), style, Math.round(sizePt));
+    }
+
+    public static Font regular(float sizePt) {
+        return ui(Font.PLAIN, sizePt);
+    }
+
+    public static Font bold(float sizePt) {
+        return ui(Font.BOLD, sizePt);
+    }
+
+    public static Font uiDefault() {
+        return regular(DEFAULT_UI_SIZE);
+    }
+
+    public static void installSwingDefaults() {
+        registerInter();
+
+        System.setProperty("awt.useSystemAAFontSettings", "on");
+        System.setProperty("swing.aatext", "true");
+        UIManager.put(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        UIManager.put(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+
+        Font plain = uiDefault();
+        Font bold = FontLoader.bold(DEFAULT_UI_SIZE);
+        String[] fontKeys = {
+                "Button.font", "CheckBox.font", "ComboBox.font", "Label.font",
+                "List.font", "Menu.font", "MenuItem.font", "OptionPane.messageFont",
+                "Panel.font", "PasswordField.font", "RadioButton.font", "ScrollPane.font",
+                "Spinner.font", "Table.font", "TableHeader.font", "TextArea.font",
+                "TextField.font", "TextPane.font", "TitledBorder.font", "ToggleButton.font",
+                "ToolBar.font", "ToolTip.font", "Tree.font", "Viewport.font"
+        };
+        for (String key : fontKeys) {
+            UIManager.put(key, key.contains("Header") || key.contains("TitledBorder") ? bold : plain);
+        }
     }
 
     // ── internals ────────────────────────────────────────────────────────────

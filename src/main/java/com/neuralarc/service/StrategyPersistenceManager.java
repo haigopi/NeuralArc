@@ -34,7 +34,7 @@ public class StrategyPersistenceManager {
             sb.append(c.symbol()).append(",")
               .append(c.baseBuyPrice().toPlainString()).append(",")
               .append(c.baseBuyQty()).append(",")
-              .append(c.stopActivationPrice().toPlainString()).append(",")
+              .append(c.stopLoss().toPlainString()).append(",")
               .append(c.sellTriggerPrice().toPlainString()).append(",")
               .append(c.lossBuyLevel1Price().toPlainString()).append(",")
               .append(c.lossBuyLevel1Qty()).append(",")
@@ -42,6 +42,7 @@ public class StrategyPersistenceManager {
               .append(c.lossBuyLevel2Qty()).append(",")
               .append(c.pollingSeconds()).append(",")
               .append(c.paperTrading()).append(",")
+              .append(c.holdAtTenPercentProfit()).append(",")
               .append(entry.paused())
               .append(LINE_SEP);
         }
@@ -74,6 +75,8 @@ public class StrategyPersistenceManager {
                 if (p.length < 12) {
                     continue;
                 }
+                boolean holdAtTenPercentProfit = p.length >= 13 && Boolean.parseBoolean(p[11]);
+                int pausedIndex = p.length >= 13 ? 12 : 11;
                 StrategyConfig config = new StrategyConfig(
                         p[0],
                         new BigDecimal(p[1]),
@@ -85,9 +88,10 @@ public class StrategyPersistenceManager {
                         new BigDecimal(p[7]),
                         Integer.parseInt(p[8]),
                         Integer.parseInt(p[9]),
-                        Boolean.parseBoolean(p[10])
+                        Boolean.parseBoolean(p[10]),
+                        holdAtTenPercentProfit
                 );
-                boolean paused = Boolean.parseBoolean(p[11]);
+                boolean paused = Boolean.parseBoolean(p[pausedIndex]);
                 result.add(new StrategyEntry(config, paused));
             }
         } catch (Exception e) {
