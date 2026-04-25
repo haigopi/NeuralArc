@@ -40,7 +40,7 @@ public class StrategyDialog extends JDialog {
             ? UIManager.getColor("Label.disabledForeground")
             : new Color(130, 130, 130);
 
-    private static final String DEFAULT_CONFIG_RESOURCE = "mock-config.properties";
+    private static final String DEFAULT_CONFIG_RESOURCE = "defaults-config.properties";
     private static final DialogDefaults DEFAULTS = loadDefaults();
 
     private final JTextField symbolField = new JTextField(25);

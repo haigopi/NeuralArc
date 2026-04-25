@@ -13,9 +13,6 @@ public final class TradingApiFactory {
     }
 
     public static TradingApi create(BrokerType type, ApplicationMode mode) {
-        return switch (type) {
-            case ALPACA -> new AlpacaTradingApi(ALPACA_ENDPOINT_CONFIG.endpointFor(mode));
-            case MOCK -> new MockTradingApi();
-        };
+        return new AlpacaTradingApi(ALPACA_ENDPOINT_CONFIG.endpointFor(mode));
     }
 }

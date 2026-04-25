@@ -69,9 +69,6 @@ public class SettingsDialog extends JDialog {
     private ApplicationMode displayedCredentialMode = ApplicationMode.PAPER;
     private boolean suppressModeSwitchHandling;
     private final Color defaultApiLabelColor = UIManager.getColor("Label.foreground");
-    private final Color mockStatusMutedColor = UIManager.getColor("Label.disabledForeground") != null
-            ? UIManager.getColor("Label.disabledForeground")
-            : new Color(130, 130, 130);
 
     public SettingsDialog(JFrame owner) {
         super(owner, "Settings", true);
@@ -241,9 +238,6 @@ public class SettingsDialog extends JDialog {
         if (getUserEmail().isBlank()) {
             return false;
         }
-        if (brokerType() == BrokerType.MOCK) {
-            return true;
-        }
         return !getApiKey().isBlank() && !getApiSecret().isBlank();
     }
 
@@ -277,7 +271,7 @@ public class SettingsDialog extends JDialog {
             settings.setProperty("endpoint", getEndpoint());
             settings.setProperty("telemetryEnabled", String.valueOf(telemetryEnabled()));
             settings.setProperty("saveCredentials", "true");
-            settings.setProperty("broker", brokerType() == null ? BrokerType.MOCK.name() : brokerType().name());
+            settings.setProperty("broker", brokerType() == null ? BrokerType.ALPACA.name() : brokerType().name());
             settings.setProperty("applicationMode", applicationMode().name());
             try (var out = Files.newOutputStream(SETTINGS_FILE)) {
                 settings.store(out, "NeuralArc settings");
@@ -313,8 +307,12 @@ public class SettingsDialog extends JDialog {
                 endpointField.setText(settings.getProperty("endpoint", endpointField.getText()));
                 telemetryEnabled.setSelected(Boolean.parseBoolean(settings.getProperty("telemetryEnabled", "true")));
                 saveCredentials.setSelected(true);
-                String broker = settings.getProperty("broker", BrokerType.MOCK.name());
-                brokerBox.setSelectedItem(BrokerType.valueOf(broker));
+                String broker = settings.getProperty("broker", BrokerType.ALPACA.name());
+                try {
+                    brokerBox.setSelectedItem(BrokerType.valueOf(broker));
+                } catch (IllegalArgumentException ignored) {
+                    brokerBox.setSelectedItem(BrokerType.ALPACA);
+                }
                 String mode = settings.getProperty("applicationMode", ApplicationMode.PAPER.name());
                 appModeBox.setSelectedItem(ApplicationMode.valueOf(mode));
             } catch (Exception ignored) {
@@ -396,10 +394,20 @@ public class SettingsDialog extends JDialog {
     }
 
     private void deleteAllData() {
+        String message = "<html><body style='width:340px'>"
+                + "<b>Permanently delete all NeuralArc local data?</b><br><br>"
+                + "The following will be erased from <code>~/.neuralarc</code>:<br>"
+                + "• User settings and preferences<br>"
+                + "• Saved API credentials (paper &amp; live)<br>"
+                + "• All saved trading strategies<br>"
+                + "• Analytics queue and app logs<br><br>"
+                + "Any active strategies will stop immediately. Open positions will <b>not</b> be automatically closed.<br><br>"
+                + "This action <b>cannot be undone</b>."
+                + "</body></html>";
         int choice = JOptionPane.showConfirmDialog(
                 this,
-                "Delete all local app data under ~/.neuralarc? This cannot be undone.",
-                "Confirm Delete All Data",
+                message,
+                "Delete All Local Data",
                 JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE
         );
@@ -415,11 +423,11 @@ public class SettingsDialog extends JDialog {
             apiSecretField.setText("");
             endpointField.setText(AppMetadata.analyticsEndpointDefault());
             telemetryEnabled.setSelected(true);
-            brokerBox.setSelectedItem(BrokerType.MOCK);
+            brokerBox.setSelectedItem(BrokerType.ALPACA);
             appModeBox.setSelectedItem(ApplicationMode.PAPER);
             displayedCredentialMode = ApplicationMode.PAPER;
             connectionStatus.setText("All local data deleted");
-            connectionStatus.setForeground(mockStatusMutedColor);
+            connectionStatus.setForeground(TEXT_MUTED);
             updateBrokerControlState();
             JOptionPane.showMessageDialog(this, "All local app data deleted.", "Deleted", JOptionPane.INFORMATION_MESSAGE);
         } catch (IOException ex) {
@@ -449,10 +457,6 @@ public class SettingsDialog extends JDialog {
     }
 
     private void verifyConnection() {
-        if (brokerType() == BrokerType.MOCK) {
-            markConnectionStatus(true, "MOCK broker selected (no API verification required)");
-            return;
-        }
         if (connectionVerifier == null) {
             markConnectionStatus(false, "Verification unavailable");
             return;
@@ -462,21 +466,16 @@ public class SettingsDialog extends JDialog {
     }
 
     private void updateBrokerControlState() {
-        boolean alpacaSelected = brokerType() == BrokerType.ALPACA;
-        apiKeyField.setEnabled(alpacaSelected);
-        apiSecretField.setEnabled(alpacaSelected);
-        appModeBox.setEnabled(alpacaSelected);
-        verifyConnectionButton.setEnabled(alpacaSelected);
-        applyInputEnabledState(apiKeyField, alpacaSelected);
-        applyInputEnabledState(apiSecretField, alpacaSelected);
-        Color labelColor = alpacaSelected ? defaultApiLabelColor : TEXT_MUTED;
-        applicationModeLabel.setForeground(labelColor);
-        apiKeyLabel.setForeground(labelColor);
-        apiSecretLabel.setForeground(labelColor);
-        if (!alpacaSelected) {
-            connectionStatus.setText("MOCK broker selected");
-            connectionStatus.setForeground(mockStatusMutedColor);
-        } else if ("MOCK broker selected".equals(connectionStatus.getText())) {
+        apiKeyField.setEnabled(true);
+        apiSecretField.setEnabled(true);
+        appModeBox.setEnabled(true);
+        verifyConnectionButton.setEnabled(true);
+        applyInputEnabledState(apiKeyField, true);
+        applyInputEnabledState(apiSecretField, true);
+        applicationModeLabel.setForeground(defaultApiLabelColor);
+        apiKeyLabel.setForeground(defaultApiLabelColor);
+        apiSecretLabel.setForeground(defaultApiLabelColor);
+        if ("Connection not verified".equals(connectionStatus.getText()) || connectionStatus.getText().isBlank()) {
             connectionStatus.setText("Connection not verified");
             connectionStatus.setForeground(new Color(180, 30, 30));
         }

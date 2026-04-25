@@ -70,7 +70,6 @@ public class TradingFrame extends JFrame {
     private static final Color TABLE_SELECTION_BG = new Color(192, 166, 240);
     private static final Color STATUS_TEXT_RUNNING = new Color(46, 125, 50);
     private static final Color STATUS_TEXT_PAUSED = new Color(180, 100, 0);
-    private static final Color MODE_TEXT_MOCK = new Color(97, 97, 97);
     private static final Color MODE_TEXT_ALPACA_PAPER = new Color(25, 118, 210);
     private static final Color MODE_TEXT_ALPACA_LIVE = new Color(183, 28, 28);
     private static final Color LOG_LINE_EVEN = new Color(63, 72, 82);
@@ -101,7 +100,7 @@ public class TradingFrame extends JFrame {
     private boolean connectionOk;
     private boolean appLaunchedPublished;
     private String selectedStrategySymbol;
-    private BrokerType currentBrokerType = BrokerType.MOCK;
+    private BrokerType currentBrokerType = BrokerType.ALPACA;
     private boolean preservingSelection;
     private Color liveBlinkPrimary = HEADER_STATUS_DEFAULT;
     private Color liveBlinkSecondary = HEADER_STATUS_DEFAULT;
@@ -534,7 +533,6 @@ public class TradingFrame extends JFrame {
             return new SettingsDialog.ConnectionResult(false, "Broker not configured");
         }
 
-        BrokerType previousBrokerType = currentBrokerType;
         tradingApi = TradingApiFactory.create(brokerType, settingsDialog.applicationMode());
         currentBrokerType = brokerType;
         tradingApi.authenticate(apiKey, apiSecret);
@@ -544,7 +542,6 @@ public class TradingFrame extends JFrame {
             setStatus("Connected — broker " + brokerType.name() + " ready.", STATUS_OK);
             updateHeaderModeStatus(brokerType);
             settingsDialog.markConnectionStatus(true, "Connected to " + brokerType.name());
-            pauseRunningMockStrategiesOnBrokerSwitch(previousBrokerType, brokerType);
             updateStatusBar();
             initPersistenceAndRestore();
             return new SettingsDialog.ConnectionResult(true, "Connected to " + brokerType.name());
@@ -626,10 +623,8 @@ public class TradingFrame extends JFrame {
     }
 
     private void openDefaultStrategyDialogOnEmptyState() {
-        settingsDialog.selectBrokerAndMode(BrokerType.MOCK, ApplicationMode.PAPER);
-        SettingsDialog.ConnectionResult result = runConnectionTest(BrokerType.MOCK, "", "", false);
-        if (!result.connected()) {
-            log("Auto setup: failed to initialize MOCK broker for default strategy dialog.");
+        if (!connectionOk || tradingApi == null) {
+            log("Auto setup: broker not connected. Please configure Settings before adding a strategy.");
             return;
         }
         addStrategy();
@@ -747,10 +742,29 @@ public class TradingFrame extends JFrame {
         }
 
         ManagedStrategy entry = strategies.get(row);
+        String statusLabel = entry.paused ? "Paused" : "Running";
+        String modeLabel = entry.config.paperTrading() ? "Paper Trading" : "⚠️ Live Trading";
+        String positionNote;
+        if (tradingApi != null) {
+            int shares = tradingApi.getPosition(entry.config.symbol()).getTotalShares();
+            positionNote = shares > 0
+                    ? "• Open position: " + shares + " share(s) held — these will NOT be automatically sold."
+                    : "• No open position.";
+        } else {
+            positionNote = "• Position data not available (broker not connected).";
+        }
+        String message = "<html><body style='width:340px'>"
+                + "<b>Permanently delete the \"" + entry.config.symbol() + "\" strategy?</b><br><br>"
+                + "• Status: " + statusLabel + "<br>"
+                + "• Mode: " + modeLabel + "<br>"
+                + positionNote + "<br><br>"
+                + "This will immediately stop polling and permanently remove the strategy from saved data.<br>"
+                + "This action <b>cannot be undone</b>."
+                + "</body></html>";
         int choice = JOptionPane.showConfirmDialog(
                 this,
-                "Delete strategy for " + entry.config.symbol() + "? This will stop it and remove it from saved strategies.",
-                "Delete Strategy",
+                message,
+                "Delete Strategy — " + entry.config.symbol(),
                 JOptionPane.YES_NO_OPTION,
                 JOptionPane.WARNING_MESSAGE
         );
@@ -836,11 +850,15 @@ public class TradingFrame extends JFrame {
             SwingUtilities.invokeLater(this::restoreSelectedRow);
         }
 
-        Position p = tradingApi.getPosition(entry.config.symbol());
-        positionSummary.setText(String.format(
-                "[%s]: Shares=%d | Stock Price=%s | Avg Cost=%s | MarketValue=%s | Invested=%s | Realized=%s | Unrealized=%s",
-                entry.config.symbol(),
-                p.getTotalShares(), p.getLastPrice().toPlainString(), p.getAverageCost(), p.marketValue(), p.totalInvested(), p.getRealizedPnl(), p.unrealizedPnl()));
+        if (currentBrokerType == BrokerType.ALPACA && tradingApi != null) {
+            Position p = tradingApi.getPosition(entry.config.symbol());
+            positionSummary.setText(String.format(
+                    "[%s]: Shares=%d | Stock Price=%s | Avg Cost=%s | MarketValue=%s | Invested=%s | Realized=%s | Unrealized=%s",
+                    entry.config.symbol(),
+                    p.getTotalShares(), p.getLastPrice().toPlainString(), p.getAverageCost(), p.marketValue(), p.totalInvested(), p.getRealizedPnl(), p.unrealizedPnl()));
+        } else {
+            positionSummary.setText("[" + entry.config.symbol() + "]: Position data available when broker is connected.");
+        }
         ruleState.setText("Rules Inflight: " + entry.service.getState().triggeredRules() + " | Status: " + (entry.paused ? "PAUSED" : "RUNNING"));
     }
 
@@ -869,9 +887,8 @@ public class TradingFrame extends JFrame {
     }
 
     private void applyHeaderTotalsVisibility() {
-        boolean showLiveTotal = currentBrokerType == BrokerType.ALPACA;
-        liveUnrealizedSummary.setVisible(showLiveTotal);
-        headerTotalsSeparator.setVisible(showLiveTotal);
+        liveUnrealizedSummary.setVisible(true);
+        headerTotalsSeparator.setVisible(true);
     }
 
     private void updateSelectedStrategy() {
@@ -967,33 +984,6 @@ public class TradingFrame extends JFrame {
         return null;
     }
 
-    private void pauseRunningMockStrategiesOnBrokerSwitch(BrokerType previousBrokerType, BrokerType newBrokerType) {
-        if (previousBrokerType != BrokerType.MOCK || newBrokerType != BrokerType.ALPACA) {
-            return;
-        }
-
-        int pausedCount = 0;
-        for (ManagedStrategy strategy : strategies) {
-            if (!strategy.paused && strategy.lastStartedBrokerType == BrokerType.MOCK) {
-                stopPoller(strategy);
-                strategy.paused = true;
-                pausedCount++;
-                log("[" + strategy.config.symbol() + "] Auto-paused after broker switch MOCK -> ALPACA");
-                if (analyticsPublisher != null) {
-                    analyticsPublisher.publish(new AnalyticsEvent("STRATEGY_PAUSED")
-                            .put("symbol", strategy.config.symbol())
-                            .put("reason", "broker_switch"));
-                }
-            }
-        }
-
-        if (pausedCount > 0) {
-            persistStrategies();
-            refreshStrategyTableData();
-            refreshPanels();
-            log("[BROKER SWITCH] Auto-paused " + pausedCount + " strategy(ies) started under MOCK.");
-        }
-    }
 
     private void resetPollingCountdown(ManagedStrategy entry) {
         entry.pollIntervalMillis = Math.max(1L, entry.config.pollingSeconds()) * 1000L;
@@ -1042,24 +1032,17 @@ public class TradingFrame extends JFrame {
     }
 
     private String connectionModeStatus(BrokerType brokerType) {
-        String broker = brokerType == BrokerType.ALPACA ? "Alpaca" : "Mock";
         String mode = settingsDialog.applicationMode() == ApplicationMode.LIVE ? "Live" : "Paper";
-        return "Broker: " + broker + " | Mode: " + mode;
+        return "Broker: Alpaca | Mode: " + mode;
     }
 
     private String gridBrokerModeLabel() {
-        if (currentBrokerType != BrokerType.ALPACA) {
-            return "Mock";
-        }
         return settingsDialog.applicationMode() == ApplicationMode.LIVE
                 ? "Alpaca Live"
                 : "Alpaca Paper Mode";
     }
 
     private Color gridBrokerModeColor() {
-        if (currentBrokerType != BrokerType.ALPACA) {
-            return MODE_TEXT_MOCK;
-        }
         return settingsDialog.applicationMode() == ApplicationMode.LIVE
                 ? MODE_TEXT_ALPACA_LIVE
                 : MODE_TEXT_ALPACA_PAPER;
@@ -1170,7 +1153,7 @@ public class TradingFrame extends JFrame {
     }
 
     private void updateHeaderModeStatus(BrokerType brokerType) {
-        BrokerType effectiveBroker = brokerType == null ? BrokerType.MOCK : brokerType;
+        BrokerType effectiveBroker = brokerType == null ? BrokerType.ALPACA : brokerType;
         headerStatus.setText(connectionModeStatus(effectiveBroker));
         boolean blinkLiveAlpaca = effectiveBroker == BrokerType.ALPACA && settingsDialog.applicationMode() == ApplicationMode.LIVE;
         if (!blinkLiveAlpaca) {
@@ -1200,7 +1183,7 @@ public class TradingFrame extends JFrame {
     }
 
     private void toggleLiveHeaderBlink() {
-        if (!(currentBrokerType == BrokerType.ALPACA && settingsDialog.applicationMode() == ApplicationMode.LIVE)) {
+        if (settingsDialog.applicationMode() != ApplicationMode.LIVE) {
             headerStatus.setForeground(HEADER_STATUS_DEFAULT);
             liveModeBlinkTimer.stop();
             return;
@@ -1289,7 +1272,7 @@ public class TradingFrame extends JFrame {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             ManagedStrategy entry = strategies.get(rowIndex);
-            if (columnIndex >= 2 && columnIndex <= 6 && tradingApi != null) {
+            if (columnIndex >= 2 && columnIndex <= 6 && tradingApi != null && currentBrokerType == BrokerType.ALPACA) {
                 Position p = tradingApi.getPosition(entry.config.symbol());
                 return switch (columnIndex) {
                     case 2 -> p.getTotalShares();
@@ -1326,7 +1309,7 @@ public class TradingFrame extends JFrame {
         private final TradingStrategyService service;
         private PricePoller poller;
         private boolean paused;
-        private BrokerType lastStartedBrokerType = BrokerType.MOCK;
+        private BrokerType lastStartedBrokerType = BrokerType.ALPACA;
         private volatile long pollIntervalMillis;
         private volatile long nextPollDueAtMillis;
         private volatile boolean countdownActive;

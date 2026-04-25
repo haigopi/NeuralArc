@@ -20,7 +20,7 @@ public class HelpDialog extends JDialog {
         {
             "⚙️  Settings — What goes in each field?",
             "User Email: Used to identify your local app profile and derive the encryption key for saved settings.\n\n" +
-            "Broker: Choose MOCK for safe local simulation, or ALPACA to connect broker credentials.\n\n" +
+            "Broker: Select ALPACA to connect your broker credentials.\n\n" +
             "Application Mode: Use Paper to test with broker paper credentials, or Live for real trading credentials.\n\n" +
             "API Key / API Secret: Broker credentials. They are encrypted before being saved locally.\n\n" +
             "Telemetry: Operational events only. No personal secrets or API credentials are sent."
@@ -59,7 +59,7 @@ public class HelpDialog extends JDialog {
             "2. Generate Paper or Live API credentials in the Alpaca dashboard.\n" +
             "3. Paste them into Settings → Alpaca API Details.\n" +
             "4. Select ALPACA and click Verify Connection.\n\n" +
-            "Important: In the current app version, the Alpaca execution path is still limited. MOCK remains the safest path for full validation."
+            "Important: In the current app version, the Alpaca execution path is still limited. Use Paper mode for safe validation."
         },
         {
             "🛡️  Strategy Persistence — Where are my strategies saved?",
@@ -78,7 +78,7 @@ public class HelpDialog extends JDialog {
             "• API keys\n" +
             "• API secrets\n" +
             "• local credential files\n\n" +
-            "If you want the safest workflow, use MOCK broker and Paper mode while telemetry is disabled."
+            "If you want the safest workflow, use Alpaca Paper mode while telemetry is disabled."
         },
         {
             "⚠️  KILL SWITCH — Emergency Stop for All Strategies",

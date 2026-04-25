@@ -13,8 +13,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class AlpacaTradingApi implements TradingApi {
+    private static final Logger LOGGER = Logger.getLogger(AlpacaTradingApi.class.getName());
     private final Position emptyPosition = new Position("UNKNOWN");
     private final String baseUrl;
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -50,9 +53,12 @@ public class AlpacaTradingApi implements TradingApi {
                 .GET()
                 .build();
         try {
+            logRequest("GET", endpoint, null);
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            logResponse("GET", endpoint, response.statusCode(), response.body());
             return response.statusCode() == 200;
         } catch (Exception ex) {
+            logFailure("GET", endpoint, ex);
             return false;
         }
     }
@@ -92,7 +98,9 @@ public class AlpacaTradingApi implements TradingApi {
                 .build();
 
         try {
+            logRequest("GET", queryEndpoint, null);
             HttpResponse<String> listResponse = httpClient.send(listRequest, HttpResponse.BodyHandlers.ofString());
+            logResponse("GET", queryEndpoint, listResponse.statusCode(), listResponse.body());
             if (listResponse.statusCode() < 200 || listResponse.statusCode() >= 300) {
                 return false;
             }
@@ -116,7 +124,9 @@ public class AlpacaTradingApi implements TradingApi {
                         .DELETE()
                         .build();
 
+                logRequest("DELETE", cancelEndpoint, null);
                 HttpResponse<String> cancelResponse = httpClient.send(cancelRequest, HttpResponse.BodyHandlers.ofString());
+                logResponse("DELETE", cancelEndpoint, cancelResponse.statusCode(), cancelResponse.body());
                 int status = cancelResponse.statusCode();
                 if (!((status >= 200 && status < 300) || status == 404)) {
                     return false;
@@ -124,6 +134,7 @@ public class AlpacaTradingApi implements TradingApi {
             }
             return true;
         } catch (Exception ex) {
+            logFailure("DELETE", queryEndpoint, ex);
             return false;
         }
     }
@@ -161,9 +172,11 @@ public class AlpacaTradingApi implements TradingApi {
                 .build();
 
         try {
+            logRequest("POST", endpoint, payload.toString());
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             int status = response.statusCode();
             String body = response.body() == null ? "" : response.body();
+            logResponse("POST", endpoint, status, body);
             if (status < 200 || status >= 300) {
                 return OrderResult.fail(symbol, qty, extractErrorMessage(body, status));
             }
@@ -174,8 +187,37 @@ public class AlpacaTradingApi implements TradingApi {
             BigDecimal fillPrice = parseMoney(filledAvgPrice);
             return OrderResult.ok(orderId.isBlank() ? null : orderId, symbol, qty, fillPrice);
         } catch (Exception ex) {
+            logFailure("POST", endpoint, ex);
             return OrderResult.fail(symbol, qty, "Failed to submit Alpaca " + side + " order: " + ex.getMessage());
         }
+    }
+
+    private void logRequest(String method, String endpoint, String body) {
+        if (!LOGGER.isLoggable(Level.INFO)) {
+            return;
+        }
+        String suffix = body == null || body.isBlank() ? "" : " body=" + abbreviate(body);
+        LOGGER.info(() -> "Alpaca API request: " + method + " " + endpoint + suffix);
+    }
+
+    private void logResponse(String method, String endpoint, int statusCode, String body) {
+        if (!LOGGER.isLoggable(Level.INFO)) {
+            return;
+        }
+        LOGGER.info(() -> "Alpaca API response: " + method + " " + endpoint
+                + " status=" + statusCode + " body=" + abbreviate(body));
+    }
+
+    private void logFailure(String method, String endpoint, Exception ex) {
+        LOGGER.log(Level.WARNING, "Alpaca API failure: " + method + " " + endpoint, ex);
+    }
+
+    private String abbreviate(String body) {
+        if (body == null || body.isBlank()) {
+            return "<empty>";
+        }
+        String flattened = body.replaceAll("\\s+", " ").trim();
+        return flattened.length() <= 300 ? flattened : flattened.substring(0, 300) + "...";
     }
 
     private String extractErrorMessage(String responseBody, int statusCode) {
