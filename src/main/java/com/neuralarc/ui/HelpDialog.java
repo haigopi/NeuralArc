@@ -117,7 +117,7 @@ public class HelpDialog extends JDialog {
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         footer.setBorder(new EmptyBorder(12, 24, 16, 24));
         JButton close = new JButton("Close");
-        close.setFocusPainted(false);
+        DialogButtonStyles.apply(close);
         close.addActionListener(e -> setVisible(false));
         footer.add(close);
         add(footer, BorderLayout.SOUTH);

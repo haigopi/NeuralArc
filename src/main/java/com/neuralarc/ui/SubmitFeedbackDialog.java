@@ -110,13 +110,24 @@ public class SubmitFeedbackDialog extends JDialog {
     }
 
     private JPanel buildFooter() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        JPanel panel = new JPanel(new BorderLayout());
+        JButton helpFaq = new JButton("Help & FAQ");
         JButton cancel = new JButton("Cancel");
         JButton submit = new JButton("Submit");
+        DialogButtonStyles.apply(helpFaq);
+        DialogButtonStyles.apply(cancel);
+        DialogButtonStyles.apply(submit);
+        helpFaq.addActionListener(e -> new HelpDialog((JFrame) getOwner()).setVisible(true));
         cancel.addActionListener(e -> setVisible(false));
         submit.addActionListener(e -> setVisible(false));
-        panel.add(cancel);
-        panel.add(submit);
+
+        JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        rightActions.setOpaque(false);
+        rightActions.add(cancel);
+        rightActions.add(submit);
+
+        panel.add(helpFaq, BorderLayout.WEST);
+        panel.add(rightActions, BorderLayout.EAST);
         return panel;
     }
 

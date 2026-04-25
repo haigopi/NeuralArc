@@ -77,8 +77,10 @@ public class StrategyDialog extends JDialog {
         tabs.setToolTipTextAt(1, "Temporarily disabled");
         add(tabs, BorderLayout.CENTER);
 
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        JPanel actions = new JPanel(new BorderLayout());
         actions.setBorder(new EmptyBorder(0, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
+        JButton helpFaq = new JButton("Help & FAQ");
+        helpFaq.addActionListener(e -> new HelpDialog(owner).setVisible(true));
         JButton save = new JButton("Save Strategy");
         save.addActionListener(e -> onSave());
         JButton cancel = new JButton("Cancel");
@@ -86,10 +88,13 @@ public class StrategyDialog extends JDialog {
             result = null;
             setVisible(false);
         });
-        actions.add(save);
-        actions.add(cancel);
+        JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        rightActions.setOpaque(false);
+        rightActions.add(save);
+        rightActions.add(cancel);
+        actions.add(helpFaq, BorderLayout.WEST);
+        actions.add(rightActions, BorderLayout.EAST);
         add(actions, BorderLayout.SOUTH);
-        getRootPane().setDefaultButton(save);
 
         applyDialogTheme();
 

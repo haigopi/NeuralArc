@@ -2,13 +2,16 @@ package com.neuralarc.api;
 
 import com.neuralarc.model.OrderResult;
 import com.neuralarc.model.Position;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.math.BigDecimal;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 public class AlpacaTradingApi implements TradingApi {
@@ -67,6 +70,62 @@ public class AlpacaTradingApi implements TradingApi {
     @Override
     public OrderResult placeSellOrder(String symbol, int qty) {
         return submitOrder(symbol, qty, "sell");
+    }
+
+    @Override
+    public boolean cancelOpenOrdersForSymbol(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return false;
+        }
+        if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
+            return false;
+        }
+
+        String encodedSymbol = URLEncoder.encode(symbol.toUpperCase(), StandardCharsets.UTF_8);
+        String ordersEndpointBase = baseUrl.endsWith("/") ? baseUrl + "orders" : baseUrl + "/orders";
+        String queryEndpoint = ordersEndpointBase + "?status=open&direction=desc&limit=500&symbols=" + encodedSymbol;
+        HttpRequest listRequest = HttpRequest.newBuilder(URI.create(queryEndpoint))
+                .timeout(Duration.ofSeconds(15))
+                .header("APCA-API-KEY-ID", apiKey)
+                .header("APCA-API-SECRET-KEY", apiSecret)
+                .GET()
+                .build();
+
+        try {
+            HttpResponse<String> listResponse = httpClient.send(listRequest, HttpResponse.BodyHandlers.ofString());
+            if (listResponse.statusCode() < 200 || listResponse.statusCode() >= 300) {
+                return false;
+            }
+
+            JSONArray orders = new JSONArray(listResponse.body() == null ? "[]" : listResponse.body());
+            for (int i = 0; i < orders.length(); i++) {
+                JSONObject order = orders.optJSONObject(i);
+                if (order == null) {
+                    continue;
+                }
+                String orderId = order.optString("id", "").trim();
+                if (orderId.isBlank()) {
+                    continue;
+                }
+
+                String cancelEndpoint = ordersEndpointBase + "/" + orderId;
+                HttpRequest cancelRequest = HttpRequest.newBuilder(URI.create(cancelEndpoint))
+                        .timeout(Duration.ofSeconds(15))
+                        .header("APCA-API-KEY-ID", apiKey)
+                        .header("APCA-API-SECRET-KEY", apiSecret)
+                        .DELETE()
+                        .build();
+
+                HttpResponse<String> cancelResponse = httpClient.send(cancelRequest, HttpResponse.BodyHandlers.ofString());
+                int status = cancelResponse.statusCode();
+                if (!((status >= 200 && status < 300) || status == 404)) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (Exception ex) {
+            return false;
+        }
     }
 
     @Override

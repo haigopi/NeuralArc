@@ -16,5 +16,7 @@ public interface TradingApi {
 
     OrderResult placeSellOrder(String symbol, int qty);
 
+    boolean cancelOpenOrdersForSymbol(String symbol);
+
     Position getPosition(String symbol);
 }

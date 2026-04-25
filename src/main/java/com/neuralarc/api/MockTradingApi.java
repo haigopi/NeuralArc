@@ -53,6 +53,11 @@ public class MockTradingApi implements TradingApi {
     }
 
     @Override
+    public boolean cancelOpenOrdersForSymbol(String symbol) {
+        return true;
+    }
+
+    @Override
     public Position getPosition(String symbol) {
         return positions.computeIfAbsent(symbol, Position::new);
     }

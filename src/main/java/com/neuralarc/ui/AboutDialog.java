@@ -69,13 +69,17 @@ public class AboutDialog extends JDialog {
 
         JPanel footer = new JPanel(new BorderLayout());
         footer.setBorder(new EmptyBorder(8, 20, 16, 20));
+        JButton helpFaq = new JButton("Help & FAQ");
+        DialogButtonStyles.apply(helpFaq);
+        helpFaq.addActionListener(e -> new HelpDialog(owner).setVisible(true));
         JButton close = new JButton("Close");
-        close.setFocusPainted(false);
+        DialogButtonStyles.apply(close);
         close.addActionListener(e -> setVisible(false));
 
         JPanel actions = new JPanel();
         actions.setOpaque(false);
         actions.add(close);
+        footer.add(helpFaq, BorderLayout.WEST);
         footer.add(actions, BorderLayout.EAST);
         add(footer, BorderLayout.SOUTH);
 

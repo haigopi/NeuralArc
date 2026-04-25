@@ -99,13 +99,24 @@ public class ContactUsDialog extends JDialog {
     }
 
     private JPanel buildFooter() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        JPanel panel = new JPanel(new BorderLayout());
+        JButton helpFaq = new JButton("Help & FAQ");
         JButton cancel = new JButton("Cancel");
         JButton send = new JButton("Send Message");
+        DialogButtonStyles.apply(helpFaq);
+        DialogButtonStyles.apply(cancel);
+        DialogButtonStyles.apply(send);
+        helpFaq.addActionListener(e -> new HelpDialog((JFrame) getOwner()).setVisible(true));
         cancel.addActionListener(e -> setVisible(false));
         send.addActionListener(e -> setVisible(false));
-        panel.add(cancel);
-        panel.add(send);
+
+        JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        rightActions.setOpaque(false);
+        rightActions.add(cancel);
+        rightActions.add(send);
+
+        panel.add(helpFaq, BorderLayout.WEST);
+        panel.add(rightActions, BorderLayout.EAST);
         return panel;
     }
 

@@ -177,7 +177,7 @@ public class SettingsDialog extends JDialog {
         contentScroll.setPreferredSize(new Dimension(760, 660));
         add(contentScroll, BorderLayout.CENTER);
 
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JPanel actions = new JPanel(new BorderLayout());
         actions.setBorder(new EmptyBorder(0, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
         JButton helpFaq = new JButton("Help & FAQ");
         helpFaq.addActionListener(e -> new HelpDialog(owner).setVisible(true));
@@ -189,9 +189,11 @@ public class SettingsDialog extends JDialog {
         });
         JButton close = new JButton("Close");
         close.addActionListener(e -> closeDialog());
-        actions.add(helpFaq);
-        actions.add(encryptSave);
-        actions.add(close);
+        JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        rightActions.add(encryptSave);
+        rightActions.add(close);
+        actions.add(helpFaq, BorderLayout.WEST);
+        actions.add(rightActions, BorderLayout.EAST);
         add(actions, BorderLayout.SOUTH);
 
         applyDialogTheme();

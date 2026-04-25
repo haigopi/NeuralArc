@@ -88,18 +88,28 @@ public class FeedbackDialog extends JDialog {
     }
 
     private JComponent buildFooter() {
-        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        JPanel actions = new JPanel(new BorderLayout());
+        JButton helpFaq = new JButton("Help & FAQ");
         JButton cancelButton = new JButton("Cancel");
         JButton sendButton = new JButton("Submit");
+        DialogButtonStyles.apply(helpFaq);
+        DialogButtonStyles.apply(cancelButton);
+        DialogButtonStyles.apply(sendButton);
 
+        helpFaq.addActionListener(e -> new HelpDialog((JFrame) getOwner()).setVisible(true));
         sendButton.addActionListener(e -> onSend());
         cancelButton.addActionListener(e -> {
             result = null;
             setVisible(false);
         });
 
-        actions.add(cancelButton);
-        actions.add(sendButton);
+        JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        rightActions.setOpaque(false);
+        rightActions.add(cancelButton);
+        rightActions.add(sendButton);
+
+        actions.add(helpFaq, BorderLayout.WEST);
+        actions.add(rightActions, BorderLayout.EAST);
         return actions;
     }
 
