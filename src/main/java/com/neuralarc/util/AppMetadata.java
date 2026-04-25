@@ -6,6 +6,7 @@ import java.util.Properties;
 
 public final class AppMetadata {
     private static final Properties PROPERTIES = loadProperties();
+    private static final int DEFAULT_SPLASH_DURATION_MILLIS = 5000;
 
     private AppMetadata() {
     }
@@ -31,11 +32,11 @@ public final class AppMetadata {
     }
 
     public static int splashDurationMillis() {
-        String configured = PROPERTIES.getProperty("app.splash.duration.millis", "5000");
+        String configured = PROPERTIES.getProperty("app.splash.duration.millis", String.valueOf(DEFAULT_SPLASH_DURATION_MILLIS));
         try {
             return Math.max(0, Integer.parseInt(configured.trim()));
         } catch (NumberFormatException ignored) {
-            return 5000;
+            return DEFAULT_SPLASH_DURATION_MILLIS;
         }
     }
 

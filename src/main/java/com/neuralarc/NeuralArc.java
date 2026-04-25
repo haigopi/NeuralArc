@@ -14,14 +14,17 @@ public class NeuralArc {
         FontLoader.installSwingDefaults();
 
         SwingUtilities.invokeLater(() -> {
-            SplashScreenWindow splash = new SplashScreenWindow();
+            int splashDurationMillis = AppMetadata.splashDurationMillis();
+            SplashScreenWindow splash = new SplashScreenWindow(splashDurationMillis);
             splash.setVisible(true);
-            Timer splashTimer = new Timer(AppMetadata.splashDurationMillis(), event -> {
-                TradingFrame frame = new TradingFrame();
-                installMacApplicationMenu(frame);
-                frame.setVisible(true);
+            Timer splashTimer = new Timer(splashDurationMillis, event -> {
                 splash.dispose();
-                frame.promptForRequiredSettings();
+                SwingUtilities.invokeLater(() -> {
+                    TradingFrame frame = new TradingFrame();
+                    installMacApplicationMenu(frame);
+                    frame.setVisible(true);
+                    frame.promptForRequiredSettings();
+                });
             });
             splashTimer.setRepeats(false);
             splashTimer.start();

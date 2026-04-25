@@ -15,8 +15,13 @@ import java.net.URL;
 
 public class SplashScreenWindow extends JWindow {
     private final JProgressBar progressBar = new JProgressBar(0, 100);
+    private final Timer progressTimer;
+    private final long startedAtMillis;
+    private final int splashDurationMillis;
 
-    public SplashScreenWindow() {
+    public SplashScreenWindow(int splashDurationMillis) {
+        this.splashDurationMillis = Math.max(0, splashDurationMillis);
+        this.startedAtMillis = System.currentTimeMillis();
         JPanel content = new JPanel(new BorderLayout(0, 0));
         content.setBackground(Color.WHITE);
         content.setBorder(BorderFactory.createCompoundBorder(
@@ -74,7 +79,7 @@ public class SplashScreenWindow extends JWindow {
         setAlwaysOnTop(true);
         setSize(new Dimension(560, 430));
         setLocationRelativeTo(null);
-        startProgressAnimation();
+        progressTimer = startProgressAnimation();
     }
 
     private ImageIcon loadLogo() {
@@ -87,12 +92,30 @@ public class SplashScreenWindow extends JWindow {
         return new ImageIcon(scaled);
     }
 
-    private void startProgressAnimation() {
+    @Override
+    public void dispose() {
+        if (progressTimer != null) {
+            progressTimer.stop();
+        }
+        super.dispose();
+    }
+
+    private Timer startProgressAnimation() {
+        if (splashDurationMillis <= 0) {
+            progressBar.setValue(100);
+            return new Timer(0, null);
+        }
+
         Timer timer = new Timer(40, null);
         timer.addActionListener(event -> {
-            int next = progressBar.getValue() + 1;
-            progressBar.setValue(next <= 100 ? next : 0);
+            long elapsed = System.currentTimeMillis() - startedAtMillis;
+            int progress = (int) Math.min(100L, Math.round((elapsed * 100.0d) / splashDurationMillis));
+            progressBar.setValue(progress);
+            if (progress >= 100) {
+                ((Timer) event.getSource()).stop();
+            }
         });
         timer.start();
+        return timer;
     }
 }

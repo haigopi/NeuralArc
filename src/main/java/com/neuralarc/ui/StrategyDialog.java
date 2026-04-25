@@ -6,100 +6,82 @@ import com.neuralarc.util.FontLoader;
 import javax.swing.*;
 import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
+import javax.swing.border.TitledBorder;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
-import java.awt.Dimension;
+import java.awt.Container;
 import java.awt.FlowLayout;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
-import java.io.InputStream;
+import java.awt.GridLayout;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 public class StrategyDialog extends JDialog {
-    private static final int OUTER_PADDING = 18;
+    private static final int OUTER_PADDING = 16;
     private static final int SECTION_GAP = 12;
-    private static final int FORM_ROW_GAP = 12;
-    private static final int FORM_COLUMN_GAP = 14;
-    private static final int FIELD_HEIGHT = 34;
-    private static final String GRID_ROW_KEY = "strategyDialog.gridRow";
+    private static final int FIELD_GAP = 10;
+    private static final int SECTION_INNER_PADDING = 10;
 
     private static final Color DIALOG_BG = UIManager.getColor("Panel.background") != null
             ? UIManager.getColor("Panel.background")
             : Color.WHITE;
-    private static final Color CARD_BG = DIALOG_BG;
-    private static final Color CARD_BORDER = UIManager.getColor("Separator.foreground") != null
-            ? UIManager.getColor("Separator.foreground")
-            : new Color(205, 205, 205);
-    private static final Color TITLE_COLOR = UIManager.getColor("Label.foreground") != null
-            ? UIManager.getColor("Label.foreground")
-            : new Color(45, 45, 50);
-    private static final Color SUBTITLE_COLOR = UIManager.getColor("Label.disabledForeground") != null
-            ? UIManager.getColor("Label.disabledForeground")
-            : new Color(120, 120, 120);
-    private static final Color HELP_TEXT_COLOR = SUBTITLE_COLOR;
     private static final Color INPUT_BG = UIManager.getColor("TextField.background") != null
             ? UIManager.getColor("TextField.background")
             : Color.WHITE;
     private static final Color INPUT_BORDER = new Color(190, 190, 200);
+    private static final Color TEXT_PRIMARY = UIManager.getColor("Label.foreground") != null
+            ? UIManager.getColor("Label.foreground")
+            : new Color(45, 45, 50);
+    private static final Color TEXT_MUTED = UIManager.getColor("Label.disabledForeground") != null
+            ? UIManager.getColor("Label.disabledForeground")
+            : new Color(130, 130, 130);
+
     private static final String DEFAULT_CONFIG_RESOURCE = "mock-config.properties";
     private static final DialogDefaults DEFAULTS = loadDefaults();
 
-    private final JTextField symbolField = new JTextField(12);
+    private final JTextField symbolField = new JTextField(25);
     private final JCheckBox paperMode = new JCheckBox("Paper trading mode", true);
-    private final JTextField basePriceField = new JTextField(12);
-    private final JTextField baseQtyField = new JTextField(12);
-    private final JTextField stopLossField = new JTextField(12);
-    private final JTextField sellTriggerField = new JTextField(12);
-    private final JTextField loss1PriceField = new JTextField(12);
-    private final JTextField loss1QtyField = new JTextField(12);
-    private final JTextField loss2PriceField = new JTextField(12);
-    private final JTextField loss2QtyField = new JTextField(12);
-    private final JTextField pollingField = new JTextField(12);
+    private final JTextField basePriceField = new JTextField(25);
+    private final JTextField baseQtyField = new JTextField(25);
+    private final JTextField stopLossField = new JTextField(25);
+    private final JTextField sellTriggerField = new JTextField(25);
+    private final JTextField loss1PriceField = new JTextField(25);
+    private final JTextField loss1QtyField = new JTextField(25);
+    private final JTextField loss2PriceField = new JTextField(25);
+    private final JTextField loss2QtyField = new JTextField(25);
+    private final JTextField pollingField = new JTextField(25);
     private final JCheckBox holdAtTenPercentProfit = new JCheckBox("Enable +10% Profit Hold", false);
+
+    private final JTextArea highSeriesArea = new JTextArea(8, 22);
+    private final JTextArea lowSeriesArea = new JTextArea(8, 22);
+    private final JLabel medianStatus = new JLabel("Paste 6-month daily highs and lows, then apply to current strategy.");
+    private JTabbedPane tabs;
 
     private StrategyConfig result;
 
     public StrategyDialog(JFrame owner, StrategyConfig initialConfig) {
         super(owner, initialConfig == null ? "Add Stock Strategy" : "Edit Stock Strategy", true);
-        setLayout(new BorderLayout());
+        setLayout(new BorderLayout(SECTION_GAP, SECTION_GAP));
 
-        configureTooltips();
-        styleInputs();
         applyDialogDefaults();
+        configureTooltips();
 
-        JPanel content = new JPanel();
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-        content.setBackground(DIALOG_BG);
-        content.setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
-
-        content.add(Box.createVerticalStrut(SECTION_GAP));
-        content.add(buildStrategyCard());
-        content.add(Box.createVerticalStrut(SECTION_GAP));
-        content.add(buildRiskCard());
-        content.add(Box.createVerticalStrut(SECTION_GAP));
-        content.add(buildProfitHoldCard());
-        content.add(Box.createVerticalStrut(SECTION_GAP));
-        content.add(buildExecutionCard());
-
-        JScrollPane scrollPane = new JScrollPane(content);
-        scrollPane.setBorder(null);
-        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        scrollPane.getViewport().setBackground(DIALOG_BG);
-        scrollPane.setPreferredSize(new Dimension(660, 700));
-        add(scrollPane, BorderLayout.CENTER);
+        tabs = new JTabbedPane();
+        tabs.addTab("Current Strategy", buildCurrentStrategyTab());
+        tabs.addTab("6-Month Median Strategy (Coming Soon)", buildMedianStrategyTab());
+        tabs.setEnabledAt(1, false);
+        tabs.setToolTipTextAt(1, "Temporarily disabled");
+        add(tabs, BorderLayout.CENTER);
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-        actions.setBackground(DIALOG_BG);
-        actions.setBorder(new EmptyBorder(8, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
+        actions.setBorder(new EmptyBorder(0, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
         JButton save = new JButton("Save Strategy");
-        JButton cancel = new JButton("Cancel");
-        stylePrimaryButton(save);
-        styleSecondaryButton(cancel);
         save.addActionListener(e -> onSave());
+        JButton cancel = new JButton("Cancel");
         cancel.addActionListener(e -> {
             result = null;
             setVisible(false);
@@ -108,6 +90,8 @@ public class StrategyDialog extends JDialog {
         actions.add(cancel);
         add(actions, BorderLayout.SOUTH);
         getRootPane().setDefaultButton(save);
+
+        applyDialogTheme();
 
         if (initialConfig != null) {
             applyConfig(initialConfig);
@@ -124,136 +108,184 @@ public class StrategyDialog extends JDialog {
         return result;
     }
 
-    private JPanel buildStrategyCard() {
-        JPanel card = createCard("Strategy Setup", "Choose the symbol, trading mode, and first-entry rule.");
-        JPanel form = createFormPanel();
-        addRow(form, "Symbol", "Ticker symbol used by this strategy.", symbolField);
-        addRow(form, "Trading mode", "Paper trading keeps strategy execution safe during validation.", paperMode);
-        addRow(form, "Base buy price", "Triggers when price is less than or equal to this value.", basePriceField);
-        addRow(form, "Base buy quantity", "Number of shares to purchase on the first entry.", baseQtyField);
-        card.add(form, BorderLayout.CENTER);
-        return card;
+    private JComponent buildCurrentStrategyTab() {
+        JPanel content = new JPanel();
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
+
+        JPanel strategyPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        strategyPanel.setBorder(createSectionBorder("Strategy Parameters"));
+        addRow(strategyPanel, "Symbol:", symbolField);
+        addRow(strategyPanel, "Trading mode:", paperMode);
+        addRow(strategyPanel, "Base buy price:", basePriceField);
+        addRow(strategyPanel, "Base buy quantity:", baseQtyField);
+
+        JPanel riskPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        riskPanel.setBorder(createSectionBorder("Risk Controls"));
+        addRow(riskPanel, "Stop Loss:", stopLossField);
+        addRow(riskPanel, "Sell trigger price:", sellTriggerField);
+        addRow(riskPanel, "Loss Buy Level 1 Price:", loss1PriceField);
+        addRow(riskPanel, "Loss buy level 1 qty:", loss1QtyField);
+        addRow(riskPanel, "Loss Buy Level 2 Price:", loss2PriceField);
+        addRow(riskPanel, "Loss buy level 2 qty:", loss2QtyField);
+
+        JPanel profitHoldPanel = new JPanel(new BorderLayout(0, 8));
+        profitHoldPanel.setBorder(createSectionBorder("Profit Hold Option"));
+        profitHoldPanel.add(holdAtTenPercentProfit, BorderLayout.NORTH);
+        JLabel help = new JLabel("<html>When enabled, hold after sell trigger if price continues at least 10% higher.</html>");
+        help.setForeground(TEXT_MUTED);
+        help.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
+        profitHoldPanel.add(help, BorderLayout.CENTER);
+
+        JPanel executionPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        executionPanel.setBorder(createSectionBorder("Execution"));
+        addRow(executionPanel, "Polling interval seconds:", pollingField);
+
+        content.add(strategyPanel);
+        content.add(Box.createVerticalStrut(SECTION_GAP));
+        content.add(riskPanel);
+        content.add(Box.createVerticalStrut(SECTION_GAP));
+        content.add(profitHoldPanel);
+        content.add(Box.createVerticalStrut(SECTION_GAP));
+        content.add(executionPanel);
+
+        JScrollPane scrollPane = new JScrollPane(content);
+        scrollPane.setBorder(null);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        return scrollPane;
     }
 
-    private JPanel buildRiskCard() {
-        JPanel card = createCard("Risk Controls", "Define exits and pullback-based additional buys.");
-        JPanel form = createFormPanel();
-        addRow(form, "Stop Loss", "Activates once price reaches this level and can exit on reversal.", stopLossField);
-        addRow(form, "Sell trigger price", "Profit-taking starts when price reaches this threshold.", sellTriggerField);
-        addRow(form, "Loss Buy Level 1 Price", "Triggers when price is less than or equal to this value.", loss1PriceField);
-        addRow(form, "Loss buy level 1 qty", "Additional shares to buy at loss level one.", loss1QtyField);
-        addRow(form, "Loss Buy Level 2 Price", "Triggers when price is less than or equal to this value.", loss2PriceField);
-        addRow(form, "Loss buy level 2 qty", "Additional shares to buy at loss level two.", loss2QtyField);
-        card.add(form, BorderLayout.CENTER);
-        return card;
+    private JComponent buildMedianStrategyTab() {
+        JPanel content = new JPanel();
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
+
+        JPanel inputPanel = new JPanel(new GridLayout(1, 2, FIELD_GAP, FIELD_GAP));
+        inputPanel.setBorder(createSectionBorder("6-Month Daily Data Input"));
+
+        inputPanel.add(wrapTextArea("Daily High Prices", highSeriesArea));
+        inputPanel.add(wrapTextArea("Daily Low Prices", lowSeriesArea));
+
+        JPanel actionsPanel = new JPanel(new BorderLayout(0, 8));
+        actionsPanel.setBorder(createSectionBorder("Apply Median Strategy to Current Strategy"));
+
+        JLabel ruleLabel = new JLabel("Average of each day midpoint ((high + low)/2) is used as the base price anchor.");
+        ruleLabel.setForeground(TEXT_MUTED);
+        ruleLabel.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
+
+        JButton apply = new JButton("Apply 6-Month Median to Current Strategy");
+        apply.addActionListener(e -> applyMedianStrategyValues());
+
+        medianStatus.setForeground(TEXT_MUTED);
+        medianStatus.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
+
+        actionsPanel.add(ruleLabel, BorderLayout.NORTH);
+        actionsPanel.add(apply, BorderLayout.CENTER);
+        actionsPanel.add(medianStatus, BorderLayout.SOUTH);
+
+        content.add(inputPanel);
+        content.add(Box.createVerticalStrut(SECTION_GAP));
+        content.add(actionsPanel);
+
+        JScrollPane scrollPane = new JScrollPane(content);
+        scrollPane.setBorder(null);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        return scrollPane;
     }
 
-    private JPanel buildProfitHoldCard() {
-        JPanel card = createCard("Profit Hold Option", "Optional momentum filter to avoid exiting too early during a strong breakout.");
-        JPanel form = createFormPanel();
-        addRow(form, "Profit hold", "", holdAtTenPercentProfit);
-        addInlineHelp(form,
-                "When enabled, the strategy keeps holding the position after the sell trigger is reached if price continues moving at least 10% higher. " +
-                "Use this when you want to give strong upward momentum more room before taking profit.");
-        card.add(form, BorderLayout.CENTER);
-        return card;
+    private JPanel wrapTextArea(String title, JTextArea area) {
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+
+        JPanel wrapper = new JPanel(new BorderLayout(0, 6));
+        wrapper.add(new JLabel(title), BorderLayout.NORTH);
+        wrapper.add(new JScrollPane(area), BorderLayout.CENTER);
+        return wrapper;
     }
 
-    private JPanel buildExecutionCard() {
-        JPanel card = createCard("Execution", "Price changes defines the frequency of strategy evaluation");
-        JPanel form = createFormPanel();
-        addRow(form, "Polling interval seconds", "Defines teh frequency of price changes.", pollingField);
-        card.add(form, BorderLayout.CENTER);
-        return card;
-    }
-
-    private JPanel createCard(String title, String subtitle) {
-        JPanel card = new JPanel(new BorderLayout(0, 14));
-        card.setAlignmentX(Component.LEFT_ALIGNMENT);
-        card.setBackground(CARD_BG);
-        card.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(CARD_BORDER, 1, true),
-                new EmptyBorder(16, 18, 16, 18)
-        ));
-
-        JPanel header = new JPanel(new BorderLayout(0, 4));
-        header.setOpaque(false);
-
-        JLabel titleLabel = new JLabel(title);
-        titleLabel.setFont(FontLoader.ui(java.awt.Font.BOLD, 14f));
-        titleLabel.setForeground(TITLE_COLOR);
-
-        JLabel subtitleLabel = new JLabel(wrapText(subtitle, 70, 10, SUBTITLE_COLOR));
-        subtitleLabel.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
-        subtitleLabel.setForeground(SUBTITLE_COLOR);
-
-        header.add(titleLabel, BorderLayout.NORTH);
-        header.add(subtitleLabel, BorderLayout.CENTER);
-        card.add(header, BorderLayout.NORTH);
-        return card;
-    }
-
-    private JPanel createFormPanel() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setOpaque(false);
-        panel.putClientProperty(GRID_ROW_KEY, 0);
-        return panel;
-    }
-
-    private void addRow(JPanel panel, String label, String description, JComponent component) {
-        int row = nextRow(panel);
-
-        JPanel labelPanel = new JPanel();
-        labelPanel.setOpaque(false);
-        labelPanel.setLayout(new BoxLayout(labelPanel, BoxLayout.Y_AXIS));
-
-        JLabel rowLabel = new JLabel(wrapText(label, 28, 11, TITLE_COLOR));
-        rowLabel.setFont(FontLoader.ui(java.awt.Font.BOLD, 11f));
-        rowLabel.setForeground(TITLE_COLOR);
-        labelPanel.add(rowLabel);
-
-        if (description != null && !description.isBlank()) {
-            JLabel descriptionLabel = new JLabel(wrapText(description, 38, 9, SUBTITLE_COLOR));
-            descriptionLabel.setFont(FontLoader.ui(java.awt.Font.PLAIN, 9f));
-            descriptionLabel.setForeground(SUBTITLE_COLOR);
-            descriptionLabel.setBorder(new EmptyBorder(3, 0, 0, 0));
-            labelPanel.add(descriptionLabel);
+    private void applyMedianStrategyValues() {
+        List<BigDecimal> highs;
+        List<BigDecimal> lows;
+        try {
+            highs = parseSeries(highSeriesArea.getText());
+            lows = parseSeries(lowSeriesArea.getText());
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(this,
+                    "Please provide only numeric values for highs and lows.",
+                    "Invalid Median Input",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
         }
 
-        GridBagConstraints labelConstraints = new GridBagConstraints();
-        labelConstraints.gridx = 0;
-        labelConstraints.gridy = row;
-        labelConstraints.weightx = 0.43;
-        labelConstraints.fill = GridBagConstraints.HORIZONTAL;
-        labelConstraints.anchor = GridBagConstraints.NORTHWEST;
-        labelConstraints.insets = new Insets(0, 0, FORM_ROW_GAP, FORM_COLUMN_GAP);
-        panel.add(labelPanel, labelConstraints);
+        if (highs.isEmpty() || lows.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "Please enter at least one high and one low value.",
+                    "Missing Median Input",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
 
-        GridBagConstraints componentConstraints = new GridBagConstraints();
-        componentConstraints.gridx = 1;
-        componentConstraints.gridy = row;
-        componentConstraints.weightx = 0.57;
-        componentConstraints.fill = GridBagConstraints.HORIZONTAL;
-        componentConstraints.anchor = GridBagConstraints.NORTHWEST;
-        componentConstraints.insets = new Insets(0, 0, FORM_ROW_GAP, 0);
-        panel.add(component, componentConstraints);
+        if (highs.size() != lows.size()) {
+            JOptionPane.showMessageDialog(this,
+                    "High and low series must have the same number of entries (one pair per day).",
+                    "Mismatched Series",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        BigDecimal midpointSum = BigDecimal.ZERO;
+        for (int i = 0; i < highs.size(); i++) {
+            BigDecimal midpoint = highs.get(i).add(lows.get(i))
+                    .divide(new BigDecimal("2"), 8, RoundingMode.HALF_UP);
+            midpointSum = midpointSum.add(midpoint);
+        }
+
+        BigDecimal averageMidpoint = midpointSum.divide(new BigDecimal(highs.size()), 8, RoundingMode.HALF_UP);
+        BigDecimal base = averageMidpoint.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal stopLoss = base.multiply(new BigDecimal("1.03")).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal sellTrigger = base.multiply(new BigDecimal("1.10")).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal loss1 = base.multiply(new BigDecimal("0.92")).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal loss2 = base.multiply(new BigDecimal("0.85")).setScale(2, RoundingMode.HALF_UP);
+
+        basePriceField.setText(base.toPlainString());
+        stopLossField.setText(stopLoss.toPlainString());
+        sellTriggerField.setText(sellTrigger.toPlainString());
+        loss1PriceField.setText(loss1.toPlainString());
+        loss2PriceField.setText(loss2.toPlainString());
+
+        medianStatus.setText("Applied median strategy from " + highs.size() + " daily pairs to Current Strategy tab.");
+        tabs.setSelectedIndex(0);
     }
 
-    private void addInlineHelp(JPanel panel, String text) {
-        int row = nextRow(panel);
-        JLabel helpLabel = new JLabel(wrapText(text, 72, 9, HELP_TEXT_COLOR));
-        helpLabel.setFont(FontLoader.ui(java.awt.Font.PLAIN, 9f));
-        helpLabel.setForeground(HELP_TEXT_COLOR);
+    private List<BigDecimal> parseSeries(String raw) {
+        List<BigDecimal> values = new ArrayList<>();
+        if (raw == null || raw.isBlank()) {
+            return values;
+        }
+        String[] tokens = raw.trim().split("[,\\s]+");
+        for (String token : tokens) {
+            if (!token.isBlank()) {
+                values.add(new BigDecimal(token));
+            }
+        }
+        return values;
+    }
 
-        GridBagConstraints constraints = new GridBagConstraints();
-        constraints.gridx = 0;
-        constraints.gridy = row;
-        constraints.gridwidth = 2;
-        constraints.weightx = 1.0;
-        constraints.fill = GridBagConstraints.HORIZONTAL;
-        constraints.anchor = GridBagConstraints.NORTHWEST;
-        constraints.insets = new Insets(-4, 0, 0, 0);
-        panel.add(helpLabel, constraints);
+    private void addRow(JPanel panel, String label, JComponent component) {
+        panel.add(new JLabel(label));
+        panel.add(component);
+    }
+
+    private Border createSectionBorder(String title) {
+        TitledBorder border = new TitledBorder(title);
+        border.setTitleColor(TEXT_PRIMARY);
+        border.setTitleFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
+        return BorderFactory.createCompoundBorder(
+                border,
+                new EmptyBorder(SECTION_INNER_PADDING, SECTION_INNER_PADDING, SECTION_INNER_PADDING, SECTION_INNER_PADDING)
+        );
     }
 
     private void configureTooltips() {
@@ -266,49 +298,73 @@ public class StrategyDialog extends JDialog {
     }
 
     private void styleInputs() {
-        styleTextField(symbolField);
-        styleTextField(basePriceField);
-        styleTextField(baseQtyField);
-        styleTextField(stopLossField);
-        styleTextField(sellTriggerField);
-        styleTextField(loss1PriceField);
-        styleTextField(loss1QtyField);
-        styleTextField(loss2PriceField);
-        styleTextField(loss2QtyField);
-        styleTextField(pollingField);
+        styleInput(symbolField);
+        styleInput(basePriceField);
+        styleInput(baseQtyField);
+        styleInput(stopLossField);
+        styleInput(sellTriggerField);
+        styleInput(loss1PriceField);
+        styleInput(loss1QtyField);
+        styleInput(loss2PriceField);
+        styleInput(loss2QtyField);
+        styleInput(pollingField);
+        styleInput(highSeriesArea);
+        styleInput(lowSeriesArea);
 
         paperMode.setOpaque(false);
-        paperMode.setForeground(TITLE_COLOR);
-        paperMode.setFont(FontLoader.ui(java.awt.Font.BOLD, 11f));
-
         holdAtTenPercentProfit.setOpaque(false);
-        holdAtTenPercentProfit.setForeground(TITLE_COLOR);
-        holdAtTenPercentProfit.setFont(FontLoader.ui(java.awt.Font.BOLD, 11f));
     }
 
-    private void styleTextField(JTextField field) {
-        field.setFont(FontLoader.ui(java.awt.Font.PLAIN, 11f));
-        field.setBackground(INPUT_BG);
-        field.setForeground(TITLE_COLOR);
-        field.setCaretColor(TITLE_COLOR);
-        field.setPreferredSize(new Dimension(field.getPreferredSize().width, FIELD_HEIGHT));
-        field.setMinimumSize(new Dimension(140, FIELD_HEIGHT));
-        field.setMaximumSize(new Dimension(Integer.MAX_VALUE, FIELD_HEIGHT));
-        Border border = BorderFactory.createCompoundBorder(
+    private void styleInput(JTextField input) {
+        input.setBackground(INPUT_BG);
+        input.setForeground(TEXT_PRIMARY);
+        input.setCaretColor(TEXT_PRIMARY);
+        input.setSelectionColor(new Color(114, 130, 176));
+        input.setSelectedTextColor(TEXT_PRIMARY);
+        input.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(INPUT_BORDER, 1, true),
-                new EmptyBorder(6, 10, 6, 10)
-        );
-        field.setBorder(border);
+                new EmptyBorder(4, 8, 4, 8)
+        ));
     }
 
-    private void stylePrimaryButton(JButton button) {
-        button.setFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
-        button.setFocusPainted(false);
+    private void styleInput(JTextArea input) {
+        input.setBackground(INPUT_BG);
+        input.setForeground(TEXT_PRIMARY);
+        input.setCaretColor(TEXT_PRIMARY);
+        input.setSelectionColor(new Color(114, 130, 176));
+        input.setSelectedTextColor(TEXT_PRIMARY);
+        input.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(INPUT_BORDER, 1, true),
+                new EmptyBorder(6, 8, 6, 8)
+        ));
     }
 
-    private void styleSecondaryButton(JButton button) {
-        button.setFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
-        button.setFocusPainted(false);
+    private void applyDialogTheme() {
+        applyThemeRecursively(getContentPane());
+        getContentPane().setBackground(DIALOG_BG);
+    }
+
+    private void applyThemeRecursively(Component component) {
+        component.setFont(FontLoader.ui(java.awt.Font.PLAIN, 12f));
+        if (component instanceof JPanel panel) {
+            panel.setBackground(DIALOG_BG);
+        }
+        if (component instanceof JLabel label) {
+            label.setForeground(TEXT_PRIMARY);
+        }
+        if (component instanceof JCheckBox checkBox) {
+            checkBox.setBackground(DIALOG_BG);
+            checkBox.setForeground(TEXT_PRIMARY);
+        }
+        if (component instanceof JButton button) {
+            button.setFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
+        }
+
+        if (component instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                applyThemeRecursively(child);
+            }
+        }
     }
 
     private void applyConfig(StrategyConfig config) {
@@ -372,52 +428,6 @@ public class StrategyDialog extends JDialog {
         }
     }
 
-    private int nextRow(JPanel panel) {
-        Object rowValue = panel.getClientProperty(GRID_ROW_KEY);
-        int row = rowValue instanceof Integer ? (Integer) rowValue : 0;
-        panel.putClientProperty(GRID_ROW_KEY, row + 1);
-        return row;
-    }
-
-    private String wrapText(String text, int maxCharactersPerLine, int fontSize, Color color) {
-        String normalized = text.replace("<br>", "\n");
-        StringBuilder html = new StringBuilder("<html><span style='font-size:")
-                .append(fontSize)
-                .append("px;color:")
-                .append(toHex(color))
-                .append(";'>");
-
-        boolean firstParagraph = true;
-        for (String paragraph : normalized.split("\\n")) {
-            if (!firstParagraph) {
-                html.append("<br>");
-            }
-            firstParagraph = false;
-
-            int lineLength = 0;
-            for (String word : paragraph.split(" ")) {
-                if (word.isBlank()) {
-                    continue;
-                }
-                if (lineLength > 0 && lineLength + word.length() + 1 > maxCharactersPerLine) {
-                    html.append("<br>");
-                    lineLength = 0;
-                } else if (lineLength > 0) {
-                    html.append(' ');
-                    lineLength++;
-                }
-                html.append(word);
-                lineLength += word.length();
-            }
-        }
-
-        html.append("</span></html>");
-        return html.toString();
-    }
-
-    private String toHex(Color color) {
-        return String.format("#%02X%02X%02X", color.getRed(), color.getGreen(), color.getBlue());
-    }
 
     private static DialogDefaults loadDefaults() {
         Properties properties = new Properties();

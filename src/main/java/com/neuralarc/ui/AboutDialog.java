@@ -7,8 +7,11 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.Image;
+import java.net.URL;
 
 public class AboutDialog extends JDialog {
     public AboutDialog(JFrame owner) {
@@ -16,36 +19,56 @@ public class AboutDialog extends JDialog {
         setLayout(new BorderLayout());
         setResizable(false);
 
-        JLabel title = new JLabel(AppMetadata.name());
-        title.setFont(FontLoader.ui(Font.BOLD, 18f));
-        title.setForeground(new Color(35, 35, 45));
+        JPanel content = new JPanel(new BorderLayout(0, 0));
+        content.setBackground(Color.WHITE);
+        content.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(220, 224, 230), 1, true),
+                new EmptyBorder(20, 22, 16, 22)
+        ));
 
-        JLabel version = new JLabel("Version: " + AppMetadata.version());
-        version.setFont(FontLoader.ui(Font.PLAIN, 13f));
+        JLabel logoLabel = new JLabel(loadLogo());
+        logoLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        logoLabel.setBorder(new EmptyBorder(10, 0, 6, 0));
+        content.add(logoLabel, BorderLayout.NORTH);
 
-        JTextArea legal = new JTextArea(AppMetadata.copyright() + "\n" + AppMetadata.patent());
-        legal.setEditable(false);
-        legal.setOpaque(false);
-        legal.setLineWrap(true);
-        legal.setWrapStyleWord(true);
-        legal.setFont(FontLoader.ui(Font.PLAIN, 13f));
-        legal.setForeground(new Color(70, 70, 85));
+        JLabel title = new JLabel(AppMetadata.name(), SwingConstants.CENTER);
+        title.setFont(FontLoader.bold(24f));
+        title.setForeground(new Color(86, 92, 102));
 
-        JPanel content = new JPanel(new BorderLayout(0, 12));
-        content.setBorder(new EmptyBorder(18, 20, 12, 20));
-        content.add(title, BorderLayout.NORTH);
+        JLabel version = new JLabel("Version " + AppMetadata.version(), SwingConstants.CENTER);
+        version.setFont(FontLoader.bold(13f));
+        version.setForeground(new Color(122, 128, 138));
 
-        JPanel details = new JPanel();
-        details.setLayout(new BoxLayout(details, BoxLayout.Y_AXIS));
-        details.setOpaque(false);
-        details.add(version);
-        details.add(Box.createVerticalStrut(12));
-        details.add(legal);
-        content.add(details, BorderLayout.CENTER);
+        JLabel copyright = new JLabel(AppMetadata.copyright(), SwingConstants.CENTER);
+        copyright.setFont(FontLoader.regular(12f));
+        copyright.setForeground(new Color(150, 156, 166));
+
+        JLabel patent = new JLabel(AppMetadata.patent(), SwingConstants.CENTER);
+        patent.setFont(FontLoader.regular(12f));
+        patent.setForeground(new Color(150, 156, 166));
+
+        JPanel textPanel = new JPanel();
+        textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
+        textPanel.setOpaque(false);
+        textPanel.setBorder(new EmptyBorder(16, 10, 14, 10));
+        textPanel.add(title);
+        textPanel.add(Box.createVerticalStrut(8));
+        textPanel.add(version);
+        textPanel.add(Box.createVerticalStrut(10));
+        textPanel.add(copyright);
+        textPanel.add(Box.createVerticalStrut(4));
+        textPanel.add(patent);
+        for (Component component : textPanel.getComponents()) {
+            if (component instanceof JComponent swingComponent) {
+                swingComponent.setAlignmentX(Component.CENTER_ALIGNMENT);
+            }
+        }
+        content.add(textPanel, BorderLayout.CENTER);
+
         add(content, BorderLayout.CENTER);
 
         JPanel footer = new JPanel(new BorderLayout());
-        footer.setBorder(new EmptyBorder(0, 20, 18, 20));
+        footer.setBorder(new EmptyBorder(8, 20, 16, 20));
         JButton close = new JButton("Close");
         close.setFocusPainted(false);
         close.addActionListener(e -> setVisible(false));
@@ -56,8 +79,18 @@ public class AboutDialog extends JDialog {
         footer.add(actions, BorderLayout.EAST);
         add(footer, BorderLayout.SOUTH);
 
-        setPreferredSize(new Dimension(420, 220));
+        setPreferredSize(new Dimension(520, 360));
         pack();
         setLocationRelativeTo(owner);
+    }
+
+    private ImageIcon loadLogo() {
+        URL resource = getClass().getResource("/logo.png");
+        if (resource == null) {
+            return new ImageIcon();
+        }
+        ImageIcon original = new ImageIcon(resource);
+        Image scaled = original.getImage().getScaledInstance(110, 110, Image.SCALE_SMOOTH);
+        return new ImageIcon(scaled);
     }
 }
