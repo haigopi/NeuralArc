@@ -270,21 +270,55 @@ public class StrategyEngine {
             if (latest.isEmpty()) {
                 continue;
             }
-            AlpacaOrderData data = latest.get();
-            StrategyOrderStatus status = StrategyService.mapOrderStatus(data.status());
-            order.setStatus(status);
-            order.setFilledQuantity(data.filledQuantity());
-            order.setFilledAveragePrice(data.filledAveragePrice());
-            order.setRawResponseJson(data.rawJson());
-            if (status == StrategyOrderStatus.FILLED && order.filledAt() == null) {
-                order.setFilledAt(Instant.now());
-            }
-            orderRepository.save(order);
-            strategy.setLatestOrderStatus(status.name());
-            strategy.setLatestAlpacaOrderId(order.alpacaOrderId());
-            transitionForOrderUpdate(strategy, order, status);
-            strategyRepository.save(strategy);
+            applyOrderUpdate(strategy, order, latest.get());
         }
+    }
+
+    public boolean applyStreamingOrderUpdate(AlpacaOrderData orderData) {
+        if (orderData == null) {
+            return false;
+        }
+
+        Optional<StrategyOrder> matchingOrder = orderRepository.findByAlpacaOrderId(orderData.orderId());
+        if (matchingOrder.isEmpty()) {
+            matchingOrder = orderRepository.findByClientOrderId(orderData.clientOrderId());
+        }
+        if (matchingOrder.isEmpty()) {
+            return false;
+        }
+
+        StrategyOrder order = matchingOrder.get();
+        Optional<Strategy> maybeStrategy = strategyRepository.findById(order.strategyId());
+        if (maybeStrategy.isEmpty()) {
+            return false;
+        }
+
+        Strategy strategy = maybeStrategy.get();
+        StrategyOrderStatus status = applyOrderUpdate(strategy, order, orderData);
+        if (status == StrategyOrderStatus.FILLED || status == StrategyOrderStatus.PARTIALLY_FILLED) {
+            reconcile(strategy);
+        }
+        return true;
+    }
+
+    private StrategyOrderStatus applyOrderUpdate(Strategy strategy, StrategyOrder order, AlpacaOrderData data) {
+        StrategyOrderStatus status = StrategyService.mapOrderStatus(data.status());
+        if (data.orderId() != null && !data.orderId().isBlank() && (order.alpacaOrderId() == null || order.alpacaOrderId().isBlank())) {
+            order.setAlpacaOrderId(data.orderId());
+        }
+        order.setStatus(status);
+        order.setFilledQuantity(data.filledQuantity());
+        order.setFilledAveragePrice(data.filledAveragePrice());
+        order.setRawResponseJson(data.rawJson());
+        if (status == StrategyOrderStatus.FILLED && order.filledAt() == null) {
+            order.setFilledAt(Instant.now());
+        }
+        orderRepository.save(order);
+        strategy.setLatestOrderStatus(status.name());
+        strategy.setLatestAlpacaOrderId(order.alpacaOrderId() == null ? "" : order.alpacaOrderId());
+        transitionForOrderUpdate(strategy, order, status);
+        strategyRepository.save(strategy);
+        return status;
     }
 
     private void transitionForOrderUpdate(Strategy strategy, StrategyOrder order, StrategyOrderStatus status) {
@@ -338,6 +372,7 @@ public class StrategyEngine {
         }
         String clientOrderId = StrategyService.buildClientOrderId(strategy.id(), stage);
         AlpacaOrderData submitted = alpacaClient.submitLimitBuyOrder(strategy.symbol(), quantity, limitPrice, clientOrderId);
+        Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
         StrategyOrder order = new StrategyOrder(
                 UUID.randomUUID().toString(),
                 strategy.id(),
@@ -353,7 +388,7 @@ public class StrategyEngine {
                 submitted.filledQuantity(),
                 submitted.filledAveragePrice(),
                 StrategyService.mapOrderStatus(submitted.status()),
-                Instant.now(),
+                submittedAt,
                 Instant.now(),
                 null,
                 submitted.rawJson()
@@ -361,6 +396,7 @@ public class StrategyEngine {
         orderRepository.save(order);
         strategy.setLatestOrderStatus(order.status().name());
         strategy.setLatestAlpacaOrderId(submitted.orderId());
+        strategy.setLastTriggeredRuleType(mapStageToRuleName(stage));
         stateMachine.transition(strategy, lifecycleState, StrategyEventType.ORDER_SUBMITTED, message, submitted.rawJson());
         strategyRepository.save(strategy);
         return order;
@@ -381,6 +417,7 @@ public class StrategyEngine {
         }
         String clientOrderId = StrategyService.buildClientOrderId(strategy.id(), stage);
         AlpacaOrderData submitted = alpacaClient.submitLimitSellOrder(strategy.symbol(), requestedQuantity, limitPrice, clientOrderId);
+        Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
         StrategyOrder order = new StrategyOrder(
                 UUID.randomUUID().toString(),
                 strategy.id(),
@@ -396,7 +433,7 @@ public class StrategyEngine {
                 submitted.filledQuantity(),
                 submitted.filledAveragePrice(),
                 StrategyService.mapOrderStatus(submitted.status()),
-                Instant.now(),
+                submittedAt,
                 Instant.now(),
                 null,
                 submitted.rawJson()
@@ -404,6 +441,7 @@ public class StrategyEngine {
         orderRepository.save(order);
         strategy.setLatestOrderStatus(order.status().name());
         strategy.setLatestAlpacaOrderId(submitted.orderId());
+        strategy.setLastTriggeredRuleType(mapStageToRuleName(stage));
         stateMachine.transition(strategy, lifecycleState, eventType, message, submitted.rawJson());
         strategyRepository.save(strategy);
         return order;
@@ -471,4 +509,15 @@ public class StrategyEngine {
     }
 
     private record RiskProjection(boolean allowed, String reason) {}
+
+    private String mapStageToRuleName(StrategyStage stage) {
+        return switch (stage) {
+            case BASE_BUY -> "BUY_RULE";
+            case BUY_LIMIT_1 -> "LOSS_BUY_RULE";
+            case BUY_LIMIT_2 -> "LOSS_INVESTMENT_BUY_RULE";
+            case TARGET_SELL -> "SELL_RULE";
+            case STOP_LOSS -> "STOP_LOSS_RULE";
+            case LOSS_EXIT, PROFIT_EXIT, CLOSE_POSITION -> stage.name();
+        };
+    }
 }

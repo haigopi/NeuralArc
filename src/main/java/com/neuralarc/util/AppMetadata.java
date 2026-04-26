@@ -59,6 +59,14 @@ public final class AppMetadata {
         return PROPERTIES.getProperty("alpaca.dataUrl", "https://data.alpaca.markets").trim();
     }
 
+    public static String alpacaTradingEventsSseUrl() {
+        return PROPERTIES.getProperty("alpaca.trading.events.sseUrl", "").trim();
+    }
+
+    public static boolean alpacaTradingEventsSseEnabled() {
+        return Boolean.parseBoolean(PROPERTIES.getProperty("alpaca.trading.events.sse.enabled", "true").trim());
+    }
+
     public static String alpacaMode() {
         return PROPERTIES.getProperty("alpaca.mode", "PAPER").trim();
     }

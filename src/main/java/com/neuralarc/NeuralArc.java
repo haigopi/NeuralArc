@@ -12,6 +12,7 @@ import java.awt.Desktop;
 public class NeuralArc {
     public static void main(String[] args) {
         FontLoader.installSwingDefaults();
+        configureTooltips();
 
         SwingUtilities.invokeLater(() -> {
             int splashDurationMillis = AppMetadata.splashDurationMillis();
@@ -40,5 +41,11 @@ public class NeuralArc {
         } catch (UnsupportedOperationException ignored) {
             // Non-macOS platforms or runtimes without app-menu support can safely ignore this.
         }
+    }
+
+    private static void configureTooltips() {
+        ToolTipManager.sharedInstance().setInitialDelay(350);
+        ToolTipManager.sharedInstance().setDismissDelay(12000);
+        ToolTipManager.sharedInstance().setReshowDelay(100);
     }
 }

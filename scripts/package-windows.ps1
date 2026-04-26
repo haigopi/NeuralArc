@@ -107,6 +107,6 @@ jpackage `
   --app-version $VersionArg `
   --icon $IconIco `
   --vendor "NeuralArc" `
-  --copyright "Copyright © 2026 NeuralArc. Patent Pending."
+  --copyright "Copyright © 2026 NeuralArc | Patent Pending."
 
 Write-Host "Windows installer created in $DestDir"

@@ -2,6 +2,8 @@ package com.neuralarc.ui;
 
 import com.neuralarc.analytics.*;
 import com.neuralarc.api.HttpAlpacaClient;
+import com.neuralarc.api.AlpacaTradeUpdateEvent;
+import com.neuralarc.api.AlpacaTradingEventSseClient;
 import com.neuralarc.api.TradingApi;
 import com.neuralarc.api.TradingApiFactory;
 import com.neuralarc.model.*;
@@ -44,10 +46,14 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public class TradingFrame extends JFrame {
@@ -55,6 +61,7 @@ public class TradingFrame extends JFrame {
     private static final int OUTER_PADDING = 16;
     private static final DateTimeFormatter LOG_DATE_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM");
     private static final DateTimeFormatter LOG_TIME_FORMAT = DateTimeFormatter.ofPattern("h:mm a");
+    private static final DateTimeFormatter RULE_TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM d yyyy, h:mm a");
 
     private final JLabel positionSummary = new JLabel("Position: -");
     private final JLabel ruleState = new JLabel("Rules: -");
@@ -114,6 +121,7 @@ public class TradingFrame extends JFrame {
     private boolean promptedDefaultStrategyDialog;
     private StrategyService strategyService;
     private StrategyPollingService strategyPollingService;
+    private AlpacaTradingEventSseClient tradingEventSseClient;
     private long lastBrokerBackedUiRefreshAtMillis;
 
     public TradingFrame() {
@@ -276,7 +284,7 @@ public class TradingFrame extends JFrame {
         styleStatusActionButton(contactUsButton);
         contactUsButton.addActionListener(e -> openFeedbackDialog("Contact Us"));
 
-        JLabel appLabel = new JLabel(AppMetadata.name() + "  " + AppMetadata.version());
+        JLabel appLabel = new JLabel(AppMetadata.name() + "  " + AppMetadata.version() + " | Patent Pending™");
         appLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         appLabel.setForeground(new Color(160, 160, 170));
         appLabel.setVerticalAlignment(SwingConstants.CENTER);
@@ -534,6 +542,7 @@ public class TradingFrame extends JFrame {
     }
 
     private void openSettingsDialog() {
+        stopTradingEventStream();
         settingsDialog.setVisible(true);
         connectionOk = false;
         setStatus("Not connected — verify connection in Settings after changes.", STATUS_WARN);
@@ -599,6 +608,7 @@ public class TradingFrame extends JFrame {
         log((manualTrigger ? "Connection test: " : "Auto connection test: ") + (connectionOk ? "SUCCESS" : "FAILED"));
         if (connectionOk) {
             refreshStrategyRuntimeServices();
+            startTradingEventStreamIfConfigured();
             setStatus("Connected — broker " + brokerType.name() + " ready.", STATUS_OK);
             updateHeaderModeStatus(brokerType);
             settingsDialog.markConnectionStatus(true, "Connected to " + brokerType.name());
@@ -606,6 +616,7 @@ public class TradingFrame extends JFrame {
             initPersistenceAndRestore();
             return new SettingsDialog.ConnectionResult(true, "Connected to " + brokerType.name());
         } else {
+            stopTradingEventStream();
             setStatus("Connection failed — check API credentials in Settings.", STATUS_ERR);
             updateHeaderModeStatus(brokerType);
             settingsDialog.markConnectionStatus(false, "Connection failed");
@@ -681,6 +692,14 @@ public class TradingFrame extends JFrame {
             JOptionPane.showMessageDialog(this, "A strategy for this symbol already exists. Use Edit on the grid row.", "Duplicate Symbol", JOptionPane.WARNING_MESSAGE);
             return;
         }
+        boolean symbolExistsInRepository = strategyRepository.findAll().stream()
+                .anyMatch(existing -> existing.symbol().equalsIgnoreCase(config.symbol()));
+        if (symbolExistsInRepository) {
+            JOptionPane.showMessageDialog(this, "A strategy for this symbol already exists. Use Edit on the grid row.", "Duplicate Symbol", JOptionPane.WARNING_MESSAGE);
+            syncStrategiesFromRepository();
+            refreshStrategyTableData();
+            return;
+        }
 
         Strategy strategy = Strategy.fromConfig(
                 UUID.randomUUID().toString(),
@@ -699,7 +718,9 @@ public class TradingFrame extends JFrame {
             log("[" + config.symbol() + "] Strategy failed during initial order placement: " + creationResult.error());
             return;
         }
-        log("[" + config.symbol() + "] Initial order submitted. clientOrderId=" + creationResult.clientOrderId());
+        log("[" + config.symbol() + "] Initial order submitted. rule=BASE_BUY, price=$"
+                + strategy.baseBuyLimitPrice().toPlainString()
+                + ", clientOrderId=" + creationResult.clientOrderId());
         JOptionPane.showMessageDialog(
                 this,
                 "Initial Alpaca limit buy submitted successfully.\nOrder ID: " + creationResult.alpacaOrderId(),
@@ -708,12 +729,15 @@ public class TradingFrame extends JFrame {
         );
 
         ensureAnalyticsPublisher();
-        ManagedStrategy entry = new ManagedStrategy(strategyRepository.findById(strategy.id()).orElse(strategy));
-        strategies.add(entry);
-        resetPollingCountdown(entry);
+        syncStrategiesFromRepository();
         updateHeaderModeStatus(currentBrokerType);
         refreshStrategyTableData();
-        int addedViewRow = strategyTable.convertRowIndexToView(strategies.size() - 1);
+        selectedStrategySymbol = config.symbol();
+        restoreSelectedRow();
+        int selectedModelRow = strategyTable.getSelectedRow() >= 0
+                ? strategyTable.convertRowIndexToModel(strategyTable.getSelectedRow())
+                : strategies.size() - 1;
+        int addedViewRow = selectedModelRow >= 0 ? strategyTable.convertRowIndexToView(selectedModelRow) : -1;
         if (addedViewRow >= 0) {
             strategyTable.setRowSelectionInterval(addedViewRow, addedViewRow);
         }
@@ -853,6 +877,7 @@ public class TradingFrame extends JFrame {
         if (entry == null) {
             positionSummary.setText("Position: -");
             ruleState.setText("Rules: -");
+            ruleState.setToolTipText(null);
             return;
         }
 
@@ -860,23 +885,31 @@ public class TradingFrame extends JFrame {
             SwingUtilities.invokeLater(this::restoreSelectedRow);
         }
 
+        List<StrategyOrder> strategyOrders = strategyOrderRepository.findByStrategyId(entry.strategy.id());
+        Optional<StrategyOrder> pendingOrder = latestPendingOrder(strategyOrders);
+        StrategyOrder latestOrder = latestOrder(strategyOrders).orElse(null);
+
         if (currentBrokerType == BrokerType.ALPACA && tradingApi != null) {
             Position p = displayedPosition(entry);
-            positionSummary.setText(String.format(
-                    "[%s]: Shares=%d | Stock Price=%s | Avg Cost=%s | MarketValue=%s | Invested=%s | Realized=%s | Unrealized=%s",
-                    entry.strategy.symbol(),
-                    p.getTotalShares(), p.getLastPrice().toPlainString(), p.getAverageCost(), p.marketValue(), p.totalInvested(), p.getRealizedPnl(), p.unrealizedPnl()));
+            if (p.getTotalShares() == 0 && (pendingOrder.isPresent() || isWaitingForFill(entry.strategy))) {
+                String orderStatus = entry.strategy.latestOrderStatus() == null || entry.strategy.latestOrderStatus().isBlank()
+                        ? "PENDING"
+                        : entry.strategy.latestOrderStatus();
+                positionSummary.setText("[" + entry.strategy.symbol() + "]: Waiting Fill — order submitted to Alpaca (status: " + orderStatus + ")");
+            } else {
+                positionSummary.setText(String.format(
+                        "[%s]: Shares=%d | Stock Price=%s | Avg Cost=%s | MarketValue=%s | Invested=%s | Realized=%s | Unrealized=%s",
+                        entry.strategy.symbol(),
+                        p.getTotalShares(), p.getLastPrice().toPlainString(), p.getAverageCost(), p.marketValue(), p.totalInvested(), p.getRealizedPnl(), p.unrealizedPnl()));
+            }
         } else {
             positionSummary.setText("[" + entry.strategy.symbol() + "]: Position data available when broker is connected.");
         }
-        String latestOrder = entry.strategy.latestOrderStatus() == null || entry.strategy.latestOrderStatus().isBlank()
-                ? "-"
-                : entry.strategy.latestOrderStatus();
-        String lastEvent = entry.strategy.lastEvent() == null || entry.strategy.lastEvent().isBlank()
-                ? "-"
-                : entry.strategy.lastEvent();
-        ruleState.setText("State: " + entry.strategy.currentState().name() + " | Status: " + entry.strategy.status().name()
-                + " | Last Event: " + lastEvent + " | Latest Order: " + latestOrder);
+        ruleState.setText(buildRuleTriggeredShortSummary(entry.strategy, entry, latestOrder, pendingOrder.orElse(null)));
+        ruleState.setToolTipText(TooltipStyler.html(
+                buildRuleTriggeredSummary(entry.strategy, latestOrder, pendingOrder.orElse(null)),
+                320
+        ));
     }
 
     private boolean shouldRunBrokerBackedUiRefresh() {
@@ -886,6 +919,152 @@ public class TradingFrame extends JFrame {
             return true;
         }
         return false;
+    }
+
+    private boolean isWaitingForFill(Strategy strategy) {
+        String latestOrderStatus = strategy.latestOrderStatus();
+        if (latestOrderStatus != null) {
+            String normalized = latestOrderStatus.trim().toUpperCase();
+            if ("SUBMITTED".equals(normalized) || "PENDING".equals(normalized) || "PARTIALLY_FILLED".equals(normalized)) {
+                return true;
+            }
+        }
+        StrategyLifecycleState state = strategy.currentState();
+        return state == StrategyLifecycleState.BASE_BUY_PLACED
+                || state == StrategyLifecycleState.BASE_BUY_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.SELL_PLACED
+                || state == StrategyLifecycleState.SELL_PARTIALLY_FILLED;
+    }
+
+    private String buildRuleTriggeredShortSummary(Strategy strategy, ManagedStrategy entry, StrategyOrder latestOrder, StrategyOrder pendingOrder) {
+        StrategyLifecycleState state = strategy.currentState();
+        String stateDisplay = formatLifecycleStateForDisplay(state);
+
+        if (stateDisplay.isEmpty()) {
+            return "Rules: -";
+        }
+
+        BigDecimal displayPrice = resolveDisplayPrice(entry, latestOrder);
+        String priceDisplay = displayPrice.compareTo(BigDecimal.ZERO) > 0 ? " @ $" + displayPrice.toPlainString() : "";
+        Instant placedAt = latestOrder == null ? null : latestOrder.submittedAt();
+        String dateDisplay = placedAt == null ? "" : " on " + formatTimestampForDisplay(placedAt);
+        String waitingDisplay = buildWaitingDurationDisplay(pendingOrder);
+        return "Rules: " + stateDisplay + priceDisplay + dateDisplay + waitingDisplay;
+    }
+
+    private String formatLifecycleStateForDisplay(StrategyLifecycleState state) {
+        if (state == null) {
+            return "";
+        }
+        return switch (state) {
+            case CREATED -> "Created";
+            case VALIDATED -> "Validated";
+            case BASE_BUY_PLACED -> "Limit Base Buy Placed";
+            case BASE_BUY_PARTIALLY_FILLED -> "Limit Base Buy Partially Filled";
+            case BASE_BUY_FILLED -> "Base Buy Filled";
+            case BUY_LIMIT_1_PLACED -> "Limit Buy 1 Placed";
+            case BUY_LIMIT_1_PARTIALLY_FILLED -> "Limit Buy 1 Partially Filled";
+            case BUY_LIMIT_1_FILLED -> "Buy Limit 1 Filled";
+            case BUY_LIMIT_2_PLACED -> "Limit Buy 2 Placed";
+            case BUY_LIMIT_2_PARTIALLY_FILLED -> "Limit Buy 2 Partially Filled";
+            case BUY_LIMIT_2_FILLED -> "Buy Limit 2 Filled";
+            case STOP_LOSS_ACTIVE -> "Stop Loss Active";
+            case PROFIT_HOLD_ACTIVE -> "Profit Hold Active";
+            case SELL_PLACED -> "Limit Sell Placed";
+            case SELL_PARTIALLY_FILLED -> "Limit Sell Partially Filled";
+            case COMPLETED -> "Completed";
+            case PAUSED -> "Paused";
+            case FAILED -> "Failed";
+            case STOPPED -> "Stopped";
+        };
+    }
+
+    private String formatTimestampForDisplay(Instant timestamp) {
+        ZonedDateTime zdt = timestamp.atZone(java.time.ZoneId.systemDefault());
+        return zdt.format(RULE_TIMESTAMP_FORMAT);
+    }
+
+    private String buildRuleTriggeredSummary(Strategy strategy, StrategyOrder latestOrder, StrategyOrder pendingOrder) {
+        String lastTriggeredRule = strategy.lastTriggeredRuleType() == null || strategy.lastTriggeredRuleType().isBlank()
+                ? "-"
+                : strategy.lastTriggeredRuleType();
+        String latestOrderStatus = strategy.latestOrderStatus() == null || strategy.latestOrderStatus().isBlank()
+                ? "-"
+                : strategy.latestOrderStatus();
+        String stopLossValue = strategy.stopLossType() == StopLossType.PERCENT_BELOW_AVERAGE_COST
+                ? strategy.stopLossPercent().toPlainString() + "% below avg cost"
+                : strategy.stopLossPrice().toPlainString();
+        String profitHoldValue;
+        if (!strategy.profitHoldEnabled()) {
+            profitHoldValue = "Disabled";
+        } else if (strategy.profitHoldType() == ProfitHoldType.FIXED_AMOUNT_TRAILING) {
+            profitHoldValue = "Fixed $" + strategy.profitHoldAmount().toPlainString();
+        } else {
+            profitHoldValue = strategy.profitHoldPercent().toPlainString() + "%";
+        }
+        String orderPlaced = latestOrder == null || latestOrder.submittedAt() == null
+                ? "-"
+                : formatTimestampForDisplay(latestOrder.submittedAt());
+        String waitingDuration = pendingOrder == null || pendingOrder.submittedAt() == null
+                ? "-"
+                : humanDuration(Duration.between(pendingOrder.submittedAt(), Instant.now()));
+        return "<b>Last Triggered:</b> " + lastTriggeredRule
+                + " &nbsp;|&nbsp; <b>Latest Order:</b> " + latestOrderStatus
+                + "<br><b>Order Placed On:</b> " + orderPlaced
+                + "<br><b>Waiting Duration:</b> " + waitingDuration
+                + "<br><b>Base Buy:</b> <= " + strategy.baseBuyLimitPrice().toPlainString() + " x " + strategy.baseBuyQuantity()
+                + "<br><b>Buy Limit 1:</b> <= " + strategy.buyLimit1Price().toPlainString() + " x " + strategy.buyLimit1Quantity()
+                + "<br><b>Buy Limit 2:</b> <= " + strategy.buyLimit2Price().toPlainString() + " x " + strategy.buyLimit2Quantity()
+                + "<br><b>Stop Loss:</b> " + stopLossValue
+                + "<br><b>Target Sell:</b> >= " + strategy.targetSellPrice().toPlainString()
+                + "<br><b>Profit Hold:</b> " + profitHoldValue;
+    }
+
+    private Optional<StrategyOrder> latestOrder(List<StrategyOrder> orders) {
+        return orders.stream().max(Comparator.comparing(StrategyOrder::submittedAt));
+    }
+
+    private Optional<StrategyOrder> latestPendingOrder(List<StrategyOrder> orders) {
+        return orders.stream()
+                .filter(StrategyOrder::isPending)
+                .max(Comparator.comparing(StrategyOrder::submittedAt));
+    }
+
+    private BigDecimal resolveDisplayPrice(ManagedStrategy entry, StrategyOrder latestOrder) {
+        if (latestOrder != null && latestOrder.limitPrice().compareTo(BigDecimal.ZERO) > 0) {
+            return latestOrder.limitPrice();
+        }
+        Position position = displayedPosition(entry);
+        return position.getLastPrice();
+    }
+
+    private String buildWaitingDurationDisplay(StrategyOrder pendingOrder) {
+        if (pendingOrder == null || pendingOrder.submittedAt() == null) {
+            return "";
+        }
+        return " | Waiting " + humanDuration(Duration.between(pendingOrder.submittedAt(), Instant.now()));
+    }
+
+    private String humanDuration(Duration duration) {
+        long totalSeconds = Math.max(0L, duration.getSeconds());
+        long days = totalSeconds / 86_400L;
+        long hours = (totalSeconds % 86_400L) / 3_600L;
+        long minutes = (totalSeconds % 3_600L) / 60L;
+        long seconds = totalSeconds % 60L;
+        if (days > 0) {
+            return days + "d " + hours + "h " + minutes + "m";
+        }
+        if (hours > 0) {
+            return hours + "h " + minutes + "m";
+        }
+        if (minutes > 0) {
+            return minutes + "m " + seconds + "s";
+        }
+        return seconds + "s";
     }
 
     private void updateUnrealizedSummaries() {
@@ -989,11 +1168,15 @@ public class TradingFrame extends JFrame {
 
     private void refreshStrategyTableContent() {
         if (strategies.isEmpty()) {
+            strategyTableModel.fireTableDataChanged();
+            strategyTable.clearSelection();
+            selectedStrategySymbol = null;
             return;
         }
+        // Row count can change between polls; full refresh keeps sorter/model indexes consistent.
         rememberSelectedStrategy();
         preservingSelection = true;
-        strategyTableModel.fireTableRowsUpdated(0, strategies.size() - 1);
+        strategyTableModel.fireTableDataChanged();
         preservingSelection = false;
         SwingUtilities.invokeLater(() -> {
             restoreSelectedRow();
@@ -1012,8 +1195,14 @@ public class TradingFrame extends JFrame {
 
     private void syncStrategiesFromRepository() {
         List<Strategy> stored = strategyRepository.findAll();
+        // Remove accidental duplicate in-memory entries first (same persisted strategy id).
+        java.util.HashSet<String> seenIds = new java.util.HashSet<>();
+        strategies.removeIf(entry -> !seenIds.add(entry.strategy.id()));
         for (Strategy strategy : stored) {
-            ManagedStrategy existing = findStrategy(strategy.symbol());
+            ManagedStrategy existing = strategies.stream()
+                    .filter(entry -> entry.strategy.id().equals(strategy.id()))
+                    .findFirst()
+                    .orElse(null);
             if (existing == null) {
                 strategies.add(new ManagedStrategy(strategy));
             } else {
@@ -1029,11 +1218,16 @@ public class TradingFrame extends JFrame {
 
     private void resetPollingCountdown(ManagedStrategy entry) {
         entry.pollIntervalMillis = Math.max(1L, entry.strategy.pollingIntervalSeconds()) * 1000L;
-        entry.countdownActive = entry.strategy.status() == StrategyStatus.ACTIVE;
-        long baseTime = entry.strategy.lastPolledAt() == null
-                ? System.currentTimeMillis()
-                : entry.strategy.lastPolledAt().toEpochMilli();
-        entry.nextPollDueAtMillis = baseTime + entry.pollIntervalMillis;
+        if (entry.strategy.status() == StrategyStatus.ACTIVE) {
+            entry.countdownActive = true;
+            long baseTime = entry.strategy.lastPolledAt() == null
+                    ? System.currentTimeMillis()
+                    : entry.strategy.lastPolledAt().toEpochMilli();
+            entry.nextPollDueAtMillis = baseTime + entry.pollIntervalMillis;
+        } else {
+            entry.countdownActive = false;
+            entry.nextPollDueAtMillis = 0L;
+        }
     }
 
     private void startPollingCountdown(ManagedStrategy entry) {
@@ -1054,16 +1248,28 @@ public class TradingFrame extends JFrame {
     }
 
     private int pollingProgressPercent(ManagedStrategy entry) {
-        if (!entry.countdownActive || entry.pollIntervalMillis <= 0L) {
+        if (entry.strategy.status() != StrategyStatus.ACTIVE || entry.pollIntervalMillis <= 0L) {
             return 0;
         }
+        if (entry.nextPollDueAtMillis <= 0L) {
+            entry.countdownActive = true;
+            entry.nextPollDueAtMillis = System.currentTimeMillis() + entry.pollIntervalMillis;
+        }
         long remainingMillis = Math.max(0L, entry.nextPollDueAtMillis - System.currentTimeMillis());
-        return (int) Math.min(100L, Math.round((remainingMillis * 100.0d) / entry.pollIntervalMillis));
+        int progress = (int) Math.min(100L, Math.round((remainingMillis * 100.0d) / entry.pollIntervalMillis));
+        if (remainingMillis > 0L && progress == 0) {
+            return 1;
+        }
+        return progress;
     }
 
     private long pollingSecondsRemaining(ManagedStrategy entry) {
-        if (!entry.countdownActive || entry.pollIntervalMillis <= 0L) {
+        if (entry.strategy.status() != StrategyStatus.ACTIVE || entry.pollIntervalMillis <= 0L) {
             return 0L;
+        }
+        if (entry.nextPollDueAtMillis <= 0L) {
+            entry.countdownActive = true;
+            entry.nextPollDueAtMillis = System.currentTimeMillis() + entry.pollIntervalMillis;
         }
         long remainingMillis = Math.max(0L, entry.nextPollDueAtMillis - System.currentTimeMillis());
         return (long) Math.ceil(remainingMillis / 1000.0d);
@@ -1141,6 +1347,7 @@ public class TradingFrame extends JFrame {
     }
 
     private void shutdownAllStrategies() {
+        stopTradingEventStream();
         logFlushTimer.stop();
         pollingIndicatorTimer.stop();
         strategyPollingTimer.stop();
@@ -1467,9 +1674,12 @@ public class TradingFrame extends JFrame {
             progressBar.setForeground(strategy.isPaused() ? STATUS_TEXT_PAUSED : new Color(94, 53, 177));
             countdownLabel.setForeground(isSelected ? new Color(30, 30, 30) : table.getForeground());
             countdownLabel.setText(strategy.isPaused() ? "Paused" : secondsRemaining + "s / " + totalSeconds + "s");
-            progressBar.setToolTipText(strategy.isPaused()
+            String tooltipText = TooltipStyler.text(strategy.isPaused()
                     ? "Polling paused"
                     : secondsRemaining + " seconds remaining out of " + totalSeconds + " seconds");
+            setToolTipText(tooltipText);
+            progressBar.setToolTipText(tooltipText);
+            countdownLabel.setToolTipText(tooltipText);
             return this;
         }
     }
@@ -1592,5 +1802,45 @@ public class TradingFrame extends JFrame {
     private void updateActionButtonColor(JButton button, Color background) {
         button.setBackground(background);
         button.setForeground(Color.WHITE);
+    }
+
+    private void startTradingEventStreamIfConfigured() {
+        stopTradingEventStream();
+        if (!AppMetadata.alpacaTradingEventsSseEnabled()) {
+            return;
+        }
+        String streamUrl = AppMetadata.alpacaTradingEventsSseUrl();
+        tradingEventSseClient = new AlpacaTradingEventSseClient(
+                streamUrl,
+                settingsDialog.getApiKey(),
+                settingsDialog.getApiSecret()
+        );
+        if (!tradingEventSseClient.isConfigured()) {
+            return;
+        }
+        tradingEventSseClient.start(this::handleTradingStreamEvent,
+                ex -> log("[STREAM] Trade event stream error: " + ex.getMessage()));
+        log("[STREAM] Connected trade event stream.");
+    }
+
+    private void stopTradingEventStream() {
+        if (tradingEventSseClient == null) {
+            return;
+        }
+        tradingEventSseClient.stop();
+        tradingEventSseClient = null;
+    }
+
+    private void handleTradingStreamEvent(AlpacaTradeUpdateEvent event) {
+        if (event == null || strategyPollingService == null) {
+            return;
+        }
+        strategyPollingService.onTradeUpdate(event);
+        SwingUtilities.invokeLater(() -> {
+            syncStrategiesFromRepository();
+            refreshStrategyTableContent();
+            refreshPanels();
+            updateStatusBar();
+        });
     }
 }

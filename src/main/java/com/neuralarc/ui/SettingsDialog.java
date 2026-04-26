@@ -124,7 +124,9 @@ public class SettingsDialog extends JDialog {
         if (!analyticsGloballyEnabled) {
             telemetryEnabled.setEnabled(false);
             telemetryEnabled.setSelected(false);
-            telemetryEnabled.setToolTipText("Analytics is disabled globally via app.analytics.enabled in app.properties");
+            telemetryEnabled.setToolTipText(TooltipStyler.text(
+                    "Analytics is disabled globally via app.analytics.enabled in app.properties"
+            ));
         }
 
         GridBagConstraints telemetryLabelConstraints = new GridBagConstraints();

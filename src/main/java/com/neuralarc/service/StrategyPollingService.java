@@ -1,6 +1,7 @@
 package com.neuralarc.service;
 
 import com.neuralarc.api.AlpacaClient;
+import com.neuralarc.api.AlpacaTradeUpdateEvent;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyEventType;
 import com.neuralarc.model.StrategyExecutionEvent;
@@ -15,10 +16,13 @@ import java.util.logging.Logger;
 
 public class StrategyPollingService {
     private static final Logger LOGGER = Logger.getLogger(StrategyPollingService.class.getName());
+    private static final int STREAM_HEALTHY_GRACE_SECONDS = 120;
+    private static final int STREAM_POLL_BACKOFF_MULTIPLIER = 3;
 
     private final StrategyRepository strategyRepository;
     private final StrategyExecutionEventRepository eventRepository;
     private final StrategyEngine strategyEngine;
+    private volatile Instant lastStreamingEventAt;
 
     public StrategyPollingService(
             StrategyRepository strategyRepository,
@@ -73,12 +77,35 @@ public class StrategyPollingService {
         }
     }
 
+    public void onTradeUpdate(AlpacaTradeUpdateEvent updateEvent) {
+        if (updateEvent == null || updateEvent.orderData() == null) {
+            return;
+        }
+        try {
+            boolean applied = strategyEngine.applyStreamingOrderUpdate(updateEvent.orderData());
+            if (applied) {
+                lastStreamingEventAt = Instant.now();
+            }
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "Failed to process streaming trade update", ex);
+        }
+    }
+
     private boolean shouldPoll(Strategy strategy, Instant now) {
         if (strategy.lastPolledAt() == null) {
             return true;
         }
         long elapsedSeconds = Duration.between(strategy.lastPolledAt(), now).getSeconds();
-        return elapsedSeconds >= Math.max(1, strategy.pollingIntervalSeconds());
+        long pollInterval = Math.max(1, strategy.pollingIntervalSeconds());
+        if (isStreamHealthy(now)) {
+            pollInterval = pollInterval * STREAM_POLL_BACKOFF_MULTIPLIER;
+        }
+        return elapsedSeconds >= pollInterval;
+    }
+
+    private boolean isStreamHealthy(Instant now) {
+        return lastStreamingEventAt != null
+                && Duration.between(lastStreamingEventAt, now).getSeconds() <= STREAM_HEALTHY_GRACE_SECONDS;
     }
 
     private StrategyExecutionEvent event(String strategyId, StrategyEventType type, String message, String metadataJson) {

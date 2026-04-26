@@ -77,6 +77,6 @@ jpackage \
   --app-version "$APP_VERSION" \
   --icon "$ICON_ICNS" \
   --vendor "NeuralArc" \
-  --copyright "Copyright © 2026 NeuralArc. Patent Pending."
+  --copyright "Copyright © 2026 NeuralArc | Patent Pending."
 
 echo "macOS installer created in $DEST_DIR"

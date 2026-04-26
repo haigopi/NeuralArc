@@ -4,6 +4,7 @@ import java.awt.Font;
 import java.awt.GraphicsEnvironment;
 import java.awt.RenderingHints;
 import java.io.InputStream;
+import javax.swing.BorderFactory;
 import javax.swing.UIManager;
 
 /**
@@ -95,6 +96,13 @@ public final class FontLoader {
         for (String key : fontKeys) {
             UIManager.put(key, key.contains("Header") || key.contains("TitledBorder") ? bold : plain);
         }
+        UIManager.put("ToolTip.font", regular(SMALL_UI_SIZE));
+        UIManager.put("ToolTip.background", new java.awt.Color(32, 36, 44));
+        UIManager.put("ToolTip.foreground", new java.awt.Color(245, 247, 250));
+        UIManager.put("ToolTip.border", BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new java.awt.Color(88, 96, 110), 1, true),
+                BorderFactory.createEmptyBorder(4, 6, 4, 6)
+        ));
     }
 
     // ── internals ────────────────────────────────────────────────────────────

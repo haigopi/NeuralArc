@@ -45,6 +45,7 @@ public class Strategy {
     private String lastEvent;
     private String latestOrderStatus;
     private String latestAlpacaOrderId;
+    private String lastTriggeredRuleType;
 
     public Strategy(
             String id,
@@ -258,6 +259,7 @@ public class Strategy {
     public String lastEvent() { return lastEvent; }
     public String latestOrderStatus() { return latestOrderStatus; }
     public String latestAlpacaOrderId() { return latestAlpacaOrderId; }
+    public String lastTriggeredRuleType() { return lastTriggeredRuleType; }
 
     public void setName(String name) { this.name = normalizeText(name); touch(); }
     public void setSymbol(String symbol) { this.symbol = normalizeSymbol(symbol); touch(); }
@@ -295,4 +297,5 @@ public class Strategy {
     public void setLastEvent(String value) { this.lastEvent = normalizeText(value); touch(); }
     public void setLatestOrderStatus(String value) { this.latestOrderStatus = normalizeText(value); touch(); }
     public void setLatestAlpacaOrderId(String value) { this.latestAlpacaOrderId = normalizeText(value); touch(); }
+    public void setLastTriggeredRuleType(String value) { this.lastTriggeredRuleType = normalizeText(value); touch(); }
 }

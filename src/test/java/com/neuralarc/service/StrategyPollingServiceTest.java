@@ -288,6 +288,16 @@ class StrategyPollingServiceTest {
             return findByStrategyId(strategyId).stream().filter(o -> o.stage() == stage)
                     .max(Comparator.comparing(StrategyOrder::submittedAt));
         }
+        @Override public Optional<StrategyOrder> findByAlpacaOrderId(String alpacaOrderId) {
+            return orders.stream()
+                    .filter(order -> alpacaOrderId != null && alpacaOrderId.equals(order.alpacaOrderId()))
+                    .max(Comparator.comparing(StrategyOrder::submittedAt));
+        }
+        @Override public Optional<StrategyOrder> findByClientOrderId(String clientOrderId) {
+            return orders.stream()
+                    .filter(order -> clientOrderId != null && clientOrderId.equals(order.clientOrderId()))
+                    .max(Comparator.comparing(StrategyOrder::submittedAt));
+        }
         @Override public void deleteByStrategyId(String strategyId) { orders.removeIf(order -> order.strategyId().equals(strategyId)); }
     }
 

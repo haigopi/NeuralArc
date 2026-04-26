@@ -12,6 +12,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -194,7 +195,8 @@ public class HttpAlpacaClient implements AlpacaClient {
                         Monetary.zero(),
                         Monetary.zero(),
                         "failed",
-                        error.toString()
+                        error.toString(),
+                        null
                 );
             }
             return toOrderData(parseObject(body));
@@ -267,6 +269,10 @@ public class HttpAlpacaClient implements AlpacaClient {
 
     private AlpacaOrderData toOrderData(JSONObject json) {
         String status = json.optString("status", "unknown");
+        Instant submittedAt = parseInstant(json.optString("submitted_at", ""));
+        if (submittedAt == null) {
+            submittedAt = parseInstant(json.optString("created_at", ""));
+        }
         return new AlpacaOrderData(
                 json.optString("id", ""),
                 json.optString("client_order_id", ""),
@@ -277,8 +283,20 @@ public class HttpAlpacaClient implements AlpacaClient {
                 parseMoney(json.optString("filled_avg_price", "0")),
                 parseMoney(json.optString("filled_qty", "0")),
                 status,
-                json.toString()
+                json.toString(),
+                submittedAt
         );
+    }
+
+    private Instant parseInstant(String value) {
+        if (value == null || value.isBlank() || "null".equalsIgnoreCase(value)) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     private BigDecimal parseMoney(String value) {

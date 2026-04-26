@@ -54,6 +54,26 @@ public class FileStrategyOrderRepository implements StrategyOrderRepository {
     }
 
     @Override
+    public synchronized Optional<StrategyOrder> findByAlpacaOrderId(String alpacaOrderId) {
+        if (alpacaOrderId == null || alpacaOrderId.isBlank()) {
+            return Optional.empty();
+        }
+        return findAll().stream()
+                .filter(order -> alpacaOrderId.equals(order.alpacaOrderId()))
+                .max(Comparator.comparing(StrategyOrder::submittedAt));
+    }
+
+    @Override
+    public synchronized Optional<StrategyOrder> findByClientOrderId(String clientOrderId) {
+        if (clientOrderId == null || clientOrderId.isBlank()) {
+            return Optional.empty();
+        }
+        return findAll().stream()
+                .filter(order -> clientOrderId.equals(order.clientOrderId()))
+                .max(Comparator.comparing(StrategyOrder::submittedAt));
+    }
+
+    @Override
     public synchronized void deleteByStrategyId(String strategyId) {
         List<StrategyOrder> remaining = findAll().stream().filter(o -> !o.strategyId().equals(strategyId)).toList();
         writeAll(remaining);

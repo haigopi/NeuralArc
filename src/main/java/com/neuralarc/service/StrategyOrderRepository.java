@@ -13,5 +13,9 @@ public interface StrategyOrderRepository {
 
     Optional<StrategyOrder> findLatestByStrategyStage(String strategyId, StrategyStage stage);
 
+    Optional<StrategyOrder> findByAlpacaOrderId(String alpacaOrderId);
+
+    Optional<StrategyOrder> findByClientOrderId(String clientOrderId);
+
     void deleteByStrategyId(String strategyId);
 }

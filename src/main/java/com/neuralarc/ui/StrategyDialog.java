@@ -75,12 +75,13 @@ public class StrategyDialog extends JDialog {
         applyDialogDefaults();
         configureTooltips();
         wireProfitHoldFields();
+        styleInputs();
 
         tabs = new JTabbedPane();
         tabs.addTab("Current Strategy", buildCurrentStrategyTab());
         tabs.addTab("6-Month Median Strategy (Coming Soon)", buildMedianStrategyTab());
         tabs.setEnabledAt(1, false);
-        tabs.setToolTipTextAt(1, "Temporarily disabled");
+        tabs.setToolTipTextAt(1, TooltipStyler.text("Temporarily disabled"));
         add(tabs, BorderLayout.CENTER);
 
         JPanel actions = new JPanel(new BorderLayout());
@@ -291,7 +292,10 @@ public class StrategyDialog extends JDialog {
     }
 
     private void addRow(JPanel panel, String label, JComponent component) {
-        panel.add(new JLabel(label));
+        JLabel rowLabel = new JLabel(label);
+        rowLabel.setLabelFor(component);
+        rowLabel.setToolTipText(component.getToolTipText());
+        panel.add(rowLabel);
         panel.add(component);
     }
 
@@ -306,15 +310,15 @@ public class StrategyDialog extends JDialog {
     }
 
     private void configureTooltips() {
-        basePriceField.setToolTipText("Initial buy triggers when price is less than or equal to this value.");
-        stopLossField.setToolTipText("Stop Loss activates once price reaches this level, then can trigger stop-loss on reversal.");
-        sellTriggerField.setToolTipText("Sell trigger starts at this price.");
-        loss1PriceField.setToolTipText("Loss Buy Level 1 triggers when price is less than or equal to this value.");
-        loss2PriceField.setToolTipText("Loss Buy Level 2 triggers when price is less than or equal to this value.");
-        pollingField.setToolTipText("How often the strategy evaluates prices, in seconds.");
-        profitHoldTypeBox.setToolTipText("Choose whether profit hold exits on a percent pullback or a fixed amount pullback.");
-        profitHoldPercentField.setToolTipText("Trailing percent below the highest observed price after the target trigger.");
-        profitHoldAmountField.setToolTipText("Trailing dollar amount below the highest observed price after the target trigger.");
+        basePriceField.setToolTipText(TooltipStyler.text("Initial buy triggers when price is less than or equal to this value."));
+        stopLossField.setToolTipText(TooltipStyler.text("Stop Loss activates once price reaches this level, then can trigger stop-loss on reversal."));
+        sellTriggerField.setToolTipText(TooltipStyler.text("Sell trigger starts at this price."));
+        loss1PriceField.setToolTipText(TooltipStyler.text("Loss Buy Level 1 triggers when price is less than or equal to this value."));
+        loss2PriceField.setToolTipText(TooltipStyler.text("Loss Buy Level 2 triggers when price is less than or equal to this value."));
+        pollingField.setToolTipText(TooltipStyler.text("How often the strategy evaluates prices, in seconds."));
+        profitHoldTypeBox.setToolTipText(TooltipStyler.text("Choose whether profit hold exits on a percent pullback or a fixed amount pullback."));
+        profitHoldPercentField.setToolTipText(TooltipStyler.text("Trailing percent below the highest observed price after the target trigger."));
+        profitHoldAmountField.setToolTipText(TooltipStyler.text("Trailing dollar amount below the highest observed price after the target trigger."));
     }
 
     private void styleInputs() {

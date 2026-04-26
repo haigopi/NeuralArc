@@ -185,6 +185,7 @@ public class StrategyService {
         }
         String clientOrderId = buildClientOrderId(strategy.id(), StrategyStage.CLOSE_POSITION);
         com.neuralarc.api.AlpacaOrderData submitted = alpacaClient.submitLimitSellOrder(strategy.symbol(), quantity, latestPrice, clientOrderId);
+        Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
         StrategyOrder order = new StrategyOrder(
                 java.util.UUID.randomUUID().toString(),
                 strategy.id(),
@@ -200,7 +201,7 @@ public class StrategyService {
                 submitted.filledQuantity(),
                 submitted.filledAveragePrice(),
                 mapOrderStatus(submitted.status()),
-                Instant.now(),
+                submittedAt,
                 Instant.now(),
                 null,
                 submitted.rawJson()
@@ -208,6 +209,7 @@ public class StrategyService {
         orderRepository.save(order);
         strategy.setLatestOrderStatus(order.status().name());
         strategy.setLatestAlpacaOrderId(order.alpacaOrderId());
+        strategy.setLastTriggeredRuleType("CLOSE_POSITION");
         strategyRepository.save(strategy);
         stateMachine.transition(strategy, StrategyLifecycleState.SELL_PLACED, StrategyEventType.ORDER_SUBMITTED, "Close position order submitted", submitted.rawJson());
         return StrategyCreationResult.success(strategy.id(), order.id(), order.alpacaOrderId(), order.clientOrderId());
@@ -319,6 +321,7 @@ public class StrategyService {
     }
 
     private StrategyOrder buildRemoteOrder(Strategy strategy, com.neuralarc.api.AlpacaOrderData remoteOrder) {
+        Instant submittedAt = remoteOrder.submittedAt() == null ? Instant.now() : remoteOrder.submittedAt();
         return new StrategyOrder(
                 UUID.randomUUID().toString(),
                 strategy.id(),
@@ -334,7 +337,7 @@ public class StrategyService {
                 remoteOrder.filledQuantity(),
                 remoteOrder.filledAveragePrice(),
                 mapOrderStatus(remoteOrder.status()),
-                Instant.now(),
+                submittedAt,
                 Instant.now(),
                 null,
                 remoteOrder.rawJson()
