@@ -11,9 +11,12 @@ import javax.swing.*;
 import java.awt.Desktop;
 import java.awt.Image;
 import java.awt.Taskbar;
+import java.io.InputStream;
+import java.util.logging.LogManager;
 
 public class NeuralArc {
     public static void main(String[] args) {
+        configureLogging();
         FontLoader.installSwingDefaults();
         configureTooltips();
 
@@ -69,6 +72,16 @@ public class NeuralArc {
             }
         } catch (UnsupportedOperationException ignored) {
             // Some platforms/JDKs do not expose taskbar icon mutation.
+        }
+    }
+
+    private static void configureLogging() {
+        try (InputStream is = NeuralArc.class.getResourceAsStream("/logging.properties")) {
+            if (is != null) {
+                LogManager.getLogManager().readConfiguration(is);
+            }
+        } catch (Exception ignored) {
+            // Fall back to JVM defaults if config cannot be loaded.
         }
     }
 

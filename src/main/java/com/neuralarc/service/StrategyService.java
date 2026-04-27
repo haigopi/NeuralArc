@@ -84,15 +84,37 @@ public class StrategyService {
     }
 
     public Optional<Strategy> updateStrategy(Strategy strategy) {
+        Optional<Strategy> existing = strategyRepository.findById(strategy.id());
+        if (existing.isEmpty()) {
+            return Optional.empty();
+        }
+
         List<String> errors = validator.validate(strategy);
         if (!errors.isEmpty()) {
             strategy.setLastError(String.join("; ", errors));
             strategyRepository.save(strategy);
             return Optional.empty();
         }
+
+        Strategy persisted = existing.get();
+        boolean refreshActiveOrders = persisted.status() == StrategyStatus.ACTIVE;
+        if (refreshActiveOrders) {
+            // For active strategies, cancel any currently open Alpaca orders before applying
+            // edited pricing/quantity so new orders are created from updated settings.
+            cancelPendingRemoteOrders(persisted);
+            if (!persisted.symbol().equalsIgnoreCase(strategy.symbol())) {
+                cancelPendingRemoteOrders(strategy);
+            }
+        }
+
         strategy.clearLastError();
         strategyRepository.save(strategy);
         stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.STRATEGY_UPDATED, "Strategy updated", "{}");
+
+        if (refreshActiveOrders && strategy.status() == StrategyStatus.ACTIVE) {
+            strategyEngine.resumeStrategy(strategy);
+        }
+
         return Optional.of(strategy);
     }
 

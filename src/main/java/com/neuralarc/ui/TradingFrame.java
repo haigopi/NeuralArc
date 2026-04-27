@@ -24,6 +24,7 @@ import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableRowSorter;
+import javax.swing.plaf.basic.BasicProgressBarUI;
 import javax.swing.plaf.basic.BasicSplitPaneDivider;
 import javax.swing.plaf.basic.BasicSplitPaneUI;
 import javax.swing.text.BadLocationException;
@@ -36,9 +37,12 @@ import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
+import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
@@ -1015,8 +1019,17 @@ public class TradingFrame extends JFrame {
         updatedStrategy.setLatestOrderStatus(entry.strategy.latestOrderStatus());
         updatedStrategy.setLatestAlpacaOrderId(entry.strategy.latestAlpacaOrderId());
         updatedStrategy.setLastError(entry.strategy.lastError());
-        strategyService.updateStrategy(updatedStrategy);
-        entry.syncFrom(updatedStrategy);
+        Optional<Strategy> updatedResult = strategyService.updateStrategy(updatedStrategy);
+        if (updatedResult.isEmpty()) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Failed to update strategy. Please review values and try again.",
+                    "Strategy Update Failed",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return;
+        }
+        entry.syncFrom(updatedResult.get());
         resetPollingCountdown(entry);
         updateHeaderModeStatus(currentBrokerType);
         refreshStrategyTableData();
@@ -1030,37 +1043,61 @@ public class TradingFrame extends JFrame {
         }
 
         ManagedStrategy entry = strategies.get(row);
+        if (entry.isPauseResumeBusy()) {
+            return;
+        }
         boolean wasPaused = entry.isPaused();
         String strategyId = entry.strategy.id();
         String symbol = entry.strategy.symbol();
-
-        if (wasPaused) {
-            strategyService.resume(strategyId);
-            log("Strategy resumed for symbol " + symbol);
-        } else {
-            strategyService.pause(strategyId);
-            stopPollingCountdown(entry);
-            log("Strategy paused for symbol " + symbol);
-            if (analyticsPublisher != null) {
-                analyticsPublisher.publish(new AnalyticsEvent("STRATEGY_PAUSED").put("symbol", symbol));
-            }
-        }
-
-        // After pause/resume, immediately fetch the updated strategy from repository
-        // and sync it to the entry. This ensures the UI sees the state change immediately
-        // on the first click, rather than waiting for the disk read to settle.
-        strategyRepository.findById(strategyId).ifPresent(updatedStrategy -> {
-            entry.syncFrom(updatedStrategy);
-            if (wasPaused) {
-                startPollingCountdown(entry);
-            } else {
-                resetPollingCountdown(entry);
-            }
-        });
-
+        entry.setPauseResumeBusy(true);
+        entry.setPauseResumeBusyText(wasPaused ? "Resuming..." : "Pausing...");
         refreshStrategyTableRow(row);
-        updateStatusBar();
-        refreshPanels();
+
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() {
+                if (wasPaused) {
+                    strategyService.resume(strategyId);
+                } else {
+                    strategyService.pause(strategyId);
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    get();
+                    if (wasPaused) {
+                        log("Strategy resumed for symbol " + symbol);
+                    } else {
+                        stopPollingCountdown(entry);
+                        log("Strategy paused for symbol " + symbol);
+                        if (analyticsPublisher != null) {
+                            analyticsPublisher.publish(new AnalyticsEvent("STRATEGY_PAUSED").put("symbol", symbol));
+                        }
+                    }
+
+                    strategyRepository.findById(strategyId).ifPresent(updatedStrategy -> {
+                        entry.syncFrom(updatedStrategy);
+                        if (wasPaused) {
+                            startPollingCountdown(entry);
+                        } else {
+                            resetPollingCountdown(entry);
+                        }
+                    });
+                } catch (Exception ex) {
+                    log("Pause/Resume failed for symbol " + symbol + ": " + ex.getMessage());
+                } finally {
+                    entry.setPauseResumeBusy(false);
+                    entry.setPauseResumeBusyText("");
+                    refreshStrategyTableRow(row);
+                    updateStatusBar();
+                    refreshPanels();
+                }
+            }
+        };
+        worker.execute();
     }
 
     private void deleteStrategy(int viewRow) {
@@ -1823,6 +1860,8 @@ public class TradingFrame extends JFrame {
         private volatile long pollIntervalMillis;
         private volatile long nextPollDueAtMillis;
         private volatile boolean countdownActive;
+        private volatile boolean pauseResumeBusy;
+        private volatile String pauseResumeBusyText = "";
 
         private ManagedStrategy(Strategy strategy) {
             this.strategy = strategy;
@@ -1835,6 +1874,22 @@ public class TradingFrame extends JFrame {
 
         private boolean isPaused() {
             return strategy.status() == StrategyStatus.PAUSED;
+        }
+
+        private boolean isPauseResumeBusy() {
+            return pauseResumeBusy;
+        }
+
+        private void setPauseResumeBusy(boolean pauseResumeBusy) {
+            this.pauseResumeBusy = pauseResumeBusy;
+        }
+
+        private String pauseResumeBusyText() {
+            return pauseResumeBusyText;
+        }
+
+        private void setPauseResumeBusyText(String pauseResumeBusyText) {
+            this.pauseResumeBusyText = pauseResumeBusyText == null ? "" : pauseResumeBusyText;
         }
 
         private StrategyConfig toConfig() {
@@ -1913,13 +1968,46 @@ public class TradingFrame extends JFrame {
             countdownLabel.setFont(FontLoader.ui(Font.PLAIN, 10f));
             countdownLabel.setHorizontalAlignment(SwingConstants.LEFT);
             countdownLabel.setBorder(new EmptyBorder(0, 8, 0, 0));
-            progressBar.setOpaque(true);
+            progressBar.setOpaque(false);
             progressBar.setBorder(BorderFactory.createEmptyBorder());
             progressBar.setStringPainted(false);
-            progressBar.setPreferredSize(new Dimension(90, 12));
+            // Fixed thin size — the wrapper panel enforces this height.
+            progressBar.setPreferredSize(new Dimension(88, 6));
+            progressBar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 6));
             progressBar.setComponentOrientation(java.awt.ComponentOrientation.RIGHT_TO_LEFT);
             progressBar.setForeground(new Color(94, 53, 177));
-            add(progressBar, BorderLayout.WEST);
+            // Custom UI: pill-shaped fill, no visible track background.
+            progressBar.setUI(new BasicProgressBarUI() {
+                @Override
+                public void paint(Graphics g, JComponent c) {
+                    Graphics2D g2 = (Graphics2D) g.create();
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    int w = c.getWidth();
+                    int h = c.getHeight();
+                    int arc = h; // fully rounded pill ends
+                    int filled = (int) Math.round(w * progressBar.getPercentComplete());
+                    // Optional faint track pill
+                    Color trackColor = progressBar.getBackground();
+                    if (trackColor != null && trackColor.getAlpha() > 0) {
+                        g2.setColor(trackColor);
+                        g2.fillRoundRect(0, 0, w, h, arc, arc);
+                    }
+                    // Filled portion, clipped to pill shape
+                    if (filled > 0) {
+                        g2.setColor(progressBar.getForeground());
+                        g2.setClip(new java.awt.geom.RoundRectangle2D.Float(0, 0, w, h, arc, arc));
+                        g2.fillRect(0, 0, filled, h);
+                    }
+                    g2.dispose();
+                }
+            });
+            // Wrap bar in a GridBagLayout panel so it stays vertically centred at 6 px
+            // regardless of how tall the containing row is.
+            JPanel barWrapper = new JPanel(new GridBagLayout());
+            barWrapper.setOpaque(false);
+            barWrapper.setPreferredSize(new Dimension(90, 0)); // fixed width, height from parent
+            barWrapper.add(progressBar, new GridBagConstraints());
+            add(barWrapper, BorderLayout.WEST);
             add(countdownLabel, BorderLayout.CENTER);
         }
 
@@ -1931,10 +2019,19 @@ public class TradingFrame extends JFrame {
             long secondsRemaining = pollingSecondsRemaining(strategy);
             long totalSeconds = Math.max(1L, strategy.strategy.pollingIntervalSeconds());
 
-            setBackground(selectionAwareRowColor(isSelected, table));
+            // Match the row background so no separate cell box is visible
+            Color rowBg = selectionAwareRowColor(isSelected, table);
+            setBackground(rowBg);
+
             progressBar.setValue(progress);
-            progressBar.setBackground(isSelected ? TABLE_SELECTION_BAR_BG : new Color(232, 236, 242));
-            progressBar.setForeground(strategy.isPaused() ? STATUS_TEXT_PAUSED : new Color(94, 53, 177));
+            // Track: transparent on selected row, very subtle on normal rows
+            progressBar.setBackground(isSelected
+                    ? new Color(TABLE_SELECTION_BAR_BG.getRed(), TABLE_SELECTION_BAR_BG.getGreen(),
+                                TABLE_SELECTION_BAR_BG.getBlue(), 60)
+                    : new Color(0, 0, 0, 0)); // fully transparent track on normal rows
+            progressBar.setForeground(strategy.isPaused()
+                    ? STATUS_TEXT_PAUSED
+                    : isSelected ? new Color(60, 30, 140) : new Color(94, 53, 177));
             countdownLabel.setForeground(isSelected ? TABLE_SELECTION_FG : table.getForeground());
             countdownLabel.setText(strategy.isPaused() ? "Paused" : secondsRemaining + "s / " + totalSeconds + "s");
             String tooltipText = TooltipStyler.text(strategy.isPaused()
@@ -1969,9 +2066,12 @@ public class TradingFrame extends JFrame {
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
             int modelRow = table.convertRowIndexToModel(row);
-            boolean paused = strategies.get(modelRow).isPaused();
-            toggleButton.setText(paused ? "Resume" : "Pause");
-            styleActionButton(toggleButton, paused ? new Color(46, 125, 50) : new Color(198, 40, 40));
+            ManagedStrategy strategy = strategies.get(modelRow);
+            boolean paused = strategy.isPaused();
+            boolean busy = strategy.isPauseResumeBusy();
+            toggleButton.setText(busy ? strategy.pauseResumeBusyText() : paused ? "Resume" : "Pause");
+            styleActionButton(toggleButton, busy ? new Color(120, 144, 156)
+                    : paused ? new Color(46, 125, 50) : new Color(198, 40, 40));
             setBackground(selectionAwareRowColor(isSelected, table));
             return this;
         }
