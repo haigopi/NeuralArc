@@ -24,6 +24,8 @@ import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableRowSorter;
+import javax.swing.plaf.basic.BasicSplitPaneDivider;
+import javax.swing.plaf.basic.BasicSplitPaneUI;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
@@ -377,15 +379,18 @@ public class TradingFrame extends JFrame {
 
         JScrollPane strategyGrid = new JScrollPane(strategyTable);
         strategyGrid.setOpaque(false);
+        strategyGrid.setBackground(new Color(0, 0, 0, 0));
         strategyGrid.getViewport().setOpaque(false);
         strategyGrid.getViewport().setBackground(new Color(0, 0, 0, 0));
-        strategyGrid.setViewportBorder(new EmptyBorder(8, 8, 8, 8));
-        javax.swing.border.TitledBorder strategyGridTitle = BorderFactory.createTitledBorder("Stock Strategies");
+        javax.swing.border.TitledBorder strategyGridTitle = BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(new Color(208, 214, 222), 1, true),
+                "Stock Strategies"
+        );
         strategyGridTitle.setTitleFont(FontLoader.ui(Font.BOLD, 10f));
         strategyGridTitle.setTitleColor(new Color(78, 84, 94));
         strategyGrid.setBorder(BorderFactory.createCompoundBorder(
-                strategyGridTitle,
-                new EmptyBorder(8, 8, 8, 8)
+                new EmptyBorder(10, 0, 0, 0),
+                strategyGridTitle
         ));
 
 
@@ -468,15 +473,18 @@ public class TradingFrame extends JFrame {
 
         JScrollPane eventLogScrollPane = new JScrollPane(eventLog);
         eventLogScrollPane.setOpaque(false);
+        eventLogScrollPane.setBackground(new Color(0, 0, 0, 0));
         eventLogScrollPane.getViewport().setOpaque(false);
         eventLogScrollPane.getViewport().setBackground(new Color(0, 0, 0, 0));
-        eventLogScrollPane.setViewportBorder(new EmptyBorder(8, 8, 8, 8));
-        javax.swing.border.TitledBorder eventLogTitle = BorderFactory.createTitledBorder("Logs");
+        javax.swing.border.TitledBorder eventLogTitle = BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(new Color(208, 214, 222), 1, true),
+                "Logs"
+        );
         eventLogTitle.setTitleFont(FontLoader.ui(Font.BOLD, 10f));
         eventLogTitle.setTitleColor(new Color(78, 84, 94));
         eventLogScrollPane.setBorder(BorderFactory.createCompoundBorder(
-                eventLogTitle,
-                new EmptyBorder(8, 8, 8, 8)
+                new EmptyBorder(10, 0, 0, 0),
+                eventLogTitle
         ));
 
         // Put event log and strategy grid in a vertical split so both are always visible
@@ -485,6 +493,13 @@ public class TradingFrame extends JFrame {
         splitPane.setResizeWeight(0.5);
         splitPane.setDividerSize(6);
         splitPane.setBorder(null);
+        splitPane.setOpaque(false);
+        splitPane.setBackground(new Color(0, 0, 0, 0));
+        if (splitPane.getUI() instanceof BasicSplitPaneUI splitPaneUi) {
+            BasicSplitPaneDivider divider = splitPaneUi.getDivider();
+            divider.setBorder(BorderFactory.createEmptyBorder());
+            divider.setBackground(new Color(189, 198, 210));
+        }
 
         JPanel positionSection = createDetailSection(positionSectionTitle, positionSummary);
         installCopyPopup(positionSection, positionSummary);
