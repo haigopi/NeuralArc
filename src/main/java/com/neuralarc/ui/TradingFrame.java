@@ -77,7 +77,9 @@ public class TradingFrame extends JFrame {
     private static final Color STATUS_OK = new Color(34, 139, 34);
     private static final Color STATUS_WARN = new Color(180, 100, 0);
     private static final Color STATUS_ERR = new Color(180, 30, 30);
-    private static final Color TABLE_SELECTION_BG = new Color(214, 232, 255);
+    private static final Color TABLE_SELECTION_BG     = new Color(255, 242, 80);   // yellow row highlight
+    private static final Color TABLE_SELECTION_FG     = new Color(25,  20,  5);    // near-black text on yellow
+    private static final Color TABLE_SELECTION_BAR_BG = new Color(230, 208, 30);   // progress-bar unfilled on yellow row
     private static final Color STATUS_TEXT_RUNNING = new Color(46, 125, 50);
     private static final Color STATUS_TEXT_PAUSED = new Color(180, 100, 0);
     private static final Color MODE_TEXT_ALPACA_PAPER = new Color(25, 118, 210);
@@ -102,7 +104,19 @@ public class TradingFrame extends JFrame {
     private final UserIdentityService identityService = new UserIdentityService();
     private final List<ManagedStrategy> strategies = new ArrayList<>();
     private final StrategyTableModel strategyTableModel = new StrategyTableModel();
-    private final JTable strategyTable = new JTable(strategyTableModel);
+    private final JTable strategyTable = new JTable(strategyTableModel) {
+        @Override
+        public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+            Component c = super.prepareRenderer(renderer, row, column);
+            // Force the custom selection colour even on macOS Aqua LAF, which otherwise
+            // paints its own system-accent stripe and ignores the renderer's background.
+            if (isCellSelected(row, column)) {
+                c.setBackground(TABLE_SELECTION_BG);
+                c.setForeground(TABLE_SELECTION_FG);
+            }
+            return c;
+        }
+    };
 
     private TradingApi tradingApi;
     private AnalyticsPublisher analyticsPublisher;
@@ -128,9 +142,9 @@ public class TradingFrame extends JFrame {
     private String runtimeApiSecret = "";
 
     public TradingFrame() {
-        liveModeBlinkTimer = new Timer(500, e -> toggleLiveHeaderBlink());
+        liveModeBlinkTimer = new Timer(500, _ -> toggleLiveHeaderBlink());
         liveModeBlinkTimer.setInitialDelay(0);
-        logFlushTimer = new Timer(10000, e -> flushLogsToFile());
+        logFlushTimer = new Timer(10000, _ -> flushLogsToFile());
         logFlushTimer.setInitialDelay(10000);
         logFlushTimer.start();
         pollingIndicatorTimer = new Timer(250, e -> strategyTable.repaint());
@@ -281,8 +295,7 @@ public class TradingFrame extends JFrame {
         strategyTable.setCellSelectionEnabled(false);
         strategyTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         strategyTable.setSelectionBackground(TABLE_SELECTION_BG);
-        strategyTable.setSelectionForeground(new Color(20, 20, 30));
-        strategyTable.setFocusable(false);
+        strategyTable.setSelectionForeground(TABLE_SELECTION_FG);
         strategyTable.setRowMargin(6);
         strategyTable.setShowGrid(false);
         strategyTable.setIntercellSpacing(new Dimension(0, 6));
@@ -297,32 +310,43 @@ public class TradingFrame extends JFrame {
         strategyTable.getColumnModel().getColumn(9).setMinWidth(270);
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
-        // This ensures the full row becomes selected on mousePressed before any action click executes.
+        // Using mousePressed (not mouseClicked) gives instant response — mouseClicked only fires
+        // when press and release land on the exact same pixel, which feels laggy.
         strategyTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mousePressed(java.awt.event.MouseEvent e) {
                 int viewRow = strategyTable.rowAtPoint(e.getPoint());
-                if (viewRow >= 0 && viewRow < strategyTable.getRowCount()) {
+                int viewCol = strategyTable.columnAtPoint(e.getPoint());
+
+                // Select the clicked row first so the full row highlights yellow immediately.
+                if (viewRow >= 0 && viewRow < strategyTable.getRowCount()
+                        && strategyTable.getSelectedRow() != viewRow) {
                     strategyTable.setRowSelectionInterval(viewRow, viewRow);
                 }
-            }
 
-            @Override
-            public void mouseClicked(java.awt.event.MouseEvent e) {
-                int viewRow = strategyTable.rowAtPoint(e.getPoint());
-                int viewCol = strategyTable.columnAtPoint(e.getPoint());
-                if (viewRow < 0 || viewCol != 9) return;
-                if (viewRow >= strategies.size()) return;
+                // Dispatch the action button (column 9 only) via zone thirds.
+                // Use invokeLater so the action runs AFTER ALL mousePressed handlers
+                // (ours + BasicTableUI) have finished — this is critical because:
+                //   • BasicTableUI fires its own mousePressed AFTER ours (LIFO order).
+                //   • Without deferral, dialogs opened here block BasicTableUI from
+                //     ever running, leaving the table in a broken state on first click.
+                if (e.getButton() != java.awt.event.MouseEvent.BUTTON1) return;
+                if (viewRow < 0 || viewRow >= strategies.size() || viewCol != 9) return;
                 java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, viewCol, false);
-                int xInCell = e.getX() - cellRect.x;
-                int sectionWidth = cellRect.width / 3;
-                if (xInCell < sectionWidth) {
-                    editStrategy(viewRow);
-                } else if (xInCell < sectionWidth * 2) {
-                    togglePauseResume(viewRow);
-                } else {
-                    deleteStrategy(viewRow);
-                }
+                int xInCell  = e.getX() - cellRect.x;
+                int section  = cellRect.width / 3;
+                final int capturedRow     = viewRow;
+                final int capturedX       = xInCell;
+                final int capturedSection = section;
+                SwingUtilities.invokeLater(() -> {
+                    if (capturedX < capturedSection) {
+                        editStrategy(capturedRow);
+                    } else if (capturedX < capturedSection * 2) {
+                        togglePauseResume(capturedRow);
+                    } else {
+                        deleteStrategy(capturedRow);
+                    }
+                });
             }
 
             @Override
@@ -333,8 +357,11 @@ public class TradingFrame extends JFrame {
         strategyTable.addMouseMotionListener(new java.awt.event.MouseMotionAdapter() {
             @Override
             public void mouseMoved(java.awt.event.MouseEvent e) {
+                // Only show HAND cursor when hovering over the action-buttons column of
+                // an actual data row — NOT over the empty viewport space below the rows.
+                int viewRow = strategyTable.rowAtPoint(e.getPoint());
                 int viewCol = strategyTable.columnAtPoint(e.getPoint());
-                if (viewCol == 9) {
+                if (viewRow >= 0 && viewCol == 9) {
                     strategyTable.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
                 } else {
                     strategyTable.setCursor(java.awt.Cursor.getDefaultCursor());
@@ -349,16 +376,22 @@ public class TradingFrame extends JFrame {
         strategyTable.setRowSorter(sorter);
 
         JScrollPane strategyGrid = new JScrollPane(strategyTable);
-        strategyGrid.setViewportBorder(new EmptyBorder(8, 10, 8, 10));
+        strategyGrid.setOpaque(false);
+        strategyGrid.getViewport().setOpaque(false);
+        strategyGrid.getViewport().setBackground(new Color(0, 0, 0, 0));
+        strategyGrid.setViewportBorder(new EmptyBorder(8, 8, 8, 8));
+        javax.swing.border.TitledBorder strategyGridTitle = BorderFactory.createTitledBorder("Stock Strategies");
+        strategyGridTitle.setTitleFont(FontLoader.ui(Font.BOLD, 10f));
+        strategyGridTitle.setTitleColor(new Color(78, 84, 94));
         strategyGrid.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createTitledBorder("Stock Strategies"),
-                new EmptyBorder(8, 10, 8, 10)
+                strategyGridTitle,
+                new EmptyBorder(8, 8, 8, 8)
         ));
 
 
         // ── Status bar ─────────────────────────────────────────────────────────
         // ── Status bar ─────────────────────────────────────────────────────────
-        statusBar.setFont(BASE_FONT.deriveFont(12.5f));
+        statusBar.setFont(BASE_FONT.deriveFont(10f));
         statusBar.setForeground(new Color(200, 100, 100));
         statusBar.setVerticalAlignment(SwingConstants.CENTER);
         statusBar.setBorder(new EmptyBorder(0, 6, 0, 16));
@@ -433,9 +466,22 @@ public class TradingFrame extends JFrame {
         applyUiPolish();
         applyDataViewFonts();
 
+        JScrollPane eventLogScrollPane = new JScrollPane(eventLog);
+        eventLogScrollPane.setOpaque(false);
+        eventLogScrollPane.getViewport().setOpaque(false);
+        eventLogScrollPane.getViewport().setBackground(new Color(0, 0, 0, 0));
+        eventLogScrollPane.setViewportBorder(new EmptyBorder(8, 8, 8, 8));
+        javax.swing.border.TitledBorder eventLogTitle = BorderFactory.createTitledBorder("Logs");
+        eventLogTitle.setTitleFont(FontLoader.ui(Font.BOLD, 10f));
+        eventLogTitle.setTitleColor(new Color(78, 84, 94));
+        eventLogScrollPane.setBorder(BorderFactory.createCompoundBorder(
+                eventLogTitle,
+                new EmptyBorder(8, 8, 8, 8)
+        ));
+
         // Put event log and strategy grid in a vertical split so both are always visible
         JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
-                new JScrollPane(eventLog), strategyGrid);
+                eventLogScrollPane, strategyGrid);
         splitPane.setResizeWeight(0.5);
         splitPane.setDividerSize(6);
         splitPane.setBorder(null);
@@ -474,8 +520,9 @@ public class TradingFrame extends JFrame {
                 if (strategyTable.getSelectedRow() < 0) {
                     return;
                 }
-                updateSelectedStrategy();
-                refreshPanels();
+                if (updateSelectedStrategy()) {
+                    refreshPanels();
+                }
             }
         });
         addWindowListener(new WindowAdapter() {
@@ -500,7 +547,11 @@ public class TradingFrame extends JFrame {
     private void applyDataViewFonts() {
         eventLog.setFont(FontLoader.ui(Font.PLAIN, 10f));
         strategyTable.setFont(FontLoader.ui(Font.PLAIN, 12f));
-        strategyTable.getTableHeader().setFont(FontLoader.ui(Font.BOLD, 12f));
+        strategyTable.getTableHeader().setFont(FontLoader.ui(Font.BOLD, 10f));
+        strategyTable.getTableHeader().setOpaque(true);
+        strategyTable.getTableHeader().setBackground(new Color(228, 233, 240));
+        strategyTable.getTableHeader().setForeground(new Color(82, 88, 98));
+        strategyTable.getTableHeader().setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(204, 210, 218)));
         paperUnrealizedSummary.setFont(headerStatus.getFont());
         liveUnrealizedSummary.setFont(headerStatus.getFont());
         headerTotalsSeparator.setFont(headerStatus.getFont());
@@ -956,18 +1007,34 @@ public class TradingFrame extends JFrame {
         }
 
         ManagedStrategy entry = strategies.get(row);
-        if (entry.isPaused()) {
-            strategyService.resume(entry.strategy.id());
-            log("Strategy resumed for symbol " + entry.strategy.symbol());
+        boolean wasPaused = entry.isPaused();
+        String strategyId = entry.strategy.id();
+        String symbol = entry.strategy.symbol();
+
+        if (wasPaused) {
+            strategyService.resume(strategyId);
+            log("Strategy resumed for symbol " + symbol);
         } else {
-            strategyService.pause(entry.strategy.id());
+            strategyService.pause(strategyId);
             stopPollingCountdown(entry);
-            log("Strategy paused for symbol " + entry.strategy.symbol());
+            log("Strategy paused for symbol " + symbol);
             if (analyticsPublisher != null) {
-                analyticsPublisher.publish(new AnalyticsEvent("STRATEGY_PAUSED").put("symbol", entry.strategy.symbol()));
+                analyticsPublisher.publish(new AnalyticsEvent("STRATEGY_PAUSED").put("symbol", symbol));
             }
         }
-        syncStrategiesFromRepository();
+
+        // After pause/resume, immediately fetch the updated strategy from repository
+        // and sync it to the entry. This ensures the UI sees the state change immediately
+        // on the first click, rather than waiting for the disk read to settle.
+        strategyRepository.findById(strategyId).ifPresent(updatedStrategy -> {
+            entry.syncFrom(updatedStrategy);
+            if (wasPaused) {
+                startPollingCountdown(entry);
+            } else {
+                resetPollingCountdown(entry);
+            }
+        });
+
         refreshStrategyTableRow(row);
         updateStatusBar();
         refreshPanels();
@@ -1265,15 +1332,19 @@ public class TradingFrame extends JFrame {
         headerTotalsSeparator.setVisible(true);
     }
 
-    private void updateSelectedStrategy() {
+    private boolean updateSelectedStrategy() {
         int viewRow = strategyTable.getSelectedRow();
         if (viewRow < 0) {
-            return;
+            return false;
         }
         int modelRow = strategyTable.convertRowIndexToModel(viewRow);
         if (modelRow >= 0 && modelRow < strategies.size()) {
-            selectedStrategySymbol = strategies.get(modelRow).strategy.symbol();
+            String newSymbol = strategies.get(modelRow).strategy.symbol();
+            boolean changed = selectedStrategySymbol == null || !selectedStrategySymbol.equalsIgnoreCase(newSymbol);
+            selectedStrategySymbol = newSymbol;
+            return changed;
         }
+        return false;
     }
 
     private void restoreSelectedRow() {
@@ -1789,7 +1860,7 @@ public class TradingFrame extends JFrame {
                 boolean paused = strategies.get(modelRow).isPaused();
                 if (isSelected) {
                     setBackground(TABLE_SELECTION_BG);
-                    setForeground(new Color(30, 30, 30));
+                    setForeground(TABLE_SELECTION_FG);
                 } else {
                     setBackground(table.getBackground());
                     if (column == 1) {
@@ -1839,9 +1910,9 @@ public class TradingFrame extends JFrame {
 
             setBackground(selectionAwareRowColor(isSelected, table));
             progressBar.setValue(progress);
-            progressBar.setBackground(isSelected ? new Color(228, 217, 250) : new Color(232, 236, 242));
+            progressBar.setBackground(isSelected ? TABLE_SELECTION_BAR_BG : new Color(232, 236, 242));
             progressBar.setForeground(strategy.isPaused() ? STATUS_TEXT_PAUSED : new Color(94, 53, 177));
-            countdownLabel.setForeground(isSelected ? new Color(30, 30, 30) : table.getForeground());
+            countdownLabel.setForeground(isSelected ? TABLE_SELECTION_FG : table.getForeground());
             countdownLabel.setText(strategy.isPaused() ? "Paused" : secondsRemaining + "s / " + totalSeconds + "s");
             String tooltipText = TooltipStyler.text(strategy.isPaused()
                     ? "Polling paused"

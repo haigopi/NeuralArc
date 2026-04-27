@@ -6,6 +6,7 @@ $ProjectDir = Split-Path -Parent $ScriptDir
 $AppName = "NeuralArc"
 $MainClass = "com.neuralarc.NeuralArc"
 $RawVersion = $null
+# Packaging icon source of truth. Keep this aligned with the runtime app icon.
 $LogoPng = Join-Path $ProjectDir "src\main\resources\logo.png"
 $IconDir = Join-Path $ProjectDir "build\jpackage\windows"
 $IconPng = Join-Path $IconDir "logo-256.png"

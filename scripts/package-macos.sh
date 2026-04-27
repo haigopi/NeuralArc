@@ -9,6 +9,7 @@ MAIN_CLASS="com.neuralarc.NeuralArc"
 RAW_VERSION="${1:-$("$PROJECT_DIR/gradlew" -q properties --property version | tail -n 1 | awk '{print $2}')}"
 APP_VERSION="$(printf '%s' "$RAW_VERSION" | sed -E 's/[^0-9.].*$//')"
 DEST_DIR="$PROJECT_DIR/build/installer/macos"
+# Packaging icon source of truth. Keep this aligned with the runtime app icon.
 LOGO_PNG="$PROJECT_DIR/src/main/resources/logo.png"
 ICONSET_DIR="$PROJECT_DIR/build/jpackage/macos/NeuralArc.iconset"
 ICON_ICNS="$PROJECT_DIR/build/jpackage/macos/NeuralArc.icns"
