@@ -75,6 +75,7 @@ public class TradingFrame extends JFrame {
     private final JLabel rulesSectionTitle = new JLabel("Rules Triggered");
     private final JLabel statusBar = new JLabel(" ● Not connected");
     private final JLabel statusStrategyCount = new JLabel("");
+    private final JLabel streamStatus = new JLabel("Stream: idle");
     private final JLabel headerStatus = new JLabel("Status: waiting for settings");
     private static final Color STATUS_OK = new Color(34, 139, 34);
     private static final Color STATUS_WARN = new Color(180, 100, 0);
@@ -405,6 +406,10 @@ public class TradingFrame extends JFrame {
         statusStrategyCount.setForeground(new Color(150, 150, 160));
         statusStrategyCount.setVerticalAlignment(SwingConstants.CENTER);
         statusStrategyCount.setBorder(new EmptyBorder(0, 0, 0, 12));
+        streamStatus.setFont(BASE_FONT.deriveFont(Font.PLAIN, 11f));
+        streamStatus.setForeground(new Color(150, 150, 160));
+        streamStatus.setVerticalAlignment(SwingConstants.CENTER);
+        streamStatus.setBorder(new EmptyBorder(0, 12, 0, 0));
 
         JButton faqsButton = new JButton("Faqs");
         applyButtonIcon(faqsButton, "icons/faqs.svg", 15);
@@ -436,8 +441,11 @@ public class TradingFrame extends JFrame {
         leftGbc.gridx = 0;
         statusLeft.add(statusBar, leftGbc);
         leftGbc.gridx = 1;
-        leftGbc.insets = new java.awt.Insets(0, 0, 0, 0);
+        leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
         statusLeft.add(statusStrategyCount, leftGbc);
+        leftGbc.gridx = 2;
+        leftGbc.insets = new java.awt.Insets(0, 0, 0, 0);
+        statusLeft.add(streamStatus, leftGbc);
 
         JPanel statusRight = new JPanel(new GridBagLayout());
         statusRight.setOpaque(false);
@@ -2026,6 +2034,7 @@ public class TradingFrame extends JFrame {
     private void startTradingEventStreamIfConfigured(String apiKey, String apiSecret) {
         stopTradingEventStream();
         if (!AppMetadata.alpacaTradingEventsWebSocketEnabled()) {
+            updateStreamStatus("disabled", new Color(150, 150, 160));
             return;
         }
         String streamUrl = AppMetadata.alpacaTradingEventsWebSocketUrl(
@@ -2037,10 +2046,28 @@ public class TradingFrame extends JFrame {
                 apiSecret
         );
         if (!tradingWebSocketClient.isConfigured()) {
+            updateStreamStatus("not configured", STATUS_WARN);
             return;
         }
+        updateStreamStatus("connecting", new Color(180, 100, 0));
         tradingWebSocketClient.start(this::handleTradingStreamEvent,
-                ex -> log("[STREAM] Trade event stream error: " + ex.getMessage()));
+                status -> {
+                    log("[STREAM] " + status);
+                    String normalized = status == null ? "" : status.toLowerCase();
+                    if (normalized.contains("authorized")) {
+                        updateStreamStatus("authorized", STATUS_OK);
+                    } else if (normalized.contains("listening")) {
+                        updateStreamStatus("listening", STATUS_OK);
+                    } else if (normalized.contains("connected")) {
+                        updateStreamStatus("connected", new Color(180, 100, 0));
+                    } else {
+                        updateStreamStatus(status, new Color(150, 150, 160));
+                    }
+                },
+                ex -> {
+                    log("[STREAM] Trade event stream error: " + ex.getMessage());
+                    updateStreamStatus("error", STATUS_ERR);
+                });
         log("[STREAM] Connected trading WebSocket.");
     }
 
@@ -2050,18 +2077,45 @@ public class TradingFrame extends JFrame {
         }
         tradingWebSocketClient.stop();
         tradingWebSocketClient = null;
+        updateStreamStatus("idle", new Color(150, 150, 160));
     }
 
     private void handleTradingStreamEvent(AlpacaTradeUpdateEvent event) {
         if (event == null || strategyPollingService == null) {
             return;
         }
+        updateStreamStatus("trade update", new Color(46, 125, 50));
+        log("[STREAM] Trade update received: event=" + event.eventType()
+                + " orderId=" + event.orderData().orderId()
+                + " clientOrderId=" + event.orderData().clientOrderId());
         strategyPollingService.onTradeUpdate(event);
+        refreshDisplayedPositionFromStream(event.orderData().symbol());
         SwingUtilities.invokeLater(() -> {
             syncStrategiesFromRepository();
             refreshStrategyTableContent();
             refreshPanels();
             updateStatusBar();
+        });
+    }
+
+    private void refreshDisplayedPositionFromStream(String symbol) {
+        if (tradingApi == null || symbol == null || symbol.isBlank()) {
+            return;
+        }
+        ManagedStrategy entry = findStrategy(symbol);
+        if (entry == null) {
+            return;
+        }
+        Position latest = tradingApi.getPosition(symbol);
+        entry.setCachedPosition(latest);
+    }
+
+    private void updateStreamStatus(String status, Color color) {
+        SwingUtilities.invokeLater(() -> {
+            streamStatus.setText("Stream: " + status);
+            if (color != null) {
+                streamStatus.setForeground(color);
+            }
         });
     }
 }

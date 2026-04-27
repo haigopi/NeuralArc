@@ -1,6 +1,7 @@
 package com.neuralarc.api;
 
 import org.json.JSONObject;
+import org.json.JSONArray;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -10,7 +11,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -35,12 +38,12 @@ public class AlpacaTradingWebSocketClient {
         return !streamUrl.isBlank() && !apiKey.isBlank() && !apiSecret.isBlank();
     }
 
-    public synchronized void start(Consumer<AlpacaTradeUpdateEvent> onEvent, Consumer<Throwable> onError) {
+    public synchronized void start(Consumer<AlpacaTradeUpdateEvent> onEvent, Consumer<String> onStatus, Consumer<Throwable> onError) {
         if (running.get() || !isConfigured()) {
             return;
         }
         running.set(true);
-        worker = new Thread(() -> runLoop(onEvent, onError), "alpaca-trading-websocket");
+        worker = new Thread(() -> runLoop(onEvent, onStatus, onError), "alpaca-trading-websocket");
         worker.setDaemon(true);
         worker.start();
     }
@@ -58,10 +61,10 @@ public class AlpacaTradingWebSocketClient {
         }
     }
 
-    private void runLoop(Consumer<AlpacaTradeUpdateEvent> onEvent, Consumer<Throwable> onError) {
+    private void runLoop(Consumer<AlpacaTradeUpdateEvent> onEvent, Consumer<String> onStatus, Consumer<Throwable> onError) {
         while (running.get()) {
             try {
-                connectOnce(onEvent);
+                connectOnce(onEvent, onStatus);
                 retryDelaySeconds.set(2);
                 waitForSocketClose();
             } catch (Exception ex) {
@@ -76,16 +79,23 @@ public class AlpacaTradingWebSocketClient {
         }
     }
 
-    private void connectOnce(Consumer<AlpacaTradeUpdateEvent> onEvent) {
-        TradingListener listener = new TradingListener(onEvent);
+    private void connectOnce(Consumer<AlpacaTradeUpdateEvent> onEvent, Consumer<String> onStatus) throws InterruptedException {
+        TradingListener listener = new TradingListener(onEvent, onStatus);
         WebSocket socket = httpClient.newWebSocketBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/json")
                 .buildAsync(URI.create(streamUrl), listener)
                 .join();
         webSocket = socket;
+        onStatus.accept("WebSocket connected");
         socket.sendText(authMessage().toString(), true).join();
+        if (!listener.awaitAuthorization()) {
+            throw new IllegalStateException(listener.handshakeErrorMessage("authorization"));
+        }
         socket.sendText(listenMessage().toString(), true).join();
+        if (!listener.awaitListening()) {
+            throw new IllegalStateException(listener.handshakeErrorMessage("listening"));
+        }
     }
 
     private void waitForSocketClose() throws InterruptedException {
@@ -117,12 +127,17 @@ public class AlpacaTradingWebSocketClient {
 
     private final class TradingListener implements WebSocket.Listener {
         private final Consumer<AlpacaTradeUpdateEvent> onEvent;
+        private final Consumer<String> onStatus;
         private final StringBuilder textBuffer = new StringBuilder();
         private final List<byte[]> binaryChunks = new ArrayList<>();
+        private final CountDownLatch authorizationLatch = new CountDownLatch(1);
+        private final CountDownLatch listeningLatch = new CountDownLatch(1);
         private int binarySize;
+        private volatile String handshakeError;
 
-        private TradingListener(Consumer<AlpacaTradeUpdateEvent> onEvent) {
+        private TradingListener(Consumer<AlpacaTradeUpdateEvent> onEvent, Consumer<String> onStatus) {
             this.onEvent = onEvent;
+            this.onStatus = onStatus;
         }
 
         @Override
@@ -175,9 +190,66 @@ public class AlpacaTradingWebSocketClient {
         }
 
         private void publishPayload(String payload) {
+            processControlPayload(payload);
             for (AlpacaTradeUpdateEvent event : AlpacaTradeUpdateEventParser.parseAll(payload)) {
                 onEvent.accept(event);
             }
+        }
+
+        private void processControlPayload(String payload) {
+            if (payload == null || payload.isBlank()) {
+                return;
+            }
+            try {
+                String normalized = payload.trim();
+                if (normalized.startsWith("[")) {
+                    JSONArray array = new JSONArray(normalized);
+                    for (int i = 0; i < array.length(); i++) {
+                        processControlObject(array.optJSONObject(i));
+                    }
+                    return;
+                }
+                processControlObject(new JSONObject(normalized));
+            } catch (Exception ignored) {
+                // Ignore non-control payload parsing errors here; trade update parser handles event payloads.
+            }
+        }
+
+        private void processControlObject(JSONObject json) {
+            if (json == null) {
+                return;
+            }
+            String stream = json.optString("stream", "").trim();
+            JSONObject data = json.optJSONObject("data");
+            if ("authorization".equals(stream) && data != null) {
+                String status = data.optString("status", "").trim();
+                String action = data.optString("action", "").trim();
+                onStatus.accept("Authorization stream: status=" + status + " action=" + action);
+                if ("authorized".equalsIgnoreCase(status)) {
+                    authorizationLatch.countDown();
+                } else if ("unauthorized".equalsIgnoreCase(status)) {
+                    handshakeError = "WebSocket authorization failed";
+                    authorizationLatch.countDown();
+                    listeningLatch.countDown();
+                }
+                return;
+            }
+            if ("listening".equals(stream) && data != null) {
+                onStatus.accept("Listening stream acknowledged: " + data.toString());
+                listeningLatch.countDown();
+            }
+        }
+
+        private boolean awaitAuthorization() throws InterruptedException {
+            return authorizationLatch.await(10, TimeUnit.SECONDS) && handshakeError == null;
+        }
+
+        private boolean awaitListening() throws InterruptedException {
+            return listeningLatch.await(10, TimeUnit.SECONDS) && handshakeError == null;
+        }
+
+        private String handshakeErrorMessage(String step) {
+            return handshakeError != null ? handshakeError : "Timed out waiting for WebSocket " + step;
         }
     }
 }

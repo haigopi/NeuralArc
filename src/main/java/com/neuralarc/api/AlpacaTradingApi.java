@@ -343,7 +343,8 @@ public class AlpacaTradingApi implements TradingApi {
             return "<empty>";
         }
         String flattened = body.replaceAll("\\s+", " ").trim();
-        return flattened.length() <= 300 ? flattened : flattened.substring(0, 800) + "...";
+        int maxLength = 300;
+        return flattened.length() <= maxLength ? flattened : flattened.substring(0, maxLength) + "...";
     }
 
     private String extractErrorMessage(String responseBody, int statusCode) {

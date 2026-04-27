@@ -85,6 +85,16 @@ public class StrategyPollingService {
             boolean applied = strategyEngine.applyStreamingOrderUpdate(updateEvent.orderData());
             if (applied) {
                 lastStreamingEventAt = Instant.now();
+                LOGGER.info(() -> "Applied trade update event "
+                        + updateEvent.eventType()
+                        + " for orderId=" + updateEvent.orderData().orderId()
+                        + " clientOrderId=" + updateEvent.orderData().clientOrderId());
+            } else {
+                LOGGER.info(() -> "Ignored trade update event "
+                        + updateEvent.eventType()
+                        + " because no matching local order was found for orderId="
+                        + updateEvent.orderData().orderId()
+                        + " clientOrderId=" + updateEvent.orderData().clientOrderId());
             }
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Failed to process streaming trade update", ex);

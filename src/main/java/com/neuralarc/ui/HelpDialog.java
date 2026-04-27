@@ -82,6 +82,18 @@ public class HelpDialog extends JDialog {
             "Use longer intervals to reduce API traffic. Use shorter intervals only when you need tighter reaction time."
         },
         {
+            "💤  Mac Sleep — Will the app keep trading?",
+            "If your Mac goes to sleep, the app can remain open, but it does not keep actively running strategy logic while the machine is asleep.\n\n" +
+            "What stops during sleep:\n" +
+            "• Java timers and polling\n" +
+            "• live network activity such as trade update streams\n\n" +
+            "What happens after wake:\n" +
+            "• the app resumes\n" +
+            "• polling starts again\n" +
+            "• the app reconnects and reconciles strategy state with Alpaca\n\n" +
+            "If you want continuous strategy execution, keep the Mac awake."
+        },
+        {
             "📄  Paper Trading Mode — What should I expect?",
             "Paper mode is the default and should be your normal starting point.\n\n" +
             "• It uses Alpaca Paper credentials, not Live credentials.\n" +
