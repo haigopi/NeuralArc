@@ -186,7 +186,7 @@ public class SettingsDialog extends JDialog {
         contentScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         contentScroll.getVerticalScrollBar().setUnitIncrement(16);
         contentScroll.getViewport().setBackground(DIALOG_BG);
-        contentScroll.setPreferredSize(new Dimension(760, 660));
+        contentScroll.setPreferredSize(new Dimension(720, 680));
         add(contentScroll, BorderLayout.CENTER);
 
         JPanel actions = new JPanel(new BorderLayout());
@@ -216,8 +216,8 @@ public class SettingsDialog extends JDialog {
         loadAll();
         updateBrokerControlState();
         pack();
-        int minDialogWidth = 760;
-        int minDialogHeight = 660;
+        int minDialogWidth = 720;
+        int minDialogHeight = 680;
         if (getWidth() < minDialogWidth || getHeight() < minDialogHeight) {
             setSize(new Dimension(Math.max(getWidth(), minDialogWidth), Math.max(getHeight(), minDialogHeight)));
         }

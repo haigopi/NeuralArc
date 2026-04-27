@@ -77,7 +77,7 @@ public class TradingFrame extends JFrame {
     private static final Color STATUS_OK = new Color(34, 139, 34);
     private static final Color STATUS_WARN = new Color(180, 100, 0);
     private static final Color STATUS_ERR = new Color(180, 30, 30);
-    private static final Color TABLE_SELECTION_BG = new Color(192, 166, 240);
+    private static final Color TABLE_SELECTION_BG = new Color(214, 232, 255);
     private static final Color STATUS_TEXT_RUNNING = new Color(46, 125, 50);
     private static final Color STATUS_TEXT_PAUSED = new Color(180, 100, 0);
     private static final Color MODE_TEXT_ALPACA_PAPER = new Color(25, 118, 210);
@@ -212,15 +212,60 @@ public class TradingFrame extends JFrame {
         JButton killSwitchButton = new JButton("KILL SWITCH");
         applyButtonIcon(killSwitchButton, "icons/kill-switch.svg", 15);
         killSwitchButton.setFocusPainted(false);
+        killSwitchButton.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
         killSwitchButton.setFont(FontLoader.ui(Font.BOLD, 12f));
         killSwitchButton.setForeground(Color.WHITE);
         killSwitchButton.setBackground(new Color(180, 20, 20));
         killSwitchButton.setOpaque(true);
+        killSwitchButton.setContentAreaFilled(true);
         killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(120, 10, 10), 1, true),
                 new EmptyBorder(8, 14, 8, 14)
         ));
         killSwitchButton.setMargin(new java.awt.Insets(8, 14, 8, 14));
+        killSwitchButton.addMouseListener(new MouseAdapter() {
+            private static final Color BASE_BG     = new Color(180, 20, 20);
+            private static final Color BASE_BORDER  = new Color(120, 10, 10);
+            private static final Color HOVER_BG    = new Color(210, 32, 32);
+            private static final Color HOVER_BORDER = new Color(148, 15, 15);
+            private static final Color PRESS_BG    = new Color(148, 14, 14);
+            private static final Color PRESS_BORDER = new Color(95,  6,  6);
+            @Override public void mouseEntered(MouseEvent e) {
+                if (killSwitchButton.isEnabled()) {
+                    killSwitchButton.setBackground(HOVER_BG);
+                    killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createLineBorder(HOVER_BORDER, 1, true),
+                            new EmptyBorder(8, 14, 8, 14)));
+                }
+            }
+            @Override public void mouseExited(MouseEvent e) {
+                killSwitchButton.setBackground(BASE_BG);
+                killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(BASE_BORDER, 1, true),
+                        new EmptyBorder(8, 14, 8, 14)));
+            }
+            @Override public void mousePressed(MouseEvent e) {
+                if (killSwitchButton.isEnabled() && e.getButton() == MouseEvent.BUTTON1) {
+                    killSwitchButton.setBackground(PRESS_BG);
+                    killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createLineBorder(PRESS_BORDER, 2, true),
+                            new EmptyBorder(7, 13, 7, 13)));
+                }
+            }
+            @Override public void mouseReleased(MouseEvent e) {
+                if (killSwitchButton.contains(e.getPoint()) && killSwitchButton.isEnabled()) {
+                    killSwitchButton.setBackground(HOVER_BG);
+                    killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createLineBorder(HOVER_BORDER, 1, true),
+                            new EmptyBorder(8, 14, 8, 14)));
+                } else {
+                    killSwitchButton.setBackground(BASE_BG);
+                    killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createLineBorder(BASE_BORDER, 1, true),
+                            new EmptyBorder(8, 14, 8, 14)));
+                }
+            }
+        });
         killSwitchButton.addActionListener(e -> killAllStrategies());
         rightControlsGbc.gridx = 2;
         rightControlsGbc.insets = new java.awt.Insets(0, 0, 0, 0);
@@ -237,6 +282,8 @@ public class TradingFrame extends JFrame {
         strategyTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         strategyTable.setSelectionBackground(TABLE_SELECTION_BG);
         strategyTable.setSelectionForeground(new Color(20, 20, 30));
+        strategyTable.setFocusable(false);
+        strategyTable.setRowMargin(6);
         strategyTable.setShowGrid(false);
         strategyTable.setIntercellSpacing(new Dimension(0, 6));
         StatusRowRenderer statusRowRenderer = new StatusRowRenderer();
@@ -244,11 +291,56 @@ public class TradingFrame extends JFrame {
         strategyTable.setDefaultRenderer(Number.class, statusRowRenderer);
         strategyTable.getColumnModel().getColumn(7).setCellRenderer(new PollingBarRenderer());
         strategyTable.getColumnModel().getColumn(9).setCellRenderer(new ActionsRenderer());
-        strategyTable.getColumnModel().getColumn(9).setCellEditor(new ActionsEditor());
         strategyTable.getColumnModel().getColumn(7).setPreferredWidth(240);
         strategyTable.getColumnModel().getColumn(7).setMinWidth(220);
         strategyTable.getColumnModel().getColumn(9).setPreferredWidth(270);
         strategyTable.getColumnModel().getColumn(9).setMinWidth(270);
+
+        // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
+        // This ensures the full row becomes selected on mousePressed before any action click executes.
+        strategyTable.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mousePressed(java.awt.event.MouseEvent e) {
+                int viewRow = strategyTable.rowAtPoint(e.getPoint());
+                if (viewRow >= 0 && viewRow < strategyTable.getRowCount()) {
+                    strategyTable.setRowSelectionInterval(viewRow, viewRow);
+                }
+            }
+
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                int viewRow = strategyTable.rowAtPoint(e.getPoint());
+                int viewCol = strategyTable.columnAtPoint(e.getPoint());
+                if (viewRow < 0 || viewCol != 9) return;
+                if (viewRow >= strategies.size()) return;
+                java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, viewCol, false);
+                int xInCell = e.getX() - cellRect.x;
+                int sectionWidth = cellRect.width / 3;
+                if (xInCell < sectionWidth) {
+                    editStrategy(viewRow);
+                } else if (xInCell < sectionWidth * 2) {
+                    togglePauseResume(viewRow);
+                } else {
+                    deleteStrategy(viewRow);
+                }
+            }
+
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                strategyTable.setCursor(java.awt.Cursor.getDefaultCursor());
+            }
+        });
+        strategyTable.addMouseMotionListener(new java.awt.event.MouseMotionAdapter() {
+            @Override
+            public void mouseMoved(java.awt.event.MouseEvent e) {
+                int viewCol = strategyTable.columnAtPoint(e.getPoint());
+                if (viewCol == 9) {
+                    strategyTable.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+                } else {
+                    strategyTable.setCursor(java.awt.Cursor.getDefaultCursor());
+                }
+            }
+        });
 
         // Make table sortable — click column headers to sort
         TableRowSorter<StrategyTableModel> sorter = new TableRowSorter<>(strategyTableModel);
@@ -450,19 +542,30 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    // ── Shared colours for the dark-background (header / footer) buttons ──────
+    private static final Color DARK_BTN_BG           = new Color(60,  60,  90);
+    private static final Color DARK_BTN_BORDER        = new Color(100, 100, 160);
+    private static final Color DARK_BTN_BG_HOVER      = new Color(80,  80,  118);
+    private static final Color DARK_BTN_BORDER_HOVER  = new Color(128, 128, 196);
+    private static final Color DARK_BTN_BG_PRESSED    = new Color(42,  42,  68);
+    private static final Color DARK_BTN_BORDER_PRESSED= new Color(85,  85,  148);
+
     private void styleHeaderButton(JButton button) {
         button.setFocusPainted(false);
         button.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
         button.setForeground(new Color(230, 230, 255));
-        button.setBackground(new Color(60, 60, 90));
+        button.setBackground(DARK_BTN_BG);
         button.setOpaque(true);
         button.setContentAreaFilled(true);
         button.setRolloverEnabled(true);
         button.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(100, 100, 160), 1, true),
+                BorderFactory.createLineBorder(DARK_BTN_BORDER, 1, true),
                 new EmptyBorder(7, 12, 7, 12)
         ));
         button.setIconTextGap(8);
+        installDarkButtonInteraction(button,
+                new EmptyBorder(7, 12, 7, 12),
+                new EmptyBorder(6, 11, 6, 11));
     }
 
     private void styleStatusActionButton(JButton button) {
@@ -470,14 +573,75 @@ public class TradingFrame extends JFrame {
         button.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
         button.setFont(BASE_FONT.deriveFont(Font.BOLD, 12f));
         button.setForeground(new Color(220, 220, 255));
-        button.setBackground(new Color(60, 60, 90));
+        button.setBackground(DARK_BTN_BG);
         button.setOpaque(true);
         button.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(100, 100, 160), 1, true),
+                BorderFactory.createLineBorder(DARK_BTN_BORDER, 1, true),
                 new EmptyBorder(5, 12, 5, 12)
         ));
         button.setMargin(new java.awt.Insets(5, 12, 5, 12));
         button.setIconTextGap(8);
+        installDarkButtonInteraction(button,
+                new EmptyBorder(5, 12, 5, 12),
+                new EmptyBorder(4, 11, 4, 11));
+    }
+
+    /**
+     * Attaches hover + press mouse feedback to a dark-background button.
+     * Guards against double-installation via a client property.
+     *
+     * @param normalInner  inner EmptyBorder for the normal/hover state
+     * @param pressedInner inner EmptyBorder for the pressed state (1 px less each
+     *                     side to compensate for the thicker 2-px outer border)
+     */
+    private void installDarkButtonInteraction(JButton button,
+                                              javax.swing.border.EmptyBorder normalInner,
+                                              javax.swing.border.EmptyBorder pressedInner) {
+        if (Boolean.TRUE.equals(button.getClientProperty("darkBtnInteractInstalled"))) {
+            return;
+        }
+        button.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseEntered(MouseEvent e) {
+                if (button.isEnabled()) {
+                    button.setBackground(DARK_BTN_BG_HOVER);
+                    button.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createLineBorder(DARK_BTN_BORDER_HOVER, 1, true),
+                            normalInner));
+                }
+            }
+            @Override
+            public void mouseExited(MouseEvent e) {
+                button.setBackground(DARK_BTN_BG);
+                button.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(DARK_BTN_BORDER, 1, true),
+                        normalInner));
+            }
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (button.isEnabled() && e.getButton() == MouseEvent.BUTTON1) {
+                    button.setBackground(DARK_BTN_BG_PRESSED);
+                    button.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createLineBorder(DARK_BTN_BORDER_PRESSED, 2, true),
+                            pressedInner));
+                }
+            }
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                if (button.contains(e.getPoint()) && button.isEnabled()) {
+                    button.setBackground(DARK_BTN_BG_HOVER);
+                    button.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createLineBorder(DARK_BTN_BORDER_HOVER, 1, true),
+                            normalInner));
+                } else {
+                    button.setBackground(DARK_BTN_BG);
+                    button.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createLineBorder(DARK_BTN_BORDER, 1, true),
+                            normalInner));
+                }
+            }
+        });
+        button.putClientProperty("darkBtnInteractInstalled", Boolean.TRUE);
     }
 
     /**
@@ -1554,7 +1718,7 @@ public class TradingFrame extends JFrame {
 
         @Override
         public boolean isCellEditable(int rowIndex, int columnIndex) {
-            return columnIndex == 9;
+            return false; // Actions are handled via table MouseListener; no cell editor needed.
         }
     }
 
@@ -1719,57 +1883,6 @@ public class TradingFrame extends JFrame {
         }
     }
 
-    private final class ActionsEditor extends AbstractCellEditor implements javax.swing.table.TableCellEditor {
-        private final JPanel panel = new JPanel(new GridLayout(1, 3, 6, 0));
-        private final JButton editButton = new JButton("Edit");
-        private final JButton toggleButton = new JButton();
-        private final JButton deleteButton = new JButton("Delete");
-        private int viewRow = -1;
-
-        private ActionsEditor() {
-            panel.setOpaque(true);
-            applyButtonIcon(editButton, "icons/edit.svg", 13);
-            applyButtonIcon(toggleButton, "icons/pause.svg", 13);
-            applyButtonIcon(deleteButton, "icons/delete.svg", 13);
-            styleActionButton(editButton, new Color(63, 81, 181));
-            styleActionButton(toggleButton, new Color(198, 40, 40));
-            styleActionButton(deleteButton, new Color(156, 39, 39));
-            editButton.addActionListener(e -> {
-                fireEditingStopped();
-                editStrategy(viewRow);
-            });
-            toggleButton.addActionListener(e -> {
-                fireEditingStopped();
-                togglePauseResume(viewRow);
-            });
-            deleteButton.addActionListener(e -> {
-                fireEditingStopped();
-                deleteStrategy(viewRow);
-            });
-            panel.add(editButton);
-            panel.add(toggleButton);
-            panel.add(deleteButton);
-        }
-
-        @Override
-        public Object getCellEditorValue() {
-            return "";
-        }
-
-        @Override
-        public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
-            this.viewRow = row;
-            if (table.getSelectedRow() != row) {
-                table.setRowSelectionInterval(row, row);
-            }
-            int modelRow = table.convertRowIndexToModel(row);
-            boolean paused = strategies.get(modelRow).isPaused();
-            toggleButton.setText(paused ? "Resume" : "Pause");
-            styleActionButton(toggleButton, paused ? new Color(46, 125, 50) : new Color(198, 40, 40));
-            panel.setBackground(selectionAwareRowColor(true, table));
-            return panel;
-        }
-    }
 
     private Color selectionAwareRowColor(boolean selected, JTable table) {
         return selected ? TABLE_SELECTION_BG : table.getBackground();
