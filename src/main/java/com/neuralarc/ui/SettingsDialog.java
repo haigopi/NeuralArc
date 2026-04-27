@@ -97,6 +97,7 @@ public class SettingsDialog extends JDialog {
         saveCredentials.setEnabled(false);
         apiPanel.add(new JLabel(""));
         apiPanel.add(saveCredentials);
+        DialogButtonStyles.apply(verifyConnectionButton, "icons/verify.svg");
         verifyConnectionButton.addActionListener(e -> verifyConnection());
         brokerBox.addActionListener(e -> updateBrokerControlState());
         appModeBox.addActionListener(e -> onModeChanged());
@@ -160,6 +161,7 @@ public class SettingsDialog extends JDialog {
         JPanel dangerZonePanel = new JPanel(new GridLayout(0, 1, FIELD_GAP, FIELD_GAP));
         dangerZonePanel.setBorder(createSectionBorder("Danger Zone"));
         JButton deleteAllDataButton = new JButton("Delete All Data");
+        DialogButtonStyles.apply(deleteAllDataButton, "icons/delete.svg");
         deleteAllDataButton.setForeground(new Color(180, 30, 30));
         deleteAllDataButton.addActionListener(e -> deleteAllData());
 
@@ -190,14 +192,17 @@ public class SettingsDialog extends JDialog {
         JPanel actions = new JPanel(new BorderLayout());
         actions.setBorder(new EmptyBorder(0, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
         JButton helpFaq = new JButton("Help & FAQ");
+        DialogButtonStyles.apply(helpFaq, "icons/faqs.svg");
         helpFaq.addActionListener(e -> new HelpDialog(owner).setVisible(true));
         JButton encryptSave = new JButton("Encrypt, Save and Close");
+        DialogButtonStyles.apply(encryptSave, "icons/save.svg");
         encryptSave.addActionListener(e -> {
             if (saveAll()) {
                 closeDialog();
             }
         });
         JButton close = new JButton("Close");
+        DialogButtonStyles.apply(close, "icons/close.svg");
         close.addActionListener(e -> closeDialog());
         JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         rightActions.add(encryptSave);

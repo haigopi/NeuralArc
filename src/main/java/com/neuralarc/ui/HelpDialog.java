@@ -54,6 +54,26 @@ public class HelpDialog extends JDialog {
             "Important: partial fills do not advance the strategy to the next buy stage."
         },
         {
+            "🛑  Stop Loss — What does it mean here?",
+            "Stop Loss in NeuralArc is downside protection after a position exists.\n\n" +
+            "It does not wait for the stock to go up first. Instead, it watches for price to fall to or below your configured stop threshold and then submits a sell order.\n\n" +
+            "It can be configured as:\n" +
+            "• a fixed stop price, or\n" +
+            "• a percent below average entry cost.\n\n" +
+            "Example:\n" +
+            "If your average cost is 10.00 and your stop loss is 9.20, the strategy exits if price falls to 9.20 or below."
+        },
+        {
+            "🔐  Protective Floor to Lock Profit — How does that work?",
+            "In NeuralArc, the profit-locking protective floor is handled by Profit Hold, not by Stop Loss.\n\n" +
+            "After the stock reaches the target sell price, Profit Hold can keep the trade open and track the highest observed price. It then exits when price pulls back by your configured amount.\n\n" +
+            "It can be configured as:\n" +
+            "• Percent Trailing, or\n" +
+            "• Fixed Amount Trailing.\n\n" +
+            "Example:\n" +
+            "If target is reached and the stock climbs to 12.00, a 5% trailing setting creates a moving protective floor at 11.40. If price falls to 11.40 or below, the strategy exits."
+        },
+        {
             "⏱️  Polling Interval — What does it control?",
             "Polling interval is per strategy, not global.\n\n" +
             "• It controls how often that strategy checks orders, position state, latest price, and exit conditions.\n" +
@@ -142,7 +162,7 @@ public class HelpDialog extends JDialog {
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         footer.setBorder(new EmptyBorder(12, 24, 16, 24));
         JButton close = new JButton("Close");
-        DialogButtonStyles.apply(close);
+        DialogButtonStyles.apply(close, "icons/close.svg");
         close.addActionListener(e -> setVisible(false));
         footer.add(close);
         add(footer, BorderLayout.SOUTH);

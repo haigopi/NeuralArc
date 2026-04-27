@@ -1,5 +1,7 @@
 package com.neuralarc.util;
 
+import com.neuralarc.model.ApplicationMode;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
@@ -51,20 +53,29 @@ public final class AppMetadata {
     }
 
 
-    public static String alpacaBaseUrl() {
-        return PROPERTIES.getProperty("alpaca.baseUrl", "https://paper-api.alpaca.markets").trim();
+    public static String alpacaTradingBaseUrl(ApplicationMode mode) {
+        String key = mode == ApplicationMode.LIVE ? "alpaca.trading.liveUrl" : "alpaca.trading.paperUrl";
+        String defaultValue = mode == ApplicationMode.LIVE
+                ? "https://api.alpaca.markets"
+                : "https://paper-api.alpaca.markets";
+        return PROPERTIES.getProperty(key, defaultValue).trim();
     }
 
     public static String alpacaDataUrl() {
         return PROPERTIES.getProperty("alpaca.dataUrl", "https://data.alpaca.markets").trim();
     }
 
-    public static String alpacaTradingEventsSseUrl() {
-        return PROPERTIES.getProperty("alpaca.trading.events.sseUrl", "").trim();
+    public static String alpacaTradingEventsWebSocketUrl(boolean liveMode) {
+        String key = liveMode ? "alpaca.trading.events.websocket.liveUrl" : "alpaca.trading.events.websocket.paperUrl";
+        String configured = PROPERTIES.getProperty(key, "").trim();
+        if (!configured.isBlank()) {
+            return configured;
+        }
+        return liveMode ? "wss://api.alpaca.markets/stream" : "wss://paper-api.alpaca.markets/stream";
     }
 
-    public static boolean alpacaTradingEventsSseEnabled() {
-        return Boolean.parseBoolean(PROPERTIES.getProperty("alpaca.trading.events.sse.enabled", "true").trim());
+    public static boolean alpacaTradingEventsWebSocketEnabled() {
+        return Boolean.parseBoolean(PROPERTIES.getProperty("alpaca.trading.events.websocket.enabled", "true").trim());
     }
 
     public static String alpacaMode() {

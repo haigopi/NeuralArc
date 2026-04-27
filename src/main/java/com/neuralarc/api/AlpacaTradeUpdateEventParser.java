@@ -1,10 +1,13 @@
 package com.neuralarc.api;
 
 import com.neuralarc.util.Monetary;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 public final class AlpacaTradeUpdateEventParser {
@@ -12,11 +15,38 @@ public final class AlpacaTradeUpdateEventParser {
     }
 
     public static Optional<AlpacaTradeUpdateEvent> parse(String payload) {
+        List<AlpacaTradeUpdateEvent> events = parseAll(payload);
+        return events.isEmpty() ? Optional.empty() : Optional.of(events.get(0));
+    }
+
+    public static List<AlpacaTradeUpdateEvent> parseAll(String payload) {
+        List<AlpacaTradeUpdateEvent> events = new ArrayList<>();
         if (payload == null || payload.isBlank()) {
+            return events;
+        }
+        try {
+            String normalized = payload.trim();
+            if (normalized.startsWith("[")) {
+                JSONArray array = new JSONArray(normalized);
+                for (int i = 0; i < array.length(); i++) {
+                    if (!array.isNull(i)) {
+                        parseObject(array.optJSONObject(i)).ifPresent(events::add);
+                    }
+                }
+                return events;
+            }
+            parseObject(new JSONObject(normalized)).ifPresent(events::add);
+        } catch (Exception ignored) {
+            return events;
+        }
+        return events;
+    }
+
+    private static Optional<AlpacaTradeUpdateEvent> parseObject(JSONObject root) {
+        if (root == null) {
             return Optional.empty();
         }
         try {
-            JSONObject root = new JSONObject(payload);
             JSONObject data = root;
             if (root.has("stream") && root.has("data")) {
                 data = root.optJSONObject("data");
@@ -80,4 +110,3 @@ public final class AlpacaTradeUpdateEventParser {
         }
     }
 }
-

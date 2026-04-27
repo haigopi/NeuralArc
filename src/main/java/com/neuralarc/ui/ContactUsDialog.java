@@ -103,9 +103,9 @@ public class ContactUsDialog extends JDialog {
         JButton helpFaq = new JButton("Help & FAQ");
         JButton cancel = new JButton("Cancel");
         JButton send = new JButton("Send Message");
-        DialogButtonStyles.apply(helpFaq);
-        DialogButtonStyles.apply(cancel);
-        DialogButtonStyles.apply(send);
+        DialogButtonStyles.apply(helpFaq, "icons/faqs.svg");
+        DialogButtonStyles.apply(cancel, "icons/close.svg");
+        DialogButtonStyles.apply(send, "icons/send.svg");
         helpFaq.addActionListener(e -> new HelpDialog((JFrame) getOwner()).setVisible(true));
         cancel.addActionListener(e -> setVisible(false));
         send.addActionListener(e -> setVisible(false));

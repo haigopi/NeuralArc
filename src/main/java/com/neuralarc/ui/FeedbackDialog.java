@@ -92,9 +92,9 @@ public class FeedbackDialog extends JDialog {
         JButton helpFaq = new JButton("Help & FAQ");
         JButton cancelButton = new JButton("Cancel");
         JButton sendButton = new JButton("Submit");
-        DialogButtonStyles.apply(helpFaq);
-        DialogButtonStyles.apply(cancelButton);
-        DialogButtonStyles.apply(sendButton);
+        DialogButtonStyles.apply(helpFaq, "icons/faqs.svg");
+        DialogButtonStyles.apply(cancelButton, "icons/close.svg");
+        DialogButtonStyles.apply(sendButton, "icons/submit.svg");
 
         helpFaq.addActionListener(e -> new HelpDialog((JFrame) getOwner()).setVisible(true));
         sendButton.addActionListener(e -> onSend());

@@ -84,10 +84,10 @@ public class AboutDialog extends JDialog {
     footer.setOpaque(false);
     footer.setBorder(new EmptyBorder(8, 20, 16, 20));
     JButton helpFaq = new JButton("Help & FAQ");
-    helpFaq.setFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
+    DialogButtonStyles.apply(helpFaq, "icons/faqs.svg");
     helpFaq.addActionListener(e -> new HelpDialog(owner).setVisible(true));
     JButton close = new JButton("Close");
-    close.setFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
+    DialogButtonStyles.apply(close, "icons/close.svg");
     close.addActionListener(e -> setVisible(false));
 
     JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));

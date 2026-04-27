@@ -3,7 +3,7 @@ package com.neuralarc.ui;
 import com.neuralarc.analytics.*;
 import com.neuralarc.api.HttpAlpacaClient;
 import com.neuralarc.api.AlpacaTradeUpdateEvent;
-import com.neuralarc.api.AlpacaTradingEventSseClient;
+import com.neuralarc.api.AlpacaTradingWebSocketClient;
 import com.neuralarc.api.TradingApi;
 import com.neuralarc.api.TradingApiFactory;
 import com.neuralarc.model.*;
@@ -16,6 +16,7 @@ import com.neuralarc.service.StrategyValidator;
 import com.neuralarc.service.UserIdentityService;
 import com.neuralarc.util.AppMetadata;
 import com.neuralarc.util.FontLoader;
+import com.neuralarc.util.SvgIconLoader;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -89,8 +90,8 @@ public class TradingFrame extends JFrame {
     private static final Color HEADER_STATUS_LIVE_ACTIVE = new Color(46, 125, 50);
     private static final Color HEADER_STATUS_LIVE_ACTIVE_DIM = Color.WHITE;
     private final JTextPane eventLog = new JTextPane();
-    private final JButton addStrategyButton = new JButton("📊 Add New Stock Strategy");
-    private final JButton settingsButton = new JButton("⚙️ Settings");
+    private final JButton addStrategyButton = new JButton("Add New Stock Strategy");
+    private final JButton settingsButton = new JButton("Settings");
     private final Timer liveModeBlinkTimer;
     private final Timer logFlushTimer;
     private final Timer pollingIndicatorTimer;
@@ -121,8 +122,10 @@ public class TradingFrame extends JFrame {
     private boolean promptedDefaultStrategyDialog;
     private StrategyService strategyService;
     private StrategyPollingService strategyPollingService;
-    private AlpacaTradingEventSseClient tradingEventSseClient;
+    private AlpacaTradingWebSocketClient tradingWebSocketClient;
     private long lastBrokerBackedUiRefreshAtMillis;
+    private String runtimeApiKey = "";
+    private String runtimeApiSecret = "";
 
     public TradingFrame() {
         liveModeBlinkTimer = new Timer(500, e -> toggleLiveHeaderBlink());
@@ -147,7 +150,7 @@ public class TradingFrame extends JFrame {
         strategyEventRepository = new FileStrategyExecutionEventRepository(
                 AppMetadata.appDataDirectory().resolve("strategy-events.json")
         );
-        refreshStrategyRuntimeServices();
+        refreshStrategyRuntimeServices(settingsDialog.getApiKey(), settingsDialog.getApiSecret());
         strategyPollingTimer = new Timer(1000, e -> {
             strategyPollingService.pollDueStrategies();
             syncStrategiesFromRepository();
@@ -206,7 +209,8 @@ public class TradingFrame extends JFrame {
         rightControlsGbc.gridx = 1;
         rightControls.add(settingsButton, rightControlsGbc);
 
-        JButton killSwitchButton = new JButton("⚠️ KILL SWITCH");
+        JButton killSwitchButton = new JButton("KILL SWITCH");
+        applyButtonIcon(killSwitchButton, "icons/kill-switch.svg", 15);
         killSwitchButton.setFocusPainted(false);
         killSwitchButton.setFont(FontLoader.ui(Font.BOLD, 12f));
         killSwitchButton.setForeground(Color.WHITE);
@@ -272,15 +276,18 @@ public class TradingFrame extends JFrame {
         statusStrategyCount.setVerticalAlignment(SwingConstants.CENTER);
         statusStrategyCount.setBorder(new EmptyBorder(0, 0, 0, 12));
 
-        JButton faqsButton = new JButton("? Faqs");
+        JButton faqsButton = new JButton("Faqs");
+        applyButtonIcon(faqsButton, "icons/faqs.svg", 15);
         styleStatusActionButton(faqsButton);
         faqsButton.addActionListener(e -> new HelpDialog(this).setVisible(true));
 
-        JButton submitFeatureButton = new JButton("+ Request New Feature");
+        JButton submitFeatureButton = new JButton("Request New Feature");
+        applyButtonIcon(submitFeatureButton, "icons/request-new-feature.svg", 15);
         styleStatusActionButton(submitFeatureButton);
         submitFeatureButton.addActionListener(e -> openFeedbackDialog("Request New Feature"));
 
-        JButton contactUsButton = new JButton("@ Contact Us");
+        JButton contactUsButton = new JButton("Contact Us");
+        applyButtonIcon(contactUsButton, "icons/contact-us.svg", 15);
         styleStatusActionButton(contactUsButton);
         contactUsButton.addActionListener(e -> openFeedbackDialog("Contact Us"));
 
@@ -394,10 +401,8 @@ public class TradingFrame extends JFrame {
 
         styleHeaderButton(addStrategyButton);
         styleHeaderButton(settingsButton);
-
-        // Buttons with emoji: use app font for text (emoji rendered by system fallback)
-        applyEmojiFontToButton(addStrategyButton, 12f);
-        applyEmojiFontToButton(settingsButton, 12f);
+        applyButtonIcon(addStrategyButton, "icons/add-stock-strategy.svg", 16);
+        applyButtonIcon(settingsButton, "icons/settings.svg", 16);
     }
 
     private void applyDataViewFonts() {
@@ -416,11 +421,6 @@ public class TradingFrame extends JFrame {
         rulesSectionTitle.setFont(FontLoader.ui(Font.BOLD, 10f));
         positionSummary.setFont(FontLoader.ui(Font.PLAIN, 10f));
         ruleState.setFont(FontLoader.ui(Font.PLAIN, 10f));
-    }
-
-    private void applyEmojiFontToButton(JButton button, float size) {
-        // Use Poppins for the text; the JVM's composite font handles emoji glyph fallback
-        button.setFont(FontLoader.ui(Font.PLAIN, size));
     }
 
     private JPanel createDetailSection(JLabel titleLabel, JLabel contentLabel) {
@@ -462,6 +462,7 @@ public class TradingFrame extends JFrame {
                 BorderFactory.createLineBorder(new Color(100, 100, 160), 1, true),
                 new EmptyBorder(7, 12, 7, 12)
         ));
+        button.setIconTextGap(8);
     }
 
     private void styleStatusActionButton(JButton button) {
@@ -476,6 +477,7 @@ public class TradingFrame extends JFrame {
                 new EmptyBorder(5, 12, 5, 12)
         ));
         button.setMargin(new java.awt.Insets(5, 12, 5, 12));
+        button.setIconTextGap(8);
     }
 
     /**
@@ -563,11 +565,14 @@ public class TradingFrame extends JFrame {
         return result.connected();
     }
 
-    private void refreshStrategyRuntimeServices() {
+    private void refreshStrategyRuntimeServices(String apiKey, String apiSecret) {
+        runtimeApiKey = apiKey == null ? "" : apiKey.trim();
+        runtimeApiSecret = apiSecret == null ? "" : apiSecret;
+        ApplicationMode mode = settingsDialog.applicationMode();
         HttpAlpacaClient alpacaClient = new HttpAlpacaClient(
-                settingsDialog.getApiKey(),
-                settingsDialog.getApiSecret(),
-                AppMetadata.alpacaBaseUrl(),
+                runtimeApiKey,
+                runtimeApiSecret,
+                AppMetadata.alpacaTradingBaseUrl(mode),
                 AppMetadata.alpacaDataUrl()
         );
         strategyService = new StrategyService(
@@ -577,7 +582,7 @@ public class TradingFrame extends JFrame {
                 alpacaClient,
                 new StrategyValidator(),
                 AppMetadata.liveTradingEnabled(),
-                settingsDialog.applicationMode() == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER
+                mode == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER
         );
         strategyPollingService = new StrategyPollingService(
                 strategyRepository,
@@ -607,8 +612,8 @@ public class TradingFrame extends JFrame {
         connectionOk = tradingApi.testConnection();
         log((manualTrigger ? "Connection test: " : "Auto connection test: ") + (connectionOk ? "SUCCESS" : "FAILED"));
         if (connectionOk) {
-            refreshStrategyRuntimeServices();
-            startTradingEventStreamIfConfigured();
+            refreshStrategyRuntimeServices(apiKey, apiSecret);
+            startTradingEventStreamIfConfigured(apiKey, apiSecret);
             setStatus("Connected — broker " + brokerType.name() + " ready.", STATUS_OK);
             updateHeaderModeStatus(brokerType);
             settingsDialog.markConnectionStatus(true, "Connected to " + brokerType.name());
@@ -1692,6 +1697,9 @@ public class TradingFrame extends JFrame {
         private ActionsRenderer() {
             super(new GridLayout(1, 3, 6, 0));
             setOpaque(true);
+            applyButtonIcon(editButton, "icons/edit.svg", 13);
+            applyButtonIcon(toggleButton, "icons/pause.svg", 13);
+            applyButtonIcon(deleteButton, "icons/delete.svg", 13);
             styleActionButton(editButton, new Color(63, 81, 181));
             styleActionButton(toggleButton, new Color(198, 40, 40));
             styleActionButton(deleteButton, new Color(156, 39, 39));
@@ -1720,6 +1728,9 @@ public class TradingFrame extends JFrame {
 
         private ActionsEditor() {
             panel.setOpaque(true);
+            applyButtonIcon(editButton, "icons/edit.svg", 13);
+            applyButtonIcon(toggleButton, "icons/pause.svg", 13);
+            applyButtonIcon(deleteButton, "icons/delete.svg", 13);
             styleActionButton(editButton, new Color(63, 81, 181));
             styleActionButton(toggleButton, new Color(198, 40, 40));
             styleActionButton(deleteButton, new Color(156, 39, 39));
@@ -1772,8 +1783,11 @@ public class TradingFrame extends JFrame {
         button.setOpaque(true);
         button.setContentAreaFilled(true);
         button.setHorizontalAlignment(SwingConstants.CENTER);
+        button.setHorizontalTextPosition(SwingConstants.RIGHT);
+        button.setVerticalTextPosition(SwingConstants.CENTER);
         button.setRolloverEnabled(true);
         button.setForeground(Color.WHITE);
+        button.setIconTextGap(6);
         button.putClientProperty("actionButtonBase", background);
         button.putClientProperty("actionButtonHover", background.brighter());
         updateActionButtonColor(button, background);
@@ -1804,31 +1818,39 @@ public class TradingFrame extends JFrame {
         button.setForeground(Color.WHITE);
     }
 
-    private void startTradingEventStreamIfConfigured() {
+    private void applyButtonIcon(JButton button, String resourcePath, int size) {
+        button.setIcon(SvgIconLoader.load(resourcePath, size));
+        button.setHorizontalTextPosition(SwingConstants.RIGHT);
+        button.setVerticalTextPosition(SwingConstants.CENTER);
+    }
+
+    private void startTradingEventStreamIfConfigured(String apiKey, String apiSecret) {
         stopTradingEventStream();
-        if (!AppMetadata.alpacaTradingEventsSseEnabled()) {
+        if (!AppMetadata.alpacaTradingEventsWebSocketEnabled()) {
             return;
         }
-        String streamUrl = AppMetadata.alpacaTradingEventsSseUrl();
-        tradingEventSseClient = new AlpacaTradingEventSseClient(
-                streamUrl,
-                settingsDialog.getApiKey(),
-                settingsDialog.getApiSecret()
+        String streamUrl = AppMetadata.alpacaTradingEventsWebSocketUrl(
+                settingsDialog.applicationMode() == ApplicationMode.LIVE
         );
-        if (!tradingEventSseClient.isConfigured()) {
+        tradingWebSocketClient = new AlpacaTradingWebSocketClient(
+                streamUrl,
+                apiKey,
+                apiSecret
+        );
+        if (!tradingWebSocketClient.isConfigured()) {
             return;
         }
-        tradingEventSseClient.start(this::handleTradingStreamEvent,
+        tradingWebSocketClient.start(this::handleTradingStreamEvent,
                 ex -> log("[STREAM] Trade event stream error: " + ex.getMessage()));
-        log("[STREAM] Connected trade event stream.");
+        log("[STREAM] Connected trading WebSocket.");
     }
 
     private void stopTradingEventStream() {
-        if (tradingEventSseClient == null) {
+        if (tradingWebSocketClient == null) {
             return;
         }
-        tradingEventSseClient.stop();
-        tradingEventSseClient = null;
+        tradingWebSocketClient.stop();
+        tradingWebSocketClient = null;
     }
 
     private void handleTradingStreamEvent(AlpacaTradeUpdateEvent event) {

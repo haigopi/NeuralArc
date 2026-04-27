@@ -87,10 +87,13 @@ public class StrategyDialog extends JDialog {
         JPanel actions = new JPanel(new BorderLayout());
         actions.setBorder(new EmptyBorder(0, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
         JButton helpFaq = new JButton("Help & FAQ");
+        DialogButtonStyles.apply(helpFaq, "icons/faqs.svg");
         helpFaq.addActionListener(e -> new HelpDialog(owner).setVisible(true));
         JButton save = new JButton("Save Strategy");
+        DialogButtonStyles.apply(save, "icons/save.svg");
         save.addActionListener(e -> onSave());
         JButton cancel = new JButton("Cancel");
+        DialogButtonStyles.apply(cancel, "icons/close.svg");
         cancel.addActionListener(e -> {
             result = null;
             setVisible(false);
@@ -193,6 +196,7 @@ public class StrategyDialog extends JDialog {
         ruleLabel.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
 
         JButton apply = new JButton("Apply 6-Month Median to Current Strategy");
+        DialogButtonStyles.apply(apply, "icons/apply.svg");
         apply.addActionListener(e -> applyMedianStrategyValues());
 
         medianStatus.setForeground(TEXT_MUTED);

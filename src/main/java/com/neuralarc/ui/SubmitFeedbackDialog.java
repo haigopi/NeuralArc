@@ -114,9 +114,9 @@ public class SubmitFeedbackDialog extends JDialog {
         JButton helpFaq = new JButton("Help & FAQ");
         JButton cancel = new JButton("Cancel");
         JButton submit = new JButton("Submit");
-        DialogButtonStyles.apply(helpFaq);
-        DialogButtonStyles.apply(cancel);
-        DialogButtonStyles.apply(submit);
+        DialogButtonStyles.apply(helpFaq, "icons/faqs.svg");
+        DialogButtonStyles.apply(cancel, "icons/close.svg");
+        DialogButtonStyles.apply(submit, "icons/submit.svg");
         helpFaq.addActionListener(e -> new HelpDialog((JFrame) getOwner()).setVisible(true));
         cancel.addActionListener(e -> setVisible(false));
         submit.addActionListener(e -> setVisible(false));
