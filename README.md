@@ -73,7 +73,7 @@ Use Settings dialog to set endpoint (example: `http://localhost:8080/events`) an
 
 ## Strategy runtime
 Strategies are stored locally under `~/.neuralarc/` and reconciled on startup using local JSON state plus Alpaca REST polling.
-The app now uses one staged-buy state machine for base buy, staged averaging, stop loss, optional loss exit, target sell, profit hold, and restart-after-exit behavior.
+The app now uses one staged-buy state machine for base buy, staged averaging, stop loss, target sell, profit hold, and restart-after-exit behavior.
 
 ## Future roadmap
 - Historical charts and richer analytics dashboard

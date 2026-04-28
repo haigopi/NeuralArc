@@ -1302,6 +1302,9 @@ public class TradingFrame extends JFrame {
         } else {
             profitHoldValue = strategy.profitHoldPercent().toPlainString() + "%";
         }
+        String cycleBehaviorValue = strategy.restartAfterExitEnabled()
+                ? "Repeat after profitable exit (optional)"
+                : "Do not repeat";
         String orderPlaced = latestOrder == null || latestOrder.submittedAt() == null
                 ? "-"
                 : formatTimestampForDisplay(latestOrder.submittedAt());
@@ -1317,7 +1320,9 @@ public class TradingFrame extends JFrame {
                 + "<br><b>Buy Limit 2:</b> <= " + strategy.buyLimit2Price().toPlainString() + " x " + strategy.buyLimit2Quantity()
                 + "<br><b>Stop Loss:</b> " + stopLossValue
                 + "<br><b>Target Sell:</b> >= " + strategy.targetSellPrice().toPlainString()
-                + "<br><b>Profit Hold:</b> " + profitHoldValue;
+                + "<br><b>Profit Hold:</b> " + profitHoldValue
+                + "<br><b>Cycle Behavior:</b> " + cycleBehaviorValue
+                + " (stop-loss/manual close do not restart)";
     }
 
     private Optional<StrategyOrder> latestOrder(List<StrategyOrder> orders) {
@@ -1897,18 +1902,22 @@ public class TradingFrame extends JFrame {
                     strategy.symbol(),
                     strategy.baseBuyLimitPrice(),
                     strategy.baseBuyQuantity(),
+                    strategy.automatedStopLossEnabled(),
                     strategy.stopLossPrice(),
                     strategy.targetSellPrice(),
                     strategy.buyLimit1Price(),
                     strategy.buyLimit1Quantity(),
                     strategy.buyLimit2Price(),
                     strategy.buyLimit2Quantity(),
+                    strategy.optionalLossExitEnabled(),
+                    strategy.optionalLossExitPrice(),
                     strategy.pollingIntervalSeconds(),
                     strategy.mode() == StrategyMode.PAPER,
                     strategy.profitHoldEnabled(),
                     strategy.profitHoldType(),
                     strategy.profitHoldPercent(),
-                    strategy.profitHoldAmount()
+                    strategy.profitHoldAmount(),
+                    strategy.restartAfterExitEnabled()
             );
         }
 

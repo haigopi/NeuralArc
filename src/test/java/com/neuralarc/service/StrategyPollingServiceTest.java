@@ -68,6 +68,21 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void stopLossDoesNotTriggerWhenDisabled() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setAutomatedStopLossEnabled(false);
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        f.alpaca.latestPrice = new BigDecimal("6.90");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("6.90"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.STOP_LOSS).isEmpty());
+    }
+
+    @Test
     void targetSellPlacesLimitSellWhenProfitHoldDisabled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
@@ -154,6 +169,83 @@ class StrategyPollingServiceTest {
                 .allMatch(order -> order.status() == StrategyOrderStatus.CANCELED));
     }
 
+    @Test
+    void profitableExitRestartsCycleWhenRepeatAfterProfitEnabled() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setRestartAfterExitEnabled(true);
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.TARGET_SELL, 10, new BigDecimal("10.00")));
+        f.alpaca.position = Optional.empty();
+
+        f.service.pollStrategy(strategy.id());
+
+        List<StrategyOrder> baseOrders = f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == StrategyStage.BASE_BUY)
+                .toList();
+        assertTrue(baseOrders.stream().anyMatch(StrategyOrder::isPending));
+        assertEquals(StrategyStatus.ACTIVE, f.strategies.findById(strategy.id()).orElseThrow().status());
+    }
+
+    @Test
+    void stopLossExitDoesNotRestartCycleWhenRepeatAfterProfitEnabled() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setRestartAfterExitEnabled(true);
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.STOP_LOSS, 10, new BigDecimal("7.00")));
+        f.alpaca.position = Optional.empty();
+
+        f.service.pollStrategy(strategy.id());
+
+        List<StrategyOrder> baseOrders = f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == StrategyStage.BASE_BUY)
+                .toList();
+        assertEquals(1, baseOrders.size());
+        assertEquals(StrategyStatus.COMPLETED, f.strategies.findById(strategy.id()).orElseThrow().status());
+    }
+
+    @Test
+    void closePositionExitDoesNotRestartCycleWhenRepeatAfterProfitEnabled() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setRestartAfterExitEnabled(true);
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.CLOSE_POSITION, 10, new BigDecimal("9.80")));
+        f.alpaca.position = Optional.empty();
+
+        f.service.pollStrategy(strategy.id());
+
+        List<StrategyOrder> baseOrders = f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == StrategyStage.BASE_BUY)
+                .toList();
+        assertEquals(1, baseOrders.size());
+        assertEquals(StrategyStatus.COMPLETED, f.strategies.findById(strategy.id()).orElseThrow().status());
+    }
+
+    @Test
+    void profitableSellDoesNotRestartWhenPositionStillOpen() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setRestartAfterExitEnabled(true);
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.TARGET_SELL, 9, new BigDecimal("10.00")));
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("1"), new BigDecimal("8.00"), new BigDecimal("10.00"), "{}"));
+        f.alpaca.latestPrice = new BigDecimal("10.00");
+
+        f.service.pollStrategy(strategy.id());
+
+        List<StrategyOrder> baseOrders = f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == StrategyStage.BASE_BUY)
+                .toList();
+        assertEquals(1, baseOrders.size());
+        assertEquals(StrategyStatus.ACTIVE, f.strategies.findById(strategy.id()).orElseThrow().status());
+    }
+
     private static final class Fixture {
         final InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         final InMemoryOrderRepository orders = new InMemoryOrderRepository();
@@ -182,7 +274,7 @@ class StrategyPollingServiceTest {
             return new StrategyOrder(
                     UUID.randomUUID().toString(), strategyId, stage,
                     "ord-" + stage.name(), "client-" + stage.name(), "AAPL",
-                    stage == StrategyStage.TARGET_SELL || stage == StrategyStage.PROFIT_EXIT || stage == StrategyStage.STOP_LOSS || stage == StrategyStage.LOSS_EXIT || stage == StrategyStage.CLOSE_POSITION
+                    stage == StrategyStage.TARGET_SELL || stage == StrategyStage.PROFIT_EXIT || stage == StrategyStage.STOP_LOSS || stage == StrategyStage.CLOSE_POSITION
                             ? StrategyOrderSide.SELL
                             : StrategyOrderSide.BUY,
                     StrategyOrderType.LIMIT,

@@ -57,9 +57,6 @@ public class StrategyValidator {
                 errors.add("Stop loss percent must be between 0 and 100");
             }
         }
-        if (strategy.optionalLossExitEnabled() && strategy.optionalLossExitPrice().compareTo(Monetary.zero()) <= 0) {
-            errors.add("Optional loss exit price must be positive");
-        }
         if (strategy.targetSellEnabled()) {
             if (strategy.targetSellPrice().compareTo(Monetary.zero()) <= 0) {
                 errors.add("Target sell price must be positive");

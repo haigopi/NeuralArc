@@ -59,11 +59,9 @@ public class StrategyEngine {
                 strategyRepository.save(strategy);
             }
             evaluateManagedStopLoss(strategy, position.get(), latestPrice, orders);
-            evaluateOptionalLossExit(strategy, position.get(), latestPrice, orders);
             evaluateTargetSellAndProfitHold(strategy, position.get(), latestPrice, orders);
         } else {
             logRule(strategy, "STOP_LOSS", "SKIPPED", "No open position");
-            logRule(strategy, "OPTIONAL_LOSS_EXIT", "SKIPPED", "No open position");
             logRule(strategy, "TARGET_SELL", "SKIPPED", "No open position");
             logRule(strategy, "PROFIT_HOLD", "SKIPPED", "No open position");
             maybeRestartStrategy(strategy, orders);
@@ -226,35 +224,6 @@ public class StrategyEngine {
                 StrategyLifecycleState.SELL_PLACED, "Stop loss sell submitted", StrategyEventType.STOP_LOSS_TRIGGERED);
     }
 
-    private void evaluateOptionalLossExit(Strategy strategy, AlpacaPositionData position, BigDecimal latestPrice, List<StrategyOrder> orders) {
-        if (!strategy.optionalLossExitEnabled()) {
-            logRule(strategy, "OPTIONAL_LOSS_EXIT", "SKIPPED", "Disabled");
-            return;
-        }
-        if (hasPendingOrFilledExitOrder(orders, StrategyStage.LOSS_EXIT)) {
-            logRule(strategy, "OPTIONAL_LOSS_EXIT", "SKIPPED", "Existing pending or filled loss exit order already present");
-            return;
-        }
-        if (latestPrice.compareTo(strategy.optionalLossExitPrice()) > 0) {
-            logRule(strategy, "OPTIONAL_LOSS_EXIT", "NOT_SATISFIED",
-                    "latestPrice=" + latestPrice.toPlainString()
-                            + " > triggerPrice=" + strategy.optionalLossExitPrice().toPlainString());
-            return;
-        }
-        boolean noMoreConfiguredStages = strategy.buyLimit2Quantity() <= 0
-                || isStageFilled(orders, StrategyStage.BUY_LIMIT_2)
-                || (strategy.buyLimit2Quantity() > 0 && !isStageFilled(orders, StrategyStage.BUY_LIMIT_1));
-        if (!noMoreConfiguredStages) {
-            logRule(strategy, "OPTIONAL_LOSS_EXIT", "SKIPPED", "Further staged buys are still allowed");
-            return;
-        }
-        logRule(strategy, "OPTIONAL_LOSS_EXIT", "SATISFIED",
-                "latestPrice=" + latestPrice.toPlainString()
-                        + " <= triggerPrice=" + strategy.optionalLossExitPrice().toPlainString()
-                        + ", quantity=" + position.quantity().toPlainString());
-        submitSellOrder(strategy, StrategyStage.LOSS_EXIT, position.quantity(), latestPrice,
-                StrategyLifecycleState.SELL_PLACED, "Optional loss exit submitted", StrategyEventType.OPTIONAL_LOSS_EXIT_TRIGGERED);
-    }
 
     private void evaluateTargetSellAndProfitHold(Strategy strategy, AlpacaPositionData position, BigDecimal latestPrice, List<StrategyOrder> orders) {
         if (!strategy.targetSellEnabled() || strategy.targetSellPrice().compareTo(BigDecimal.ZERO) <= 0) {
@@ -322,17 +291,24 @@ public class StrategyEngine {
     }
 
     private void maybeRestartStrategy(Strategy strategy, List<StrategyOrder> orders) {
-        if (!strategy.restartAfterExitEnabled()) {
-            if (hasFilledExitOrder(orders)) {
-                stateMachine.transition(strategy, StrategyLifecycleState.COMPLETED,
-                        StrategyEventType.STRATEGY_COMPLETED,
-                        "Strategy cycle completed",
-                        "{}");
-                strategyRepository.save(strategy);
-            }
+        // Called only when no open position exists, so restart is inherently full-exit only.
+        Optional<StrategyOrder> latestFilledExitOrder = latestFilledExitOrder(orders);
+        if (latestFilledExitOrder.isEmpty()) {
             return;
         }
-        if (!hasFilledExitOrder(orders) || hasPendingStage(orders, StrategyStage.BASE_BUY)) {
+
+        StrategyOrder filledExitOrder = latestFilledExitOrder.get();
+        // Manual/defensive exits (e.g., CLOSE_POSITION, STOP_LOSS) always complete the cycle.
+        if (!strategy.restartAfterExitEnabled() || !isProfitableExitStage(filledExitOrder.stage())) {
+            stateMachine.transition(strategy, StrategyLifecycleState.COMPLETED,
+                    StrategyEventType.STRATEGY_COMPLETED,
+                    "Strategy cycle completed",
+                    "{}");
+            strategyRepository.save(strategy);
+            return;
+        }
+
+        if (hasPendingStage(orders, StrategyStage.BASE_BUY)) {
             return;
         }
         strategy.clearProfitHoldTracking();
@@ -550,14 +526,24 @@ public class StrategyEngine {
         return orders.stream().anyMatch(order -> order.stage() == stage && (order.isPending() || order.status() == StrategyOrderStatus.FILLED));
     }
 
-    private boolean hasFilledExitOrder(List<StrategyOrder> orders) {
-        return orders.stream().anyMatch(order ->
-                (order.stage() == StrategyStage.TARGET_SELL
-                        || order.stage() == StrategyStage.PROFIT_EXIT
-                        || order.stage() == StrategyStage.STOP_LOSS
-                        || order.stage() == StrategyStage.LOSS_EXIT
-                        || order.stage() == StrategyStage.CLOSE_POSITION)
-                        && order.status() == StrategyOrderStatus.FILLED);
+    private Optional<StrategyOrder> latestFilledExitOrder(List<StrategyOrder> orders) {
+        return orders.stream()
+                .filter(order -> isExitStage(order.stage()) && order.status() == StrategyOrderStatus.FILLED)
+                .max(Comparator.comparing(StrategyOrder::filledAt,
+                        Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())));
+    }
+
+    private boolean isExitStage(StrategyStage stage) {
+        return stage == StrategyStage.TARGET_SELL
+                || stage == StrategyStage.PROFIT_EXIT
+                || stage == StrategyStage.STOP_LOSS
+                || stage == StrategyStage.LOSS_EXIT
+                || stage == StrategyStage.CLOSE_POSITION;
+    }
+
+    private boolean isProfitableExitStage(StrategyStage stage) {
+        return stage == StrategyStage.TARGET_SELL || stage == StrategyStage.PROFIT_EXIT;
     }
 
     private boolean isStageFilled(List<StrategyOrder> orders, StrategyStage stage) {
