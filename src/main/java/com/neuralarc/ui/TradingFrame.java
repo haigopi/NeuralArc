@@ -10,12 +10,14 @@ import com.neuralarc.model.*;
 import com.neuralarc.service.FileStrategyExecutionEventRepository;
 import com.neuralarc.service.FileStrategyOrderRepository;
 import com.neuralarc.service.FileStrategyRepository;
+import com.neuralarc.service.PersistentAggregatePnlStore;
 import com.neuralarc.service.StrategyPollingService;
 import com.neuralarc.service.StrategyService;
 import com.neuralarc.service.StrategyValidator;
 import com.neuralarc.service.UserIdentityService;
 import com.neuralarc.util.AppMetadata;
 import com.neuralarc.util.FontLoader;
+import com.neuralarc.util.Monetary;
 import com.neuralarc.util.SvgIconLoader;
 
 import javax.swing.*;
@@ -131,6 +133,7 @@ public class TradingFrame extends JFrame {
     private final FileStrategyRepository strategyRepository;
     private final FileStrategyOrderRepository strategyOrderRepository;
     private final FileStrategyExecutionEventRepository strategyEventRepository;
+    private final PersistentAggregatePnlStore aggregatePnlStore;
     private boolean connectionOk;
     private boolean appLaunchedPublished;
     private String selectedStrategySymbol;
@@ -170,6 +173,9 @@ public class TradingFrame extends JFrame {
         );
         strategyEventRepository = new FileStrategyExecutionEventRepository(
                 AppMetadata.appDataDirectory().resolve("strategy-events.json")
+        );
+        aggregatePnlStore = new PersistentAggregatePnlStore(
+                AppMetadata.appDataDirectory().resolve("aggregate-pnl.json")
         );
         refreshStrategyRuntimeServices(settingsDialog.getApiKey(), settingsDialog.getApiSecret());
         strategyPollingTimer = new Timer(1000, e -> {
@@ -1137,6 +1143,8 @@ public class TradingFrame extends JFrame {
             return;
         }
 
+        BigDecimal realizedAtDeletion = realizedPnlForStrategy(entry.strategy.id());
+        aggregatePnlStore.addArchivedRealized(entry.strategy.mode(), realizedAtDeletion);
         strategyService.delete(entry.strategy.id());
         strategies.remove(row);
         log("Deleted strategy for symbol " + entry.strategy.symbol());
@@ -1369,27 +1377,74 @@ public class TradingFrame extends JFrame {
     }
 
     private void updateUnrealizedSummaries() {
-        if (strategies.isEmpty() || tradingApi == null) {
-            paperUnrealizedSummary.setText("Paper Unrealized P&L Total: -");
-            liveUnrealizedSummary.setText("Live Unrealized P&L Total: -");
-            applyHeaderTotalsVisibility();
-            return;
-        }
-
         BigDecimal paperTotal = BigDecimal.ZERO;
         BigDecimal liveTotal = BigDecimal.ZERO;
+        BigDecimal paperRealized = aggregatePnlStore.archivedRealized(StrategyMode.PAPER);
+        BigDecimal liveRealized = aggregatePnlStore.archivedRealized(StrategyMode.LIVE);
         for (ManagedStrategy strategy : strategies) {
-            Position position = displayedPosition(strategy);
-            BigDecimal unrealized = position.unrealizedPnl();
+            BigDecimal unrealized = tradingApi == null
+                    ? BigDecimal.ZERO
+                    : displayedPosition(strategy).unrealizedPnl();
+            BigDecimal realized = realizedPnlForStrategy(strategy.strategy.id());
             if (strategy.strategy.mode() == StrategyMode.PAPER) {
                 paperTotal = paperTotal.add(unrealized);
+                paperRealized = paperRealized.add(realized);
             } else {
                 liveTotal = liveTotal.add(unrealized);
+                liveRealized = liveRealized.add(realized);
             }
         }
-        paperUnrealizedSummary.setText("Paper Unrealized P&L Total: " + paperTotal.toPlainString());
-        liveUnrealizedSummary.setText("Live Unrealized P&L Total: " + liveTotal.toPlainString());
+        paperUnrealizedSummary.setText("Paper P&L (Unrealized/Realized): "
+                + Monetary.round(paperTotal).toPlainString()
+                + " / "
+                + Monetary.round(paperRealized).toPlainString());
+        liveUnrealizedSummary.setText("Live P&L (Unrealized/Realized): "
+                + Monetary.round(liveTotal).toPlainString()
+                + " / "
+                + Monetary.round(liveRealized).toPlainString());
         applyHeaderTotalsVisibility();
+    }
+
+    private BigDecimal realizedPnlForStrategy(String strategyId) {
+        List<StrategyOrder> filledOrders = strategyOrderRepository.findByStrategyId(strategyId).stream()
+                .filter(order -> order.status() == StrategyOrderStatus.FILLED || order.status() == StrategyOrderStatus.PARTIALLY_FILLED)
+                .filter(order -> order.filledQuantity().compareTo(BigDecimal.ZERO) > 0)
+                .sorted(Comparator
+                        .comparing(StrategyOrder::filledAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+
+        BigDecimal positionQty = BigDecimal.ZERO;
+        BigDecimal averageCost = BigDecimal.ZERO;
+        BigDecimal realized = BigDecimal.ZERO;
+
+        for (StrategyOrder order : filledOrders) {
+            BigDecimal quantity = order.filledQuantity();
+            BigDecimal fillPrice = order.filledAveragePrice().compareTo(BigDecimal.ZERO) > 0
+                    ? order.filledAveragePrice()
+                    : order.limitPrice();
+
+            if (order.side() == StrategyOrderSide.BUY) {
+                BigDecimal runningCost = averageCost.multiply(positionQty).add(fillPrice.multiply(quantity));
+                positionQty = positionQty.add(quantity);
+                if (positionQty.compareTo(BigDecimal.ZERO) > 0) {
+                    averageCost = runningCost.divide(positionQty, 8, java.math.RoundingMode.HALF_UP);
+                }
+                continue;
+            }
+
+            BigDecimal sellQty = quantity.min(positionQty.max(BigDecimal.ZERO));
+            if (sellQty.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            realized = realized.add(fillPrice.subtract(averageCost).multiply(sellQty));
+            positionQty = positionQty.subtract(sellQty);
+            if (positionQty.compareTo(BigDecimal.ZERO) == 0) {
+                averageCost = BigDecimal.ZERO;
+            }
+        }
+
+        return Monetary.round(realized);
     }
 
     private void applyHeaderTotalsVisibility() {
