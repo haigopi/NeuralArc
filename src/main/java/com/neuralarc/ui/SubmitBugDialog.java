@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.mailjet.client.errors.MailjetException;
+import com.neuralarc.service.DailyLogBundleService;
 import com.neuralarc.service.FeedbackEmailService;
 
 import javax.swing.*;
@@ -12,35 +13,44 @@ import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.util.List;
 
-public class ContactUsDialog extends JDialog {
+public class SubmitBugDialog extends JDialog {
     private final FeedbackEmailService emailService;
+    private final DailyLogBundleService dailyLogBundleService;
     private final String customerEmail;
     private final JTextField fullNameField = SupportDialogStyles.createTextField(28);
     private final JTextField phoneField = SupportDialogStyles.createTextField(18);
-    private final JTextArea messageArea = SupportDialogStyles.createTextArea(8, 34);
-    private final JButton sendButton = new JButton("Send Message");
+    private final JTextArea stepsArea = SupportDialogStyles.createTextArea(5, 34);
+    private final JTextArea expectedArea = SupportDialogStyles.createTextArea(5, 34);
+    private final JTextArea actualArea = SupportDialogStyles.createTextArea(5, 34);
+    private final JButton sendButton = new JButton("Submit Bug");
     private boolean sent;
 
-    public ContactUsDialog(JFrame owner, String customerEmail, FeedbackEmailService emailService) {
-        super(owner, "Contact Us", true);
+    public SubmitBugDialog(JFrame owner, String customerEmail, FeedbackEmailService emailService) {
+        this(owner, customerEmail, emailService, new DailyLogBundleService());
+    }
+
+    SubmitBugDialog(JFrame owner, String customerEmail, FeedbackEmailService emailService, DailyLogBundleService dailyLogBundleService) {
+        super(owner, "Submit Bug", true);
         this.customerEmail = customerEmail == null ? "" : customerEmail.trim();
         this.emailService = emailService;
+        this.dailyLogBundleService = dailyLogBundleService;
 
         setLayout(new BorderLayout(12, 12));
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(18, 20, 16, 20));
 
         add(SupportDialogStyles.createHeroPanel(
-                "Contact the NeuralArc Team",
-                "Use this form for support, product questions, or partnerships."
+                "Submit a Bug Report",
+                "Describe the issue. Today's logs will be attached automatically."
         ), BorderLayout.NORTH);
         add(buildBody(), BorderLayout.CENTER);
         add(buildFooter(), BorderLayout.SOUTH);
 
-        DialogButtonStyles.apply(sendButton, "icons/send.svg");
+        DialogButtonStyles.apply(sendButton, "icons/submit-bug.svg");
         SupportDialogStyles.applyDialogTheme(getContentPane());
 
-        setPreferredSize(new Dimension(700, 700));
+        setPreferredSize(new Dimension(720, 760));
         pack();
         setLocationRelativeTo(owner);
     }
@@ -56,15 +66,15 @@ public class ContactUsDialog extends JDialog {
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setOpaque(false);
 
-        JPanel detailsSection = SupportDialogStyles.createSectionPanel("Contact Details");
+        JPanel detailsSection = SupportDialogStyles.createSectionPanel("Reporter Details");
         detailsSection.add(buildDetailsForm(), BorderLayout.CENTER);
 
-        JPanel messageSection = SupportDialogStyles.createSectionPanel("Message");
-        messageSection.add(buildMessageForm(), BorderLayout.CENTER);
+        JPanel reportSection = SupportDialogStyles.createSectionPanel("Bug Details");
+        reportSection.add(buildReportForm(), BorderLayout.CENTER);
 
         content.add(detailsSection);
         content.add(Box.createVerticalStrut(12));
-        content.add(messageSection);
+        content.add(reportSection);
 
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(null);
@@ -85,12 +95,14 @@ public class ContactUsDialog extends JDialog {
         return form;
     }
 
-    private JComponent buildMessageForm() {
+    private JComponent buildReportForm() {
         JPanel form = new JPanel(new GridBagLayout());
         form.setOpaque(false);
 
         GridBagConstraints gbc = baseConstraints();
-        addFormRow(form, gbc, 0, "Message *", SupportDialogStyles.wrapTextArea(messageArea, 210));
+        addFormRow(form, gbc, 0, "Steps to reproduce *", SupportDialogStyles.wrapTextArea(stepsArea, 120));
+        addFormRow(form, gbc, 1, "Expected behavior", SupportDialogStyles.wrapTextArea(expectedArea, 110));
+        addFormRow(form, gbc, 2, "Actual behavior *", SupportDialogStyles.wrapTextArea(actualArea, 130));
         return form;
     }
 
@@ -123,18 +135,20 @@ public class ContactUsDialog extends JDialog {
     private void onSend() {
         String fullName = fullNameField.getText().trim();
         String phone = phoneField.getText().trim();
-        String message = messageArea.getText().trim();
+        String steps = stepsArea.getText().trim();
+        String expected = expectedArea.getText().trim();
+        String actual = actualArea.getText().trim();
 
         if (customerEmail.isBlank()) {
             JOptionPane.showMessageDialog(this,
-                    "Please save the customer email in Settings before sending a contact request.",
+                    "Please save the customer email in Settings before sending a bug report.",
                     "Missing Settings Email",
                     JOptionPane.WARNING_MESSAGE);
             return;
         }
-        if (fullName.isBlank() || message.isBlank()) {
+        if (fullName.isBlank() || steps.isBlank() || actual.isBlank()) {
             JOptionPane.showMessageDialog(this,
-                    "Please complete the full name and message fields.",
+                    "Please complete full name, steps to reproduce, and actual behavior.",
                     "Missing Required Fields",
                     JOptionPane.WARNING_MESSAGE);
             return;
@@ -151,19 +165,31 @@ public class ContactUsDialog extends JDialog {
         SwingWorker<Void, Void> worker = new SwingWorker<>() {
             @Override
             protected Void doInBackground() throws Exception {
-                String mailSubject = "NeuralArc - Contact Us";
-                String textBody = "Category: Contact Us\n"
+                String mailSubject = "NeuralArc - Bug Report";
+                String textBody = "Category: Bug Report\n"
                         + "Customer Email: " + customerEmail + "\n"
                         + "Full Name: " + fullName + "\n"
                         + "Phone: " + (phone.isBlank() ? "-" : phone) + "\n\n"
-                        + "Message:\n" + message;
-                String htmlBody = "<h3>Contact Us</h3>"
+                        + "Steps to Reproduce:\n" + steps + "\n\n"
+                        + "Expected Behavior:\n" + (expected.isBlank() ? "-" : expected) + "\n\n"
+                        + "Actual Behavior:\n" + actual + "\n\n"
+                        + "Attachment: daily logs for current day";
+                String htmlBody = "<h3>Bug Report</h3>"
                         + "<p><b>Customer Email:</b> " + escape(customerEmail) + "<br/>"
                         + "<b>Full Name:</b> " + escape(fullName) + "<br/>"
                         + "<b>Phone:</b> " + escape(phone.isBlank() ? "-" : phone) + "</p>"
-                        + "<p><b>Message</b><br/>" + htmlMultiline(message) + "</p>";
+                        + "<p><b>Steps to Reproduce</b><br/>" + htmlMultiline(steps) + "</p>"
+                        + "<p><b>Expected Behavior</b><br/>" + htmlMultiline(expected.isBlank() ? "-" : expected) + "</p>"
+                        + "<p><b>Actual Behavior</b><br/>" + htmlMultiline(actual) + "</p>"
+                        + "<p><i>Daily system logs are attached.</i></p>";
+
+                FeedbackEmailService.SupportEmailAttachment dailyLogs = dailyLogBundleService.buildTodayLogAttachment();
                 emailService.sendSupportEmail(new FeedbackEmailService.SupportEmailRequest(
-                        mailSubject, textBody, htmlBody, customerEmail
+                        mailSubject,
+                        textBody,
+                        htmlBody,
+                        customerEmail,
+                        List.of(dailyLogs)
                 ));
                 return null;
             }
@@ -173,8 +199,8 @@ public class ContactUsDialog extends JDialog {
                 try {
                     get();
                     sent = true;
-                    JOptionPane.showMessageDialog(ContactUsDialog.this,
-                            "Message sent successfully.",
+                    JOptionPane.showMessageDialog(SubmitBugDialog.this,
+                            "Bug report sent successfully.",
                             "Sent",
                             JOptionPane.INFORMATION_MESSAGE);
                     setVisible(false);
@@ -182,12 +208,12 @@ public class ContactUsDialog extends JDialog {
                     String detail = ex.getCause() instanceof MailjetException
                             ? ex.getCause().getMessage()
                             : ex.getMessage();
-                    JOptionPane.showMessageDialog(ContactUsDialog.this,
-                            "Unable to send your message.\n" + detail,
+                    JOptionPane.showMessageDialog(SubmitBugDialog.this,
+                            "Unable to send your bug report.\n" + detail,
                             "Send Failed",
                             JOptionPane.ERROR_MESSAGE);
                 } finally {
-                    setSendingState(false, "Send Message");
+                    setSendingState(false, "Submit Bug");
                 }
             }
         };

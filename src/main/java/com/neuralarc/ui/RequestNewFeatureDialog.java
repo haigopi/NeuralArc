@@ -33,8 +33,7 @@ public class RequestNewFeatureDialog extends JDialog {
 
         add(SupportDialogStyles.createHeroPanel(
                 "Request a New Feature",
-                "Tell us what capability you need, why it matters, and what outcome you expect. " +
-                        "We will send it directly to the NeuralArc team and copy your settings email."
+                "Share the feature, the use case, and the expected outcome."
         ), BorderLayout.NORTH);
         add(buildBody(), BorderLayout.CENTER);
         add(buildFooter(), BorderLayout.SOUTH);
@@ -42,7 +41,7 @@ public class RequestNewFeatureDialog extends JDialog {
         DialogButtonStyles.apply(sendButton, "icons/send.svg");
         SupportDialogStyles.applyDialogTheme(getContentPane());
 
-        setPreferredSize(new Dimension(700, 620));
+        setPreferredSize(new Dimension(700, 690));
         pack();
         setLocationRelativeTo(owner);
     }
@@ -155,7 +154,7 @@ public class RequestNewFeatureDialog extends JDialog {
         SwingWorker<Void, Void> worker = new SwingWorker<>() {
             @Override
             protected Void doInBackground() throws Exception {
-                String subject = "NeuralArc - Request New Feature - " + featureTitle;
+                String subject = "NeuralArc - Request New Feature";
                 String textBody = "Category: Request New Feature\n"
                         + "Customer Email: " + customerEmail + "\n"
                         + "Phone: " + (phone.isBlank() ? "-" : phone) + "\n"
