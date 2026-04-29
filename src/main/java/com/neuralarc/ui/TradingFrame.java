@@ -2505,6 +2505,7 @@ public class TradingFrame extends JFrame {
     private boolean showLegalDisclosureDialog(boolean requireAcceptance) {
         JDialog dialog = new JDialog(this, "Legal Disclosure", true);
         dialog.setLayout(new BorderLayout(10, 10));
+        dialog.getRootPane().setBorder(new EmptyBorder(10, 10, 10, 10));
 
         JTextArea disclosureArea = new JTextArea(LEGAL_DISCLOSURE_TEXT);
         disclosureArea.setEditable(false);
@@ -2513,10 +2514,15 @@ public class TradingFrame extends JFrame {
         disclosureArea.setCaretPosition(0);
         disclosureArea.setFont(FontLoader.ui(Font.PLAIN, 12f));
         JScrollPane disclosureScroll = new JScrollPane(disclosureArea);
-        disclosureScroll.setPreferredSize(new Dimension(760, 420));
+        disclosureScroll.setPreferredSize(new Dimension(760, 440));
 
         JCheckBox acceptCheck = new JCheckBox("I have read and accept this legal disclosure.", legalDisclosureAccepted);
-        acceptCheck.setEnabled(requireAcceptance || !legalDisclosureAccepted);
+        boolean requiresScrollGate = requireAcceptance && !legalDisclosureAccepted;
+        acceptCheck.setEnabled(!requiresScrollGate);
+        JLabel scrollHint = new JLabel("Scroll to the end to enable acceptance.");
+        scrollHint.setFont(FontLoader.ui(Font.PLAIN, 11f));
+        scrollHint.setForeground(new Color(180, 160, 110));
+        scrollHint.setVisible(requiresScrollGate);
 
         JButton acceptButton = new JButton(requireAcceptance ? "Accept and Continue" : "Save Acceptance");
         DialogButtonStyles.apply(acceptButton, "icons/verify.svg");
@@ -2526,6 +2532,24 @@ public class TradingFrame extends JFrame {
         final boolean[] accepted = new boolean[]{legalDisclosureAccepted};
         acceptButton.setEnabled(acceptCheck.isSelected());
         acceptCheck.addActionListener(e -> acceptButton.setEnabled(acceptCheck.isSelected()));
+
+        if (requiresScrollGate) {
+            JScrollBar verticalBar = disclosureScroll.getVerticalScrollBar();
+            verticalBar.addAdjustmentListener(e -> {
+                boolean atBottom = isScrolledToBottom(verticalBar);
+                acceptCheck.setEnabled(atBottom);
+                scrollHint.setVisible(!atBottom);
+                if (!atBottom) {
+                    acceptCheck.setSelected(false);
+                    acceptButton.setEnabled(false);
+                }
+            });
+            SwingUtilities.invokeLater(() -> {
+                boolean atBottom = isScrolledToBottom(verticalBar);
+                acceptCheck.setEnabled(atBottom);
+                scrollHint.setVisible(!atBottom);
+            });
+        }
 
         acceptButton.addActionListener(e -> {
             legalDisclosureAccepted = acceptCheck.isSelected();
@@ -2540,20 +2564,37 @@ public class TradingFrame extends JFrame {
         });
 
         JPanel footer = new JPanel(new BorderLayout());
-        footer.setBorder(new EmptyBorder(0, 0, 0, 0));
-        footer.add(acceptCheck, BorderLayout.WEST);
+        footer.setBorder(new EmptyBorder(12, 4, 8, 4));
+        JPanel footerLeft = new JPanel();
+        footerLeft.setLayout(new BoxLayout(footerLeft, BoxLayout.Y_AXIS));
+        footerLeft.setOpaque(false);
+        acceptCheck.setAlignmentX(Component.LEFT_ALIGNMENT);
+        scrollHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        footerLeft.add(acceptCheck);
+        footerLeft.add(Box.createVerticalStrut(4));
+        footerLeft.add(scrollHint);
+        footer.add(footerLeft, BorderLayout.WEST);
         JPanel footerActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        footerActions.setBorder(new EmptyBorder(6, 0, 6, 0));
         footerActions.add(acceptButton);
         footerActions.add(closeButton);
         footer.add(footerActions, BorderLayout.EAST);
 
         dialog.add(disclosureScroll, BorderLayout.CENTER);
         dialog.add(footer, BorderLayout.SOUTH);
+        dialog.setMinimumSize(new Dimension(790, 590));
         dialog.pack();
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
 
         return accepted[0];
+    }
+
+    private boolean isScrolledToBottom(JScrollBar bar) {
+        int extent = bar.getModel().getExtent();
+        int max = bar.getMaximum();
+        int value = bar.getValue();
+        return value + extent >= max;
     }
 
     private boolean loadLegalDisclosureAcceptance() {
