@@ -46,6 +46,7 @@ public class Strategy {
     private String latestOrderStatus;
     private String latestAlpacaOrderId;
     private String lastTriggeredRuleType;
+    private PauseReason pauseReason;
 
     public Strategy(
             String id,
@@ -115,6 +116,7 @@ public class Strategy {
         this.pollingIntervalSeconds = pollingIntervalSeconds;
         this.createdAt = createdAt == null ? Instant.now() : createdAt;
         this.updatedAt = updatedAt == null ? this.createdAt : updatedAt;
+        this.pauseReason = PauseReason.NONE;
     }
 
     public static Strategy fromConfig(String id, String name, StrategyConfig config, StrategyMode mode) {
@@ -260,6 +262,7 @@ public class Strategy {
     public String latestOrderStatus() { return latestOrderStatus; }
     public String latestAlpacaOrderId() { return latestAlpacaOrderId; }
     public String lastTriggeredRuleType() { return lastTriggeredRuleType; }
+    public PauseReason pauseReason() { return pauseReason; }
 
     public void setName(String name) { this.name = normalizeText(name); touch(); }
     public void setSymbol(String symbol) { this.symbol = normalizeSymbol(symbol); touch(); }
@@ -298,4 +301,5 @@ public class Strategy {
     public void setLatestOrderStatus(String value) { this.latestOrderStatus = normalizeText(value); touch(); }
     public void setLatestAlpacaOrderId(String value) { this.latestAlpacaOrderId = normalizeText(value); touch(); }
     public void setLastTriggeredRuleType(String value) { this.lastTriggeredRuleType = normalizeText(value); touch(); }
+    public void setPauseReason(PauseReason value) { this.pauseReason = value == null ? PauseReason.NONE : value; touch(); }
 }

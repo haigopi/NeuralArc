@@ -26,6 +26,8 @@ public class StrategyService {
     private final StrategyMode defaultStrategyMode;
     private final StrategyStateMachine stateMachine;
     private final StrategyEngine strategyEngine;
+    private final AppSettingsService appSettingsService;
+    private final MarketHoursService marketHoursService;
 
     public StrategyService(
             StrategyRepository strategyRepository,
@@ -36,6 +38,30 @@ public class StrategyService {
             boolean liveTradingEnabled,
             StrategyMode defaultStrategyMode
     ) {
+        this(
+                strategyRepository,
+                orderRepository,
+                eventRepository,
+                alpacaClient,
+                validator,
+                liveTradingEnabled,
+                defaultStrategyMode,
+                new AppSettingsService(),
+                new MarketHoursService()
+        );
+    }
+
+    public StrategyService(
+            StrategyRepository strategyRepository,
+            StrategyOrderRepository orderRepository,
+            StrategyExecutionEventRepository eventRepository,
+            AlpacaClient alpacaClient,
+            StrategyValidator validator,
+            boolean liveTradingEnabled,
+            StrategyMode defaultStrategyMode,
+            AppSettingsService appSettingsService,
+            MarketHoursService marketHoursService
+    ) {
         this.strategyRepository = strategyRepository;
         this.orderRepository = orderRepository;
         this.eventRepository = eventRepository;
@@ -43,9 +69,18 @@ public class StrategyService {
         this.validator = validator;
         this.liveTradingEnabled = liveTradingEnabled;
         this.defaultStrategyMode = defaultStrategyMode == null ? StrategyMode.PAPER : defaultStrategyMode;
+        this.appSettingsService = appSettingsService;
+        this.marketHoursService = marketHoursService;
         StrategyEventBus eventBus = new StrategyEventBus();
         this.stateMachine = new StrategyStateMachine(eventRepository, eventBus);
-        this.strategyEngine = new StrategyEngine(strategyRepository, orderRepository, stateMachine, alpacaClient);
+        this.strategyEngine = new StrategyEngine(
+                strategyRepository,
+                orderRepository,
+                stateMachine,
+                alpacaClient,
+                appSettingsService,
+                marketHoursService
+        );
     }
 
     public StrategyCreationResult createAndActivate(Strategy strategy) {
@@ -64,6 +99,7 @@ public class StrategyService {
 
         strategy.setStatus(StrategyStatus.ACTIVE);
         strategy.setCurrentState(StrategyLifecycleState.VALIDATED);
+        strategy.setPauseReason(PauseReason.NONE);
         strategy.clearLastError();
         strategyRepository.save(strategy);
         stateMachine.transition(strategy, StrategyLifecycleState.VALIDATED, StrategyEventType.STRATEGY_CREATED, "Strategy validated", "{}");
@@ -108,6 +144,7 @@ public class StrategyService {
         }
 
         strategy.clearLastError();
+        strategy.setPauseReason(PauseReason.NONE);
         strategyRepository.save(strategy);
         stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.STRATEGY_UPDATED, "Strategy updated", "{}");
 
@@ -123,6 +160,7 @@ public class StrategyService {
             cancelPendingRemoteOrders(strategy);
             strategy.setStatus(StrategyStatus.PAUSED);
             strategy.setCurrentState(StrategyLifecycleState.PAUSED);
+            strategy.setPauseReason(PauseReason.USER_PAUSED);
             strategyRepository.save(strategy);
             stateMachine.transition(strategy, StrategyLifecycleState.PAUSED, StrategyEventType.STRATEGY_PAUSED, "Strategy paused", "{}");
         });
@@ -134,8 +172,41 @@ public class StrategyService {
             if (strategy.currentState() == StrategyLifecycleState.PAUSED) {
                 strategy.setCurrentState(StrategyLifecycleState.VALIDATED);
             }
+            strategy.setPauseReason(PauseReason.NONE);
+            strategy.clearLastError();
             strategyRepository.save(strategy);
             stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.STRATEGY_RESUMED, "Strategy resumed", "{}");
+            strategyEngine.resumeStrategy(strategy);
+        });
+    }
+
+    public void autoPauseForMarketClose(String strategyId, String reasonMessage) {
+        strategyRepository.findById(strategyId).ifPresent(strategy -> {
+            if (strategy.status() != StrategyStatus.ACTIVE) {
+                return;
+            }
+            strategy.setStatus(StrategyStatus.PAUSED);
+            strategy.setCurrentState(StrategyLifecycleState.PAUSED);
+            strategy.setPauseReason(PauseReason.AUTO_MARKET_CLOSED);
+            strategy.clearLastError();
+            strategyRepository.save(strategy);
+            stateMachine.transition(strategy, StrategyLifecycleState.PAUSED, StrategyEventType.STRATEGY_PAUSED, reasonMessage, "{}");
+        });
+    }
+
+    public void autoResumeFromMarketClose(String strategyId, String reasonMessage) {
+        strategyRepository.findById(strategyId).ifPresent(strategy -> {
+            if (strategy.status() != StrategyStatus.PAUSED || strategy.pauseReason() != PauseReason.AUTO_MARKET_CLOSED) {
+                return;
+            }
+            strategy.setStatus(StrategyStatus.ACTIVE);
+            if (strategy.currentState() == StrategyLifecycleState.PAUSED) {
+                strategy.setCurrentState(StrategyLifecycleState.VALIDATED);
+            }
+            strategy.setPauseReason(PauseReason.NONE);
+            strategy.clearLastError();
+            strategyRepository.save(strategy);
+            stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.STRATEGY_RESUMED, reasonMessage, "{}");
             strategyEngine.resumeStrategy(strategy);
         });
     }
@@ -144,6 +215,7 @@ public class StrategyService {
         strategyRepository.findById(strategyId).ifPresent(strategy -> {
             strategy.setStatus(StrategyStatus.STOPPED);
             strategy.setCurrentState(StrategyLifecycleState.STOPPED);
+            strategy.setPauseReason(PauseReason.NONE);
             strategyRepository.save(strategy);
             stateMachine.transition(strategy, StrategyLifecycleState.STOPPED, StrategyEventType.STRATEGY_STOPPED, "Strategy stopped", "{}");
         });

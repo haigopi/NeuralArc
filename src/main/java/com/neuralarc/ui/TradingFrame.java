@@ -7,11 +7,15 @@ import com.neuralarc.api.AlpacaTradingWebSocketClient;
 import com.neuralarc.api.TradingApi;
 import com.neuralarc.api.TradingApiFactory;
 import com.neuralarc.model.*;
+import com.neuralarc.api.HttpAlpacaMarketDataApi;
+import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.FileStrategyExecutionEventRepository;
 import com.neuralarc.service.FileStrategyOrderRepository;
 import com.neuralarc.service.FileStrategyRepository;
 import com.neuralarc.service.FeedbackEmailService;
+import com.neuralarc.service.MarketHoursService;
 import com.neuralarc.service.PersistentAggregatePnlStore;
+import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.service.StrategyPollingService;
 import com.neuralarc.service.StrategyService;
 import com.neuralarc.service.StrategyValidator;
@@ -75,6 +79,7 @@ public class TradingFrame extends JFrame {
     private static final DateTimeFormatter LOG_DATE_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM");
     private static final DateTimeFormatter LOG_TIME_FORMAT = DateTimeFormatter.ofPattern("h:mm a");
     private static final DateTimeFormatter RULE_TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM d yyyy, h:mm a");
+    private static final DateTimeFormatter NEXT_OPEN_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM d yyyy h:mm a z");
 
     private final JLabel positionSummary = new JLabel("Position: -");
     private final JLabel ruleState = new JLabel("Rules: -");
@@ -113,6 +118,8 @@ public class TradingFrame extends JFrame {
     private final Timer logFlushTimer;
     private final Timer pollingIndicatorTimer;
     private final Timer strategyPollingTimer;
+    private final AppSettingsService appSettingsService = new AppSettingsService();
+    private final MarketHoursService marketHoursService = new MarketHoursService();
     private final Path appLogFile = AppMetadata.appDataDirectory().resolve("app.log");
     private final Path strategiesFilePath = AppMetadata.appDataDirectory().resolve("strategies-v2.json");
     private static final Path LEGAL_DISCLOSURE_FILE = AppMetadata.appDataDirectory().resolve("legal-disclosure.properties");
@@ -286,6 +293,7 @@ public class TradingFrame extends JFrame {
     private long lastBrokerBackedUiRefreshAtMillis;
     private String runtimeApiKey = "";
     private String runtimeApiSecret = "";
+    private final AutoAnalyzeResultStore autoAnalyzeResultStore = new AutoAnalyzeResultStore();
 
     public TradingFrame() {
         liveModeBlinkTimer = new Timer(500, _ -> toggleLiveHeaderBlink());
@@ -1019,7 +1027,8 @@ public class TradingFrame extends JFrame {
                 runtimeApiKey,
                 runtimeApiSecret,
                 AppMetadata.alpacaTradingBaseUrl(mode),
-                AppMetadata.alpacaDataUrl()
+                AppMetadata.alpacaDataUrl(),
+                settingsDialog.extendedHoursTradingEnabled()
         );
         strategyService = new StrategyService(
                 strategyRepository,
@@ -1028,13 +1037,17 @@ public class TradingFrame extends JFrame {
                 alpacaClient,
                 new StrategyValidator(),
                 AppMetadata.liveTradingEnabled(),
-                mode == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER
+                mode == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER,
+                appSettingsService,
+                marketHoursService
         );
         strategyPollingService = new StrategyPollingService(
                 strategyRepository,
                 strategyOrderRepository,
                 strategyEventRepository,
-                alpacaClient
+                alpacaClient,
+                appSettingsService,
+                marketHoursService
         );
     }
 
@@ -1180,7 +1193,9 @@ public class TradingFrame extends JFrame {
             return;
         }
 
-        StrategyDialog dialog = new StrategyDialog(this, null);
+        HttpAlpacaMarketDataApi marketDataApi = connectionOk && !runtimeApiKey.isBlank()
+                ? new HttpAlpacaMarketDataApi(runtimeApiKey, runtimeApiSecret) : null;
+        StrategyDialog dialog = new StrategyDialog(this, null, marketDataApi, autoAnalyzeResultStore);
         StrategyConfig config = dialog.showDialog();
         if (config == null) {
             return;
@@ -1250,7 +1265,9 @@ public class TradingFrame extends JFrame {
         }
 
         ManagedStrategy entry = strategies.get(row);
-        StrategyDialog dialog = new StrategyDialog(this, entry.toConfig());
+        HttpAlpacaMarketDataApi marketDataApi = connectionOk && !runtimeApiKey.isBlank()
+                ? new HttpAlpacaMarketDataApi(runtimeApiKey, runtimeApiSecret) : null;
+        StrategyDialog dialog = new StrategyDialog(this, entry.toConfig(), marketDataApi, autoAnalyzeResultStore);
         StrategyConfig updated = dialog.showDialog();
         if (updated == null) {
             return;
@@ -1444,7 +1461,11 @@ public class TradingFrame extends JFrame {
                 String orderStatus = entry.strategy.latestOrderStatus() == null || entry.strategy.latestOrderStatus().isBlank()
                         ? "PENDING"
                         : entry.strategy.latestOrderStatus();
-                positionSummary.setText("[" + entry.strategy.symbol() + "]: Waiting Fill — order submitted to Alpaca (status: " + orderStatus + ")");
+                String stockPriceDisplay = p.getLastPrice().compareTo(BigDecimal.ZERO) > 0
+                        ? p.getLastPrice().toPlainString()
+                        : "-";
+                positionSummary.setText("[" + entry.strategy.symbol() + "]: Waiting Fill — order submitted to Alpaca"
+                        + " (status: " + orderStatus + ", Stock Price=" + stockPriceDisplay + ")");
             } else {
                 positionSummary.setText(String.format(
                         "[%s]: Shares=%d | Stock Price=%s | Avg Cost=%s | MarketValue=%s | Invested=%s | Realized=%s | Unrealized=%s",
@@ -1491,7 +1512,7 @@ public class TradingFrame extends JFrame {
 
     private String buildRuleTriggeredShortSummary(Strategy strategy, ManagedStrategy entry, StrategyOrder latestOrder, StrategyOrder pendingOrder) {
         StrategyLifecycleState state = strategy.currentState();
-        String stateDisplay = formatLifecycleStateForDisplay(state);
+        String stateDisplay = displayStatusLabel(strategy);
 
         if (stateDisplay.isEmpty()) {
             return "Rules: -";
@@ -1532,12 +1553,29 @@ public class TradingFrame extends JFrame {
         };
     }
 
+    private String displayStatusLabel(Strategy strategy) {
+        if (strategy == null) {
+            return "";
+        }
+        if (strategy.status() == StrategyStatus.PAUSED && strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED) {
+            return "Auto Paused (Market Closed)";
+        }
+        if (strategy.status() == StrategyStatus.PAUSED && strategy.pauseReason() == PauseReason.USER_PAUSED) {
+            return "Paused";
+        }
+        if (strategy.status() == StrategyStatus.PAUSED && strategy.pauseReason() == PauseReason.SYSTEM_ERROR) {
+            return "Paused (System Error)";
+        }
+        return formatLifecycleStateForDisplay(strategy.currentState());
+    }
+
     private String formatTimestampForDisplay(Instant timestamp) {
         ZonedDateTime zdt = timestamp.atZone(java.time.ZoneId.systemDefault());
         return zdt.format(RULE_TIMESTAMP_FORMAT);
     }
 
     private String buildRuleTriggeredSummary(Strategy strategy, StrategyOrder latestOrder, StrategyOrder pendingOrder) {
+        AppSettingsService.AppSettings settings = appSettingsService.load();
         String lastTriggeredRule = strategy.lastTriggeredRuleType() == null || strategy.lastTriggeredRuleType().isBlank()
                 ? "-"
                 : strategy.lastTriggeredRuleType();
@@ -1558,6 +1596,11 @@ public class TradingFrame extends JFrame {
         String cycleBehaviorValue = strategy.restartAfterExitEnabled()
                 ? "Repeat after profitable exit (optional)"
                 : "Do not repeat";
+        String nextOpenValue = marketHoursService.nextMarketOpen(settings.extendedHoursTradingEnabled())
+                .atZone(java.time.ZoneId.systemDefault())
+                .format(NEXT_OPEN_FORMAT);
+        String extendedHoursValue = settings.extendedHoursTradingEnabled() ? "Enabled" : "Disabled";
+        String pauseReasonValue = strategy.pauseReason() == null ? PauseReason.NONE.name() : strategy.pauseReason().name();
         String orderPlaced = latestOrder == null || latestOrder.submittedAt() == null
                 ? "-"
                 : formatTimestampForDisplay(latestOrder.submittedAt());
@@ -1574,6 +1617,9 @@ public class TradingFrame extends JFrame {
                 + "<br><b>Stop Loss:</b> " + stopLossValue
                 + "<br><b>Target Sell:</b> >= " + strategy.targetSellPrice().toPlainString()
                 + "<br><b>Profit Hold:</b> " + profitHoldValue
+                + "<br><b>Pause Reason:</b> " + pauseReasonValue
+                + "<br><b>Extended Hours:</b> " + extendedHoursValue
+                + "<br><b>Next Market Open:</b> " + nextOpenValue
                 + "<br><b>Cycle Behavior:</b> " + cycleBehaviorValue
                 + " (stop-loss/manual close do not restart)";
     }
@@ -2042,6 +2088,12 @@ public class TradingFrame extends JFrame {
             return entry.cachedPosition();
         }
         Position latest = tradingApi.getPosition(entry.strategy.symbol());
+        if (latest.getTotalShares() == 0 && isWaitingForFill(entry.strategy)) {
+            BigDecimal latestPrice = tradingApi.getLatestPrice(entry.strategy.symbol());
+            if (latestPrice.compareTo(BigDecimal.ZERO) > 0) {
+                latest.setLastPrice(latestPrice);
+            }
+        }
         entry.setCachedPosition(latest);
         return latest;
     }
@@ -2135,7 +2187,7 @@ public class TradingFrame extends JFrame {
             }
             return switch (columnIndex) {
                 case 0 -> entry.strategy.symbol();
-                case 1 -> entry.strategy.status().name();
+                case 1 -> displayStatusLabel(entry.strategy);
                 case 2 -> "-";
                 case 3 -> "-";
                 case 4 -> "-";
@@ -2143,7 +2195,7 @@ public class TradingFrame extends JFrame {
                 case 6 -> "-";
                 case 7 -> entry.strategy.pollingIntervalSeconds();
                 case 8 -> gridBrokerModeLabel();
-                case 9 -> entry.strategy.status().name();
+                case 9 -> displayStatusLabel(entry.strategy);
                 default -> "";
             };
         }
@@ -2175,6 +2227,26 @@ public class TradingFrame extends JFrame {
 
         private boolean isPaused() {
             return strategy.status() == StrategyStatus.PAUSED;
+        }
+
+        private String pauseLabel() {
+            if (strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED) {
+                return "Market Closed";
+            }
+            if (strategy.pauseReason() == PauseReason.SYSTEM_ERROR) {
+                return "System Error";
+            }
+            return "Paused";
+        }
+
+        private String pauseTooltip() {
+            if (strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED) {
+                return "Polling auto-paused because the market is closed";
+            }
+            if (strategy.pauseReason() == PauseReason.SYSTEM_ERROR) {
+                return "Polling paused because of a system error";
+            }
+            return "Polling paused by the user";
         }
 
         private boolean isPauseResumeBusy() {
@@ -2247,7 +2319,11 @@ public class TradingFrame extends JFrame {
                 } else {
                     setBackground(table.getBackground());
                     if (column == 1) {
-                        setForeground(paused ? STATUS_TEXT_PAUSED : STATUS_TEXT_RUNNING);
+                        if (strategies.get(modelRow).strategy.pauseReason() == PauseReason.SYSTEM_ERROR) {
+                            setForeground(STATUS_ERR);
+                        } else {
+                            setForeground(paused ? STATUS_TEXT_PAUSED : STATUS_TEXT_RUNNING);
+                        }
                     } else if (column == 8) {
                         setForeground(gridBrokerModeColor());
                     } else {
@@ -2338,9 +2414,11 @@ public class TradingFrame extends JFrame {
                     ? STATUS_TEXT_PAUSED
                     : isSelected ? new Color(60, 30, 140) : new Color(94, 53, 177));
             countdownLabel.setForeground(isSelected ? TABLE_SELECTION_FG : table.getForeground());
-            countdownLabel.setText(strategy.isPaused() ? "Paused" : secondsRemaining + "s / " + totalSeconds + "s");
+            countdownLabel.setText(strategy.isPaused()
+                    ? strategy.pauseLabel()
+                    : secondsRemaining + "s / " + totalSeconds + "s");
             String tooltipText = TooltipStyler.text(strategy.isPaused()
-                    ? "Polling paused"
+                    ? strategy.pauseTooltip()
                     : secondsRemaining + " seconds remaining out of " + totalSeconds + " seconds");
             setToolTipText(tooltipText);
             progressBar.setToolTipText(tooltipText);

@@ -21,6 +21,8 @@ public class StrategyEngine {
     private final StrategyOrderRepository orderRepository;
     private final StrategyStateMachine stateMachine;
     private final AlpacaClient alpacaClient;
+    private final AppSettingsService appSettingsService;
+    private final MarketHoursService marketHoursService;
 
     public StrategyEngine(
             StrategyRepository strategyRepository,
@@ -28,10 +30,23 @@ public class StrategyEngine {
             StrategyStateMachine stateMachine,
             AlpacaClient alpacaClient
     ) {
+        this(strategyRepository, orderRepository, stateMachine, alpacaClient, new AppSettingsService(), new MarketHoursService());
+    }
+
+    public StrategyEngine(
+            StrategyRepository strategyRepository,
+            StrategyOrderRepository orderRepository,
+            StrategyStateMachine stateMachine,
+            AlpacaClient alpacaClient,
+            AppSettingsService appSettingsService,
+            MarketHoursService marketHoursService
+    ) {
         this.strategyRepository = strategyRepository;
         this.orderRepository = orderRepository;
         this.stateMachine = stateMachine;
         this.alpacaClient = alpacaClient;
+        this.appSettingsService = appSettingsService;
+        this.marketHoursService = marketHoursService;
     }
 
     public void reconcile(Strategy strategy) {
@@ -432,6 +447,9 @@ public class StrategyEngine {
             strategyRepository.save(strategy);
             return null;
         }
+        if (!ensureTradableSession(strategy, stage, limitPrice)) {
+            return null;
+        }
         String clientOrderId = StrategyService.buildClientOrderId(strategy.id(), stage);
         AlpacaOrderData submitted = alpacaClient.submitLimitBuyOrder(strategy.symbol(), quantity, limitPrice, clientOrderId);
         Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
@@ -475,6 +493,9 @@ public class StrategyEngine {
     ) {
         int requestedQuantity = quantity.setScale(0, java.math.RoundingMode.DOWN).intValue();
         if (requestedQuantity <= 0) {
+            return null;
+        }
+        if (!ensureTradableSession(strategy, stage, limitPrice)) {
             return null;
         }
         String clientOrderId = StrategyService.buildClientOrderId(strategy.id(), stage);
@@ -594,6 +615,22 @@ public class StrategyEngine {
     }
 
     private record RiskProjection(boolean allowed, String reason) {}
+
+    private boolean ensureTradableSession(Strategy strategy, StrategyStage stage, BigDecimal limitPrice) {
+        AppSettingsService.AppSettings settings = appSettingsService.load();
+        if (marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled())) {
+            return true;
+        }
+        String sessionLabel = settings.extendedHoursTradingEnabled()
+                ? "extended trading session"
+                : "regular market hours";
+        String message = "Blocked " + stage.name() + " order at $" + Monetary.round(limitPrice).toPlainString()
+                + " because the " + sessionLabel + " is closed.";
+        strategy.setLastError(message);
+        strategyRepository.save(strategy);
+        logRule(strategy, stage.name(), "SKIPPED", message);
+        return false;
+    }
 
     private void logPoll(Strategy strategy, String scope, String status, String details) {
         if ("STARTED".equals(status)) {

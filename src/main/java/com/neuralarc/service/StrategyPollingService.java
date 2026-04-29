@@ -2,9 +2,11 @@ package com.neuralarc.service;
 
 import com.neuralarc.api.AlpacaClient;
 import com.neuralarc.api.AlpacaTradeUpdateEvent;
+import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyEventType;
 import com.neuralarc.model.StrategyExecutionEvent;
+import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyStatus;
 
 import java.time.Duration;
@@ -22,7 +24,11 @@ public class StrategyPollingService {
     private final StrategyRepository strategyRepository;
     private final StrategyExecutionEventRepository eventRepository;
     private final StrategyEngine strategyEngine;
+    private final StrategyService strategyService;
+    private final AppSettingsService appSettingsService;
+    private final MarketHoursService marketHoursService;
     private volatile Instant lastStreamingEventAt;
+    private volatile Boolean lastTradingSessionOpen;
 
     public StrategyPollingService(
             StrategyRepository strategyRepository,
@@ -30,19 +36,64 @@ public class StrategyPollingService {
             StrategyExecutionEventRepository eventRepository,
             AlpacaClient alpacaClient
     ) {
+        this(
+                strategyRepository,
+                orderRepository,
+                eventRepository,
+                alpacaClient,
+                new AppSettingsService(),
+                new MarketHoursService()
+        );
+    }
+
+    public StrategyPollingService(
+            StrategyRepository strategyRepository,
+            StrategyOrderRepository orderRepository,
+            StrategyExecutionEventRepository eventRepository,
+            AlpacaClient alpacaClient,
+            AppSettingsService appSettingsService,
+            MarketHoursService marketHoursService
+    ) {
         this.strategyRepository = strategyRepository;
         this.eventRepository = eventRepository;
+        this.appSettingsService = appSettingsService;
+        this.marketHoursService = marketHoursService;
         StrategyEventBus eventBus = new StrategyEventBus();
+        StrategyStateMachine stateMachine = new StrategyStateMachine(eventRepository, eventBus);
         this.strategyEngine = new StrategyEngine(
                 strategyRepository,
                 orderRepository,
-                new StrategyStateMachine(eventRepository, eventBus),
-                alpacaClient
+                stateMachine,
+                alpacaClient,
+                appSettingsService,
+                marketHoursService
+        );
+        this.strategyService = new StrategyService(
+                strategyRepository,
+                orderRepository,
+                eventRepository,
+                alpacaClient,
+                new StrategyValidator(),
+                true,
+                null,
+                appSettingsService,
+                marketHoursService
         );
     }
 
     public void pollDueStrategies() {
         Instant now = Instant.now();
+        AppSettingsService.AppSettings settings = appSettingsService.load();
+        if (settings.autoPausePollingWhenMarketClosed()) {
+            boolean marketOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
+            handleMarketSessionTransition(marketOpen, settings.extendedHoursTradingEnabled(), now);
+            if (!marketOpen) {
+                return;
+            }
+        } else {
+            lastTradingSessionOpen = null;
+        }
+
         for (Strategy strategy : strategyRepository.findActive()) {
             if (shouldPoll(strategy, now)) {
                 pollStrategy(strategy.id());
@@ -69,6 +120,9 @@ public class StrategyPollingService {
             eventRepository.save(event(strategy.id(), StrategyEventType.POLL_SUCCESS,
                     "Poll completed", "{\"strategyId\":\"" + strategy.id() + "\"}"));
         } catch (Exception ex) {
+            strategy.setStatus(StrategyStatus.PAUSED);
+            strategy.setCurrentState(StrategyLifecycleState.PAUSED);
+            strategy.setPauseReason(PauseReason.SYSTEM_ERROR);
             strategy.setLastPolledAt(Instant.now());
             strategy.setLastError(ex.getMessage());
             strategyRepository.save(strategy);
@@ -116,6 +170,43 @@ public class StrategyPollingService {
     private boolean isStreamHealthy(Instant now) {
         return lastStreamingEventAt != null
                 && Duration.between(lastStreamingEventAt, now).getSeconds() <= STREAM_HEALTHY_GRACE_SECONDS;
+    }
+
+    private void handleMarketSessionTransition(boolean marketOpen, boolean extendedHoursEnabled, Instant now) {
+        if (lastTradingSessionOpen == null || lastTradingSessionOpen != marketOpen) {
+            lastTradingSessionOpen = marketOpen;
+            if (marketOpen) {
+                LOGGER.info(() -> "Market session open. Auto-resuming eligible strategies."
+                        + " Extended hours enabled=" + extendedHoursEnabled);
+            } else {
+                LOGGER.info(() -> "Market session closed. Auto-pausing eligible strategies until "
+                        + marketHoursService.nextMarketOpen(now, extendedHoursEnabled)
+                        + ". Extended hours enabled=" + extendedHoursEnabled);
+            }
+        }
+        if (marketOpen) {
+            resumeAutoPausedStrategies();
+        } else {
+            autoPauseActiveStrategiesForMarketClose();
+        }
+    }
+
+    private void autoPauseActiveStrategiesForMarketClose() {
+        for (Strategy strategy : strategyRepository.findActive()) {
+            strategyService.autoPauseForMarketClose(strategy.id(), "Strategy auto-paused because market is closed");
+        }
+    }
+
+    private void resumeAutoPausedStrategies() {
+        for (Strategy strategy : strategyRepository.findAll()) {
+            if (strategy.status() != StrategyStatus.PAUSED) {
+                continue;
+            }
+            if (strategy.pauseReason() != PauseReason.AUTO_MARKET_CLOSED) {
+                continue;
+            }
+            strategyService.autoResumeFromMarketClose(strategy.id(), "Strategy auto-resumed because market is open");
+        }
     }
 
     private StrategyExecutionEvent event(String strategyId, StrategyEventType type, String message, String metadataJson) {

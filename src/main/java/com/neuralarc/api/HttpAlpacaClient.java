@@ -30,12 +30,18 @@ public class HttpAlpacaClient implements AlpacaClient {
     private final String secretKey;
     private final String tradingBaseUrl;
     private final String dataBaseUrl;
+    private final boolean extendedHoursEnabled;
 
     public HttpAlpacaClient(String apiKey, String secretKey, String tradingBaseUrl, String dataBaseUrl) {
+        this(apiKey, secretKey, tradingBaseUrl, dataBaseUrl, false);
+    }
+
+    public HttpAlpacaClient(String apiKey, String secretKey, String tradingBaseUrl, String dataBaseUrl, boolean extendedHoursEnabled) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.secretKey = secretKey == null ? "" : secretKey.trim();
         this.tradingBaseUrl = normalizeBaseUrl(tradingBaseUrl);
         this.dataBaseUrl = normalizeBaseUrl(dataBaseUrl);
+        this.extendedHoursEnabled = extendedHoursEnabled;
     }
 
     @Override
@@ -177,9 +183,11 @@ public class HttpAlpacaClient implements AlpacaClient {
                 .put("side", side)
                 .put("type", "limit")
                 .put("time_in_force", "day")
-                .put("extended_hours", true)
                 .put("limit_price", Monetary.round(limitPrice).toPlainString())
                 .put("client_order_id", clientOrderId == null ? "" : clientOrderId);
+        if (extendedHoursEnabled) {
+            payload.put("extended_hours", true);
+        }
         String endpoint = tradingBaseUrl + "/v2/orders";
         HttpRequest request = baseRequest(endpoint)
                 .header("Content-Type", "application/json")

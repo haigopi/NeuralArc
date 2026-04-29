@@ -19,7 +19,7 @@ class StrategyServiceTest {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
         InMemoryEventRepository events = new InMemoryEventRepository();
-        StrategyService service = new StrategyService(strategies, orders, events, new FakeAlpacaClient(), new StrategyValidator(), false, StrategyMode.PAPER);
+        StrategyService service = service(strategies, orders, events, new FakeAlpacaClient());
 
         Strategy invalid = baseStrategy("", 10, new BigDecimal("8.00"));
         StrategyService.StrategyCreationResult result = service.createAndActivate(invalid);
@@ -34,7 +34,7 @@ class StrategyServiceTest {
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
         InMemoryEventRepository events = new InMemoryEventRepository();
         FakeAlpacaClient alpaca = new FakeAlpacaClient();
-        StrategyService service = new StrategyService(strategies, orders, events, alpaca, new StrategyValidator(), false, StrategyMode.PAPER);
+        StrategyService service = service(strategies, orders, events, alpaca);
 
         Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
         StrategyService.StrategyCreationResult result = service.createAndActivate(strategy);
@@ -53,7 +53,7 @@ class StrategyServiceTest {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
         InMemoryEventRepository events = new InMemoryEventRepository();
-        StrategyService service = new StrategyService(strategies, orders, events, new FakeAlpacaClient(), new StrategyValidator(), false, StrategyMode.PAPER);
+        StrategyService service = service(strategies, orders, events, new FakeAlpacaClient());
 
         Strategy live = baseStrategy("AAPL", 1, new BigDecimal("10.00"));
         live.setMode(StrategyMode.LIVE);
@@ -71,7 +71,7 @@ class StrategyServiceTest {
         FakeAlpacaClient alpaca = new FakeAlpacaClient();
         alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("7"), new BigDecimal("8.00"), new BigDecimal("9.50"), "{}"));
         alpaca.latestPrice = new BigDecimal("9.50");
-        StrategyService service = new StrategyService(strategies, orders, events, alpaca, new StrategyValidator(), false, StrategyMode.PAPER);
+        StrategyService service = service(strategies, orders, events, alpaca);
 
         Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
         strategies.save(strategy);
@@ -89,7 +89,7 @@ class StrategyServiceTest {
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
         InMemoryEventRepository events = new InMemoryEventRepository();
         FakeAlpacaClient alpaca = new FakeAlpacaClient();
-        StrategyService service = new StrategyService(strategies, orders, events, alpaca, new StrategyValidator(), false, StrategyMode.PAPER);
+        StrategyService service = service(strategies, orders, events, alpaca);
 
         Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
         strategy.setStatus(StrategyStatus.ACTIVE);
@@ -115,7 +115,7 @@ class StrategyServiceTest {
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
         InMemoryEventRepository events = new InMemoryEventRepository();
         FakeAlpacaClient alpaca = new FakeAlpacaClient();
-        StrategyService service = new StrategyService(strategies, orders, events, alpaca, new StrategyValidator(), false, StrategyMode.PAPER);
+        StrategyService service = service(strategies, orders, events, alpaca);
 
         Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
         strategy.setStatus(StrategyStatus.ACTIVE);
@@ -146,7 +146,7 @@ class StrategyServiceTest {
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
         InMemoryEventRepository events = new InMemoryEventRepository();
         FakeAlpacaClient alpaca = new FakeAlpacaClient();
-        StrategyService service = new StrategyService(strategies, orders, events, alpaca, new StrategyValidator(), false, StrategyMode.PAPER);
+        StrategyService service = service(strategies, orders, events, alpaca);
 
         Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
         strategy.setStatus(StrategyStatus.ACTIVE);
@@ -185,7 +185,7 @@ class StrategyServiceTest {
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
         InMemoryEventRepository events = new InMemoryEventRepository();
         FakeAlpacaClient alpaca = new FakeAlpacaClient();
-        StrategyService service = new StrategyService(strategies, orders, events, alpaca, new StrategyValidator(), false, StrategyMode.PAPER);
+        StrategyService service = service(strategies, orders, events, alpaca);
 
         Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
         strategy.setStatus(StrategyStatus.PAUSED);
@@ -211,7 +211,7 @@ class StrategyServiceTest {
         FakeAlpacaClient alpaca = new FakeAlpacaClient();
         alpaca.allPositions = List.of(new AlpacaPositionData("NIO", new BigDecimal("5"), new BigDecimal("6.20"), new BigDecimal("6.30"), "{}"));
         alpaca.openOrders.add(new AlpacaOrderData("ord-remote", "client-remote", "NIO", "buy", "limit", new BigDecimal("6.21"), BigDecimal.ZERO, BigDecimal.ZERO, "accepted", "{\"qty\":\"5\"}"));
-        StrategyService service = new StrategyService(strategies, orders, events, alpaca, new StrategyValidator(), false, StrategyMode.PAPER);
+        StrategyService service = service(strategies, orders, events, alpaca);
 
         List<Strategy> synced = service.syncRemoteStrategies();
 
@@ -220,6 +220,38 @@ class StrategyServiceTest {
         assertEquals("NIO", syncedStrategy.symbol());
         assertEquals(StrategyStatus.ACTIVE, syncedStrategy.status());
         assertTrue(orders.findByStrategyId(syncedStrategy.id()).stream().anyMatch(order -> "ord-remote".equals(order.alpacaOrderId())));
+    }
+
+    private StrategyService service(
+            InMemoryStrategyRepository strategies,
+            InMemoryOrderRepository orders,
+            InMemoryEventRepository events,
+            FakeAlpacaClient alpaca
+    ) {
+        try {
+            AppSettingsService settingsService = new AppSettingsService(java.nio.file.Files.createTempDirectory("neuralarc-service-test").resolve("settings.properties"));
+            settingsService.save(new AppSettingsService.AppSettings(
+                    "test@example.com",
+                    true,
+                    true,
+                    false,
+                    BrokerType.ALPACA,
+                    ApplicationMode.PAPER
+            ));
+            return new StrategyService(
+                    strategies,
+                    orders,
+                    events,
+                    alpaca,
+                    new StrategyValidator(),
+                    false,
+                    StrategyMode.PAPER,
+                    settingsService,
+                    new AlwaysOpenMarketHoursService()
+            );
+        } catch (Exception ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     private Strategy baseStrategy(String symbol, int qty, BigDecimal price) {
@@ -322,6 +354,18 @@ class StrategyServiceTest {
 
         @Override
         public BigDecimal getLatestPrice(String symbol) { return latestPrice; }
+    }
+
+    private static final class AlwaysOpenMarketHoursService extends MarketHoursService {
+        @Override
+        public boolean isTradingSessionOpen(boolean extendedHoursEnabled) {
+            return true;
+        }
+
+        @Override
+        public boolean isTradingSessionOpen(Instant instant, boolean extendedHoursEnabled) {
+            return true;
+        }
     }
 
     private static final class InMemoryStrategyRepository implements StrategyRepository {

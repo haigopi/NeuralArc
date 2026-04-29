@@ -40,13 +40,30 @@ Set API key/secret in the app **Settings** dialog.
 Set these runtime defaults in `src/main/resources/app.properties` (or your packaged runtime config):
 
 ```ini
-alpaca.baseUrl=https://paper-api.alpaca.markets
+alpaca.trading.paperUrl=https://paper-api.alpaca.markets
+alpaca.trading.liveUrl=https://api.alpaca.markets
 alpaca.dataUrl=https://data.alpaca.markets
-alpaca.mode=PAPER
 trading.live.enabled=false
 ```
 
 `LIVE` mode is blocked unless `trading.live.enabled=true` is explicitly set.
+
+## Market hours and polling
+Settings now include:
+- `Auto pause polling when market is closed` (enabled by default)
+- `Enable extended-hours trading` (disabled by default)
+
+When auto-pause is enabled, NeuralArc pauses active strategies outside the current tradable session to reduce Alpaca API usage. Strategies paused by the system are marked separately from user-paused strategies and only those auto-paused strategies are resumed when the market session reopens.
+
+Market session detection uses:
+- regular US equity hours: `9:30 AM` to `4:00 PM` Eastern
+- extended hours when enabled: `4:00 AM` to `8:00 PM` Eastern
+- weekend and major US market holiday detection
+
+If extended-hours trading is disabled, only regular market hours count as tradable and new orders outside that window are blocked. If extended-hours trading is enabled, eligible Alpaca limit orders are submitted with `extended_hours=true`.
+
+## Extended-hours trading risk
+Extended-hours sessions can have lower liquidity, wider spreads, more price gaps, and higher execution risk. Paper trading remains the default mode and is the recommended way to validate strategies before enabling live trading.
 
 ## How credentials are stored
 If enabled, credentials are encrypted using AES-GCM with a PBKDF2-derived key and written to:

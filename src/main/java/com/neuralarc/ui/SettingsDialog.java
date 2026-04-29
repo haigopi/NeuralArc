@@ -3,6 +3,7 @@ package com.neuralarc.ui;
 import com.neuralarc.model.BrokerType;
 import com.neuralarc.model.ApplicationMode;
 import com.neuralarc.security.CredentialManager;
+import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.service.UserIdentityService;
 import com.neuralarc.util.AppMetadata;
 import com.neuralarc.util.FontLoader;
@@ -57,6 +58,8 @@ public class SettingsDialog extends JDialog {
     private final JLabel apiSecretLabel = new JLabel("API secret:");
     private final JTextField endpointField = new JTextField(AppMetadata.analyticsEndpointDefault(), 25);
     private final JCheckBox telemetryEnabled = new JCheckBox("Enable telemetry", true);
+    private final JCheckBox autoPausePollingWhenMarketClosed = new JCheckBox("Auto pause polling when market is closed", AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED);
+    private final JCheckBox extendedHoursTradingEnabled = new JCheckBox("Enable extended-hours trading", AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED);
     private final JCheckBox saveCredentials = new JCheckBox("Save credentials locally", false);
     private final JButton verifyConnectionButton = new JButton("Verify Connection");
     private final JButton exportStrategiesButton = new JButton("Export Strategies");
@@ -109,7 +112,6 @@ public class SettingsDialog extends JDialog {
         apiPanel.add(verifyConnectionButton);
 
         JPanel telemetryPanel = new JPanel(new GridBagLayout());
-        telemetryPanel.setBorder(createSectionBorder("Telemetry"));
         telemetryPanel.setOpaque(false);
 
         boolean analyticsGloballyEnabled = AppMetadata.analyticsEnabled();
@@ -162,6 +164,55 @@ public class SettingsDialog extends JDialog {
         telemetryContent.add(telemetryDescription);
         telemetryPanel.add(telemetryContent, telemetryContentConstraints);
 
+        JPanel marketHoursPanel = new JPanel(new GridBagLayout());
+        marketHoursPanel.setOpaque(false);
+        GridBagConstraints marketHoursLabelConstraints = new GridBagConstraints();
+        marketHoursLabelConstraints.gridx = 0;
+        marketHoursLabelConstraints.gridy = 0;
+        marketHoursLabelConstraints.weightx = 0.43;
+        marketHoursLabelConstraints.fill = GridBagConstraints.HORIZONTAL;
+        marketHoursLabelConstraints.anchor = GridBagConstraints.NORTHWEST;
+        marketHoursLabelConstraints.insets = new Insets(0, 0, 0, FIELD_GAP);
+        marketHoursPanel.add(new JLabel("Session Controls:"), marketHoursLabelConstraints);
+
+        JLabel autoPauseDescription = new JLabel("<html><div style='max-width:320px; width:320px; line-height:1.35;'>"
+                + "Reduces API usage by pausing strategy polling outside regular market hours. "
+                + "Active strategies resume automatically when the market opens, unless manually paused by the user."
+                + "</div></html>");
+        autoPauseDescription.setForeground(TEXT_MUTED);
+        autoPauseDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
+
+        JLabel extendedHoursDescription = new JLabel("<html><div style='max-width:320px; width:320px; line-height:1.35;'>"
+                + "Allows eligible orders during pre-market and after-hours sessions. "
+                + "This may involve lower liquidity, wider spreads, and higher risk."
+                + "</div></html>");
+        extendedHoursDescription.setForeground(TEXT_MUTED);
+        extendedHoursDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
+
+        JPanel marketHoursContent = new JPanel();
+        marketHoursContent.setLayout(new BoxLayout(marketHoursContent, BoxLayout.Y_AXIS));
+        marketHoursContent.setOpaque(false);
+        marketHoursContent.setBorder(new EmptyBorder(2, 0, 2, 0));
+        autoPausePollingWhenMarketClosed.setAlignmentX(Component.LEFT_ALIGNMENT);
+        autoPauseDescription.setAlignmentX(Component.LEFT_ALIGNMENT);
+        extendedHoursTradingEnabled.setAlignmentX(Component.LEFT_ALIGNMENT);
+        extendedHoursDescription.setAlignmentX(Component.LEFT_ALIGNMENT);
+        marketHoursContent.add(autoPausePollingWhenMarketClosed);
+        marketHoursContent.add(Box.createVerticalStrut(6));
+        marketHoursContent.add(autoPauseDescription);
+        marketHoursContent.add(Box.createVerticalStrut(12));
+        marketHoursContent.add(extendedHoursTradingEnabled);
+        marketHoursContent.add(Box.createVerticalStrut(6));
+        marketHoursContent.add(extendedHoursDescription);
+
+        GridBagConstraints marketHoursContentConstraints = new GridBagConstraints();
+        marketHoursContentConstraints.gridx = 1;
+        marketHoursContentConstraints.gridy = 0;
+        marketHoursContentConstraints.weightx = 0.57;
+        marketHoursContentConstraints.fill = GridBagConstraints.HORIZONTAL;
+        marketHoursContentConstraints.anchor = GridBagConstraints.NORTHWEST;
+        marketHoursPanel.add(marketHoursContent, marketHoursContentConstraints);
+
         JPanel dangerZonePanel = new JPanel(new GridLayout(0, 1, FIELD_GAP, FIELD_GAP));
         dangerZonePanel.setBorder(createSectionBorder("Danger Zone"));
         JButton deleteAllDataButton = new JButton("Delete All Data");
@@ -196,7 +247,9 @@ public class SettingsDialog extends JDialog {
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(apiPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
-        content.add(telemetryPanel);
+        content.add(createCollapsibleSection("Telemetry", telemetryPanel, true));
+        content.add(Box.createVerticalStrut(SECTION_GAP));
+        content.add(createCollapsibleSection("Trading Hours", marketHoursPanel, true));
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(strategyTransferPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
@@ -259,6 +312,8 @@ public class SettingsDialog extends JDialog {
 
     public String getEndpoint() { return endpointField.getText().trim(); }
     public boolean telemetryEnabled() { return telemetryEnabled.isSelected(); }
+    public boolean autoPausePollingWhenMarketClosed() { return autoPausePollingWhenMarketClosed.isSelected(); }
+    public boolean extendedHoursTradingEnabled() { return extendedHoursTradingEnabled.isSelected(); }
     public boolean saveCredentials() { return saveCredentials.isSelected(); }
     public BrokerType brokerType() { return (BrokerType) brokerBox.getSelectedItem(); }
     public ApplicationMode applicationMode() {
@@ -317,6 +372,8 @@ public class SettingsDialog extends JDialog {
             settings.setProperty("userEmail", email);
             settings.setProperty("endpoint", getEndpoint());
             settings.setProperty("telemetryEnabled", String.valueOf(telemetryEnabled()));
+            settings.setProperty("autoPausePollingWhenMarketClosed", String.valueOf(autoPausePollingWhenMarketClosed()));
+            settings.setProperty("extendedHoursTradingEnabled", String.valueOf(extendedHoursTradingEnabled()));
             settings.setProperty("saveCredentials", "true");
             settings.setProperty("broker", brokerType() == null ? BrokerType.ALPACA.name() : brokerType().name());
             settings.setProperty("applicationMode", applicationMode().name());
@@ -353,6 +410,14 @@ public class SettingsDialog extends JDialog {
                 emailField.setText(settings.getProperty("userEmail", ""));
                 endpointField.setText(settings.getProperty("endpoint", endpointField.getText()));
                 telemetryEnabled.setSelected(Boolean.parseBoolean(settings.getProperty("telemetryEnabled", "true")));
+                autoPausePollingWhenMarketClosed.setSelected(Boolean.parseBoolean(settings.getProperty(
+                        "autoPausePollingWhenMarketClosed",
+                        String.valueOf(AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED)
+                )));
+                extendedHoursTradingEnabled.setSelected(Boolean.parseBoolean(settings.getProperty(
+                        "extendedHoursTradingEnabled",
+                        String.valueOf(AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED)
+                )));
                 saveCredentials.setSelected(true);
                 String broker = settings.getProperty("broker", BrokerType.ALPACA.name());
                 try {
@@ -470,6 +535,8 @@ public class SettingsDialog extends JDialog {
             apiSecretField.setText("");
             endpointField.setText(AppMetadata.analyticsEndpointDefault());
             telemetryEnabled.setSelected(true);
+            autoPausePollingWhenMarketClosed.setSelected(AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED);
+            extendedHoursTradingEnabled.setSelected(AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED);
             brokerBox.setSelectedItem(BrokerType.ALPACA);
             appModeBox.setSelectedItem(ApplicationMode.PAPER);
             displayedCredentialMode = ApplicationMode.PAPER;
@@ -576,6 +643,49 @@ public class SettingsDialog extends JDialog {
     public record ConnectionResult(boolean connected, String message) {}
 
     public record StrategyTransferResult(boolean success, String message) {}
+
+    private JComponent createCollapsibleSection(String title, JComponent sectionContent, boolean initiallyExpanded) {
+        JPanel container = new JPanel(new BorderLayout(0, 8));
+        container.setOpaque(false);
+        container.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(INPUT_BORDER, 1, true),
+                new EmptyBorder(10, 12, 10, 12)
+        ));
+
+        JButton toggleButton = new JButton();
+        toggleButton.setOpaque(false);
+        toggleButton.setContentAreaFilled(false);
+        toggleButton.setBorderPainted(false);
+        toggleButton.setFocusPainted(false);
+        toggleButton.setHorizontalAlignment(SwingConstants.LEFT);
+        toggleButton.setFont(FontLoader.ui(Font.BOLD, 12f));
+        toggleButton.setForeground(TEXT_PRIMARY);
+        toggleButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        toggleButton.setMargin(new Insets(0, 0, 0, 0));
+
+        JPanel contentWrapper = new JPanel(new BorderLayout());
+        contentWrapper.setOpaque(false);
+        contentWrapper.add(sectionContent, BorderLayout.CENTER);
+        contentWrapper.setVisible(initiallyExpanded);
+
+        updateCollapsibleSectionButton(toggleButton, title, initiallyExpanded);
+        toggleButton.addActionListener(e -> {
+            boolean expanded = !contentWrapper.isVisible();
+            contentWrapper.setVisible(expanded);
+            updateCollapsibleSectionButton(toggleButton, title, expanded);
+            container.revalidate();
+            container.repaint();
+            pack();
+        });
+
+        container.add(toggleButton, BorderLayout.NORTH);
+        container.add(contentWrapper, BorderLayout.CENTER);
+        return container;
+    }
+
+    private void updateCollapsibleSectionButton(JButton button, String title, boolean expanded) {
+        button.setText((expanded ? "▼  " : "▶  ") + title);
+    }
 
     private Border createSectionBorder(String title) {
         TitledBorder border = new TitledBorder(title);

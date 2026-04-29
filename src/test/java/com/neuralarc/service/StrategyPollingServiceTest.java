@@ -8,7 +8,11 @@ import com.neuralarc.util.Monetary;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -264,12 +268,94 @@ class StrategyPollingServiceTest {
         assertEquals(StrategyStatus.ACTIVE, f.strategies.findById(strategy.id()).orElseThrow().status());
     }
 
+    @Test
+    void autoPauseWhenMarketClosed() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        f.marketHoursService.open = false;
+
+        f.service.pollDueStrategies();
+
+        Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.PAUSED, updated.status());
+        assertEquals(PauseReason.AUTO_MARKET_CLOSED, updated.pauseReason());
+        assertEquals(0, f.alpaca.positionCalls);
+        assertEquals(0, f.alpaca.priceCalls);
+        assertEquals(0, f.alpaca.openOrderCalls);
+    }
+
+    @Test
+    void autoResumeWhenMarketOpens() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setStatus(StrategyStatus.PAUSED);
+        strategy.setCurrentState(StrategyLifecycleState.PAUSED);
+        strategy.setPauseReason(PauseReason.AUTO_MARKET_CLOSED);
+        f.strategies.save(strategy);
+
+        f.service.pollDueStrategies();
+
+        Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, updated.status());
+        assertEquals(PauseReason.NONE, updated.pauseReason());
+    }
+
+    @Test
+    void manualPauseIsNotOverwrittenByAutoResume() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setStatus(StrategyStatus.PAUSED);
+        strategy.setCurrentState(StrategyLifecycleState.PAUSED);
+        strategy.setPauseReason(PauseReason.USER_PAUSED);
+        f.strategies.save(strategy);
+
+        f.service.pollDueStrategies();
+
+        Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.PAUSED, updated.status());
+        assertEquals(PauseReason.USER_PAUSED, updated.pauseReason());
+    }
+
+    @Test
+    void pollingDoesNotCallAlpacaRepeatedlyWhenAutoPaused() {
+        Fixture f = new Fixture();
+        f.activeStrategy(false);
+        f.marketHoursService.open = false;
+
+        f.service.pollDueStrategies();
+        f.service.pollDueStrategies();
+
+        assertEquals(0, f.alpaca.positionCalls);
+        assertEquals(0, f.alpaca.priceCalls);
+        assertEquals(0, f.alpaca.openOrderCalls);
+    }
+
     private static final class Fixture {
         final InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         final InMemoryOrderRepository orders = new InMemoryOrderRepository();
         final InMemoryEventRepository events = new InMemoryEventRepository();
         final FakeAlpacaClient alpaca = new FakeAlpacaClient();
-        final StrategyPollingService service = new StrategyPollingService(strategies, orders, events, alpaca);
+        final MutableMarketHoursService marketHoursService = new MutableMarketHoursService();
+        final AppSettingsService settingsService;
+        final StrategyPollingService service;
+
+        Fixture() {
+            try {
+                Path settingsPath = Files.createTempDirectory("neuralarc-test").resolve("settings.properties");
+                settingsService = new AppSettingsService(settingsPath);
+                settingsService.save(new AppSettingsService.AppSettings(
+                        "test@example.com",
+                        true,
+                        true,
+                        false,
+                        BrokerType.ALPACA,
+                        ApplicationMode.PAPER
+                ));
+                service = new StrategyPollingService(strategies, orders, events, alpaca, settingsService, marketHoursService);
+            } catch (Exception ex) {
+                throw new IllegalStateException(ex);
+            }
+        }
 
         Strategy activeStrategy(boolean profitHold) {
             Strategy strategy = new Strategy(
@@ -323,6 +409,9 @@ class StrategyPollingServiceTest {
         Optional<AlpacaPositionData> position = Optional.empty();
         final Map<String, AlpacaOrderData> orderById = new HashMap<>();
         int orderCounter;
+        int positionCalls;
+        int priceCalls;
+        int openOrderCalls;
 
         @Override
         public AlpacaOrderData submitLimitBuyOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
@@ -349,11 +438,13 @@ class StrategyPollingServiceTest {
 
         @Override
         public List<AlpacaOrderData> getOpenOrders(String symbol) {
+            openOrderCalls++;
             return orderById.values().stream().filter(o -> o.symbol().equalsIgnoreCase(symbol)).toList();
         }
 
         @Override
         public List<AlpacaOrderData> getOpenOrders() {
+            openOrderCalls++;
             return new ArrayList<>(orderById.values());
         }
 
@@ -364,6 +455,7 @@ class StrategyPollingServiceTest {
 
         @Override
         public Optional<AlpacaPositionData> getPosition(String symbol) {
+            positionCalls++;
             return position;
         }
 
@@ -374,7 +466,32 @@ class StrategyPollingServiceTest {
 
         @Override
         public BigDecimal getLatestPrice(String symbol) {
+            priceCalls++;
             return latestPrice;
+        }
+    }
+
+    private static final class MutableMarketHoursService extends MarketHoursService {
+        private boolean open = true;
+
+        @Override
+        public boolean isTradingSessionOpen(boolean extendedHoursEnabled) {
+            return open;
+        }
+
+        @Override
+        public boolean isTradingSessionOpen(Instant instant, boolean extendedHoursEnabled) {
+            return open;
+        }
+
+        @Override
+        public Instant nextMarketOpen(boolean extendedHoursEnabled) {
+            return ZonedDateTime.of(2026, 4, 30, 9, 30, 0, 0, ZoneId.of("America/New_York")).toInstant();
+        }
+
+        @Override
+        public Instant nextMarketOpen(Instant instant, boolean extendedHoursEnabled) {
+            return nextMarketOpen(extendedHoursEnabled);
         }
     }
 
