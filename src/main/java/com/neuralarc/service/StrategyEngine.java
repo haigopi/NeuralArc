@@ -36,8 +36,11 @@ public class StrategyEngine {
 
     public void reconcile(Strategy strategy) {
         refreshOrderStatuses(strategy);
-        BigDecimal latestPrice = alpacaClient.getLatestPrice(strategy.symbol());
         Optional<AlpacaPositionData> position = alpacaClient.getPosition(strategy.symbol());
+        // Extract marketPrice from position response (avoids redundant /trades/latest API call)
+        BigDecimal latestPrice = position.isPresent() && position.get().marketPrice() != null
+                ? position.get().marketPrice()
+                : alpacaClient.getLatestPrice(strategy.symbol());
         List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
         List<AlpacaOrderData> remoteOpenOrders = alpacaClient.getOpenOrders(strategy.symbol());
         logPoll(strategy, "POLL", "STARTED",
@@ -51,7 +54,7 @@ public class StrategyEngine {
         }
 
         if (position.isPresent() && position.get().exists()) {
-            if (strategy.automatedStopLossEnabled()) {
+            if (shouldActivateStopLossMonitoring(strategy, orders)) {
                 stateMachine.transition(strategy, StrategyLifecycleState.STOP_LOSS_ACTIVE,
                         StrategyEventType.STOP_LOSS_ACTIVATED,
                         "Stop loss monitoring active",
@@ -524,6 +527,19 @@ public class StrategyEngine {
 
     private boolean hasPendingOrFilledExitOrder(List<StrategyOrder> orders, StrategyStage stage) {
         return orders.stream().anyMatch(order -> order.stage() == stage && (order.isPending() || order.status() == StrategyOrderStatus.FILLED));
+    }
+
+    private boolean shouldActivateStopLossMonitoring(Strategy strategy, List<StrategyOrder> orders) {
+        if (!strategy.automatedStopLossEnabled()) {
+            return false;
+        }
+        StrategyLifecycleState state = strategy.currentState();
+        if (state == StrategyLifecycleState.SELL_PLACED
+                || state == StrategyLifecycleState.SELL_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.PROFIT_HOLD_ACTIVE) {
+            return false;
+        }
+        return orders.stream().noneMatch(order -> isExitStage(order.stage()) && (order.isPending() || order.status() == StrategyOrderStatus.FILLED));
     }
 
     private Optional<StrategyOrder> latestFilledExitOrder(List<StrategyOrder> orders) {

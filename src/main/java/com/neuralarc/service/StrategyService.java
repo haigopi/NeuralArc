@@ -200,7 +200,10 @@ public class StrategyService {
         if (position.isEmpty() || !position.get().exists()) {
             return StrategyCreationResult.failed("No open position to close");
         }
-        BigDecimal latestPrice = alpacaClient.getLatestPrice(strategy.symbol());
+        // Extract marketPrice from position response (avoids redundant /trades/latest API call)
+        BigDecimal latestPrice = position.get().marketPrice() != null && position.get().marketPrice().compareTo(BigDecimal.ZERO) > 0
+                ? position.get().marketPrice()
+                : alpacaClient.getLatestPrice(strategy.symbol());
         int quantity = position.get().quantity().setScale(0, java.math.RoundingMode.DOWN).intValue();
         if (quantity <= 0) {
             return StrategyCreationResult.failed("No open quantity to close");

@@ -83,10 +83,9 @@ public class TradingFrame extends JFrame {
     private final JLabel liveUnrealizedSummary = new JLabel("Live Unrealized P&L Total: -");
     private final JLabel positionSectionTitle = new JLabel("Position");
     private final JLabel rulesSectionTitle = new JLabel("Rules Triggered");
-    private final JLabel statusBar = new JLabel("Broker Connection Status: Not connected");
+    private final JLabel statusBar = new JLabel("Broker: Not connected");
     private final JLabel statusStrategyCount = new JLabel("Strategies: Active 0 | Inactive 0");
-    private final JLabel streamStatus = new JLabel("Stream Connection Status: Idle");
-    private final JLabel disclaimerStatus = new JLabel("Disclaimer: Please review and accept Legal Disclosure before adding strategies.");
+    private final JLabel streamStatus = new JLabel("Trade Stream: idle");
     private final JLabel headerStatus = new JLabel("Status: waiting for settings");
     private static final Color STATUS_OK = new Color(34, 139, 34);
     private static final Color STATUS_WARN = new Color(180, 100, 0);
@@ -98,6 +97,7 @@ public class TradingFrame extends JFrame {
     private static final Color STATUS_TEXT_PAUSED = new Color(180, 100, 0);
     private static final Color MODE_TEXT_ALPACA_PAPER = new Color(25, 118, 210);
     private static final Color MODE_TEXT_ALPACA_LIVE = new Color(183, 28, 28);
+    private static final Color BOTTOM_STATUS_ACCENT = new Color(180, 160, 110);
     private static final Color LOG_LINE_EVEN = new Color(63, 72, 82);
     private static final Color LOG_LINE_ODD = new Color(110, 118, 128);
     private static final Color HEADER_STATUS_DEFAULT = new Color(220, 220, 255);
@@ -547,28 +547,27 @@ public class TradingFrame extends JFrame {
         // ── Status bar ─────────────────────────────────────────────────────────
         // ── Status bar ─────────────────────────────────────────────────────────
         statusBar.setFont(BASE_FONT.deriveFont(10f));
-        statusBar.setForeground(new Color(200, 100, 100));
+        statusBar.setForeground(BOTTOM_STATUS_ACCENT);
         statusBar.setVerticalAlignment(SwingConstants.CENTER);
         statusBar.setBorder(new EmptyBorder(0, 6, 0, 16));
 
-        statusStrategyCount.setFont(BASE_FONT.deriveFont(Font.ITALIC, 12f));
+        statusStrategyCount.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
         statusStrategyCount.setForeground(new Color(150, 150, 160));
         statusStrategyCount.setVerticalAlignment(SwingConstants.CENTER);
         statusStrategyCount.setBorder(new EmptyBorder(0, 0, 0, 12));
         streamStatus.setFont(BASE_FONT.deriveFont(Font.PLAIN, 11f));
-        streamStatus.setForeground(new Color(150, 150, 160));
+        streamStatus.setForeground(BOTTOM_STATUS_ACCENT);
         streamStatus.setVerticalAlignment(SwingConstants.CENTER);
         streamStatus.setBorder(new EmptyBorder(0, 12, 0, 0));
-        disclaimerStatus.setFont(BASE_FONT.deriveFont(Font.PLAIN, 11f));
-        disclaimerStatus.setForeground(new Color(180, 160, 110));
-        disclaimerStatus.setVerticalAlignment(SwingConstants.CENTER);
-        disclaimerStatus.setBorder(new EmptyBorder(0, 12, 0, 0));
-        disclaimerStatus.setToolTipText(TooltipStyler.text("Review Legal Disclosure before adding strategies."));
 
         JButton faqsButton = new JButton("Faqs");
         applyButtonIcon(faqsButton, "icons/faqs.svg", 15);
         styleStatusActionButton(faqsButton);
         faqsButton.addActionListener(e -> new HelpDialog(this).setVisible(true));
+        JButton updatesButton = new JButton("Check Updates");
+        applyButtonIcon(updatesButton, "icons/apply.svg", 15);
+        styleStatusActionButton(updatesButton);
+        updatesButton.addActionListener(e -> UpdateCheckSupport.checkForUpdates(this, updatesButton));
         applyButtonIcon(legalDisclosureButton, "icons/verify.svg", 15);
         styleStatusActionButton(legalDisclosureButton);
         legalDisclosureButton.addActionListener(e -> showLegalDisclosureDialog(false));
@@ -582,6 +581,21 @@ public class TradingFrame extends JFrame {
         applyButtonIcon(contactUsButton, "icons/contact-us.svg", 15);
         styleStatusActionButton(contactUsButton);
         contactUsButton.addActionListener(e -> openContactUsDialog());
+
+        JButton moreButton = new JButton("More");
+        applyButtonIcon(moreButton, "icons/settings.svg", 15);
+        styleStatusActionButton(moreButton);
+
+        JPopupMenu moreMenu = new JPopupMenu();
+        moreMenu.add(createStatusMenuItem("Request New Feature", "icons/request-new-feature.svg",
+                () -> openRequestNewFeatureDialog()));
+        moreMenu.add(createStatusMenuItem("Contact Us", "icons/contact-us.svg",
+                () -> openContactUsDialog()));
+        moreMenu.add(createStatusMenuItem("Check for Updates", "icons/apply.svg",
+                () -> UpdateCheckSupport.checkForUpdates(this, moreButton)));
+        moreMenu.add(createStatusMenuItem("Legal Disclosure", "icons/verify.svg",
+                () -> showLegalDisclosureDialog(false)));
+        moreButton.addActionListener(e -> moreMenu.show(moreButton, 0, moreButton.getHeight()));
 
         JLabel appLabel = new JLabel(AppMetadata.name() + "  " + AppMetadata.version() + " | Patent Pending™");
         appLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
@@ -603,8 +617,6 @@ public class TradingFrame extends JFrame {
         leftGbc.gridx = 2;
         leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
         statusLeft.add(streamStatus, leftGbc);
-        leftGbc.gridx = 3;
-        statusLeft.add(disclaimerStatus, leftGbc);
 
         JPanel statusRight = new JPanel(new GridBagLayout());
         statusRight.setOpaque(false);
@@ -615,12 +627,8 @@ public class TradingFrame extends JFrame {
         rightGbc.gridx = 0;
         statusRight.add(appLabel, rightGbc);
         rightGbc.gridx = 1;
-        statusRight.add(submitFeatureButton, rightGbc);
+        statusRight.add(moreButton, rightGbc);
         rightGbc.gridx = 2;
-        statusRight.add(contactUsButton, rightGbc);
-        rightGbc.gridx = 3;
-        statusRight.add(legalDisclosureButton, rightGbc);
-        rightGbc.gridx = 4;
         rightGbc.insets = new java.awt.Insets(0, 0, 0, 0);
         statusRight.add(faqsButton, rightGbc);
 
@@ -820,6 +828,18 @@ public class TradingFrame extends JFrame {
         installDarkButtonInteraction(button,
                 new EmptyBorder(5, 12, 5, 12),
                 new EmptyBorder(4, 11, 4, 11));
+    }
+
+    private JMenuItem createStatusMenuItem(String text, String iconPath, Runnable action) {
+        JMenuItem item = new JMenuItem(text, SvgIconLoader.load(iconPath, 14));
+        item.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
+        item.setForeground(new Color(225, 228, 236));
+        item.setBackground(new Color(46, 49, 60));
+        item.setOpaque(true);
+        item.setBorder(new EmptyBorder(8, 10, 8, 12));
+        item.setIconTextGap(10);
+        item.addActionListener(e -> action.run());
+        return item;
     }
 
     /**
@@ -1849,8 +1869,8 @@ public class TradingFrame extends JFrame {
 
     private void setStatus(String message, Color color) {
         SwingUtilities.invokeLater(() -> {
-            statusBar.setText(" ● " + message);
-            statusBar.setForeground(color);
+            statusBar.setText("Broker: " + message);
+            statusBar.setForeground(color == null ? BOTTOM_STATUS_ACCENT : color);
         });
     }
 
@@ -1877,16 +1897,16 @@ public class TradingFrame extends JFrame {
         SwingUtilities.invokeLater(() -> {
             statusStrategyCount.setText("Strategies: Active " + running + " | Inactive " + inactive);
             if (!connectionOk) {
-                statusBar.setText("Broker Connection Status: Not connected");
+                statusBar.setText("Broker: Not connected");
                 statusBar.setForeground(STATUS_ERR);
             } else if (running > 0) {
-                statusBar.setText("Broker Connection Status: Connected");
+                statusBar.setText("Broker: Connected");
                 statusBar.setForeground(STATUS_OK);
             } else if (inactive > 0) {
-                statusBar.setText("Broker Connection Status: Connected (No active strategies)");
+                statusBar.setText("Broker: Connected (No active strategies)");
                 statusBar.setForeground(STATUS_WARN);
             } else {
-                statusBar.setText("Broker Connection Status: Connected (No strategies)");
+                statusBar.setText("Broker: Connected (No strategies)");
                 statusBar.setForeground(STATUS_WARN);
             }
         });
@@ -2485,10 +2505,8 @@ public class TradingFrame extends JFrame {
     private void updateStreamStatus(String status, Color color) {
         SwingUtilities.invokeLater(() -> {
             String normalized = status == null || status.isBlank() ? "idle" : status;
-            streamStatus.setText("Stream Connection Status: " + normalized);
-            if (color != null) {
-                streamStatus.setForeground(color);
-            }
+            streamStatus.setText("Trade Stream: " + normalized);
+            streamStatus.setForeground(color == null ? BOTTOM_STATUS_ACCENT : color);
         });
     }
 
@@ -2629,9 +2647,8 @@ public class TradingFrame extends JFrame {
     }
 
     private void updateLegalDisclosureUiState() {
-        disclaimerStatus.setText(legalDisclosureAccepted
-                ? "Disclaimer: Accepted"
-                : "Disclaimer: Acceptance required before adding strategies");
-        disclaimerStatus.setForeground(legalDisclosureAccepted ? new Color(115, 185, 120) : new Color(180, 160, 110));
+        legalDisclosureButton.setForeground(legalDisclosureAccepted
+                ? new Color(220, 255, 220)
+                : new Color(255, 235, 190));
     }
 }

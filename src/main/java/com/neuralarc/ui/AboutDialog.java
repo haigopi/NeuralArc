@@ -84,14 +84,18 @@ public class AboutDialog extends JDialog {
     footer.setOpaque(false);
     footer.setBorder(new EmptyBorder(8, 20, 16, 20));
     JButton helpFaq = new JButton("Help & FAQ");
+    JButton checkUpdates = new JButton("Check for Updates");
     DialogButtonStyles.apply(helpFaq, "icons/faqs.svg");
+    DialogButtonStyles.apply(checkUpdates, "icons/apply.svg");
     helpFaq.addActionListener(e -> new HelpDialog(owner).setVisible(true));
+    checkUpdates.addActionListener(e -> UpdateCheckSupport.checkForUpdates(this, checkUpdates));
     JButton close = new JButton("Close");
     DialogButtonStyles.apply(close, "icons/close.svg");
     close.addActionListener(e -> setVisible(false));
 
     JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
     actions.setOpaque(false);
+    actions.add(checkUpdates);
     actions.add(close);
     footer.add(helpFaq, BorderLayout.WEST);
     footer.add(actions, BorderLayout.EAST);

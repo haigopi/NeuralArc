@@ -95,20 +95,38 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void targetSellStateIsNotOverwrittenByStopLossMonitoringOnLaterPoll() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.00"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+        Strategy afterSellTrigger = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyLifecycleState.SELL_PLACED, afterSellTrigger.currentState());
+
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.10"), "{}"));
+        f.service.pollStrategy(strategy.id());
+        Strategy afterSecondPoll = f.strategies.findById(strategy.id()).orElseThrow();
+
+        assertEquals(StrategyLifecycleState.SELL_PLACED, afterSecondPoll.currentState());
+        assertEquals("SELL_RULE", afterSecondPoll.lastTriggeredRuleType());
+    }
+
+    @Test
     void profitHoldSellsAfterPullbackFromHigh() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(true);
         f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.00"), "{}"));
 
-        f.alpaca.latestPrice = new BigDecimal("10.50");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.50"), "{}"));
         f.service.pollStrategy(strategy.id());
         assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isEmpty());
 
-        f.alpaca.latestPrice = new BigDecimal("11.00");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("11.00"), "{}"));
         f.service.pollStrategy(strategy.id());
         assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isEmpty());
 
-        f.alpaca.latestPrice = new BigDecimal("9.85");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("9.85"), "{}"));
         f.service.pollStrategy(strategy.id());
         assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isPresent());
     }

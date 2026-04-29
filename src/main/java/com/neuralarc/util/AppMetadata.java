@@ -86,6 +86,14 @@ public final class AppMetadata {
         return Boolean.parseBoolean(PROPERTIES.getProperty("trading.live.enabled", "false").trim());
     }
 
+    public static boolean updateCheckEnabled() {
+        return Boolean.parseBoolean(PROPERTIES.getProperty("app.update.enabled", "true").trim());
+    }
+
+    public static String githubLatestReleaseUrl() {
+        return PROPERTIES.getProperty("app.update.github.latestReleaseUrl", "").trim();
+    }
+
     public static String mailjetApiKey() {
         return configuredOrEnv("mailjet.api.key", "MAILJET_API_KEY", "");
     }

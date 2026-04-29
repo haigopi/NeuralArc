@@ -22,7 +22,7 @@ import java.util.logging.Logger;
 
 public class AlpacaTradingApi implements TradingApi {
     private static final Logger LOGGER = Logger.getLogger(AlpacaTradingApi.class.getName());
-    private static final long PRICE_CACHE_TTL_MILLIS = 5_000L;
+    private static final long PRICE_CACHE_TTL_MILLIS = 5_000L;  // Fallback cache only; polling uses position.currentPrice()
     private static final long POSITION_CACHE_TTL_MILLIS = 5_000L;
     private final String baseUrl;
     private final String dataUrl;
@@ -343,7 +343,7 @@ public class AlpacaTradingApi implements TradingApi {
             return "<empty>";
         }
         String flattened = body.replaceAll("\\s+", " ").trim();
-        int maxLength = 300;
+        int maxLength = 2000;
         return flattened.length() <= maxLength ? flattened : flattened.substring(0, maxLength) + "...";
     }
 
