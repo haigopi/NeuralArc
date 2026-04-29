@@ -113,11 +113,18 @@ final class SupportDialogStyles {
     }
 
     static void applyDialogTheme(Container container) {
+        if (container instanceof JTextArea textArea && !textArea.isEditable()) {
+            textArea.setOpaque(false);
+            textArea.setBorder(null);
+        }
         if (container instanceof JComponent component) {
-            component.setOpaque(true);
-            Color existing = component.getBackground();
-            if (existing == null || (!existing.equals(CARD_BG) && !existing.equals(HERO_BG) && !existing.equals(INPUT_BG) && !existing.equals(READONLY_BG))) {
-                component.setBackground(DIALOG_BG);
+            boolean transparentReadOnlyText = component instanceof JTextArea textArea && !textArea.isEditable();
+            if (!transparentReadOnlyText) {
+                component.setOpaque(true);
+                Color existing = component.getBackground();
+                if (existing == null || (!existing.equals(CARD_BG) && !existing.equals(HERO_BG) && !existing.equals(INPUT_BG) && !existing.equals(READONLY_BG))) {
+                    component.setBackground(DIALOG_BG);
+                }
             }
         }
         for (java.awt.Component child : container.getComponents()) {
@@ -130,7 +137,8 @@ final class SupportDialogStyles {
                 if (!(nestedContainer instanceof JPanel panel
                         && panel.getBackground() != null
                         && (panel.getBackground().equals(CARD_BG) || panel.getBackground().equals(HERO_BG)))
-                        && nestedContainer instanceof JComponent nestedComponent) {
+                        && nestedContainer instanceof JComponent nestedComponent
+                        && !(nestedContainer instanceof JTextArea textArea && !textArea.isEditable())) {
                     Color existing = nestedComponent.getBackground();
                     if (existing == null || (!existing.equals(INPUT_BG) && !existing.equals(READONLY_BG))) {
                         nestedComponent.setBackground(DIALOG_BG);

@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.mailjet.client.errors.MailjetException;
+import com.neuralarc.service.ApiRequestIdStore;
 import com.neuralarc.service.FeedbackEmailService;
 
 import javax.swing.*;
@@ -15,6 +16,7 @@ import java.awt.Insets;
 
 public class ContactUsDialog extends JDialog {
     private final FeedbackEmailService emailService;
+    private final ApiRequestIdStore apiRequestIdStore = new ApiRequestIdStore();
     private final String customerEmail;
     private final JTextField fullNameField = SupportDialogStyles.createTextField(28);
     private final JTextField phoneField = SupportDialogStyles.createTextField(18);
@@ -40,7 +42,7 @@ public class ContactUsDialog extends JDialog {
         DialogButtonStyles.apply(sendButton, "icons/send.svg");
         SupportDialogStyles.applyDialogTheme(getContentPane());
 
-        setPreferredSize(new Dimension(700, 700));
+        setPreferredSize(new Dimension(700, 730));
         pack();
         setLocationRelativeTo(owner);
     }
@@ -66,12 +68,7 @@ public class ContactUsDialog extends JDialog {
         content.add(Box.createVerticalStrut(12));
         content.add(messageSection);
 
-        JScrollPane scrollPane = new JScrollPane(content);
-        scrollPane.setBorder(null);
-        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        scrollPane.getViewport().setBackground(SupportDialogStyles.DIALOG_BG);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        return scrollPane;
+        return content;
     }
 
     private JComponent buildDetailsForm() {
@@ -162,8 +159,12 @@ public class ContactUsDialog extends JDialog {
                         + "<b>Full Name:</b> " + escape(fullName) + "<br/>"
                         + "<b>Phone:</b> " + escape(phone.isBlank() ? "-" : phone) + "</p>"
                         + "<p><b>Message</b><br/>" + htmlMultiline(message) + "</p>";
+                FeedbackEmailService.SupportEmailAttachment requestIds = FeedbackEmailService.SupportEmailAttachment.textFile(
+                        "alpaca-request-ids.txt",
+                        apiRequestIdStore.buildRecentReport()
+                );
                 emailService.sendSupportEmail(new FeedbackEmailService.SupportEmailRequest(
-                        mailSubject, textBody, htmlBody, customerEmail
+                        mailSubject, textBody, htmlBody, customerEmail, java.util.List.of(requestIds)
                 ));
                 return null;
             }

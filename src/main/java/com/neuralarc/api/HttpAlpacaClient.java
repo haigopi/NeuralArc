@@ -1,5 +1,6 @@
 package com.neuralarc.api;
 
+import com.neuralarc.service.ApiRequestIdStore;
 import com.neuralarc.util.Monetary;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -21,8 +22,10 @@ import java.util.logging.Logger;
 
 public class HttpAlpacaClient implements AlpacaClient {
     private static final Logger LOGGER = Logger.getLogger(HttpAlpacaClient.class.getName());
+    private static final String REQUEST_ID_HEADER = "X-Request-ID";
 
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+    private final ApiRequestIdStore requestIdStore = new ApiRequestIdStore();
     private final String apiKey;
     private final String secretKey;
     private final String tradingBaseUrl;
@@ -75,6 +78,7 @@ public class HttpAlpacaClient implements AlpacaClient {
         HttpRequest request = baseRequest(endpoint).DELETE().build();
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            recordRequestId("cancelOrder", "DELETE", endpoint, response);
             return response.statusCode() >= 200 && response.statusCode() < 300;
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Failed to cancel order " + orderId, ex);
@@ -91,6 +95,7 @@ public class HttpAlpacaClient implements AlpacaClient {
         HttpRequest request = baseRequest(endpoint).GET().build();
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            recordRequestId("getPosition", "GET", endpoint, response);
             if (response.statusCode() == 404) {
                 return Optional.empty();
             }
@@ -172,6 +177,7 @@ public class HttpAlpacaClient implements AlpacaClient {
                 .put("side", side)
                 .put("type", "limit")
                 .put("time_in_force", "day")
+                .put("extended_hours", true)
                 .put("limit_price", Monetary.round(limitPrice).toPlainString())
                 .put("client_order_id", clientOrderId == null ? "" : clientOrderId);
         String endpoint = tradingBaseUrl + "/v2/orders";
@@ -182,6 +188,7 @@ public class HttpAlpacaClient implements AlpacaClient {
 
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            recordRequestId("submitLimitOrder", "POST", endpoint, response);
             String body = response.body() == null ? "{}" : response.body();
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 JSONObject error = parseObject(body);
@@ -216,6 +223,7 @@ public class HttpAlpacaClient implements AlpacaClient {
     private Optional<String> executeBody(HttpRequest request) {
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            recordRequestId("executeBody", request.method(), request.uri().toString(), response);
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 return Optional.empty();
             }
@@ -257,6 +265,14 @@ public class HttpAlpacaClient implements AlpacaClient {
 
     private Optional<JSONObject> executeJson(HttpRequest request) {
         return executeBody(request).map(this::parseObject);
+    }
+
+    private void recordRequestId(String source, String method, String endpoint, HttpResponse<String> response) {
+        String requestId = response.headers().firstValue(REQUEST_ID_HEADER).orElse("");
+        if (!requestId.isBlank()) {
+            LOGGER.info(() -> "Alpaca Request ID [" + source + "]: " + requestId + " (" + method + " " + endpoint + ")");
+            requestIdStore.record(source, method, endpoint, requestId);
+        }
     }
 
     private JSONObject parseObject(String body) {

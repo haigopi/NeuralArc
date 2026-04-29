@@ -2,6 +2,7 @@ package com.neuralarc.api;
 
 import com.neuralarc.model.OrderResult;
 import com.neuralarc.model.Position;
+import com.neuralarc.service.ApiRequestIdStore;
 import com.neuralarc.util.Monetary;
 import com.neuralarc.util.AppMetadata;
 import org.json.JSONArray;
@@ -24,6 +25,7 @@ public class AlpacaTradingApi implements TradingApi {
     private static final Logger LOGGER = Logger.getLogger(AlpacaTradingApi.class.getName());
     private static final long PRICE_CACHE_TTL_MILLIS = 5_000L;  // Fallback cache only; polling uses position.currentPrice()
     private static final long POSITION_CACHE_TTL_MILLIS = 5_000L;
+    private static final String REQUEST_ID_HEADER = "X-Request-ID";
     private final String baseUrl;
     private final String dataUrl;
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -31,6 +33,7 @@ public class AlpacaTradingApi implements TradingApi {
             .build();
     private final Map<String, CacheEntry<BigDecimal>> latestPriceCache = new ConcurrentHashMap<>();
     private final Map<String, CacheEntry<Position>> positionCache = new ConcurrentHashMap<>();
+    private final ApiRequestIdStore requestIdStore = new ApiRequestIdStore();
     private String apiKey;
     private String apiSecret;
 
@@ -67,6 +70,7 @@ public class AlpacaTradingApi implements TradingApi {
         try {
             logRequest("GET", endpoint, null);
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            recordRequestId("testConnection", "GET", endpoint, response);
             logResponse("GET", endpoint, response.statusCode(), response.body());
             return response.statusCode() == 200;
         } catch (Exception ex) {
@@ -99,6 +103,7 @@ public class AlpacaTradingApi implements TradingApi {
         try {
             logRequest("GET", endpoint, null);
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            recordRequestId("getLatestPrice", "GET", endpoint, response);
             logResponse("GET", endpoint, response.statusCode(), response.body());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 return Monetary.zero();
@@ -149,6 +154,7 @@ public class AlpacaTradingApi implements TradingApi {
         try {
             logRequest("GET", queryEndpoint, null);
             HttpResponse<String> listResponse = httpClient.send(listRequest, HttpResponse.BodyHandlers.ofString());
+            recordRequestId("cancelOpenOrdersForSymbol:list", "GET", queryEndpoint, listResponse);
             logResponse("GET", queryEndpoint, listResponse.statusCode(), listResponse.body());
             if (listResponse.statusCode() < 200 || listResponse.statusCode() >= 300) {
                 return false;
@@ -175,6 +181,7 @@ public class AlpacaTradingApi implements TradingApi {
 
                 logRequest("DELETE", cancelEndpoint, null);
                 HttpResponse<String> cancelResponse = httpClient.send(cancelRequest, HttpResponse.BodyHandlers.ofString());
+                recordRequestId("cancelOpenOrdersForSymbol:delete", "DELETE", cancelEndpoint, cancelResponse);
                 logResponse("DELETE", cancelEndpoint, cancelResponse.statusCode(), cancelResponse.body());
                 int status = cancelResponse.statusCode();
                 if (!((status >= 200 && status < 300) || status == 404)) {
@@ -213,6 +220,7 @@ public class AlpacaTradingApi implements TradingApi {
         try {
             logRequest("GET", endpoint, null);
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            recordRequestId("getPosition", "GET", endpoint, response);
             logResponse("GET", endpoint, response.statusCode(), response.body());
             if (response.statusCode() == 404) {
                 Position empty = new Position(normalizedSymbol);
@@ -287,6 +295,7 @@ public class AlpacaTradingApi implements TradingApi {
                 .put("side", side)
                 .put("type", "limit")
                 .put("time_in_force", "day")
+                .put("extended_hours", true)
                 .put("limit_price", normalizedLimit.toPlainString());
 
         HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint))
@@ -300,6 +309,7 @@ public class AlpacaTradingApi implements TradingApi {
         try {
             logRequest("POST", endpoint, payload.toString());
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            recordRequestId("submitOrder", "POST", endpoint, response);
             int status = response.statusCode();
             String body = response.body() == null ? "" : response.body();
             logResponse("POST", endpoint, status, body);
@@ -322,7 +332,7 @@ public class AlpacaTradingApi implements TradingApi {
         if (!LOGGER.isLoggable(Level.INFO)) {
             return;
         }
-        String suffix = body == null || body.isBlank() ? "" : " body=" + abbreviate(body);
+        String suffix = body == null || body.isBlank() ? "" : System.lineSeparator() + "body=" + formatBodyForLog(body);
         LOGGER.info(() -> "Request: " + endpoint + suffix);
     }
 
@@ -331,20 +341,44 @@ public class AlpacaTradingApi implements TradingApi {
             return;
         }
         LOGGER.info(() -> " -> Response: " + endpoint
-                + " status=" + statusCode + " body=" + abbreviate(body));
+                + " status=" + statusCode
+                + System.lineSeparator() + "body=" + formatBodyForLog(body));
     }
 
     private void logFailure(String method, String endpoint, Exception ex) {
         LOGGER.log(Level.WARNING, "Alpaca API failure: " + method + " " + endpoint, ex);
     }
 
-    private String abbreviate(String body) {
+    private void recordRequestId(String source, String method, String endpoint, HttpResponse<String> response) {
+        String requestId = response.headers().firstValue(REQUEST_ID_HEADER).orElse("");
+        if (!requestId.isBlank()) {
+            LOGGER.info(() -> "Alpaca Request ID [" + source + "]: " + requestId + " (" + method + " " + endpoint + ")");
+            requestIdStore.record(source, method, endpoint, requestId);
+        }
+    }
+
+    private String formatBodyForLog(String body) {
         if (body == null || body.isBlank()) {
             return "<empty>";
         }
-        String flattened = body.replaceAll("\\s+", " ").trim();
-        int maxLength = 2000;
-        return flattened.length() <= maxLength ? flattened : flattened.substring(0, maxLength) + "...";
+        String pretty = tryPrettyJson(body);
+        int maxLength = 4000;
+        return pretty.length() <= maxLength ? pretty : pretty.substring(0, maxLength) + System.lineSeparator() + "...";
+    }
+
+    private String tryPrettyJson(String body) {
+        String trimmed = body == null ? "" : body.trim();
+        try {
+            if (trimmed.startsWith("{")) {
+                return new JSONObject(trimmed).toString(2);
+            }
+            if (trimmed.startsWith("[")) {
+                return new JSONArray(trimmed).toString(2);
+            }
+        } catch (Exception ignored) {
+            // Fall through to plain text formatting for non-JSON or malformed content.
+        }
+        return trimmed.replaceAll("\\s+", " ").trim();
     }
 
     private String extractErrorMessage(String responseBody, int statusCode) {

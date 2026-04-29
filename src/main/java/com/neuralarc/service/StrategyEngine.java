@@ -596,7 +596,15 @@ public class StrategyEngine {
     private record RiskProjection(boolean allowed, String reason) {}
 
     private void logPoll(Strategy strategy, String scope, String status, String details) {
+        if ("STARTED".equals(status)) {
+            LOGGER.info("");
+            LOGGER.info(() -> "========== [" + strategy.symbol() + "] Poll Evaluation ==========");
+        }
         LOGGER.info(() -> "[POLL][" + strategy.symbol() + "][" + scope + "][" + status + "] " + details);
+        if ("COMPLETED".equals(status)) {
+            LOGGER.info(() -> "========== [" + strategy.symbol() + "] End Poll ==========");
+            LOGGER.info("");
+        }
     }
 
     private void logRule(Strategy strategy, String ruleName, String status, String details) {

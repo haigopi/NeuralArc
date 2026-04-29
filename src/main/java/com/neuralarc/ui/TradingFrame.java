@@ -565,10 +565,10 @@ public class TradingFrame extends JFrame {
         styleStatusActionButton(faqsButton);
         faqsButton.addActionListener(e -> new HelpDialog(this).setVisible(true));
         JButton updatesButton = new JButton("Check Updates");
-        applyButtonIcon(updatesButton, "icons/apply.svg", 15);
+        applyButtonIcon(updatesButton, "icons/check-for-updates.svg", 15);
         styleStatusActionButton(updatesButton);
         updatesButton.addActionListener(e -> UpdateCheckSupport.checkForUpdates(this, updatesButton));
-        applyButtonIcon(legalDisclosureButton, "icons/verify.svg", 15);
+        applyButtonIcon(legalDisclosureButton, "icons/legal-disclosure.svg", 15);
         styleStatusActionButton(legalDisclosureButton);
         legalDisclosureButton.addActionListener(e -> showLegalDisclosureDialog(false));
 
@@ -593,9 +593,9 @@ public class TradingFrame extends JFrame {
                 () -> openRequestNewFeatureDialog()));
         moreMenu.add(createStatusMenuItem("Contact Us", "icons/contact-us.svg",
                 () -> openContactUsDialog()));
-        moreMenu.add(createStatusMenuItem("Check for Updates", "icons/apply.svg",
+        moreMenu.add(createStatusMenuItem("Check for Updates", "icons/check-for-updates.svg",
                 () -> UpdateCheckSupport.checkForUpdates(this, moreButton)));
-        moreMenu.add(createStatusMenuItem("Legal Disclosure", "icons/verify.svg",
+        moreMenu.add(createStatusMenuItem("Legal Disclosure", "icons/legal-disclosure.svg",
                 () -> showLegalDisclosureDialog(false)));
         moreButton.addActionListener(e -> moreMenu.show(moreButton, 0, moreButton.getHeight()));
 

@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.mailjet.client.errors.MailjetException;
+import com.neuralarc.service.ApiRequestIdStore;
 import com.neuralarc.service.DailyLogBundleService;
 import com.neuralarc.service.FeedbackEmailService;
 
@@ -18,6 +19,7 @@ import java.util.List;
 public class SubmitBugDialog extends JDialog {
     private final FeedbackEmailService emailService;
     private final DailyLogBundleService dailyLogBundleService;
+    private final ApiRequestIdStore apiRequestIdStore;
     private final String customerEmail;
     private final JTextField fullNameField = SupportDialogStyles.createTextField(28);
     private final JTextField phoneField = SupportDialogStyles.createTextField(18);
@@ -28,14 +30,16 @@ public class SubmitBugDialog extends JDialog {
     private boolean sent;
 
     public SubmitBugDialog(JFrame owner, String customerEmail, FeedbackEmailService emailService) {
-        this(owner, customerEmail, emailService, new DailyLogBundleService());
+        this(owner, customerEmail, emailService, new DailyLogBundleService(), new ApiRequestIdStore());
     }
 
-    SubmitBugDialog(JFrame owner, String customerEmail, FeedbackEmailService emailService, DailyLogBundleService dailyLogBundleService) {
+    SubmitBugDialog(JFrame owner, String customerEmail, FeedbackEmailService emailService,
+                    DailyLogBundleService dailyLogBundleService, ApiRequestIdStore apiRequestIdStore) {
         super(owner, "Submit Bug", true);
         this.customerEmail = customerEmail == null ? "" : customerEmail.trim();
         this.emailService = emailService;
         this.dailyLogBundleService = dailyLogBundleService;
+        this.apiRequestIdStore = apiRequestIdStore;
 
         setLayout(new BorderLayout(12, 12));
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(18, 20, 16, 20));
@@ -50,7 +54,7 @@ public class SubmitBugDialog extends JDialog {
         DialogButtonStyles.apply(sendButton, "icons/submit-bug.svg");
         SupportDialogStyles.applyDialogTheme(getContentPane());
 
-        setPreferredSize(new Dimension(720, 760));
+        setPreferredSize(new Dimension(720, 820));
         pack();
         setLocationRelativeTo(owner);
     }
@@ -184,12 +188,16 @@ public class SubmitBugDialog extends JDialog {
                         + "<p><i>Daily system logs are attached.</i></p>";
 
                 FeedbackEmailService.SupportEmailAttachment dailyLogs = dailyLogBundleService.buildTodayLogAttachment();
+                FeedbackEmailService.SupportEmailAttachment requestIds = FeedbackEmailService.SupportEmailAttachment.textFile(
+                        "alpaca-request-ids.txt",
+                        apiRequestIdStore.buildRecentReport()
+                );
                 emailService.sendSupportEmail(new FeedbackEmailService.SupportEmailRequest(
                         mailSubject,
                         textBody,
                         htmlBody,
                         customerEmail,
-                        List.of(dailyLogs)
+                        List.of(dailyLogs, requestIds)
                 ));
                 return null;
             }
