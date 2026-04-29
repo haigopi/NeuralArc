@@ -6,14 +6,10 @@ import com.neuralarc.service.DailyLogBundleService;
 import com.neuralarc.service.FeedbackEmailService;
 
 import javax.swing.*;
-import javax.swing.border.EmptyBorder;
 import java.awt.BorderLayout;
 import java.awt.Cursor;
-import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-import java.awt.Insets;
 import java.util.List;
 
 public class SubmitBugDialog extends JDialog {
@@ -41,8 +37,8 @@ public class SubmitBugDialog extends JDialog {
         this.dailyLogBundleService = dailyLogBundleService;
         this.apiRequestIdStore = apiRequestIdStore;
 
-        setLayout(new BorderLayout(12, 12));
-        ((JComponent) getContentPane()).setBorder(new EmptyBorder(18, 20, 16, 20));
+        setLayout(new BorderLayout(SupportDialogStyles.DIALOG_CONTENT_GAP, SupportDialogStyles.DIALOG_CONTENT_GAP));
+        ((JComponent) getContentPane()).setBorder(SupportDialogStyles.createDialogContentBorder());
 
         add(SupportDialogStyles.createHeroPanel(
                 "Submit a Bug Report",
@@ -54,8 +50,11 @@ public class SubmitBugDialog extends JDialog {
         DialogButtonStyles.apply(sendButton, "icons/submit-bug.svg");
         SupportDialogStyles.applyDialogTheme(getContentPane());
 
-        setPreferredSize(new Dimension(720, 820));
-        pack();
+        SupportDialogStyles.packAndFit(
+                this,
+                SupportDialogStyles.SUPPORT_DIALOG_MIN_WIDTH,
+                SupportDialogStyles.SUPPORT_DIALOG_LARGE_MIN_HEIGHT
+        );
         setLocationRelativeTo(owner);
     }
 
@@ -66,9 +65,7 @@ public class SubmitBugDialog extends JDialog {
     }
 
     private JComponent buildBody() {
-        JPanel content = new JPanel();
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-        content.setOpaque(false);
+        JPanel content = SupportDialogStyles.createBodyStackPanel();
 
         JPanel detailsSection = SupportDialogStyles.createSectionPanel("Reporter Details");
         detailsSection.add(buildDetailsForm(), BorderLayout.CENTER);
@@ -77,15 +74,10 @@ public class SubmitBugDialog extends JDialog {
         reportSection.add(buildReportForm(), BorderLayout.CENTER);
 
         content.add(detailsSection);
-        content.add(Box.createVerticalStrut(12));
+        content.add(Box.createVerticalStrut(SupportDialogStyles.SECTION_VERTICAL_GAP));
         content.add(reportSection);
 
-        JScrollPane scrollPane = new JScrollPane(content);
-        scrollPane.setBorder(null);
-        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        scrollPane.getViewport().setBackground(SupportDialogStyles.DIALOG_BG);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        return scrollPane;
+        return SupportDialogStyles.wrapBodyContent(content);
     }
 
     private JComponent buildDetailsForm() {
@@ -111,8 +103,7 @@ public class SubmitBugDialog extends JDialog {
     }
 
     private JComponent buildFooter() {
-        JPanel footer = new JPanel(new BorderLayout());
-        footer.setOpaque(false);
+        JPanel footer = SupportDialogStyles.createFooterPanel();
 
         JButton helpFaq = new JButton("Help & FAQ");
         JButton cancel = new JButton("Cancel");
@@ -126,8 +117,7 @@ public class SubmitBugDialog extends JDialog {
         });
         sendButton.addActionListener(e -> onSend());
 
-        JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        rightActions.setOpaque(false);
+        JPanel rightActions = SupportDialogStyles.createFooterActionsPanel();
         rightActions.add(cancel);
         rightActions.add(sendButton);
 
@@ -235,13 +225,7 @@ public class SubmitBugDialog extends JDialog {
     }
 
     private GridBagConstraints baseConstraints() {
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridx = 0;
-        gbc.weightx = 1.0;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.anchor = GridBagConstraints.NORTHWEST;
-        gbc.insets = new Insets(0, 0, 10, 0);
-        return gbc;
+        return SupportDialogStyles.createFormConstraints();
     }
 
     private void addFormRow(JPanel form, GridBagConstraints gbc, int row, String label, JComponent component) {

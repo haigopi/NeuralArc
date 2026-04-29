@@ -10,6 +10,12 @@ import java.awt.Color;
 import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.FlowLayout;
+import java.awt.GraphicsConfiguration;
+import java.awt.GridBagConstraints;
+import java.awt.Insets;
+import java.awt.Rectangle;
+import java.awt.Toolkit;
 
 final class SupportDialogStyles {
     static final Color DIALOG_BG = new Color(246, 248, 252);
@@ -22,6 +28,14 @@ final class SupportDialogStyles {
     static final Color INPUT_BG = Color.WHITE;
     static final Color READONLY_BG = new Color(243, 246, 251);
 
+    static final int SUPPORT_DIALOG_MIN_WIDTH = 720;
+    static final int SUPPORT_DIALOG_STANDARD_MIN_HEIGHT = 700;
+    static final int SUPPORT_DIALOG_LARGE_MIN_HEIGHT = 780;
+    static final int DIALOG_CONTENT_GAP = 12;
+    static final int SECTION_VERTICAL_GAP = 12;
+    static final int FOOTER_ACTION_GAP = 8;
+    static final Insets FORM_ROW_INSETS = new Insets(0, 0, 10, 0);
+
     static final Font TITLE_FONT = FontLoader.ui(Font.BOLD, 19f);
     static final Font SUBTITLE_FONT = FontLoader.ui(Font.PLAIN, 12f);
     static final Font SECTION_FONT = FontLoader.ui(Font.BOLD, 12f);
@@ -29,6 +43,39 @@ final class SupportDialogStyles {
     static final Font FIELD_FONT = FontLoader.ui(Font.PLAIN, 12f);
 
     private SupportDialogStyles() {
+    }
+
+    static EmptyBorder createDialogContentBorder() {
+        return new EmptyBorder(18, 20, 16, 20);
+    }
+
+    static JPanel createBodyStackPanel() {
+        JPanel content = new JPanel();
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setOpaque(false);
+        return content;
+    }
+
+    static JPanel createFooterPanel() {
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.setOpaque(false);
+        return footer;
+    }
+
+    static JPanel createFooterActionsPanel() {
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, FOOTER_ACTION_GAP, 0));
+        actions.setOpaque(false);
+        return actions;
+    }
+
+    static GridBagConstraints createFormConstraints() {
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        gbc.insets = FORM_ROW_INSETS;
+        return gbc;
     }
 
     static JPanel createHeroPanel(String title, String subtitle) {
@@ -112,6 +159,27 @@ final class SupportDialogStyles {
         return scrollPane;
     }
 
+    static JScrollPane wrapBodyContent(JComponent content) {
+        JScrollPane scrollPane = new JScrollPane(content);
+        scrollPane.setBorder(null);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        scrollPane.getViewport().setBackground(DIALOG_BG);
+        scrollPane.setPreferredSize(content.getPreferredSize());
+        return scrollPane;
+    }
+
+    static void packAndFit(JDialog dialog, int minWidth, int minHeight) {
+        dialog.pack();
+        Dimension preferred = dialog.getPreferredSize();
+        Rectangle usableBounds = usableScreenBounds(dialog);
+        int width = Math.max(minWidth, preferred.width);
+        int height = Math.max(minHeight, preferred.height);
+        width = Math.min(width, usableBounds.width);
+        height = Math.min(height, usableBounds.height);
+        dialog.setSize(width, height);
+    }
+
     static void applyDialogTheme(Container container) {
         if (container instanceof JTextArea textArea && !textArea.isEditable()) {
             textArea.setOpaque(false);
@@ -162,5 +230,22 @@ final class SupportDialogStyles {
                 BorderFactory.createLineBorder(INPUT_BORDER, 1, true),
                 new EmptyBorder(8, 10, 8, 10)
         ));
+    }
+
+    private static Rectangle usableScreenBounds(JDialog dialog) {
+        GraphicsConfiguration configuration = dialog.getGraphicsConfiguration();
+        if (configuration == null) {
+            configuration = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
+                    .getDefaultScreenDevice()
+                    .getDefaultConfiguration();
+        }
+        Rectangle bounds = configuration.getBounds();
+        Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(configuration);
+        return new Rectangle(
+                bounds.x + insets.left,
+                bounds.y + insets.top,
+                Math.max(320, bounds.width - insets.left - insets.right),
+                Math.max(320, bounds.height - insets.top - insets.bottom)
+        );
     }
 }

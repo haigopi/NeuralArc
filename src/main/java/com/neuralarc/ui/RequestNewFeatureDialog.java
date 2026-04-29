@@ -5,14 +5,10 @@ import com.neuralarc.service.ApiRequestIdStore;
 import com.neuralarc.service.FeedbackEmailService;
 
 import javax.swing.*;
-import javax.swing.border.EmptyBorder;
 import java.awt.BorderLayout;
 import java.awt.Cursor;
-import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-import java.awt.Insets;
 
 public class RequestNewFeatureDialog extends JDialog {
     private final FeedbackEmailService emailService;
@@ -30,8 +26,8 @@ public class RequestNewFeatureDialog extends JDialog {
         this.customerEmail = customerEmail == null ? "" : customerEmail.trim();
         this.emailService = emailService;
 
-        setLayout(new BorderLayout(12, 12));
-        ((JComponent) getContentPane()).setBorder(new EmptyBorder(18, 20, 16, 20));
+        setLayout(new BorderLayout(SupportDialogStyles.DIALOG_CONTENT_GAP, SupportDialogStyles.DIALOG_CONTENT_GAP));
+        ((JComponent) getContentPane()).setBorder(SupportDialogStyles.createDialogContentBorder());
 
         add(SupportDialogStyles.createHeroPanel(
                 "Request a New Feature",
@@ -43,8 +39,11 @@ public class RequestNewFeatureDialog extends JDialog {
         DialogButtonStyles.apply(sendButton, "icons/send.svg");
         SupportDialogStyles.applyDialogTheme(getContentPane());
 
-        setPreferredSize(new Dimension(700, 730));
-        pack();
+        SupportDialogStyles.packAndFit(
+                this,
+                SupportDialogStyles.SUPPORT_DIALOG_MIN_WIDTH,
+                SupportDialogStyles.SUPPORT_DIALOG_STANDARD_MIN_HEIGHT
+        );
         setLocationRelativeTo(owner);
     }
 
@@ -55,9 +54,7 @@ public class RequestNewFeatureDialog extends JDialog {
     }
 
     private JComponent buildBody() {
-        JPanel content = new JPanel();
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-        content.setOpaque(false);
+        JPanel content = SupportDialogStyles.createBodyStackPanel();
 
         JPanel requesterSection = SupportDialogStyles.createSectionPanel("Requester Details");
         requesterSection.add(buildRequesterForm(), BorderLayout.CENTER);
@@ -66,10 +63,10 @@ public class RequestNewFeatureDialog extends JDialog {
         requestSection.add(buildRequestForm(), BorderLayout.CENTER);
 
         content.add(requesterSection);
-        content.add(Box.createVerticalStrut(12));
+        content.add(Box.createVerticalStrut(SupportDialogStyles.SECTION_VERTICAL_GAP));
         content.add(requestSection);
 
-        return content;
+        return SupportDialogStyles.wrapBodyContent(content);
     }
 
     private JComponent buildRequesterForm() {
@@ -94,8 +91,7 @@ public class RequestNewFeatureDialog extends JDialog {
     }
 
     private JComponent buildFooter() {
-        JPanel footer = new JPanel(new BorderLayout());
-        footer.setOpaque(false);
+        JPanel footer = SupportDialogStyles.createFooterPanel();
 
         JButton helpFaq = new JButton("Help & FAQ");
         JButton cancel = new JButton("Cancel");
@@ -109,8 +105,7 @@ public class RequestNewFeatureDialog extends JDialog {
         });
         sendButton.addActionListener(e -> onSend());
 
-        JPanel rightActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        rightActions.setOpaque(false);
+        JPanel rightActions = SupportDialogStyles.createFooterActionsPanel();
         rightActions.add(cancel);
         rightActions.add(sendButton);
 
@@ -207,13 +202,7 @@ public class RequestNewFeatureDialog extends JDialog {
     }
 
     private GridBagConstraints baseConstraints() {
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridx = 0;
-        gbc.weightx = 1.0;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.anchor = GridBagConstraints.NORTHWEST;
-        gbc.insets = new Insets(0, 0, 10, 0);
-        return gbc;
+        return SupportDialogStyles.createFormConstraints();
     }
 
     private void addFormRow(JPanel form, GridBagConstraints gbc, int row, String label, JComponent component) {
