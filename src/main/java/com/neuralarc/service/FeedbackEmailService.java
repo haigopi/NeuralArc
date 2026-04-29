@@ -6,6 +6,7 @@ import com.mailjet.client.MailjetRequest;
 import com.mailjet.client.MailjetResponse;
 import com.mailjet.client.errors.MailjetException;
 import com.mailjet.client.resource.Emailv31;
+import com.neuralarc.util.AppMetadata;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -13,21 +14,24 @@ public class FeedbackEmailService {
     private final String apiKey;
     private final String apiSecret;
     private final String fromEmail;
+    private final String fromName;
     private final String toEmail;
 
-    public FeedbackEmailService(String apiKey, String apiSecret, String fromEmail, String toEmail) {
+    public FeedbackEmailService(String apiKey, String apiSecret, String fromEmail, String fromName, String toEmail) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.apiSecret = apiSecret == null ? "" : apiSecret.trim();
         this.fromEmail = fromEmail == null ? "" : fromEmail.trim();
+        this.fromName = fromName == null ? "" : fromName.trim();
         this.toEmail = toEmail == null ? "" : toEmail.trim();
     }
 
-    public static FeedbackEmailService fromEnvironment() {
+    public static FeedbackEmailService fromConfiguration() {
         return new FeedbackEmailService(
-                System.getenv("MAILJET_API_KEY"),
-                System.getenv("MAILJET_API_SECRET"),
-                System.getenv("MAILJET_FROM_EMAIL"),
-                System.getenv("MAILJET_TO_EMAIL")
+                AppMetadata.mailjetApiKey(),
+                AppMetadata.mailjetApiSecret(),
+                AppMetadata.mailjetFromEmail(),
+                AppMetadata.mailjetFromName(),
+                AppMetadata.mailjetToEmail()
         );
     }
 
@@ -36,26 +40,26 @@ public class FeedbackEmailService {
     }
 
     public String missingConfigMessage() {
-        return "Missing Mailjet configuration. Set MAILJET_API_KEY, MAILJET_API_SECRET, MAILJET_FROM_EMAIL, MAILJET_TO_EMAIL.";
+        return "Missing Mailjet configuration. Set mailjet.* in app.properties or MAILJET_API_KEY, MAILJET_API_SECRET, MAILJET_FROM_EMAIL, MAILJET_TO_EMAIL.";
     }
 
-    public void sendFeedback(String subjectPrefix, String phoneNumber, String description, String userEmail) throws MailjetException {
+    public void sendSupportEmail(SupportEmailRequest supportEmailRequest) throws MailjetException {
         MailjetClient client = new MailjetClient(ClientOptions.builder()
                 .apiKey(apiKey)
                 .apiSecretKey(apiSecret)
                 .build());
 
-        String subject = "NeuralArc - " + subjectPrefix;
-        String textBody = "Category: " + subjectPrefix + "\n"
-                + "Phone: " + phoneNumber + "\n"
-                + "User Email: " + (userEmail == null ? "" : userEmail) + "\n\n"
-                + "Description:\n" + description;
-
         JSONObject message = new JSONObject()
-                .put(Emailv31.Message.FROM, new JSONObject().put("Email", fromEmail).put("Name", "NeuralArc App"))
-                .put(Emailv31.Message.TO, new JSONArray().put(new JSONObject().put("Email", toEmail)))
-                .put(Emailv31.Message.SUBJECT, subject)
-                .put(Emailv31.Message.TEXTPART, textBody);
+                .put("From", new JSONObject().put("Email", fromEmail).put("Name", fromName.isBlank() ? "NeuralArc Desktop" : fromName))
+                .put("To", new JSONArray().put(new JSONObject().put("Email", toEmail).put("Name", "NeuralArc Support")))
+                .put("Subject", supportEmailRequest.subject())
+                .put("TextPart", supportEmailRequest.textBody())
+                .put("HTMLPart", supportEmailRequest.htmlBody());
+
+        if (!supportEmailRequest.customerEmail().isBlank()) {
+            message.put("Cc", new JSONArray().put(new JSONObject().put("Email", supportEmailRequest.customerEmail())));
+            message.put("ReplyTo", new JSONObject().put("Email", supportEmailRequest.customerEmail()));
+        }
 
         MailjetRequest request = new MailjetRequest(Emailv31.resource)
                 .property(Emailv31.MESSAGES, new JSONArray().put(message));
@@ -63,6 +67,20 @@ public class FeedbackEmailService {
         MailjetResponse response = client.post(request);
         if (response.getStatus() < 200 || response.getStatus() >= 300) {
             throw new MailjetException("Mailjet send failed with status " + response.getStatus());
+        }
+    }
+
+    public record SupportEmailRequest(
+            String subject,
+            String textBody,
+            String htmlBody,
+            String customerEmail
+    ) {
+        public SupportEmailRequest {
+            subject = subject == null ? "" : subject.trim();
+            textBody = textBody == null ? "" : textBody.trim();
+            htmlBody = htmlBody == null ? "" : htmlBody.trim();
+            customerEmail = customerEmail == null ? "" : customerEmail.trim();
         }
     }
 }

@@ -86,6 +86,26 @@ public final class AppMetadata {
         return Boolean.parseBoolean(PROPERTIES.getProperty("trading.live.enabled", "false").trim());
     }
 
+    public static String mailjetApiKey() {
+        return configuredOrEnv("mailjet.api.key", "MAILJET_API_KEY", "");
+    }
+
+    public static String mailjetApiSecret() {
+        return configuredOrEnv("mailjet.api.secret", "MAILJET_API_SECRET", "");
+    }
+
+    public static String mailjetFromEmail() {
+        return configuredOrEnv("mailjet.from.email", "MAILJET_FROM_EMAIL", "");
+    }
+
+    public static String mailjetFromName() {
+        return configuredOrEnv("mailjet.from.name", "MAILJET_FROM_NAME", "NeuralArc Desktop");
+    }
+
+    public static String mailjetToEmail() {
+        return configuredOrEnv("mailjet.to.email", "MAILJET_TO_EMAIL", "");
+    }
+
     public static int defaultStrategyPollingSeconds() {
         String configured = PROPERTIES.getProperty(
                 "app.strategy.default.polling.seconds",
@@ -123,5 +143,17 @@ public final class AppMetadata {
             // Fall back to defaults when metadata cannot be loaded.
         }
         return properties;
+    }
+
+    private static String configuredOrEnv(String propertyKey, String envKey, String defaultValue) {
+        String configured = PROPERTIES.getProperty(propertyKey, "").trim();
+        if (!configured.isBlank()) {
+            return configured;
+        }
+        String env = System.getenv(envKey);
+        if (env != null && !env.isBlank()) {
+            return env.trim();
+        }
+        return defaultValue;
     }
 }

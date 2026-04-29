@@ -13,18 +13,18 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 
-public class ContactUsDialog extends JDialog {
+public class RequestNewFeatureDialog extends JDialog {
     private final FeedbackEmailService emailService;
     private final String customerEmail;
-    private final JTextField fullNameField = SupportDialogStyles.createTextField(28);
-    private final JTextField subjectField = SupportDialogStyles.createTextField(28);
+    private final JTextField featureTitleField = SupportDialogStyles.createTextField(30);
     private final JTextField phoneField = SupportDialogStyles.createTextField(18);
-    private final JTextArea messageArea = SupportDialogStyles.createTextArea(8, 34);
-    private final JButton sendButton = new JButton("Send Message");
+    private final JTextArea useCaseArea = SupportDialogStyles.createTextArea(5, 34);
+    private final JTextArea outcomeArea = SupportDialogStyles.createTextArea(5, 34);
+    private final JButton sendButton = new JButton("Send Feature Request");
     private boolean sent;
 
-    public ContactUsDialog(JFrame owner, String customerEmail, FeedbackEmailService emailService) {
-        super(owner, "Contact Us", true);
+    public RequestNewFeatureDialog(JFrame owner, String customerEmail, FeedbackEmailService emailService) {
+        super(owner, "Request New Feature", true);
         this.customerEmail = customerEmail == null ? "" : customerEmail.trim();
         this.emailService = emailService;
 
@@ -32,9 +32,9 @@ public class ContactUsDialog extends JDialog {
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(18, 20, 16, 20));
 
         add(SupportDialogStyles.createHeroPanel(
-                "Contact the NeuralArc Team",
-                "Use this form for product questions, partnerships, support requests, or account follow-up. " +
-                        "Your settings email will be copied on the message."
+                "Request a New Feature",
+                "Tell us what capability you need, why it matters, and what outcome you expect. " +
+                        "We will send it directly to the NeuralArc team and copy your settings email."
         ), BorderLayout.NORTH);
         add(buildBody(), BorderLayout.CENTER);
         add(buildFooter(), BorderLayout.SOUTH);
@@ -42,7 +42,7 @@ public class ContactUsDialog extends JDialog {
         DialogButtonStyles.apply(sendButton, "icons/send.svg");
         SupportDialogStyles.applyDialogTheme(getContentPane());
 
-        setPreferredSize(new Dimension(700, 640));
+        setPreferredSize(new Dimension(700, 620));
         pack();
         setLocationRelativeTo(owner);
     }
@@ -58,42 +58,42 @@ public class ContactUsDialog extends JDialog {
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setOpaque(false);
 
-        JPanel detailsSection = SupportDialogStyles.createSectionPanel("Contact Details");
-        detailsSection.add(buildDetailsForm(), BorderLayout.CENTER);
+        JPanel requesterSection = SupportDialogStyles.createSectionPanel("Requester Details");
+        requesterSection.add(buildRequesterForm(), BorderLayout.CENTER);
 
-        JPanel messageSection = SupportDialogStyles.createSectionPanel("Message");
-        messageSection.add(buildMessageForm(), BorderLayout.CENTER);
+        JPanel requestSection = SupportDialogStyles.createSectionPanel("Feature Request");
+        requestSection.add(buildRequestForm(), BorderLayout.CENTER);
 
-        content.add(detailsSection);
+        content.add(requesterSection);
         content.add(Box.createVerticalStrut(12));
-        content.add(messageSection);
+        content.add(requestSection);
 
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(null);
         scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        scrollPane.getViewport().setBackground(SupportDialogStyles.DIALOG_BG);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        scrollPane.getViewport().setBackground(SupportDialogStyles.DIALOG_BG);
         return scrollPane;
     }
 
-    private JComponent buildDetailsForm() {
+    private JComponent buildRequesterForm() {
         JPanel form = new JPanel(new GridBagLayout());
         form.setOpaque(false);
 
         GridBagConstraints gbc = baseConstraints();
         addFormRow(form, gbc, 0, "Customer email", SupportDialogStyles.createReadOnlyField(customerEmail));
-        addFormRow(form, gbc, 1, "Full name *", fullNameField);
-        addFormRow(form, gbc, 2, "Phone number", phoneField);
-        addFormRow(form, gbc, 3, "Subject *", subjectField);
+        addFormRow(form, gbc, 1, "Phone number", phoneField);
         return form;
     }
 
-    private JComponent buildMessageForm() {
+    private JComponent buildRequestForm() {
         JPanel form = new JPanel(new GridBagLayout());
         form.setOpaque(false);
 
         GridBagConstraints gbc = baseConstraints();
-        addFormRow(form, gbc, 0, "Message *", SupportDialogStyles.wrapTextArea(messageArea, 210));
+        addFormRow(form, gbc, 0, "Feature title *", featureTitleField);
+        addFormRow(form, gbc, 1, "Problem / use case *", SupportDialogStyles.wrapTextArea(useCaseArea, 120));
+        addFormRow(form, gbc, 2, "Desired outcome *", SupportDialogStyles.wrapTextArea(outcomeArea, 120));
         return form;
     }
 
@@ -124,21 +124,21 @@ public class ContactUsDialog extends JDialog {
     }
 
     private void onSend() {
-        String fullName = fullNameField.getText().trim();
-        String subject = subjectField.getText().trim();
+        String featureTitle = featureTitleField.getText().trim();
+        String useCase = useCaseArea.getText().trim();
+        String desiredOutcome = outcomeArea.getText().trim();
         String phone = phoneField.getText().trim();
-        String message = messageArea.getText().trim();
 
         if (customerEmail.isBlank()) {
             JOptionPane.showMessageDialog(this,
-                    "Please save the customer email in Settings before sending a contact request.",
+                    "Please save the customer email in Settings before sending a feature request.",
                     "Missing Settings Email",
                     JOptionPane.WARNING_MESSAGE);
             return;
         }
-        if (fullName.isBlank() || subject.isBlank() || message.isBlank()) {
+        if (featureTitle.isBlank() || useCase.isBlank() || desiredOutcome.isBlank()) {
             JOptionPane.showMessageDialog(this,
-                    "Please complete the full name, subject, and message fields.",
+                    "Please complete the feature title, problem / use case, and desired outcome fields.",
                     "Missing Required Fields",
                     JOptionPane.WARNING_MESSAGE);
             return;
@@ -155,21 +155,21 @@ public class ContactUsDialog extends JDialog {
         SwingWorker<Void, Void> worker = new SwingWorker<>() {
             @Override
             protected Void doInBackground() throws Exception {
-                String mailSubject = "NeuralArc - Contact Us - " + subject;
-                String textBody = "Category: Contact Us\n"
+                String subject = "NeuralArc - Request New Feature - " + featureTitle;
+                String textBody = "Category: Request New Feature\n"
                         + "Customer Email: " + customerEmail + "\n"
-                        + "Full Name: " + fullName + "\n"
                         + "Phone: " + (phone.isBlank() ? "-" : phone) + "\n"
-                        + "Subject: " + subject + "\n\n"
-                        + "Message:\n" + message;
-                String htmlBody = "<h3>Contact Us</h3>"
+                        + "Feature Title: " + featureTitle + "\n\n"
+                        + "Problem / Use Case:\n" + useCase + "\n\n"
+                        + "Desired Outcome:\n" + desiredOutcome;
+                String htmlBody = "<h3>Request New Feature</h3>"
                         + "<p><b>Customer Email:</b> " + escape(customerEmail) + "<br/>"
-                        + "<b>Full Name:</b> " + escape(fullName) + "<br/>"
                         + "<b>Phone:</b> " + escape(phone.isBlank() ? "-" : phone) + "<br/>"
-                        + "<b>Subject:</b> " + escape(subject) + "</p>"
-                        + "<p><b>Message</b><br/>" + htmlMultiline(message) + "</p>";
+                        + "<b>Feature Title:</b> " + escape(featureTitle) + "</p>"
+                        + "<p><b>Problem / Use Case</b><br/>" + htmlMultiline(useCase) + "</p>"
+                        + "<p><b>Desired Outcome</b><br/>" + htmlMultiline(desiredOutcome) + "</p>";
                 emailService.sendSupportEmail(new FeedbackEmailService.SupportEmailRequest(
-                        mailSubject, textBody, htmlBody, customerEmail
+                        subject, textBody, htmlBody, customerEmail
                 ));
                 return null;
             }
@@ -179,21 +179,21 @@ public class ContactUsDialog extends JDialog {
                 try {
                     get();
                     sent = true;
-                    JOptionPane.showMessageDialog(ContactUsDialog.this,
-                            "Message sent successfully.",
+                    JOptionPane.showMessageDialog(RequestNewFeatureDialog.this,
+                            "Feature request sent successfully.",
                             "Sent",
                             JOptionPane.INFORMATION_MESSAGE);
                     setVisible(false);
                 } catch (Exception ex) {
-                    String detail = ex.getCause() instanceof MailjetException
+                    String message = ex.getCause() instanceof MailjetException
                             ? ex.getCause().getMessage()
                             : ex.getMessage();
-                    JOptionPane.showMessageDialog(ContactUsDialog.this,
-                            "Unable to send your message.\n" + detail,
+                    JOptionPane.showMessageDialog(RequestNewFeatureDialog.this,
+                            "Unable to send the feature request.\n" + message,
                             "Send Failed",
                             JOptionPane.ERROR_MESSAGE);
                 } finally {
-                    setSendingState(false, "Send Message");
+                    setSendingState(false, "Send Feature Request");
                 }
             }
         };

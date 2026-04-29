@@ -59,12 +59,16 @@ public class SettingsDialog extends JDialog {
     private final JCheckBox telemetryEnabled = new JCheckBox("Enable telemetry", true);
     private final JCheckBox saveCredentials = new JCheckBox("Save credentials locally", false);
     private final JButton verifyConnectionButton = new JButton("Verify Connection");
+    private final JButton exportStrategiesButton = new JButton("Export Strategies");
+    private final JButton importStrategiesButton = new JButton("Import Strategies");
     private final JLabel connectionStatus = new JLabel("Connection not verified");
     private final JComboBox<BrokerType> brokerBox = new JComboBox<>(BrokerType.values());
     private final JComboBox<ApplicationMode> appModeBox = new JComboBox<>(ApplicationMode.values());
     private final CredentialManager credentialManager = new CredentialManager();
     private final UserIdentityService identityService = new UserIdentityService();
     private transient Function<ConnectionRequest, ConnectionResult> connectionVerifier;
+    private transient Function<Path, StrategyTransferResult> strategyExportHandler;
+    private transient Function<Path, StrategyTransferResult> strategyImportHandler;
     private final Map<ApplicationMode, String[]> credentialCache = new EnumMap<>(ApplicationMode.class);
     private ApplicationMode displayedCredentialMode = ApplicationMode.PAPER;
     private boolean suppressModeSwitchHandling;
@@ -173,11 +177,28 @@ public class SettingsDialog extends JDialog {
         dangerZonePanel.add(deleteAllDataButton);
         dangerZonePanel.add(dangerDescription);
 
+        JPanel strategyTransferPanel = new JPanel(new GridLayout(0, 1, FIELD_GAP, FIELD_GAP));
+        strategyTransferPanel.setBorder(createSectionBorder("Strategy Transfer"));
+        DialogButtonStyles.apply(exportStrategiesButton, "icons/save.svg");
+        DialogButtonStyles.apply(importStrategiesButton, "icons/apply.svg");
+        exportStrategiesButton.addActionListener(e -> exportStrategies());
+        importStrategiesButton.addActionListener(e -> importStrategies());
+        JLabel transferDescription = new JLabel("<html><div style='width:100%;color:#9AA0A8;'>"
+                + "Export/import strategies JSON only. Settings, credentials, orders, and logs are not included."
+                + "</div></html>");
+        transferDescription.setForeground(new Color(154, 160, 168));
+        transferDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        strategyTransferPanel.add(exportStrategiesButton);
+        strategyTransferPanel.add(importStrategiesButton);
+        strategyTransferPanel.add(transferDescription);
+
         content.add(userPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(apiPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(telemetryPanel);
+        content.add(Box.createVerticalStrut(SECTION_GAP));
+        content.add(strategyTransferPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(dangerZonePanel);
 
@@ -226,6 +247,14 @@ public class SettingsDialog extends JDialog {
 
     public void setConnectionVerifier(Function<ConnectionRequest, ConnectionResult> connectionVerifier) {
         this.connectionVerifier = connectionVerifier;
+    }
+
+    public void setStrategyExportHandler(Function<Path, StrategyTransferResult> strategyExportHandler) {
+        this.strategyExportHandler = strategyExportHandler;
+    }
+
+    public void setStrategyImportHandler(Function<Path, StrategyTransferResult> strategyImportHandler) {
+        this.strategyImportHandler = strategyImportHandler;
     }
 
     public String getEndpoint() { return endpointField.getText().trim(); }
@@ -483,6 +512,49 @@ public class SettingsDialog extends JDialog {
         markConnectionStatus(result.connected(), result.message());
     }
 
+    private void exportStrategies() {
+        if (strategyExportHandler == null) {
+            JOptionPane.showMessageDialog(this,
+                    "Strategy export is unavailable right now.",
+                    "Export Unavailable",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Export Strategies");
+        chooser.setSelectedFile(Path.of("strategies-export.json").toFile());
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        Path targetPath = chooser.getSelectedFile().toPath();
+        StrategyTransferResult result = strategyExportHandler.apply(targetPath);
+        JOptionPane.showMessageDialog(this,
+                result.message(),
+                result.success() ? "Export Complete" : "Export Failed",
+                result.success() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.ERROR_MESSAGE);
+    }
+
+    private void importStrategies() {
+        if (strategyImportHandler == null) {
+            JOptionPane.showMessageDialog(this,
+                    "Strategy import is unavailable right now.",
+                    "Import Unavailable",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Import Strategies");
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        Path sourcePath = chooser.getSelectedFile().toPath();
+        StrategyTransferResult result = strategyImportHandler.apply(sourcePath);
+        JOptionPane.showMessageDialog(this,
+                result.message(),
+                result.success() ? "Import Complete" : "Import Failed",
+                result.success() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.ERROR_MESSAGE);
+    }
+
     private void updateBrokerControlState() {
         apiKeyField.setEnabled(true);
         apiSecretField.setEnabled(true);
@@ -502,6 +574,8 @@ public class SettingsDialog extends JDialog {
     public record ConnectionRequest(BrokerType brokerType, String apiKey, String apiSecret) {}
 
     public record ConnectionResult(boolean connected, String message) {}
+
+    public record StrategyTransferResult(boolean success, String message) {}
 
     private Border createSectionBorder(String title) {
         TitledBorder border = new TitledBorder(title);

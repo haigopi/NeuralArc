@@ -10,6 +10,7 @@ import com.neuralarc.model.*;
 import com.neuralarc.service.FileStrategyExecutionEventRepository;
 import com.neuralarc.service.FileStrategyOrderRepository;
 import com.neuralarc.service.FileStrategyRepository;
+import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.PersistentAggregatePnlStore;
 import com.neuralarc.service.StrategyPollingService;
 import com.neuralarc.service.StrategyService;
@@ -19,6 +20,7 @@ import com.neuralarc.util.AppMetadata;
 import com.neuralarc.util.FontLoader;
 import com.neuralarc.util.Monetary;
 import com.neuralarc.util.SvgIconLoader;
+import org.json.JSONArray;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -39,6 +41,7 @@ import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.FlowLayout;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
@@ -63,6 +66,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.UUID;
 
 public class TradingFrame extends JFrame {
@@ -79,9 +83,10 @@ public class TradingFrame extends JFrame {
     private final JLabel liveUnrealizedSummary = new JLabel("Live Unrealized P&L Total: -");
     private final JLabel positionSectionTitle = new JLabel("Position");
     private final JLabel rulesSectionTitle = new JLabel("Rules Triggered");
-    private final JLabel statusBar = new JLabel(" ● Not connected");
-    private final JLabel statusStrategyCount = new JLabel("");
-    private final JLabel streamStatus = new JLabel("Stream: idle");
+    private final JLabel statusBar = new JLabel("Broker Connection Status: Not connected");
+    private final JLabel statusStrategyCount = new JLabel("Strategies: Active 0 | Inactive 0");
+    private final JLabel streamStatus = new JLabel("Stream Connection Status: Idle");
+    private final JLabel disclaimerStatus = new JLabel("Disclaimer: Please review and accept Legal Disclosure before adding strategies.");
     private final JLabel headerStatus = new JLabel("Status: waiting for settings");
     private static final Color STATUS_OK = new Color(34, 139, 34);
     private static final Color STATUS_WARN = new Color(180, 100, 0);
@@ -103,11 +108,142 @@ public class TradingFrame extends JFrame {
     private final JTextPane eventLog = new JTextPane();
     private final JButton addStrategyButton = new JButton("Add New Stock Strategy");
     private final JButton settingsButton = new JButton("Settings");
+    private final JButton legalDisclosureButton = new JButton("Legal Disclosure");
     private final Timer liveModeBlinkTimer;
     private final Timer logFlushTimer;
     private final Timer pollingIndicatorTimer;
     private final Timer strategyPollingTimer;
     private final Path appLogFile = AppMetadata.appDataDirectory().resolve("app.log");
+    private final Path strategiesFilePath = AppMetadata.appDataDirectory().resolve("strategies-v2.json");
+    private static final Path LEGAL_DISCLOSURE_FILE = AppMetadata.appDataDirectory().resolve("legal-disclosure.properties");
+    private static final String LEGAL_DISCLOSURE_TEXT = String.join(System.lineSeparator(),
+         "LEGAL DISCLOSURE AND USER RESPONSIBILITY AGREEMENT\n"
+             + "\n"
+             + "Last Updated: [Insert Date]\n"
+             + "\n"
+             + "This Legal Disclosure and User Responsibility Agreement (\"Agreement\") governs your use of the NeuralArc software application (\"NeuralArc\", \"Application\", or \"Software\"). By installing, accessing, or using NeuralArc, you acknowledge that you have read, understood, and agree to be bound by the terms set forth below.\n"
+             + "\n"
+             + "1. SERVICE FEE\n"
+             + "NeuralArc may apply a service fee equal to twenty percent (20%) of net profit realized from each completed sell transaction executed through the Application.\n"
+             + "\n"
+             + "- No service fee shall be applied to transactions resulting in a loss.\n"
+             + "- Profit calculations are based on data available to the Application and may not include taxes, brokerage fees, or third-party costs.\n"
+             + "- NeuralArc reserves the right to modify its fee structure with reasonable notice.\n"
+             + "\n"
+             + "2. NO INVESTMENT ADVICE\n"
+             + "NeuralArc is a software tool for trade execution and strategy automation only.\n"
+             + "\n"
+             + "- NeuralArc does not provide financial, investment, legal, or tax advice.\n"
+             + "- All trading decisions are made solely by you.\n"
+             + "- You are fully responsible for evaluating risks and outcomes of your strategies.\n"
+             + "\n"
+             + "3. ASSUMPTION OF RISK AND LOSS LIABILITY\n"
+             + "You acknowledge and agree that:\n"
+             + "\n"
+             + "- Trading securities involves substantial risk, including total loss of capital.\n"
+             + "- NeuralArc is not responsible for any losses, including but not limited to:\n"
+             + "  - Market volatility\n"
+             + "  - Slippage\n"
+             + "  - Partial or missed order fills\n"
+             + "  - Delayed execution\n"
+             + "  - Connectivity failures\n"
+             + "  - System errors or downtime\n"
+             + "- NeuralArc does not guarantee profitability or performance.\n"
+             + "\n"
+             + "4. NO FIDUCIARY RELATIONSHIP\n"
+             + "Use of NeuralArc does not create any fiduciary, advisory, or agency relationship between you and NeuralArc or its operators.\n"
+             + "\n"
+             + "- NeuralArc does not act in your best interest in a fiduciary capacity.\n"
+             + "- You retain full control and responsibility for all actions taken.\n"
+             + "\n"
+             + "5. ALPACA ACCOUNT INTEGRATION\n"
+             + "NeuralArc integrates with third-party brokerage services including Alpaca Markets.\n"
+             + "\n"
+             + "- Your brokerage account remains under your sole ownership and control.\n"
+             + "- NeuralArc does not hold or custody funds or securities.\n"
+             + "- API credentials are stored locally and used only to execute your instructions.\n"
+             + "- You are responsible for securing your API keys and permissions.\n"
+             + "\n"
+             + "6. THIRD-PARTY SERVICES DISCLAIMER\n"
+             + "NeuralArc depends on third-party services, including brokerage APIs and market data providers.\n"
+             + "\n"
+             + "- NeuralArc is not responsible for failures, inaccuracies, or interruptions from third-party services.\n"
+             + "- Changes to third-party APIs may affect functionality.\n"
+             + "\n"
+             + "7. DATA STORAGE AND PRIVACY\n"
+             + "- All strategy and application data is stored locally on your device by default.\n"
+             + "- NeuralArc does not upload or store your strategies in the cloud unless explicitly enabled in future features.\n"
+             + "- Optional telemetry, if enabled, is limited to system performance and operational metrics.\n"
+             + "\n"
+             + "8. DATA SECURITY DISCLAIMER\n"
+             + "- NeuralArc does not guarantee protection against unauthorized access to your device.\n"
+             + "- NeuralArc is not responsible for:\n"
+             + "  - Data loss\n"
+             + "  - Device compromise\n"
+             + "  - Malware or external attacks\n"
+             + "- You are responsible for maintaining device security and safe usage practices.\n"
+             + "\n"
+             + "9. BACKUP AND DATA INTEGRITY\n"
+             + "- You are solely responsible for backing up your data.\n"
+             + "- NeuralArc recommends regular export of strategies to avoid data loss.\n"
+             + "- NeuralArc is not responsible for recovery of lost or corrupted data.\n"
+             + "\n"
+             + "10. AVAILABILITY AND SYSTEM RELIABILITY\n"
+             + "- NeuralArc is provided \"as-is\" and \"as-available\".\n"
+             + "- The Application may experience interruptions, delays, or errors.\n"
+             + "- Continuous or error-free operation is not guaranteed.\n"
+             + "\n"
+             + "11. LIMITATION OF LIABILITY\n"
+             + "To the fullest extent permitted by law:\n"
+             + "\n"
+             + "- NeuralArc and its developers shall not be liable for any damages, including:\n"
+             + "  - Direct or indirect financial loss\n"
+             + "  - Loss of profits\n"
+             + "  - Loss of data\n"
+             + "  - Loss of opportunity\n"
+             + "- This applies regardless of cause, including negligence.\n"
+             + "\n"
+             + "12. INDEMNIFICATION\n"
+             + "You agree to indemnify and hold harmless NeuralArc, its developers, and affiliates from any claims, damages, or liabilities arising from:\n"
+             + "\n"
+             + "- Your use of the Application\n"
+             + "- Your trading activities\n"
+             + "- Violation of this Agreement\n"
+             + "\n"
+             + "13. TAX RESPONSIBILITY DISCLAIMER\n"
+             + "- You are solely responsible for reporting and paying any taxes related to your trading activities.\n"
+             + "- NeuralArc does not provide tax reporting or guidance.\n"
+             + "\n"
+             + "14. OPEN SOURCE AND SOFTWARE LICENSE (IF APPLICABLE)\n"
+             + "- Portions of NeuralArc may include open-source components governed by their respective licenses.\n"
+             + "- You agree to comply with all applicable third-party license terms.\n"
+             + "- NeuralArc itself may be distributed under a separate license, if provided.\n"
+             + "\n"
+             + "15. MODIFICATIONS AND UPDATES\n"
+             + "- NeuralArc may update or modify this Agreement at any time.\n"
+             + "- Continued use of the Application constitutes acceptance of updated terms.\n"
+             + "\n"
+             + "16. TERMINATION\n"
+             + "- NeuralArc reserves the right to suspend or terminate access for misuse, violations, or security risks.\n"
+             + "- You may discontinue use at any time.\n"
+             + "\n"
+             + "17. GOVERNING LAW\n"
+             + "This Agreement shall be governed by applicable laws of the jurisdiction in which the Application operator resides, without regard to conflict of law principles.\n"
+             + "\n"
+             + "18. USER RESPONSIBILITY\n"
+             + "You acknowledge that:\n"
+             + "\n"
+             + "- You are solely responsible for all trades executed through NeuralArc.\n"
+             + "- You understand the risks associated with automated trading.\n"
+             + "- You accept full responsibility for outcomes, including financial losses.\n"
+             + "\n"
+             + "19. ACKNOWLEDGMENT AND ACCEPTANCE\n"
+             + "By selecting \"Accept\", installing, or using NeuralArc, you:\n"
+             + "\n"
+             + "- Confirm that you have read and understood this Agreement\n"
+             + "- Accept all terms and conditions\n"
+             + "- Agree to use the Application at your own risk");
+    private boolean legalDisclosureAccepted;
     private final StringBuilder pendingLogWrites = new StringBuilder();
 
     private final UserIdentityService identityService = new UserIdentityService();
@@ -166,7 +302,7 @@ public class TradingFrame extends JFrame {
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
         settingsDialog = new SettingsDialog(this);
         strategyRepository = new FileStrategyRepository(
-                AppMetadata.appDataDirectory().resolve("strategies-v2.json")
+                strategiesFilePath
         );
         strategyOrderRepository = new FileStrategyOrderRepository(
                 AppMetadata.appDataDirectory().resolve("strategy-orders.json")
@@ -177,7 +313,10 @@ public class TradingFrame extends JFrame {
         aggregatePnlStore = new PersistentAggregatePnlStore(
                 AppMetadata.appDataDirectory().resolve("aggregate-pnl.json")
         );
+        legalDisclosureAccepted = loadLegalDisclosureAcceptance();
         refreshStrategyRuntimeServices(settingsDialog.getApiKey(), settingsDialog.getApiSecret());
+        settingsDialog.setStrategyExportHandler(this::exportStrategiesToFile);
+        settingsDialog.setStrategyImportHandler(this::importStrategiesFromFile);
         strategyPollingTimer = new Timer(1000, e -> {
             strategyPollingService.pollDueStrategies();
             syncStrategiesFromRepository();
@@ -420,21 +559,29 @@ public class TradingFrame extends JFrame {
         streamStatus.setForeground(new Color(150, 150, 160));
         streamStatus.setVerticalAlignment(SwingConstants.CENTER);
         streamStatus.setBorder(new EmptyBorder(0, 12, 0, 0));
+        disclaimerStatus.setFont(BASE_FONT.deriveFont(Font.PLAIN, 11f));
+        disclaimerStatus.setForeground(new Color(180, 160, 110));
+        disclaimerStatus.setVerticalAlignment(SwingConstants.CENTER);
+        disclaimerStatus.setBorder(new EmptyBorder(0, 12, 0, 0));
+        disclaimerStatus.setToolTipText(TooltipStyler.text("Review Legal Disclosure before adding strategies."));
 
         JButton faqsButton = new JButton("Faqs");
         applyButtonIcon(faqsButton, "icons/faqs.svg", 15);
         styleStatusActionButton(faqsButton);
         faqsButton.addActionListener(e -> new HelpDialog(this).setVisible(true));
+        applyButtonIcon(legalDisclosureButton, "icons/verify.svg", 15);
+        styleStatusActionButton(legalDisclosureButton);
+        legalDisclosureButton.addActionListener(e -> showLegalDisclosureDialog(false));
 
         JButton submitFeatureButton = new JButton("Request New Feature");
         applyButtonIcon(submitFeatureButton, "icons/request-new-feature.svg", 15);
         styleStatusActionButton(submitFeatureButton);
-        submitFeatureButton.addActionListener(e -> openFeedbackDialog("Request New Feature"));
+        submitFeatureButton.addActionListener(e -> openRequestNewFeatureDialog());
 
         JButton contactUsButton = new JButton("Contact Us");
         applyButtonIcon(contactUsButton, "icons/contact-us.svg", 15);
         styleStatusActionButton(contactUsButton);
-        contactUsButton.addActionListener(e -> openFeedbackDialog("Contact Us"));
+        contactUsButton.addActionListener(e -> openContactUsDialog());
 
         JLabel appLabel = new JLabel(AppMetadata.name() + "  " + AppMetadata.version() + " | Patent Pending™");
         appLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
@@ -454,8 +601,10 @@ public class TradingFrame extends JFrame {
         leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
         statusLeft.add(statusStrategyCount, leftGbc);
         leftGbc.gridx = 2;
-        leftGbc.insets = new java.awt.Insets(0, 0, 0, 0);
+        leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
         statusLeft.add(streamStatus, leftGbc);
+        leftGbc.gridx = 3;
+        statusLeft.add(disclaimerStatus, leftGbc);
 
         JPanel statusRight = new JPanel(new GridBagLayout());
         statusRight.setOpaque(false);
@@ -470,6 +619,8 @@ public class TradingFrame extends JFrame {
         rightGbc.gridx = 2;
         statusRight.add(contactUsButton, rightGbc);
         rightGbc.gridx = 3;
+        statusRight.add(legalDisclosureButton, rightGbc);
+        rightGbc.gridx = 4;
         rightGbc.insets = new java.awt.Insets(0, 0, 0, 0);
         statusRight.add(faqsButton, rightGbc);
 
@@ -544,6 +695,7 @@ public class TradingFrame extends JFrame {
         add(southWrapper, BorderLayout.SOUTH);
 
         wireEvents();
+        updateLegalDisclosureUiState();
         settingsDialog.setConnectionVerifier(request -> runConnectionTest(request.brokerType(), request.apiKey(), request.apiSecret(), true));
         strategyTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
@@ -759,17 +911,26 @@ public class TradingFrame extends JFrame {
         contentLabel.addMouseListener(handler);
     }
 
-    private void openFeedbackDialog(String type) {
-        FeedbackDialog dialog = new FeedbackDialog(this, type);
-        FeedbackDialog.FeedbackData data = dialog.showDialog();
-        if (data == null) {
-            return;
+    private void openRequestNewFeatureDialog() {
+        RequestNewFeatureDialog dialog = new RequestNewFeatureDialog(
+                this,
+                settingsDialog.getUserEmail(),
+                FeedbackEmailService.fromConfiguration()
+        );
+        if (dialog.showDialog()) {
+            log("[Request New Feature] Sent and copied to " + settingsDialog.getUserEmail());
         }
-        log("[" + type + "] Received feedback from " + data.phoneNumber());
-        JOptionPane.showMessageDialog(this,
-                type + " submitted successfully.",
-                "Submitted",
-                JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void openContactUsDialog() {
+        ContactUsDialog dialog = new ContactUsDialog(
+                this,
+                settingsDialog.getUserEmail(),
+                FeedbackEmailService.fromConfiguration()
+        );
+        if (dialog.showDialog()) {
+            log("[Contact Us] Sent and copied to " + settingsDialog.getUserEmail());
+        }
     }
 
     private static Font createBaseFont() {
@@ -883,6 +1044,47 @@ public class TradingFrame extends JFrame {
         restoreStrategies();
     }
 
+    private SettingsDialog.StrategyTransferResult exportStrategiesToFile(Path targetPath) {
+        if (targetPath == null) {
+            return new SettingsDialog.StrategyTransferResult(false, "Export path is missing.");
+        }
+        try {
+            Path exportParent = targetPath.toAbsolutePath().getParent();
+            if (exportParent != null) {
+                Files.createDirectories(exportParent);
+            }
+            String content = Files.exists(strategiesFilePath) ? Files.readString(strategiesFilePath) : "[]";
+            JSONArray parsed = new JSONArray(content.isBlank() ? "[]" : content);
+            Files.writeString(targetPath, parsed.toString(2));
+            return new SettingsDialog.StrategyTransferResult(true,
+                    "Exported " + parsed.length() + " strategies to " + targetPath.toAbsolutePath());
+        } catch (Exception ex) {
+            return new SettingsDialog.StrategyTransferResult(false,
+                    "Failed to export strategies: " + ex.getMessage());
+        }
+    }
+
+    private SettingsDialog.StrategyTransferResult importStrategiesFromFile(Path sourcePath) {
+        if (sourcePath == null || !Files.exists(sourcePath)) {
+            return new SettingsDialog.StrategyTransferResult(false, "Import file does not exist.");
+        }
+        try {
+            String incoming = Files.readString(sourcePath);
+            JSONArray parsed = new JSONArray(incoming.isBlank() ? "[]" : incoming);
+            Files.createDirectories(strategiesFilePath.getParent());
+            Files.writeString(strategiesFilePath, parsed.toString());
+            syncStrategiesFromRepository();
+            refreshStrategyTableData();
+            refreshPanels();
+            updateStatusBar();
+            return new SettingsDialog.StrategyTransferResult(true,
+                    "Imported " + parsed.length() + " strategies from " + sourcePath.toAbsolutePath());
+        } catch (Exception ex) {
+            return new SettingsDialog.StrategyTransferResult(false,
+                    "Failed to import strategies: " + ex.getMessage());
+        }
+    }
+
     private void restoreStrategies() {
         strategies.clear();
         List<Strategy> storedStrategies = strategyRepository.findAll();
@@ -926,10 +1128,16 @@ public class TradingFrame extends JFrame {
             log("Auto setup: broker not connected. Please configure Settings before adding a strategy.");
             return;
         }
+        if (!ensureLegalDisclosureAccepted()) {
+            return;
+        }
         addStrategy();
     }
 
     private void addStrategy() {
+        if (!ensureLegalDisclosureAccepted()) {
+            return;
+        }
         if (!connectionOk || tradingApi == null) {
             JOptionPane.showMessageDialog(this, "Please complete Settings and verify the connection before adding a strategy.", "Connection Required", JOptionPane.WARNING_MESSAGE);
             return;
@@ -1661,25 +1869,21 @@ public class TradingFrame extends JFrame {
 
     private void updateStatusBar() {
         long running = strategies.stream().filter(s -> s.strategy.status() == StrategyStatus.ACTIVE).count();
-        long paused  = strategies.stream().filter(s ->  s.strategy.status() == StrategyStatus.PAUSED).count();
+        long inactive = Math.max(0L, strategies.size() - running);
         SwingUtilities.invokeLater(() -> {
+            statusStrategyCount.setText("Strategies: Active " + running + " | Inactive " + inactive);
             if (!connectionOk) {
-                statusBar.setText(" ● Not connected");
+                statusBar.setText("Broker Connection Status: Not connected");
                 statusBar.setForeground(STATUS_ERR);
-                statusStrategyCount.setText("");
             } else if (running > 0) {
-                statusBar.setText(" ● Connected");
+                statusBar.setText("Broker Connection Status: Connected");
                 statusBar.setForeground(STATUS_OK);
-                statusStrategyCount.setText(running + " stock strategies running" +
-                        (paused > 0 ? ",  " + paused + " paused" : ""));
-            } else if (paused > 0) {
-                statusBar.setText(" ● Connected — idle");
+            } else if (inactive > 0) {
+                statusBar.setText("Broker Connection Status: Connected (No active strategies)");
                 statusBar.setForeground(STATUS_WARN);
-                statusStrategyCount.setText(paused + " strategy paused");
             } else {
-                statusBar.setText(" ● Connected — no strategies");
+                statusBar.setText("Broker Connection Status: Connected (No strategies)");
                 statusBar.setForeground(STATUS_WARN);
-                statusStrategyCount.setText("");
             }
         });
     }
@@ -2276,10 +2480,113 @@ public class TradingFrame extends JFrame {
 
     private void updateStreamStatus(String status, Color color) {
         SwingUtilities.invokeLater(() -> {
-            streamStatus.setText("Stream: " + status);
+            String normalized = status == null || status.isBlank() ? "idle" : status;
+            streamStatus.setText("Stream Connection Status: " + normalized);
             if (color != null) {
                 streamStatus.setForeground(color);
             }
         });
+    }
+
+    private boolean ensureLegalDisclosureAccepted() {
+        if (legalDisclosureAccepted) {
+            return true;
+        }
+        boolean accepted = showLegalDisclosureDialog(true);
+        if (!accepted) {
+            JOptionPane.showMessageDialog(this,
+                    "You must accept the Legal Disclosure before adding stock strategies.",
+                    "Disclosure Required",
+                    JOptionPane.WARNING_MESSAGE);
+        }
+        return accepted;
+    }
+
+    private boolean showLegalDisclosureDialog(boolean requireAcceptance) {
+        JDialog dialog = new JDialog(this, "Legal Disclosure", true);
+        dialog.setLayout(new BorderLayout(10, 10));
+
+        JTextArea disclosureArea = new JTextArea(LEGAL_DISCLOSURE_TEXT);
+        disclosureArea.setEditable(false);
+        disclosureArea.setLineWrap(true);
+        disclosureArea.setWrapStyleWord(true);
+        disclosureArea.setCaretPosition(0);
+        disclosureArea.setFont(FontLoader.ui(Font.PLAIN, 12f));
+        JScrollPane disclosureScroll = new JScrollPane(disclosureArea);
+        disclosureScroll.setPreferredSize(new Dimension(760, 420));
+
+        JCheckBox acceptCheck = new JCheckBox("I have read and accept this legal disclosure.", legalDisclosureAccepted);
+        acceptCheck.setEnabled(requireAcceptance || !legalDisclosureAccepted);
+
+        JButton acceptButton = new JButton(requireAcceptance ? "Accept and Continue" : "Save Acceptance");
+        DialogButtonStyles.apply(acceptButton, "icons/verify.svg");
+        JButton closeButton = new JButton(requireAcceptance ? "Decline" : "Close");
+        DialogButtonStyles.apply(closeButton, "icons/close.svg");
+
+        final boolean[] accepted = new boolean[]{legalDisclosureAccepted};
+        acceptButton.setEnabled(acceptCheck.isSelected());
+        acceptCheck.addActionListener(e -> acceptButton.setEnabled(acceptCheck.isSelected()));
+
+        acceptButton.addActionListener(e -> {
+            legalDisclosureAccepted = acceptCheck.isSelected();
+            saveLegalDisclosureAcceptance(legalDisclosureAccepted);
+            updateLegalDisclosureUiState();
+            accepted[0] = legalDisclosureAccepted;
+            dialog.dispose();
+        });
+        closeButton.addActionListener(e -> {
+            accepted[0] = legalDisclosureAccepted;
+            dialog.dispose();
+        });
+
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.setBorder(new EmptyBorder(0, 0, 0, 0));
+        footer.add(acceptCheck, BorderLayout.WEST);
+        JPanel footerActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        footerActions.add(acceptButton);
+        footerActions.add(closeButton);
+        footer.add(footerActions, BorderLayout.EAST);
+
+        dialog.add(disclosureScroll, BorderLayout.CENTER);
+        dialog.add(footer, BorderLayout.SOUTH);
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+
+        return accepted[0];
+    }
+
+    private boolean loadLegalDisclosureAcceptance() {
+        if (!Files.exists(LEGAL_DISCLOSURE_FILE)) {
+            return false;
+        }
+        Properties properties = new Properties();
+        try (var input = Files.newInputStream(LEGAL_DISCLOSURE_FILE)) {
+            properties.load(input);
+            return Boolean.parseBoolean(properties.getProperty("accepted", "false"));
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private void saveLegalDisclosureAcceptance(boolean accepted) {
+        Properties properties = new Properties();
+        properties.setProperty("accepted", String.valueOf(accepted));
+        properties.setProperty("acceptedAt", accepted ? Instant.now().toString() : "");
+        try {
+            Files.createDirectories(LEGAL_DISCLOSURE_FILE.getParent());
+            try (var output = Files.newOutputStream(LEGAL_DISCLOSURE_FILE)) {
+                properties.store(output, "NeuralArc legal disclosure acceptance");
+            }
+        } catch (Exception ignored) {
+            // Keep app running even if acceptance state cannot be persisted.
+        }
+    }
+
+    private void updateLegalDisclosureUiState() {
+        disclaimerStatus.setText(legalDisclosureAccepted
+                ? "Disclaimer: Accepted"
+                : "Disclaimer: Acceptance required before adding strategies");
+        disclaimerStatus.setForeground(legalDisclosureAccepted ? new Color(115, 185, 120) : new Color(180, 160, 110));
     }
 }
