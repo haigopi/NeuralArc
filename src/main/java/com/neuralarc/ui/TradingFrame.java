@@ -943,6 +943,10 @@ public class TradingFrame extends JFrame {
     }
 
     public void promptForRequiredSettings() {
+        // First-launch flow: disclosure -> settings -> (after connect) auto add strategy.
+        if (!ensureLegalDisclosureAccepted()) {
+            return;
+        }
         if (!settingsDialog.hasRequiredSettings()) {
             openSettingsDialog();
             return;
@@ -2519,7 +2523,7 @@ public class TradingFrame extends JFrame {
         JCheckBox acceptCheck = new JCheckBox("I have read and accept this legal disclosure.", legalDisclosureAccepted);
         boolean requiresScrollGate = requireAcceptance && !legalDisclosureAccepted;
         acceptCheck.setEnabled(!requiresScrollGate);
-        JLabel scrollHint = new JLabel("Scroll to the end to enable acceptance.");
+        JLabel scrollHint = new JLabel("Scroll to end to enable acceptance.");
         scrollHint.setFont(FontLoader.ui(Font.PLAIN, 11f));
         scrollHint.setForeground(new Color(180, 160, 110));
         scrollHint.setVisible(requiresScrollGate);
