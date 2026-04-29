@@ -21,7 +21,7 @@ public class ContactUsDialog extends JDialog {
     private boolean sent;
 
     public ContactUsDialog(JFrame owner, String customerEmail, FeedbackEmailService emailService) {
-        super(owner, "Contact Us", true);
+        super(owner, "Contact Us / Feedback", true);
         this.customerEmail = customerEmail == null ? "" : customerEmail.trim();
         this.emailService = emailService;
 
@@ -29,8 +29,8 @@ public class ContactUsDialog extends JDialog {
         ((JComponent) getContentPane()).setBorder(SupportDialogStyles.createDialogContentBorder());
 
         add(SupportDialogStyles.createHeroPanel(
-                "Contact the NeuralArc Team",
-                "Use this form for support, product questions, or partnerships."
+                "Contact the NeuralArc Team / Share Feedback",
+                "Use this form for support, product questions, partnerships, or product feedback."
         ), BorderLayout.NORTH);
         add(buildBody(), BorderLayout.CENTER);
         add(buildFooter(), BorderLayout.SOUTH);
@@ -55,7 +55,7 @@ public class ContactUsDialog extends JDialog {
     private JComponent buildBody() {
         JPanel content = SupportDialogStyles.createBodyStackPanel();
 
-        JPanel detailsSection = SupportDialogStyles.createSectionPanel("Contact Details");
+        JPanel detailsSection = SupportDialogStyles.createSectionPanel("Contact / Feedback Details");
         detailsSection.add(buildDetailsForm(), BorderLayout.CENTER);
 
         JPanel messageSection = SupportDialogStyles.createSectionPanel("Message");
@@ -119,7 +119,7 @@ public class ContactUsDialog extends JDialog {
 
         if (customerEmail.isBlank()) {
             JOptionPane.showMessageDialog(this,
-                    "Please save the customer email in Settings before sending a contact request.",
+                    "Please save the customer email in Settings before sending contact or feedback.",
                     "Missing Settings Email",
                     JOptionPane.WARNING_MESSAGE);
             return;
@@ -143,13 +143,13 @@ public class ContactUsDialog extends JDialog {
         SwingWorker<Void, Void> worker = new SwingWorker<>() {
             @Override
             protected Void doInBackground() throws Exception {
-                String mailSubject = "NeuralArc - Contact Us";
-                String textBody = "Category: Contact Us\n"
+                String mailSubject = "NeuralArc - Contact Us / Feedback";
+                String textBody = "Category: Contact Us / Feedback\n"
                         + "Customer Email: " + customerEmail + "\n"
                         + "Full Name: " + fullName + "\n"
                         + "Phone: " + (phone.isBlank() ? "-" : phone) + "\n\n"
                         + "Message:\n" + message;
-                String htmlBody = "<h3>Contact Us</h3>"
+                String htmlBody = "<h3>Contact Us / Feedback</h3>"
                         + "<p><b>Customer Email:</b> " + escape(customerEmail) + "<br/>"
                         + "<b>Full Name:</b> " + escape(fullName) + "<br/>"
                         + "<b>Phone:</b> " + escape(phone.isBlank() ? "-" : phone) + "</p>"

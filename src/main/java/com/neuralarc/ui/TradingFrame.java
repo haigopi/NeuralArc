@@ -577,7 +577,7 @@ public class TradingFrame extends JFrame {
         styleStatusActionButton(submitFeatureButton);
         submitFeatureButton.addActionListener(e -> openRequestNewFeatureDialog());
 
-        JButton contactUsButton = new JButton("Contact Us");
+        JButton contactUsButton = new JButton("Contact Us / Feedback");
         applyButtonIcon(contactUsButton, "icons/contact-us.svg", 15);
         styleStatusActionButton(contactUsButton);
         contactUsButton.addActionListener(e -> openContactUsDialog());
@@ -591,7 +591,7 @@ public class TradingFrame extends JFrame {
                 this::openSubmitBugDialog));
         moreMenu.add(createStatusMenuItem("Request New Feature", "icons/request-new-feature.svg",
                 () -> openRequestNewFeatureDialog()));
-        moreMenu.add(createStatusMenuItem("Contact Us", "icons/contact-us.svg",
+        moreMenu.add(createStatusMenuItem("Contact Us / Feedback", "icons/contact-us.svg",
                 () -> openContactUsDialog()));
         moreMenu.add(createStatusMenuItem("Check for Updates", "icons/check-for-updates.svg",
                 () -> UpdateCheckSupport.checkForUpdates(this, moreButton)));
@@ -951,7 +951,7 @@ public class TradingFrame extends JFrame {
                 FeedbackEmailService.fromConfiguration()
         );
         if (dialog.showDialog()) {
-            log("[Contact Us] Sent and copied to " + settingsDialog.getUserEmail());
+            log("[Contact Us / Feedback] Sent and copied to " + settingsDialog.getUserEmail());
         }
     }
 
