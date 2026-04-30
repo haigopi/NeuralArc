@@ -15,6 +15,7 @@ public record StrategyConfig(
         int lossBuyLevel1Qty,
         BigDecimal lossBuyLevel2Price,
         int lossBuyLevel2Qty,
+        boolean lossBuyLevelsEnabled,
         boolean optionalLossExitEnabled,
         BigDecimal optionalLossExitPrice,
         int pollingSeconds,
@@ -23,7 +24,8 @@ public record StrategyConfig(
         ProfitHoldType profitHoldType,
         BigDecimal profitHoldPercent,
         BigDecimal profitHoldAmount,
-        boolean repeatCycleAfterProfitExitEnabled) {
+        boolean repeatCycleAfterProfitExitEnabled
+) {
     public StrategyConfig {
         baseBuyPrice = Monetary.round(baseBuyPrice);
         stopLoss = Monetary.round(stopLoss);
@@ -67,6 +69,7 @@ public record StrategyConfig(
                 lossBuyLevel1Qty,
                 lossBuyLevel2Price,
                 lossBuyLevel2Qty,
+                true,
                 optionalLossExitEnabled,
                 optionalLossExitPrice,
                 pollingSeconds,
@@ -102,12 +105,14 @@ public record StrategyConfig(
                 symbol,
                 baseBuyPrice,
                 baseBuyQty,
+                true,
                 stopLoss,
                 sellTriggerPrice,
                 lossBuyLevel1Price,
                 lossBuyLevel1Qty,
                 lossBuyLevel2Price,
                 lossBuyLevel2Qty,
+                true,
                 optionalLossExitEnabled,
                 optionalLossExitPrice,
                 pollingSeconds,
@@ -130,6 +135,7 @@ public record StrategyConfig(
             int lossBuyLevel1Qty,
             BigDecimal lossBuyLevel2Price,
             int lossBuyLevel2Qty,
+            boolean lossBuyLevelsEnabled,
             boolean optionalLossExitEnabled,
             BigDecimal optionalLossExitPrice,
             int pollingSeconds,
@@ -151,6 +157,7 @@ public record StrategyConfig(
                 lossBuyLevel1Qty,
                 lossBuyLevel2Price,
                 lossBuyLevel2Qty,
+                lossBuyLevelsEnabled,
                 optionalLossExitEnabled,
                 optionalLossExitPrice,
                 pollingSeconds,
@@ -160,46 +167,6 @@ public record StrategyConfig(
                 profitHoldPercent,
                 profitHoldAmount,
                 repeatCycleAfterProfitExitEnabled
-        );
-    }
-
-    public StrategyConfig(
-            String symbol,
-            BigDecimal baseBuyPrice,
-            int baseBuyQty,
-            BigDecimal stopLoss,
-            BigDecimal sellTriggerPrice,
-            BigDecimal lossBuyLevel1Price,
-            int lossBuyLevel1Qty,
-            BigDecimal lossBuyLevel2Price,
-            int lossBuyLevel2Qty,
-            int pollingSeconds,
-            boolean paperTrading,
-            boolean profitHoldEnabled,
-            ProfitHoldType profitHoldType,
-            BigDecimal profitHoldPercent,
-            BigDecimal profitHoldAmount
-    ) {
-        this(
-                symbol,
-                baseBuyPrice,
-                baseBuyQty,
-                true,
-                stopLoss,
-                sellTriggerPrice,
-                lossBuyLevel1Price,
-                lossBuyLevel1Qty,
-                lossBuyLevel2Price,
-                lossBuyLevel2Qty,
-                false,
-                BigDecimal.ZERO,
-                pollingSeconds,
-                paperTrading,
-                profitHoldEnabled,
-                profitHoldType,
-                profitHoldPercent,
-                profitHoldAmount,
-                false
         );
     }
 
@@ -228,6 +195,7 @@ public record StrategyConfig(
                 lossBuyLevel1Qty,
                 lossBuyLevel2Price,
                 lossBuyLevel2Qty,
+                true,
                 false,
                 BigDecimal.ZERO,
                 pollingSeconds,

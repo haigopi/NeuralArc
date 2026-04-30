@@ -2,13 +2,17 @@ package com.neuralarc.service;
 
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.api.AlpacaMarketDataException;
+import com.neuralarc.model.AutoAnalyzeBundle;
 import com.neuralarc.model.AutoAnalyzeResult;
 import com.neuralarc.model.MarketBar;
+import com.neuralarc.model.StrategyRecommendation;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
 
@@ -34,12 +38,26 @@ public class AutoAnalyzeService {
 
     private static final Logger LOGGER = Logger.getLogger(AutoAnalyzeService.class.getName());
     private static final int PRICE_SCALE = 8;
+    private static final int MIN_MONTHS_BACK = 1;
+    private static final int MAX_MONTHS_BACK = 12;
 
     private final AlpacaMarketDataApi marketDataApi;
+    private final HistoricalPriceService historicalPriceService;
+    private final RecommendationEngine recommendationEngine;
 
     public AutoAnalyzeService(AlpacaMarketDataApi marketDataApi) {
+        this(marketDataApi, new HistoricalPriceService(marketDataApi), new RecommendationEngine());
+    }
+
+    AutoAnalyzeService(
+            AlpacaMarketDataApi marketDataApi,
+            HistoricalPriceService historicalPriceService,
+            RecommendationEngine recommendationEngine
+    ) {
         if (marketDataApi == null) throw new IllegalArgumentException("marketDataApi must not be null");
         this.marketDataApi = marketDataApi;
+        this.historicalPriceService = historicalPriceService;
+        this.recommendationEngine = recommendationEngine;
     }
 
     /**
@@ -47,7 +65,7 @@ public class AutoAnalyzeService {
      * {@code intervalMinutes} for intraday threshold calculation.
      *
      * @param symbol          stock ticker, will be upper-cased
-     * @param monthsBack      number of calendar months to look back (e.g. 6)
+     * @param monthsBack      number of calendar months to look back (1..12)
      * @param intervalMinutes intraday bar interval in minutes (must be &gt; 0)
      * @return completed {@link AutoAnalyzeResult}
      * @throws AutoAnalyzeException if data fetch or computation fails
@@ -57,6 +75,9 @@ public class AutoAnalyzeService {
 
         if (symbol == null || symbol.isBlank()) {
             throw new AutoAnalyzeException("Symbol must not be blank.");
+        }
+        if (monthsBack < MIN_MONTHS_BACK || monthsBack > MAX_MONTHS_BACK) {
+            throw new AutoAnalyzeException("Months back must be between 1 and 12.");
         }
         if (intervalMinutes <= 0) {
             throw new AutoAnalyzeException("Interval must be a positive number of minutes.");
@@ -100,33 +121,34 @@ public class AutoAnalyzeService {
                 ? BigDecimal.ZERO
                 : averageOf(intradayBars, "close");
 
-        // --- 6-month range (min/max of already-fetched daily bars) ---
-        BigDecimal sixMonthLow  = minOf(dailyBars, "low");
-        BigDecimal sixMonthHigh = maxOf(dailyBars, "high");
-
-        // --- 52-week range (separate fetch, always 52 weeks back) ---
-        LocalDate fiftyTwoWeekStart = endDate.minusWeeks(52);
-        BigDecimal fiftyTwoWeekLow;
-        BigDecimal fiftyTwoWeekHigh;
+        // --- Price ranges (1w -> 1y) ---
+        BigDecimal fallbackLow = minOf(dailyBars, "low");
+        BigDecimal fallbackHigh = maxOf(dailyBars, "high");
+        List<MarketBar> oneYearBars;
         try {
-            List<MarketBar> yearlyBars = marketDataApi.getDailyBars(upperSymbol, fiftyTwoWeekStart, endDate);
-            if (yearlyBars.isEmpty()) {
-                fiftyTwoWeekLow  = sixMonthLow;
-                fiftyTwoWeekHigh = sixMonthHigh;
-            } else {
-                fiftyTwoWeekLow  = minOf(yearlyBars, "low");
-                fiftyTwoWeekHigh = maxOf(yearlyBars, "high");
+            oneYearBars = marketDataApi.getDailyBars(upperSymbol, endDate.minusYears(1), endDate);
+            if (oneYearBars.isEmpty()) {
+                oneYearBars = dailyBars;
             }
         } catch (AlpacaMarketDataException ex) {
-            LOGGER.warning("Could not fetch 52-week bars for " + upperSymbol + "; falling back to 6-month range.");
-            fiftyTwoWeekLow  = sixMonthLow;
-            fiftyTwoWeekHigh = sixMonthHigh;
+            LOGGER.warning("Could not fetch 1-year bars for " + upperSymbol + "; falling back to analysis range.");
+            oneYearBars = dailyBars;
         }
+
+        PriceRange oneWeekRange = rangeForWindow(oneYearBars, endDate.minusWeeks(1), fallbackLow, fallbackHigh);
+        PriceRange twoWeekRange = rangeForWindow(oneYearBars, endDate.minusWeeks(2), fallbackLow, fallbackHigh);
+        PriceRange oneMonthRange = rangeForWindow(oneYearBars, endDate.minusMonths(1), fallbackLow, fallbackHigh);
+        PriceRange twoMonthRange = rangeForWindow(oneYearBars, endDate.minusMonths(2), fallbackLow, fallbackHigh);
+        PriceRange fourMonthRange = rangeForWindow(oneYearBars, endDate.minusMonths(4), fallbackLow, fallbackHigh);
+        PriceRange sixMonthRange = rangeForWindow(oneYearBars, endDate.minusMonths(6), fallbackLow, fallbackHigh);
+        PriceRange eightMonthRange = rangeForWindow(oneYearBars, endDate.minusMonths(8), fallbackLow, fallbackHigh);
+        PriceRange oneYearRange = rangeForWindow(oneYearBars, endDate.minusYears(1), fallbackLow, fallbackHigh);
 
         // --- Today's snapshot ---
         BigDecimal todayStockPrice = BigDecimal.ZERO;
         BigDecimal todayOpen = BigDecimal.ZERO;
         BigDecimal todayHighSoFar = BigDecimal.ZERO;
+        BigDecimal todayLowSoFar = BigDecimal.ZERO;
         boolean todayCloseAvailable = false;
         BigDecimal todayClose = BigDecimal.ZERO;
         try {
@@ -135,6 +157,7 @@ public class AutoAnalyzeService {
                 MarketBar todayBar = todayDailyBars.get(todayDailyBars.size() - 1);
                 todayOpen = todayBar.open();
                 todayHighSoFar = todayBar.high();
+                todayLowSoFar = todayBar.low();
                 todayClose = todayBar.close();
                 todayCloseAvailable = todayClose.compareTo(BigDecimal.ZERO) > 0;
             }
@@ -144,6 +167,9 @@ public class AutoAnalyzeService {
                 todayStockPrice = todayIntradayBars.get(todayIntradayBars.size() - 1).close();
                 if (todayHighSoFar.compareTo(BigDecimal.ZERO) <= 0) {
                     todayHighSoFar = maxOf(todayIntradayBars, "high");
+                }
+                if (todayLowSoFar.compareTo(BigDecimal.ZERO) <= 0) {
+                    todayLowSoFar = minOf(todayIntradayBars, "low");
                 }
                 if (todayOpen.compareTo(BigDecimal.ZERO) <= 0) {
                     todayOpen = todayIntradayBars.get(0).open();
@@ -164,13 +190,26 @@ public class AutoAnalyzeService {
                 round2(avgClose),
                 round2(avgLow),
                 round2(avgHigh),
-                round2(sixMonthLow),
-                round2(sixMonthHigh),
-                round2(fiftyTwoWeekLow),
-                round2(fiftyTwoWeekHigh),
+                round2(oneWeekRange.low()),
+                round2(oneWeekRange.high()),
+                round2(twoWeekRange.low()),
+                round2(twoWeekRange.high()),
+                round2(oneMonthRange.low()),
+                round2(oneMonthRange.high()),
+                round2(twoMonthRange.low()),
+                round2(twoMonthRange.high()),
+                round2(fourMonthRange.low()),
+                round2(fourMonthRange.high()),
+                round2(sixMonthRange.low()),
+                round2(sixMonthRange.high()),
+                round2(eightMonthRange.low()),
+                round2(eightMonthRange.high()),
+                round2(oneYearRange.low()),
+                round2(oneYearRange.high()),
                 round2(todayStockPrice),
                 round2(todayOpen),
                 round2(todayHighSoFar),
+                round2(todayLowSoFar),
                 todayCloseAvailable,
                 round2(todayClose),
                 round2(threshold),
@@ -178,6 +217,18 @@ public class AutoAnalyzeService {
                 intradayBars.size(),
                 Instant.now()
         );
+    }
+
+    public AutoAnalyzeBundle analyzeBundle(String symbol, int monthsBack, int intervalMinutes)
+            throws AutoAnalyzeException {
+        AutoAnalyzeResult result = analyze(symbol, monthsBack, intervalMinutes);
+        List<MarketBar> history = historicalPriceService.getHistoricalPrices(result.symbol(), 365);
+        BigDecimal currentPrice = result.todayStockPrice().compareTo(BigDecimal.ZERO) > 0
+                ? result.todayStockPrice()
+                : latestClose(history);
+        StrategyRecommendation shortTerm = recommendationEngine.generateShortTermRecommendation(result.symbol(), history, currentPrice);
+        StrategyRecommendation longTerm = recommendationEngine.generateLongTermRecommendation(result.symbol(), history, currentPrice);
+        return new AutoAnalyzeBundle(result, shortTerm, longTerm);
     }
 
     // -------------------------------------------------------------------------
@@ -217,6 +268,45 @@ public class AutoAnalyzeService {
         return max;
     }
 
+    private PriceRange rangeForWindow(List<MarketBar> bars, LocalDate startDateInclusive,
+                                      BigDecimal fallbackLow, BigDecimal fallbackHigh) {
+        List<MarketBar> windowBars = filterByStartDate(bars, startDateInclusive);
+        if (windowBars.isEmpty()) {
+            return new PriceRange(fallbackLow, fallbackHigh);
+        }
+        return new PriceRange(minOf(windowBars, "low"), maxOf(windowBars, "high"));
+    }
+
+    private List<MarketBar> filterByStartDate(List<MarketBar> bars, LocalDate startDateInclusive) {
+        List<MarketBar> filtered = new ArrayList<>();
+        for (MarketBar bar : bars) {
+            LocalDate barDate = toBarDate(bar);
+            if (barDate != null && !barDate.isBefore(startDateInclusive)) {
+                filtered.add(bar);
+            }
+        }
+        return filtered;
+    }
+
+    private LocalDate toBarDate(MarketBar bar) {
+        if (bar == null || bar.timestamp() == null || bar.timestamp().isBlank()) {
+            return null;
+        }
+        String ts = bar.timestamp().trim();
+        try {
+            return Instant.parse(ts).atZone(ZoneOffset.UTC).toLocalDate();
+        } catch (Exception ignored) {
+            try {
+                if (ts.length() >= 10) {
+                    return LocalDate.parse(ts.substring(0, 10));
+                }
+            } catch (Exception ignored2) {
+                return null;
+            }
+        }
+        return null;
+    }
+
     private BigDecimal priceField(MarketBar bar, String field) {
         return switch (field) {
             case "open"  -> bar.open();
@@ -230,5 +320,13 @@ public class AutoAnalyzeService {
     private BigDecimal round2(BigDecimal value) {
         return value.setScale(2, RoundingMode.HALF_UP);
     }
-}
 
+    private BigDecimal latestClose(List<MarketBar> bars) {
+        if (bars == null || bars.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        return round2(bars.get(bars.size() - 1).close());
+    }
+
+    private record PriceRange(BigDecimal low, BigDecimal high) {}
+}

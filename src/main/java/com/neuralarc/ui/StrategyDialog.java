@@ -1,11 +1,15 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.api.AlpacaMarketDataApi;
+import com.neuralarc.model.AutoAnalyzeBundle;
 import com.neuralarc.model.AutoAnalyzeResult;
 import com.neuralarc.model.ProfitHoldType;
+import com.neuralarc.model.RecommendationAction;
 import com.neuralarc.model.StrategyConfig;
+import com.neuralarc.model.StrategyRecommendation;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.AutoAnalyzeService;
+import com.neuralarc.service.StrategyApplyService;
 import com.neuralarc.util.AppMetadata;
 import com.neuralarc.util.FontLoader;
 
@@ -13,13 +17,20 @@ import javax.swing.*;
 import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
+import javax.swing.plaf.basic.BasicTabbedPaneUI;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
+import java.awt.GraphicsEnvironment;
 import java.awt.GridLayout;
+import java.awt.Insets;
+import java.awt.Rectangle;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.io.InputStream;
@@ -30,12 +41,18 @@ import java.util.List;
 import java.util.Properties;
 
 public class StrategyDialog extends JDialog {
+    private static final int TAB_CURRENT_STRATEGY = 0;
+    private static final int TAB_AUTO_ANALYZE = 1;
     private static final int OUTER_PADDING = 16;
     private static final int SECTION_GAP = 12;
     private static final int FIELD_GAP = 10;
     private static final int SECTION_INNER_PADDING = 10;
     private static final int RISK_CONTROLS_HORIZONTAL_PADDING = 12;
-    private static final int MAX_MONTHS_BACK = 6;
+    private static final int MAX_MONTHS_BACK = 12;
+    private static final int DIALOG_TARGET_WIDTH = 920;
+    private static final int DIALOG_TARGET_HEIGHT = 760;
+    private static final double DIALOG_MAX_SCREEN_HEIGHT_RATIO = 0.88d;
+    private static final int DIALOG_SCREEN_MARGIN = 48;
     private static final DateTimeFormatter DISPLAY_FMT =
             DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm").withZone(ZoneId.systemDefault());
 
@@ -52,6 +69,18 @@ public class StrategyDialog extends JDialog {
     private static final Color TEXT_MUTED = UIManager.getColor("Label.disabledForeground") != null
             ? UIManager.getColor("Label.disabledForeground")
             : new Color(130, 130, 130);
+    private static final Color TAB_BORDER = new Color(204, 214, 225);
+    private static final Color TAB_SELECTED_BG = new Color(235, 244, 252);
+    private static final Color TAB_UNSELECTED_BG = new Color(246, 248, 250);
+    private static final Color TAB_SELECTED_TEXT = new Color(11, 84, 132);
+    private static final Color TAB_UNSELECTED_TEXT = new Color(75, 85, 99);
+    private static final Color BUY_BADGE_BG = new Color(219, 241, 229);
+    private static final Color BUY_BADGE_TEXT = new Color(22, 110, 62);
+    private static final Color WATCH_BADGE_BG = new Color(255, 242, 214);
+    private static final Color WATCH_BADGE_TEXT = new Color(154, 92, 13);
+    private static final Color AVOID_BADGE_BG = new Color(250, 223, 223);
+    private static final Color AVOID_BADGE_TEXT = new Color(166, 45, 45);
+    private static final Color WARNING_TEXT = new Color(166, 45, 45);
 
     private static final String DEFAULT_CONFIG_RESOURCE = "defaults-config.properties";
     private static final DialogDefaults DEFAULTS = loadDefaults();
@@ -67,6 +96,7 @@ public class StrategyDialog extends JDialog {
     private final JTextField loss1QtyField = new JTextField(25);
     private final JTextField loss2PriceField = new JTextField(25);
     private final JTextField loss2QtyField = new JTextField(25);
+    private final JCheckBox lossBuyLevelsEnabled = new JCheckBox("Enable Loss Buy Levels", true);
     private final JTextField pollingField = new JTextField(25);
     private final JCheckBox repeatCycleAfterProfitExitEnabled = new JCheckBox("Repeat cycle after profitable exit", false);
     private final JCheckBox profitHoldEnabled = new JCheckBox("Enable Profit Hold", false);
@@ -86,28 +116,47 @@ public class StrategyDialog extends JDialog {
     private final JSpinner aaMonthsSpinner = new JSpinner(new SpinnerNumberModel(MAX_MONTHS_BACK, 1, MAX_MONTHS_BACK, 1));
     private final JSpinner aaIntervalSpinner = new JSpinner(new SpinnerNumberModel(15, 1, 60, 5));
     private final JButton aaRunButton = new JButton("Run Auto Analyze");
-    private final JButton aaApplyButton = new JButton("Apply to Current Strategy");
     private final JLabel aaStatusLabel = new JLabel(" ");
     private final JLabel aaAvgOpenLabel = new JLabel("—");
     private final JLabel aaAvgCloseLabel = new JLabel("—");
     private final JLabel aaAvgLowLabel = new JLabel("—");
     private final JLabel aaAvgHighLabel = new JLabel("—");
+    private final JLabel aaOneWeekLowLabel = new JLabel("—");
+    private final JLabel aaOneWeekHighLabel = new JLabel("—");
+    private final JLabel aaTwoWeekLowLabel = new JLabel("—");
+    private final JLabel aaTwoWeekHighLabel = new JLabel("—");
+    private final JLabel aaOneMonthLowLabel = new JLabel("—");
+    private final JLabel aaOneMonthHighLabel = new JLabel("—");
+    private final JLabel aaTwoMonthLowLabel = new JLabel("—");
+    private final JLabel aaTwoMonthHighLabel = new JLabel("—");
+    private final JLabel aaFourMonthLowLabel = new JLabel("—");
+    private final JLabel aaFourMonthHighLabel = new JLabel("—");
     private final JLabel aaSixMonthLowLabel = new JLabel("—");
     private final JLabel aaSixMonthHighLabel = new JLabel("—");
-    private final JLabel aa52WeekLowLabel = new JLabel("—");
-    private final JLabel aa52WeekHighLabel = new JLabel("—");
+    private final JLabel aaEightMonthLowLabel = new JLabel("—");
+    private final JLabel aaEightMonthHighLabel = new JLabel("—");
+    private final JLabel aaOneYearLowLabel = new JLabel("—");
+    private final JLabel aaOneYearHighLabel = new JLabel("—");
     private final JLabel aaTodayStockPriceLabel = new JLabel("—");
     private final JLabel aaTodayOpenLabel = new JLabel("—");
     private final JLabel aaTodayHighSoFarLabel = new JLabel("—");
+    private final JLabel aaTodayLowSoFarLabel = new JLabel("—");
     private final JLabel aaTodayCloseLabel = new JLabel("—");
     private final JLabel aaThresholdLabel = new JLabel("—");
     private final JLabel aaDailyBarsLabel = new JLabel("—");
     private final JLabel aaIntradayBarsLabel = new JLabel("—");
     private final JLabel aaAnalyzedAtLabel = new JLabel("—");
+    private final JLabel aaResultsLoadingLabel = new JLabel("Loading analysis data...");
+    private final JProgressBar aaResultsProgressBar = new JProgressBar();
+    private final RecommendationView shortTermRecommendationView = new RecommendationView("Short-Term Recommendation");
+    private final RecommendationView longTermRecommendationView = new RecommendationView("Long-Term Recommendation");
 
     private AutoAnalyzeResult lastAutoAnalyzeResult;
+    private StrategyRecommendation lastShortTermRecommendation;
+    private StrategyRecommendation lastLongTermRecommendation;
     private final AlpacaMarketDataApi marketDataApi;
     private final AutoAnalyzeResultStore resultStore;
+    private final StrategyApplyService strategyApplyService = new StrategyApplyService();
 
     /** Backward-compatible constructor – Auto Analyze tab is visible but requires connection. */
     public StrategyDialog(JFrame owner, StrategyConfig initialConfig) {
@@ -124,6 +173,7 @@ public class StrategyDialog extends JDialog {
         applyDialogDefaults();
         configureTooltips();
         wireStopLossFields();
+        wireLossBuyLevelFields();
         wireProfitHoldFields();
         styleInputs();
 
@@ -133,10 +183,8 @@ public class StrategyDialog extends JDialog {
         }
 
         tabs = new JTabbedPane();
+        styleTabs();
         tabs.addTab("Current Strategy", buildCurrentStrategyTab());
-        tabs.addTab("6-Month Median Strategy (Coming Soon)", buildMedianStrategyTab());
-        tabs.setEnabledAt(1, false);
-        tabs.setToolTipTextAt(1, TooltipStyler.text("Temporarily disabled"));
         tabs.addTab("Auto Analyze", buildAutoAnalyzeTab());
         add(tabs, BorderLayout.CENTER);
 
@@ -147,7 +195,7 @@ public class StrategyDialog extends JDialog {
         helpFaq.addActionListener(e -> new HelpDialog(owner).setVisible(true));
         JButton save = new JButton("Save Strategy");
         DialogButtonStyles.apply(save, "icons/save.svg");
-        save.addActionListener(e -> onSave());
+        save.addActionListener(e -> onSaveForSelectedTab());
         JButton cancel = new JButton("Cancel");
         DialogButtonStyles.apply(cancel, "icons/close.svg");
         cancel.addActionListener(e -> {
@@ -172,8 +220,7 @@ public class StrategyDialog extends JDialog {
         loadCachedAutoAnalyzeResult(initialConfig != null ? initialConfig.symbol() : null);
 
         pack();
-        setResizable(false);
-        setLocationRelativeTo(owner);
+        fitDialogToScreen(owner);
     }
 
     public StrategyConfig showDialog() {
@@ -215,6 +262,7 @@ public class StrategyDialog extends JDialog {
         JPanel lossBuySubPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
         lossBuySubPanel.setBorder(createSubSectionBorder("Loss Buy Levels"));
         prepareSubSection(lossBuySubPanel);
+        addRow(lossBuySubPanel, "Enable:", lossBuyLevelsEnabled);
         addRow(lossBuySubPanel, "Loss Buy Level 1 Price:", loss1PriceField);
         addRow(lossBuySubPanel, "Loss buy level 1 qty:", loss1QtyField);
         addRow(lossBuySubPanel, "Loss Buy Level 2 Price:", loss2PriceField);
@@ -261,11 +309,7 @@ public class StrategyDialog extends JDialog {
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(cycleBehaviorPanel);
 
-        JScrollPane scrollPane = new JScrollPane(content);
-        scrollPane.setBorder(null);
-        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        return scrollPane;
+        return createContentScrollPane(content);
     }
 
     private JComponent buildMedianStrategyTab() {
@@ -301,11 +345,7 @@ public class StrategyDialog extends JDialog {
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(actionsPanel);
 
-        JScrollPane scrollPane = new JScrollPane(content);
-        scrollPane.setBorder(null);
-        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        return scrollPane;
+        return createContentScrollPane(content);
     }
 
     private JComponent buildAutoAnalyzeTab() {
@@ -326,7 +366,7 @@ public class StrategyDialog extends JDialog {
         JPanel inputFields = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
         inputFields.setOpaque(false);
         addRow(inputFields, "Symbol:", aaSymbolField);
-        addRow(inputFields, "Months back (max 6):", aaMonthsSpinner);
+        addRow(inputFields, "Months back (max 12):", aaMonthsSpinner);
         addRow(inputFields, "Intraday interval (minutes):", aaIntervalSpinner);
 
         DialogButtonStyles.apply(aaRunButton, "icons/actions.svg");
@@ -349,6 +389,20 @@ public class StrategyDialog extends JDialog {
         resultsPanel.setBorder(createSectionBorder("Results"));
         resultsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         resultsPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+
+        JPanel resultsLoadingPanel = new JPanel(new BorderLayout(8, 0));
+        resultsLoadingPanel.setOpaque(false);
+        resultsLoadingPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        aaResultsLoadingLabel.setForeground(TEXT_MUTED);
+        aaResultsLoadingLabel.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
+        aaResultsProgressBar.setIndeterminate(true);
+        aaResultsProgressBar.setVisible(false);
+        aaResultsLoadingLabel.setVisible(false);
+        resultsLoadingPanel.add(aaResultsLoadingLabel, BorderLayout.WEST);
+        resultsLoadingPanel.add(aaResultsProgressBar, BorderLayout.CENTER);
+
+        resultsPanel.add(resultsLoadingPanel);
+        resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
 
         // Price averages: 4 columns, label–value pairs side by side
         JPanel avgSubPanel = new JPanel(new GridLayout(0, 4, FIELD_GAP, FIELD_GAP));
@@ -383,20 +437,44 @@ public class StrategyDialog extends JDialog {
         resultsPanel.add(avgSubPanel);
         resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
 
-        // Price Ranges: 6-month and 52-week low/high in a 4-column sub-grid
+        // Price Ranges: low/high across requested lookback windows
         JPanel rangesSubPanel = new JPanel(new GridLayout(0, 4, FIELD_GAP, FIELD_GAP));
         rangesSubPanel.setOpaque(false);
         rangesSubPanel.setBorder(createSubSectionBorder("Price Ranges"));
         rangesSubPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         rangesSubPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        rangesSubPanel.add(new JLabel("1-Week Low:"));
+        rangesSubPanel.add(aaOneWeekLowLabel);
+        rangesSubPanel.add(new JLabel("1-Week High:"));
+        rangesSubPanel.add(aaOneWeekHighLabel);
+        rangesSubPanel.add(new JLabel("2-Week Low:"));
+        rangesSubPanel.add(aaTwoWeekLowLabel);
+        rangesSubPanel.add(new JLabel("2-Week High:"));
+        rangesSubPanel.add(aaTwoWeekHighLabel);
+        rangesSubPanel.add(new JLabel("1-Month Low:"));
+        rangesSubPanel.add(aaOneMonthLowLabel);
+        rangesSubPanel.add(new JLabel("1-Month High:"));
+        rangesSubPanel.add(aaOneMonthHighLabel);
+        rangesSubPanel.add(new JLabel("2-Month Low:"));
+        rangesSubPanel.add(aaTwoMonthLowLabel);
+        rangesSubPanel.add(new JLabel("2-Month High:"));
+        rangesSubPanel.add(aaTwoMonthHighLabel);
+        rangesSubPanel.add(new JLabel("4-Month Low:"));
+        rangesSubPanel.add(aaFourMonthLowLabel);
+        rangesSubPanel.add(new JLabel("4-Month High:"));
+        rangesSubPanel.add(aaFourMonthHighLabel);
         rangesSubPanel.add(new JLabel("6-Month Low:"));
         rangesSubPanel.add(aaSixMonthLowLabel);
         rangesSubPanel.add(new JLabel("6-Month High:"));
         rangesSubPanel.add(aaSixMonthHighLabel);
-        rangesSubPanel.add(new JLabel("52-Week Low:"));
-        rangesSubPanel.add(aa52WeekLowLabel);
-        rangesSubPanel.add(new JLabel("52-Week High:"));
-        rangesSubPanel.add(aa52WeekHighLabel);
+        rangesSubPanel.add(new JLabel("8-Month Low:"));
+        rangesSubPanel.add(aaEightMonthLowLabel);
+        rangesSubPanel.add(new JLabel("8-Month High:"));
+        rangesSubPanel.add(aaEightMonthHighLabel);
+        rangesSubPanel.add(new JLabel("1-Year Low:"));
+        rangesSubPanel.add(aaOneYearLowLabel);
+        rangesSubPanel.add(new JLabel("1-Year High:"));
+        rangesSubPanel.add(aaOneYearHighLabel);
 
         resultsPanel.add(rangesSubPanel);
         resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
@@ -412,49 +490,40 @@ public class StrategyDialog extends JDialog {
         todaySubPanel.add(aaTodayOpenLabel);
         todaySubPanel.add(new JLabel("High So Far:"));
         todaySubPanel.add(aaTodayHighSoFarLabel);
+        todaySubPanel.add(new JLabel("Low So Far:"));
+        todaySubPanel.add(aaTodayLowSoFarLabel);
         todaySubPanel.add(new JLabel("Close (if available):"));
         todaySubPanel.add(aaTodayCloseLabel);
 
         resultsPanel.add(todaySubPanel);
         resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
+        resultsPanel.add(buildRecommendationSection(shortTermRecommendationView, RecommendationTypeLabel.SHORT_TERM));
+        resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
+        resultsPanel.add(buildRecommendationSection(longTermRecommendationView, RecommendationTypeLabel.LONG_TERM));
+        resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
         resultsPanel.add(detailsSubPanel);
 
-        // -- Apply / status --
-        JPanel applyPanel = new JPanel(new BorderLayout(0, 8));
-        applyPanel.setBorder(createSectionBorder("Apply to Strategy"));
-        applyPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        applyPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
-
-        JLabel applyHelp = new JLabel("<html>Fills the <b>Current Strategy</b> tab with historical averages:<br>"
-                + "base buy ← avg daily close · stop loss ← avg daily low · sell trigger ← avg daily high.</html>");
-        applyHelp.setForeground(TEXT_MUTED);
-        applyHelp.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
-
-        DialogButtonStyles.apply(aaApplyButton, "icons/apply.svg");
-        aaApplyButton.setEnabled(false);
-        aaApplyButton.addActionListener(e -> applyAutoAnalyzeToStrategy());
-
-        JPanel applyButtonRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        applyButtonRow.setOpaque(false);
-        applyButtonRow.add(aaApplyButton);
+        JPanel disclaimerPanel = new JPanel(new BorderLayout());
+        disclaimerPanel.setBorder(createSectionBorder("Disclaimer"));
+        disclaimerPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        disclaimerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        JLabel disclaimerLabel = new JLabel("<html>Auto Analyze is a decision-support tool. It does not guarantee profit. Review all values before saving or trading.</html>");
+        disclaimerLabel.setForeground(TEXT_MUTED);
+        disclaimerLabel.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
+        disclaimerPanel.add(disclaimerLabel, BorderLayout.CENTER);
 
         aaStatusLabel.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
         aaStatusLabel.setForeground(TEXT_MUTED);
-        applyPanel.add(applyHelp, BorderLayout.NORTH);
-        applyPanel.add(applyButtonRow, BorderLayout.CENTER);
-        applyPanel.add(aaStatusLabel, BorderLayout.SOUTH);
 
         content.add(inputPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(resultsPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
-        content.add(applyPanel);
+        content.add(disclaimerPanel);
+        content.add(Box.createVerticalStrut(SECTION_GAP));
+        content.add(aaStatusLabel);
 
-        JScrollPane scrollPane = new JScrollPane(content);
-        scrollPane.setBorder(null);
-        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        return scrollPane;
+        return createContentScrollPane(content);
     }
 
     private JPanel wrapTextArea(String title, JTextArea area) {
@@ -465,6 +534,34 @@ public class StrategyDialog extends JDialog {
         wrapper.add(new JLabel(title), BorderLayout.NORTH);
         wrapper.add(new JScrollPane(area), BorderLayout.CENTER);
         return wrapper;
+    }
+
+    private JScrollPane createContentScrollPane(JPanel content) {
+        JScrollPane scrollPane = new JScrollPane(content);
+        scrollPane.setBorder(null);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        scrollPane.setPreferredSize(new Dimension(DIALOG_TARGET_WIDTH - (OUTER_PADDING * 2), DIALOG_TARGET_HEIGHT - 180));
+        return scrollPane;
+    }
+
+    private void fitDialogToScreen(JFrame owner) {
+        Rectangle screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        int maxWidth = Math.max(720, screenBounds.width - DIALOG_SCREEN_MARGIN);
+        int maxHeight = Math.max(560, Math.min(
+                screenBounds.height - DIALOG_SCREEN_MARGIN,
+                (int) Math.round(screenBounds.height * DIALOG_MAX_SCREEN_HEIGHT_RATIO)
+        ));
+
+        Dimension preferred = getPreferredSize();
+        int width = Math.min(Math.max(preferred.width, DIALOG_TARGET_WIDTH), maxWidth);
+        int height = Math.min(Math.max(preferred.height, DIALOG_TARGET_HEIGHT), maxHeight);
+
+        setPreferredSize(new Dimension(width, height));
+        setSize(width, height);
+        setMinimumSize(new Dimension(Math.min(width, 760), Math.min(height, 620)));
+        setResizable(true);
+        setLocationRelativeTo(owner);
     }
 
     private void applyMedianStrategyValues() {
@@ -583,6 +680,7 @@ public class StrategyDialog extends JDialog {
         basePriceField.setToolTipText(TooltipStyler.text("Initial buy triggers when price is less than or equal to this value."));
         stopLossField.setToolTipText(TooltipStyler.text("Stop Loss activates once price reaches this level, then can trigger stop-loss on reversal."));
         sellTriggerField.setToolTipText(TooltipStyler.text("Sell trigger starts at this price."));
+        lossBuyLevelsEnabled.setToolTipText(TooltipStyler.text("When disabled, Loss Buy Level 1 and Loss Buy Level 2 will not trigger."));
         loss1PriceField.setToolTipText(TooltipStyler.text("Loss Buy Level 1 triggers when price is less than or equal to this value."));
         loss2PriceField.setToolTipText(TooltipStyler.text("Loss Buy Level 2 triggers when price is less than or equal to this value."));
         stopLossEnabled.setToolTipText(TooltipStyler.text("When disabled, stop-loss checks and stop-loss sell orders are skipped."));
@@ -611,8 +709,22 @@ public class StrategyDialog extends JDialog {
 
         paperMode.setOpaque(false);
         stopLossEnabled.setOpaque(false);
+        lossBuyLevelsEnabled.setOpaque(false);
         repeatCycleAfterProfitExitEnabled.setOpaque(false);
         profitHoldEnabled.setOpaque(false);
+    }
+
+    private void wireLossBuyLevelFields() {
+        lossBuyLevelsEnabled.addActionListener(e -> updateLossBuyFieldState());
+        updateLossBuyFieldState();
+    }
+
+    private void updateLossBuyFieldState() {
+        boolean enabled = lossBuyLevelsEnabled.isSelected();
+        loss1PriceField.setEnabled(enabled);
+        loss1QtyField.setEnabled(enabled);
+        loss2PriceField.setEnabled(enabled);
+        loss2QtyField.setEnabled(enabled);
     }
 
     private void styleInput(JTextField input) {
@@ -688,6 +800,7 @@ public class StrategyDialog extends JDialog {
         stopLossEnabled.setSelected(config.stopLossEnabled());
         stopLossField.setText(config.stopLoss().toPlainString());
         sellTriggerField.setText(config.sellTriggerPrice().toPlainString());
+        lossBuyLevelsEnabled.setSelected(config.lossBuyLevelsEnabled());
         loss1PriceField.setText(config.lossBuyLevel1Price().toPlainString());
         loss1QtyField.setText(String.valueOf(config.lossBuyLevel1Qty()));
         loss2PriceField.setText(config.lossBuyLevel2Price().toPlainString());
@@ -703,6 +816,7 @@ public class StrategyDialog extends JDialog {
                 : "0.50");
         repeatCycleAfterProfitExitEnabled.setSelected(config.repeatCycleAfterProfitExitEnabled());
         updateStopLossFieldState();
+        updateLossBuyFieldState();
         updateProfitHoldFieldState();
     }
 
@@ -714,6 +828,7 @@ public class StrategyDialog extends JDialog {
         stopLossEnabled.setSelected(DEFAULTS.stopLossEnabled());
         stopLossField.setText(DEFAULTS.stopLoss());
         sellTriggerField.setText(DEFAULTS.sellTriggerPrice());
+        lossBuyLevelsEnabled.setSelected(true);
         loss1PriceField.setText(DEFAULTS.lossBuyLevel1Price());
         loss1QtyField.setText(DEFAULTS.lossBuyLevel1Qty());
         loss2PriceField.setText(DEFAULTS.lossBuyLevel2Price());
@@ -725,7 +840,66 @@ public class StrategyDialog extends JDialog {
         profitHoldPercentField.setText(DEFAULTS.profitHoldPercent());
         profitHoldAmountField.setText(DEFAULTS.profitHoldAmount());
         updateStopLossFieldState();
+        updateLossBuyFieldState();
         updateProfitHoldFieldState();
+    }
+
+    private void onSaveForSelectedTab() {
+        onSave();
+    }
+
+    private void styleTabs() {
+        tabs.setOpaque(false);
+        tabs.setBackground(DIALOG_BG);
+        tabs.setForeground(TAB_UNSELECTED_TEXT);
+        tabs.setFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
+        tabs.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(TAB_BORDER, 1, true),
+                new EmptyBorder(2, 2, 2, 2)
+        ));
+        tabs.setUI(new BasicTabbedPaneUI() {
+            @Override
+            protected void installDefaults() {
+                super.installDefaults();
+                selectedTabPadInsets = new Insets(0, 0, 0, 0);
+                tabInsets = new Insets(8, 14, 8, 14);
+                contentBorderInsets = new Insets(1, 0, 0, 0);
+            }
+
+            @Override
+            protected void paintTabBackground(Graphics g, int tabPlacement, int tabIndex,
+                                              int x, int y, int w, int h, boolean isSelected) {
+                g.setColor(isSelected ? TAB_SELECTED_BG : TAB_UNSELECTED_BG);
+                g.fillRoundRect(x, y, w, h, 10, 10);
+            }
+
+            @Override
+            protected void paintTabBorder(Graphics g, int tabPlacement, int tabIndex,
+                                          int x, int y, int w, int h, boolean isSelected) {
+                g.setColor(TAB_BORDER);
+                g.drawRoundRect(x, y, w - 1, h - 1, 10, 10);
+            }
+
+            @Override
+            protected void paintContentBorder(Graphics g, int tabPlacement, int selectedIndex) {
+                g.setColor(TAB_BORDER);
+                g.drawLine(0, calculateTabAreaHeight(tabPlacement, runCount, maxTabHeight), tabs.getWidth(), calculateTabAreaHeight(tabPlacement, runCount, maxTabHeight));
+            }
+
+            @Override
+            protected void paintText(Graphics g, int tabPlacement, Font font, FontMetrics metrics,
+                                     int tabIndex, String title, Rectangle textRect, boolean isSelected) {
+                g.setFont(font);
+                g.setColor(isSelected ? TAB_SELECTED_TEXT : TAB_UNSELECTED_TEXT);
+                g.drawString(title, textRect.x, textRect.y + metrics.getAscent());
+            }
+
+            @Override
+            protected void paintFocusIndicator(Graphics g, int tabPlacement, Rectangle[] rects, int tabIndex,
+                                               Rectangle iconRect, Rectangle textRect, boolean isSelected) {
+                // Intentionally omitted for cleaner enterprise-style tabs.
+            }
+        });
     }
 
     private void onSave() {
@@ -746,8 +920,9 @@ public class StrategyDialog extends JDialog {
                 return;
             }
 
-            BigDecimal lossBuyLevel1Price = new BigDecimal(loss1PriceField.getText().trim());
-            BigDecimal lossBuyLevel2Price = new BigDecimal(loss2PriceField.getText().trim());
+            boolean lossBuysOn = lossBuyLevelsEnabled.isSelected();
+            BigDecimal lossBuyLevel1Price = lossBuysOn ? new BigDecimal(loss1PriceField.getText().trim()) : BigDecimal.ZERO;
+            BigDecimal lossBuyLevel2Price = lossBuysOn ? new BigDecimal(loss2PriceField.getText().trim()) : BigDecimal.ZERO;
 
             boolean stopLossOn = stopLossEnabled.isSelected();
             BigDecimal stopLossPrice = stopLossOn
@@ -768,14 +943,14 @@ public class StrategyDialog extends JDialog {
                 return;
             }
 
-            if (lossBuyLevel1Price.compareTo(baseBuyPrice) >= 0) {
+            if (lossBuysOn && lossBuyLevel1Price.compareTo(baseBuyPrice) >= 0) {
                 JOptionPane.showMessageDialog(this,
                         "Loss Buy Level 1 price must be less than base buy price.",
                         "Invalid Loss Buy Level",
                         JOptionPane.WARNING_MESSAGE);
                 return;
             }
-            if (lossBuyLevel2Price.compareTo(lossBuyLevel1Price) >= 0) {
+            if (lossBuysOn && lossBuyLevel2Price.compareTo(lossBuyLevel1Price) >= 0) {
                 JOptionPane.showMessageDialog(this,
                         "Loss Buy Level 2 price must be less than Loss Buy Level 1 price.",
                         "Invalid Loss Buy Level",
@@ -818,6 +993,9 @@ public class StrategyDialog extends JDialog {
                 return;
             }
 
+            int lossBuyLevel1Qty = lossBuysOn ? Integer.parseInt(loss1QtyField.getText().trim()) : 0;
+            int lossBuyLevel2Qty = lossBuysOn ? Integer.parseInt(loss2QtyField.getText().trim()) : 0;
+
             result = new StrategyConfig(
                     symbol,
                     baseBuyPrice,
@@ -826,9 +1004,10 @@ public class StrategyDialog extends JDialog {
                     stopLossPrice,
                     sellTriggerPrice,
                     lossBuyLevel1Price,
-                    Integer.parseInt(loss1QtyField.getText().trim()),
+                    lossBuyLevel1Qty,
                     lossBuyLevel2Price,
-                    Integer.parseInt(loss2QtyField.getText().trim()),
+                    lossBuyLevel2Qty,
+                    lossBuysOn,
                     false,
                     BigDecimal.ZERO,
                     pollingSeconds,
@@ -943,34 +1122,38 @@ public class StrategyDialog extends JDialog {
         int intervalMinutes = (Integer) aaIntervalSpinner.getValue();
 
         aaRunButton.setEnabled(false);
-        aaApplyButton.setEnabled(false);
+        setRecommendationState(shortTermRecommendationView, null);
+        setRecommendationState(longTermRecommendationView, null);
+        updateResultsLoadingState(true, "Loading historical bars and computing metrics...");
         aaStatusLabel.setForeground(TEXT_MUTED);
         aaStatusLabel.setText("Running analysis for " + symbol + "…");
 
-        SwingWorker<AutoAnalyzeResult, Void> worker = new SwingWorker<>() {
+        SwingWorker<AutoAnalyzeBundle, Void> worker = new SwingWorker<>() {
             @Override
-            protected AutoAnalyzeResult doInBackground() throws Exception {
+            protected AutoAnalyzeBundle doInBackground() throws Exception {
                 AutoAnalyzeService service = new AutoAnalyzeService(marketDataApi);
-                return service.analyze(symbol, monthsBack, intervalMinutes);
+                return service.analyzeBundle(symbol, monthsBack, intervalMinutes);
             }
 
             @Override
             protected void done() {
                 try {
-                    AutoAnalyzeResult r = get();
+                    AutoAnalyzeBundle bundle = get();
+                    AutoAnalyzeResult r = bundle.result();
                     displayAutoAnalyzeResult(r);
+                    setRecommendationState(shortTermRecommendationView, bundle.shortTermRecommendation());
+                    setRecommendationState(longTermRecommendationView, bundle.longTermRecommendation());
                     if (resultStore != null) {
                         resultStore.save(r);
                     }
                     aaStatusLabel.setForeground(new Color(34, 139, 34));
                     aaStatusLabel.setText("Analysis complete — " + r.dailyBarsProcessed() + " daily bars processed.");
-                    aaApplyButton.setEnabled(true);
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     aaStatusLabel.setForeground(new Color(180, 30, 30));
                     aaStatusLabel.setText("<html>" + escapeHtml(cause.getMessage()) + "</html>");
-                    aaApplyButton.setEnabled(false);
                 } finally {
+                    updateResultsLoadingState(false, null);
                     aaRunButton.setEnabled(marketDataApi != null);
                 }
             }
@@ -984,18 +1167,193 @@ public class StrategyDialog extends JDialog {
         aaAvgCloseLabel.setText("$" + r.averageDailyClose().toPlainString());
         aaAvgLowLabel.setText("$" + r.averageDailyLow().toPlainString());
         aaAvgHighLabel.setText("$" + r.averageDailyHigh().toPlainString());
+        aaOneWeekLowLabel.setText("$" + r.oneWeekLow().toPlainString());
+        aaOneWeekHighLabel.setText("$" + r.oneWeekHigh().toPlainString());
+        aaTwoWeekLowLabel.setText("$" + r.twoWeekLow().toPlainString());
+        aaTwoWeekHighLabel.setText("$" + r.twoWeekHigh().toPlainString());
+        aaOneMonthLowLabel.setText("$" + r.oneMonthLow().toPlainString());
+        aaOneMonthHighLabel.setText("$" + r.oneMonthHigh().toPlainString());
+        aaTwoMonthLowLabel.setText("$" + r.twoMonthLow().toPlainString());
+        aaTwoMonthHighLabel.setText("$" + r.twoMonthHigh().toPlainString());
+        aaFourMonthLowLabel.setText("$" + r.fourMonthLow().toPlainString());
+        aaFourMonthHighLabel.setText("$" + r.fourMonthHigh().toPlainString());
         aaSixMonthLowLabel.setText("$" + r.sixMonthLow().toPlainString());
         aaSixMonthHighLabel.setText("$" + r.sixMonthHigh().toPlainString());
-        aa52WeekLowLabel.setText("$" + r.fiftyTwoWeekLow().toPlainString());
-        aa52WeekHighLabel.setText("$" + r.fiftyTwoWeekHigh().toPlainString());
+        aaEightMonthLowLabel.setText("$" + r.eightMonthLow().toPlainString());
+        aaEightMonthHighLabel.setText("$" + r.eightMonthHigh().toPlainString());
+        aaOneYearLowLabel.setText("$" + r.oneYearLow().toPlainString());
+        aaOneYearHighLabel.setText("$" + r.oneYearHigh().toPlainString());
         aaTodayStockPriceLabel.setText(formatPriceOrDash(r.todayStockPrice()));
         aaTodayOpenLabel.setText(formatPriceOrDash(r.todayOpen()));
         aaTodayHighSoFarLabel.setText(formatPriceOrDash(r.todayHighSoFar()));
+        aaTodayLowSoFarLabel.setText(formatPriceOrDash(r.todayLowSoFar()));
         aaTodayCloseLabel.setText(r.todayCloseAvailable() ? formatPriceOrDash(r.todayClose()) : "—");
         aaThresholdLabel.setText("$" + r.thresholdNumber().toPlainString());
         aaDailyBarsLabel.setText(String.valueOf(r.dailyBarsProcessed()));
         aaIntradayBarsLabel.setText(String.valueOf(r.intradayBarsProcessed()));
         aaAnalyzedAtLabel.setText(DISPLAY_FMT.format(r.analyzedAt()));
+    }
+
+    private JPanel buildRecommendationSection(RecommendationView view, RecommendationTypeLabel typeLabel) {
+        JPanel panel = new JPanel(new BorderLayout(0, 10));
+        panel.setOpaque(false);
+        panel.setBorder(createSubSectionBorder(view.title));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+
+        JPanel topRow = new JPanel(new BorderLayout(10, 0));
+        topRow.setOpaque(false);
+
+        JPanel confidencePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        confidencePanel.setOpaque(false);
+        JLabel confidenceTitle = new JLabel("Confidence:");
+        confidenceTitle.setFont(FontLoader.ui(Font.BOLD, 11f));
+        view.confidenceValue.setFont(FontLoader.ui(Font.BOLD, 14f));
+        view.badge.setOpaque(true);
+        view.badge.setBorder(new EmptyBorder(4, 10, 4, 10));
+        view.badge.setFont(FontLoader.ui(Font.BOLD, 11f));
+        confidencePanel.add(confidenceTitle);
+        confidencePanel.add(view.confidenceValue);
+        confidencePanel.add(view.badge);
+        topRow.add(confidencePanel, BorderLayout.WEST);
+
+        DialogButtonStyles.apply(view.applyButton, "icons/apply.svg");
+        view.applyButton.setText("Apply to Current Strategy");
+        view.applyButton.setEnabled(false);
+        view.applyButton.addActionListener(e -> applyRecommendationToCurrentStrategy(typeLabel));
+        topRow.add(view.applyButton, BorderLayout.EAST);
+
+        JPanel grid = new JPanel(new GridLayout(0, 4, FIELD_GAP, FIELD_GAP));
+        grid.setOpaque(false);
+        addRecommendationRow(grid, "Base Buy Price:", view.baseBuyValue);
+        addRecommendationRow(grid, "Buy Level 1:", view.buy1Value);
+        addRecommendationRow(grid, "Buy Level 2:", view.buy2Value);
+        addRecommendationRow(grid, "Stop Loss:", view.stopLossValue);
+        addRecommendationRow(grid, "Recommended Sell Price:", view.sellPriceValue);
+        addRecommendationRow(grid, "Target 1:", view.target1Value);
+        addRecommendationRow(grid, "Target 2:", view.target2Value);
+        addRecommendationRow(grid, "Trend Status:", view.trendStatusValue);
+        addRecommendationRow(grid, "Volume Status:", view.volumeStatusValue);
+        addRecommendationRow(grid, "Risk/Reward Ratio:", view.riskRewardValue);
+
+        view.warningLabel.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        view.warningLabel.setForeground(WARNING_TEXT);
+        view.warningLabel.setVerticalAlignment(SwingConstants.TOP);
+
+        panel.add(topRow, BorderLayout.NORTH);
+        panel.add(grid, BorderLayout.CENTER);
+        panel.add(view.warningLabel, BorderLayout.SOUTH);
+
+        setRecommendationState(view, null);
+        return panel;
+    }
+
+    private void addRecommendationRow(JPanel panel, String label, JLabel valueLabel) {
+        JLabel rowLabel = new JLabel(label);
+        rowLabel.setFont(FontLoader.ui(Font.PLAIN, 11f));
+        valueLabel.setFont(FontLoader.ui(Font.BOLD, 11f));
+        panel.add(rowLabel);
+        panel.add(valueLabel);
+    }
+
+    private void setRecommendationState(RecommendationView view, StrategyRecommendation recommendation) {
+        if (view == shortTermRecommendationView) {
+            lastShortTermRecommendation = recommendation;
+        } else if (view == longTermRecommendationView) {
+            lastLongTermRecommendation = recommendation;
+        }
+
+        if (recommendation == null) {
+            view.baseBuyValue.setText("—");
+            view.buy1Value.setText("—");
+            view.buy2Value.setText("—");
+            view.stopLossValue.setText("—");
+            view.sellPriceValue.setText("—");
+            view.target1Value.setText("—");
+            view.target2Value.setText("—");
+            view.trendStatusValue.setText("Run Auto Analyze");
+            view.volumeStatusValue.setText("Run Auto Analyze");
+            view.riskRewardValue.setText("—");
+            view.confidenceValue.setText("—");
+            view.warningLabel.setText("Run Auto Analyze to populate this recommendation.");
+            styleBadge(view.badge, null);
+            view.badge.setText("PENDING");
+            view.applyButton.setEnabled(false);
+            return;
+        }
+
+        view.baseBuyValue.setText(formatPriceOrDash(recommendation.baseBuyPrice()));
+        view.buy1Value.setText(formatPriceOrDash(recommendation.buy1Price()));
+        view.buy2Value.setText(formatPriceOrDash(recommendation.buy2Price()));
+        view.stopLossValue.setText(formatPriceOrDash(recommendation.stopLossPrice()));
+        view.sellPriceValue.setText(formatPriceOrDash(recommendation.sellPrice()));
+        view.target1Value.setText(formatPriceOrDash(recommendation.target1Price()));
+        view.target2Value.setText(formatPriceOrDash(recommendation.target2Price()));
+        view.trendStatusValue.setText(recommendation.trendStatus());
+        view.volumeStatusValue.setText(recommendation.volumeStatus());
+        view.riskRewardValue.setText(recommendation.riskRewardRatio().compareTo(BigDecimal.ZERO) > 0
+                ? recommendation.riskRewardRatio().toPlainString() + "x"
+                : "—");
+        view.confidenceValue.setText(recommendation.confidenceScore() + "/100");
+        view.warningLabel.setText(recommendation.warningMessage().isBlank()
+                ? "Recommendation ready. Review values before applying."
+                : "<html>" + escapeHtml(recommendation.warningMessage()) + "</html>");
+        styleBadge(view.badge, recommendation.recommendationAction());
+        view.badge.setText(recommendation.recommendationAction().name());
+        view.applyButton.setEnabled(recommendation.isApplicable());
+    }
+
+    private void styleBadge(JLabel badge, RecommendationAction action) {
+        if (action == null) {
+            badge.setBackground(TAB_UNSELECTED_BG);
+            badge.setForeground(TEXT_MUTED);
+            return;
+        }
+        switch (action) {
+            case BUY -> {
+                badge.setBackground(BUY_BADGE_BG);
+                badge.setForeground(BUY_BADGE_TEXT);
+            }
+            case WATCH -> {
+                badge.setBackground(WATCH_BADGE_BG);
+                badge.setForeground(WATCH_BADGE_TEXT);
+            }
+            case AVOID -> {
+                badge.setBackground(AVOID_BADGE_BG);
+                badge.setForeground(AVOID_BADGE_TEXT);
+            }
+        }
+    }
+
+    private void applyRecommendationToCurrentStrategy(RecommendationTypeLabel typeLabel) {
+        StrategyRecommendation recommendation = typeLabel == RecommendationTypeLabel.SHORT_TERM
+                ? lastShortTermRecommendation
+                : lastLongTermRecommendation;
+        if (recommendation == null || !recommendation.isApplicable()) {
+            JOptionPane.showMessageDialog(this,
+                    "This recommendation cannot be applied yet. Run Auto Analyze and make sure enough historical data is available.",
+                    "Recommendation Not Ready",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        StrategyApplyService.AppliedStrategyValues values = strategyApplyService.applyRecommendationToCurrentStrategy(recommendation);
+        basePriceField.setText(values.buyRulePrice().toPlainString());
+        lossBuyLevelsEnabled.setSelected(values.enableLossBuyLevels());
+        updateLossBuyFieldState();
+        loss1PriceField.setText(values.lossBuy1Price().toPlainString());
+        loss2PriceField.setText(values.lossBuy2Price().toPlainString());
+        stopLossEnabled.setSelected(true);
+        updateStopLossFieldState();
+        stopLossField.setText(values.stopLossPrice().toPlainString());
+        sellTriggerField.setText(values.sellRulePrice().toPlainString());
+        symbolField.setText(recommendation.symbol());
+        tabs.setSelectedIndex(TAB_CURRENT_STRATEGY);
+        JOptionPane.showMessageDialog(this,
+                typeLabel == RecommendationTypeLabel.SHORT_TERM
+                        ? "Short-term recommendation applied. Please review and save strategy."
+                        : "Long-term recommendation applied. Please review and save strategy.",
+                "Recommendation Applied",
+                JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void loadCachedAutoAnalyzeResult(String symbol) {
@@ -1005,50 +1363,10 @@ public class StrategyDialog extends JDialog {
         resultStore.load(symbol).ifPresent(r -> {
             displayAutoAnalyzeResult(r);
             aaStatusLabel.setForeground(TEXT_MUTED);
-            aaStatusLabel.setText("Showing last saved result from " + DISPLAY_FMT.format(r.analyzedAt()) + ". Run to refresh.");
-            aaApplyButton.setEnabled(true);
+            aaStatusLabel.setText("Showing last saved result from " + DISPLAY_FMT.format(r.analyzedAt()) + ". Run to refresh recommendations.");
+            setRecommendationState(shortTermRecommendationView, null);
+            setRecommendationState(longTermRecommendationView, null);
         });
-    }
-
-    private void applyAutoAnalyzeToStrategy() {
-        if (lastAutoAnalyzeResult == null) {
-            return;
-        }
-        AutoAnalyzeResult r = lastAutoAnalyzeResult;
-        BigDecimal base = r.averageDailyClose();
-        BigDecimal stopLossVal = r.averageDailyLow();
-        BigDecimal sellTrigger = r.averageDailyHigh();
-
-        // Guard: enforce the dialog's own validation constraints before filling
-        boolean baseSane = base.compareTo(BigDecimal.ZERO) > 0;
-        boolean stopSane = stopLossVal.compareTo(BigDecimal.ZERO) > 0 && stopLossVal.compareTo(base) < 0;
-        boolean sellSane = sellTrigger.compareTo(base) >= 0;
-
-        if (!baseSane || !stopSane || !sellSane) {
-            JOptionPane.showMessageDialog(this,
-                    "<html>Could not apply Auto Analyze results — the computed values do not satisfy<br>"
-                            + "strategy validation constraints (stop loss ≥ base, or sell trigger &lt; base).<br>"
-                            + "Please adjust manually on the Current Strategy tab.</html>",
-                    "Cannot Apply Auto Analyze",
-                    JOptionPane.WARNING_MESSAGE);
-            tabs.setSelectedIndex(0);
-            return;
-        }
-
-        // Derive loss buy levels anchored to the historical low
-        BigDecimal loss1 = stopLossVal.multiply(new BigDecimal("0.97")).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal loss2 = stopLossVal.multiply(new BigDecimal("0.93")).setScale(2, RoundingMode.HALF_UP);
-
-        basePriceField.setText(base.setScale(2, RoundingMode.HALF_UP).toPlainString());
-        stopLossField.setText(stopLossVal.setScale(2, RoundingMode.HALF_UP).toPlainString());
-        sellTriggerField.setText(sellTrigger.setScale(2, RoundingMode.HALF_UP).toPlainString());
-        loss1PriceField.setText(loss1.toPlainString());
-        loss2PriceField.setText(loss2.toPlainString());
-        symbolField.setText(r.symbol());
-
-        tabs.setSelectedIndex(0);
-        aaStatusLabel.setForeground(new Color(34, 139, 34));
-        aaStatusLabel.setText("Applied to Current Strategy tab.");
     }
 
     private static String escapeHtml(String s) {
@@ -1060,6 +1378,41 @@ public class StrategyDialog extends JDialog {
         return value != null && value.compareTo(BigDecimal.ZERO) > 0
                 ? "$" + value.toPlainString()
                 : "—";
+    }
+
+    private void updateResultsLoadingState(boolean loading, String message) {
+        if (message != null && !message.isBlank()) {
+            aaResultsLoadingLabel.setText(message);
+        }
+        aaResultsLoadingLabel.setVisible(loading);
+        aaResultsProgressBar.setVisible(loading);
+    }
+
+    private static final class RecommendationView {
+        private final String title;
+        private final JLabel baseBuyValue = new JLabel("—");
+        private final JLabel buy1Value = new JLabel("—");
+        private final JLabel buy2Value = new JLabel("—");
+        private final JLabel stopLossValue = new JLabel("—");
+        private final JLabel sellPriceValue = new JLabel("—");
+        private final JLabel target1Value = new JLabel("—");
+        private final JLabel target2Value = new JLabel("—");
+        private final JLabel trendStatusValue = new JLabel("—");
+        private final JLabel volumeStatusValue = new JLabel("—");
+        private final JLabel riskRewardValue = new JLabel("—");
+        private final JLabel confidenceValue = new JLabel("—");
+        private final JLabel badge = new JLabel("PENDING");
+        private final JLabel warningLabel = new JLabel("Run Auto Analyze to populate this recommendation.");
+        private final JButton applyButton = new JButton();
+
+        private RecommendationView(String title) {
+            this.title = title;
+        }
+    }
+
+    private enum RecommendationTypeLabel {
+        SHORT_TERM,
+        LONG_TERM
     }
 
     private record DialogDefaults(

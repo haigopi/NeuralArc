@@ -41,6 +41,7 @@ public class StrategyPersistenceManager {
               .append(c.lossBuyLevel1Qty()).append(",")
               .append(c.lossBuyLevel2Price().toPlainString()).append(",")
               .append(c.lossBuyLevel2Qty()).append(",")
+              .append(c.lossBuyLevelsEnabled()).append(",")
               .append(c.pollingSeconds()).append(",")
               .append(c.paperTrading()).append(",")
               .append(c.profitHoldEnabled()).append(",")
@@ -80,10 +81,11 @@ public class StrategyPersistenceManager {
                 if (p.length < 12) {
                     continue;
                 }
-                boolean legacyFormat = p.length < 16;
-                boolean hasStopLossEnabledFlag = p.length >= 17;
+                boolean legacyFormat = p.length < 17;
+                boolean hasStopLossEnabledFlag = p.length >= 18;
                 boolean stopLossEnabled = hasStopLossEnabledFlag ? Boolean.parseBoolean(p[3]) : true;
                 int offset = hasStopLossEnabledFlag ? 1 : 0;
+                boolean lossBuyLevelsEnabled = legacyFormat ? true : Boolean.parseBoolean(p[9 + offset]);
                 boolean profitHoldEnabled = Boolean.parseBoolean(p[11 + offset]);
                 com.neuralarc.model.ProfitHoldType profitHoldType = legacyFormat
                         ? com.neuralarc.model.ProfitHoldType.PERCENT_TRAILING
@@ -94,9 +96,9 @@ public class StrategyPersistenceManager {
                 BigDecimal profitHoldAmount = legacyFormat
                         ? BigDecimal.ZERO
                         : new BigDecimal(p[14 + offset]);
-                boolean repeatCycleAfterProfitExitEnabled = p.length > 16 + offset
-                        && Boolean.parseBoolean(p[15 + offset]);
-                int pausedIndex = legacyFormat ? 12 : (repeatCycleAfterProfitExitEnabled ? 16 + offset : 15 + offset);
+                boolean repeatCycleAfterProfitExitEnabled = p.length > 17 + offset
+                        && Boolean.parseBoolean(p[16 + offset]);
+                int pausedIndex = legacyFormat ? 12 : (repeatCycleAfterProfitExitEnabled ? 17 + offset : 16 + offset);
                 StrategyConfig config = new StrategyConfig(
                         p[0],
                         new BigDecimal(p[1]),
@@ -108,10 +110,11 @@ public class StrategyPersistenceManager {
                         Integer.parseInt(p[6 + offset]),
                         new BigDecimal(p[7 + offset]),
                         Integer.parseInt(p[8 + offset]),
+                        lossBuyLevelsEnabled,
                         false,
                         BigDecimal.ZERO,
-                        Integer.parseInt(p[9 + offset]),
-                        Boolean.parseBoolean(p[10 + offset]),
+                        Integer.parseInt(p[10 + offset]),
+                        Boolean.parseBoolean(p[11 + offset]),
                         profitHoldEnabled,
                         profitHoldType,
                         profitHoldPercent,

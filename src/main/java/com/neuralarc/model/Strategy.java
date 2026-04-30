@@ -19,6 +19,7 @@ public class Strategy {
     private int buyLimit1Quantity;
     private BigDecimal buyLimit2Price;
     private int buyLimit2Quantity;
+    private boolean lossBuyLevelsEnabled;
     private boolean automatedStopLossEnabled;
     private StopLossType stopLossType;
     private BigDecimal stopLossPrice;
@@ -95,6 +96,7 @@ public class Strategy {
         this.buyLimit1Quantity = buyLimit1Quantity;
         this.buyLimit2Price = money(buyLimit2Price);
         this.buyLimit2Quantity = buyLimit2Quantity;
+        this.lossBuyLevelsEnabled = true;
         this.automatedStopLossEnabled = automatedStopLossEnabled;
         this.stopLossType = stopLossType == null ? StopLossType.FIXED_PRICE : stopLossType;
         this.stopLossPrice = money(stopLossPrice);
@@ -120,11 +122,14 @@ public class Strategy {
     }
 
     public static Strategy fromConfig(String id, String name, StrategyConfig config, StrategyMode mode) {
-        int maxQty = config.baseBuyQty() + config.lossBuyLevel1Qty() + config.lossBuyLevel2Qty();
+        int maxQty = config.baseBuyQty()
+                + (config.lossBuyLevelsEnabled() ? config.lossBuyLevel1Qty() + config.lossBuyLevel2Qty() : 0);
         BigDecimal maxCapital = Monetary.round(config.baseBuyPrice().multiply(BigDecimal.valueOf(config.baseBuyQty()))
-                .add(config.lossBuyLevel1Price().multiply(BigDecimal.valueOf(config.lossBuyLevel1Qty())))
-                .add(config.lossBuyLevel2Price().multiply(BigDecimal.valueOf(config.lossBuyLevel2Qty()))));
-        return new Strategy(
+                .add(config.lossBuyLevelsEnabled()
+                        ? config.lossBuyLevel1Price().multiply(BigDecimal.valueOf(config.lossBuyLevel1Qty()))
+                            .add(config.lossBuyLevel2Price().multiply(BigDecimal.valueOf(config.lossBuyLevel2Qty())))
+                        : BigDecimal.ZERO));
+        Strategy strategy = new Strategy(
                 id,
                 name,
                 config.symbol(),
@@ -159,6 +164,8 @@ public class Strategy {
                 Instant.now(),
                 Instant.now()
         );
+        strategy.setLossBuyLevelsEnabled(config.lossBuyLevelsEnabled());
+        return strategy;
     }
 
     private static BigDecimal money(BigDecimal value) {
@@ -179,13 +186,19 @@ public class Strategy {
 
     public BigDecimal estimatedTotalCapital() {
         BigDecimal total = baseBuyLimitPrice.multiply(BigDecimal.valueOf(baseBuyQuantity));
-        total = total.add(buyLimit1Price.multiply(BigDecimal.valueOf(Math.max(0, buyLimit1Quantity))));
-        total = total.add(buyLimit2Price.multiply(BigDecimal.valueOf(Math.max(0, buyLimit2Quantity))));
+        if (lossBuyLevelsEnabled) {
+            total = total.add(buyLimit1Price.multiply(BigDecimal.valueOf(Math.max(0, buyLimit1Quantity))));
+            total = total.add(buyLimit2Price.multiply(BigDecimal.valueOf(Math.max(0, buyLimit2Quantity))));
+        }
         return Monetary.round(total);
     }
 
     public int configuredTotalQuantity() {
-        return Math.max(0, baseBuyQuantity) + Math.max(0, buyLimit1Quantity) + Math.max(0, buyLimit2Quantity);
+        int total = Math.max(0, baseBuyQuantity);
+        if (lossBuyLevelsEnabled) {
+            total += Math.max(0, buyLimit1Quantity) + Math.max(0, buyLimit2Quantity);
+        }
+        return total;
     }
 
     public BigDecimal targetSellQuantity(BigDecimal positionQuantity) {
@@ -235,6 +248,7 @@ public class Strategy {
     public int buyLimit1Quantity() { return buyLimit1Quantity; }
     public BigDecimal buyLimit2Price() { return buyLimit2Price; }
     public int buyLimit2Quantity() { return buyLimit2Quantity; }
+    public boolean lossBuyLevelsEnabled() { return lossBuyLevelsEnabled; }
     public boolean automatedStopLossEnabled() { return automatedStopLossEnabled; }
     public StopLossType stopLossType() { return stopLossType; }
     public BigDecimal stopLossPrice() { return stopLossPrice; }
@@ -275,6 +289,7 @@ public class Strategy {
     public void setBuyLimit1Quantity(int value) { this.buyLimit1Quantity = value; touch(); }
     public void setBuyLimit2Price(BigDecimal value) { this.buyLimit2Price = money(value); touch(); }
     public void setBuyLimit2Quantity(int value) { this.buyLimit2Quantity = value; touch(); }
+    public void setLossBuyLevelsEnabled(boolean value) { this.lossBuyLevelsEnabled = value; touch(); }
     public void setAutomatedStopLossEnabled(boolean enabled) { this.automatedStopLossEnabled = enabled; touch(); }
     public void setStopLossType(StopLossType stopLossType) { this.stopLossType = stopLossType == null ? StopLossType.FIXED_PRICE : stopLossType; touch(); }
     public void setStopLossPrice(BigDecimal value) { this.stopLossPrice = money(value); touch(); }

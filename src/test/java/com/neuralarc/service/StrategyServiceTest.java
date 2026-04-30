@@ -49,6 +49,24 @@ class StrategyServiceTest {
     }
 
     @Test
+    void initialBaseBuyCanBePlacedWhenMarketIsClosed() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca, new AlwaysClosedMarketHoursService());
+
+        Strategy strategy = baseStrategy("ASML", 10, new BigDecimal("1366.10"));
+        strategy.setMaxCapitalAllowed(new BigDecimal("20000.00"));
+        strategy.setMaxTotalQuantity(100);
+        StrategyService.StrategyCreationResult result = service.createAndActivate(strategy);
+
+        assertTrue(result.success());
+        assertEquals(1, alpaca.submittedOrders.size());
+        assertTrue(orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).isPresent());
+    }
+
+    @Test
     void liveModeBlockedWhenFlagDisabled() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
@@ -228,6 +246,16 @@ class StrategyServiceTest {
             InMemoryEventRepository events,
             FakeAlpacaClient alpaca
     ) {
+        return service(strategies, orders, events, alpaca, new AlwaysOpenMarketHoursService());
+    }
+
+    private StrategyService service(
+            InMemoryStrategyRepository strategies,
+            InMemoryOrderRepository orders,
+            InMemoryEventRepository events,
+            FakeAlpacaClient alpaca,
+            MarketHoursService marketHoursService
+    ) {
         try {
             AppSettingsService settingsService = new AppSettingsService(java.nio.file.Files.createTempDirectory("neuralarc-service-test").resolve("settings.properties"));
             settingsService.save(new AppSettingsService.AppSettings(
@@ -247,7 +275,7 @@ class StrategyServiceTest {
                     false,
                     StrategyMode.PAPER,
                     settingsService,
-                    new AlwaysOpenMarketHoursService()
+                    marketHoursService
             );
         } catch (Exception ex) {
             throw new IllegalStateException(ex);
@@ -365,6 +393,18 @@ class StrategyServiceTest {
         @Override
         public boolean isTradingSessionOpen(Instant instant, boolean extendedHoursEnabled) {
             return true;
+        }
+    }
+
+    private static final class AlwaysClosedMarketHoursService extends MarketHoursService {
+        @Override
+        public boolean isTradingSessionOpen(boolean extendedHoursEnabled) {
+            return false;
+        }
+
+        @Override
+        public boolean isTradingSessionOpen(Instant instant, boolean extendedHoursEnabled) {
+            return false;
         }
     }
 

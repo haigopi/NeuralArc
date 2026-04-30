@@ -28,6 +28,7 @@ import org.json.JSONArray;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.RowSorter;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableCellRenderer;
@@ -1250,7 +1251,7 @@ public class TradingFrame extends JFrame {
         int selectedModelRow = strategyTable.getSelectedRow() >= 0
                 ? strategyTable.convertRowIndexToModel(strategyTable.getSelectedRow())
                 : strategies.size() - 1;
-        int addedViewRow = selectedModelRow >= 0 ? strategyTable.convertRowIndexToView(selectedModelRow) : -1;
+        int addedViewRow = safeConvertModelRowToView(selectedModelRow);
         if (addedViewRow >= 0) {
             strategyTable.setRowSelectionInterval(addedViewRow, addedViewRow);
         }
@@ -1612,8 +1613,13 @@ public class TradingFrame extends JFrame {
                 + "<br><b>Order Placed On:</b> " + orderPlaced
                 + "<br><b>Waiting Duration:</b> " + waitingDuration
                 + "<br><b>Base Buy:</b> <= " + strategy.baseBuyLimitPrice().toPlainString() + " x " + strategy.baseBuyQuantity()
-                + "<br><b>Buy Limit 1:</b> <= " + strategy.buyLimit1Price().toPlainString() + " x " + strategy.buyLimit1Quantity()
-                + "<br><b>Buy Limit 2:</b> <= " + strategy.buyLimit2Price().toPlainString() + " x " + strategy.buyLimit2Quantity()
+                + "<br><b>Loss Buy Levels:</b> " + (strategy.lossBuyLevelsEnabled() ? "Enabled" : "Disabled")
+                + "<br><b>Buy Limit 1:</b> " + (strategy.lossBuyLevelsEnabled()
+                    ? "<= " + strategy.buyLimit1Price().toPlainString() + " x " + strategy.buyLimit1Quantity()
+                    : "Disabled")
+                + "<br><b>Buy Limit 2:</b> " + (strategy.lossBuyLevelsEnabled()
+                    ? "<= " + strategy.buyLimit2Price().toPlainString() + " x " + strategy.buyLimit2Quantity()
+                    : "Disabled")
                 + "<br><b>Stop Loss:</b> " + stopLossValue
                 + "<br><b>Target Sell:</b> >= " + strategy.targetSellPrice().toPlainString()
                 + "<br><b>Profit Hold:</b> " + profitHoldValue
@@ -1776,11 +1782,32 @@ public class TradingFrame extends JFrame {
             preservingSelection = false;
             return;
         }
-        int viewRow = strategyTable.convertRowIndexToView(modelRow);
+        int viewRow = safeConvertModelRowToView(modelRow);
         if (viewRow >= 0 && strategyTable.getSelectedRow() != viewRow) {
             strategyTable.setRowSelectionInterval(viewRow, viewRow);
         }
         preservingSelection = false;
+    }
+
+    private int safeConvertModelRowToView(int modelRow) {
+        if (modelRow < 0 || modelRow >= strategyTableModel.getRowCount()) {
+            return -1;
+        }
+        RowSorter<?> sorter = strategyTable.getRowSorter();
+        if (sorter != null) {
+            try {
+                if (modelRow >= sorter.getModelRowCount()) {
+                    return -1;
+                }
+            } catch (RuntimeException ignored) {
+                return -1;
+            }
+        }
+        try {
+            return strategyTable.convertRowIndexToView(modelRow);
+        } catch (RuntimeException ignored) {
+            return -1;
+        }
     }
 
     private void rememberSelectedStrategy() {
@@ -1869,7 +1896,7 @@ public class TradingFrame extends JFrame {
 
     private void resetPollingCountdown(ManagedStrategy entry) {
         entry.pollIntervalMillis = Math.max(1L, entry.strategy.pollingIntervalSeconds()) * 1000L;
-        if (entry.strategy.status() == StrategyStatus.ACTIVE) {
+        if (shouldShowPollingIndicator(entry)) {
             entry.countdownActive = true;
             long baseTime = entry.strategy.lastPolledAt() == null
                     ? System.currentTimeMillis()
@@ -1899,7 +1926,7 @@ public class TradingFrame extends JFrame {
     }
 
     private int pollingProgressPercent(ManagedStrategy entry) {
-        if (entry.strategy.status() != StrategyStatus.ACTIVE || entry.pollIntervalMillis <= 0L) {
+        if (!shouldShowPollingIndicator(entry) || entry.pollIntervalMillis <= 0L) {
             return 0;
         }
         if (entry.nextPollDueAtMillis <= 0L) {
@@ -1915,7 +1942,7 @@ public class TradingFrame extends JFrame {
     }
 
     private long pollingSecondsRemaining(ManagedStrategy entry) {
-        if (entry.strategy.status() != StrategyStatus.ACTIVE || entry.pollIntervalMillis <= 0L) {
+        if (!shouldShowPollingIndicator(entry) || entry.pollIntervalMillis <= 0L) {
             return 0L;
         }
         if (entry.nextPollDueAtMillis <= 0L) {
@@ -1924,6 +1951,28 @@ public class TradingFrame extends JFrame {
         }
         long remainingMillis = Math.max(0L, entry.nextPollDueAtMillis - System.currentTimeMillis());
         return (long) Math.ceil(remainingMillis / 1000.0d);
+    }
+
+    private boolean shouldShowPollingIndicator(ManagedStrategy entry) {
+        return entry != null
+                && (entry.strategy.status() == StrategyStatus.ACTIVE || isWaitingForFill(entry.strategy));
+    }
+
+    private boolean shouldSuppressBrokerBackedRefreshForClosedMarket() {
+        if (tradingApi == null || currentBrokerType != BrokerType.ALPACA) {
+            return false;
+        }
+        AppSettingsService.AppSettings settings = appSettingsService.load();
+        if (!settings.autoPausePollingWhenMarketClosed()) {
+            return false;
+        }
+        return !marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
+    }
+
+    private boolean isAutoPausedForClosedMarket(ManagedStrategy entry) {
+        return entry != null
+                && entry.strategy.status() == StrategyStatus.PAUSED
+                && entry.strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED;
     }
 
     private void setStatus(String message, Color color) {
@@ -2081,10 +2130,22 @@ public class TradingFrame extends JFrame {
         if (tradingApi == null) {
             return entry.cachedPosition();
         }
-        if (entry.strategy.status() != StrategyStatus.ACTIVE) {
+        if (shouldSuppressBrokerBackedRefreshForClosedMarket()) {
             return entry.cachedPosition();
         }
         if (!entry.shouldRefreshDisplayedPosition()) {
+            return entry.cachedPosition();
+        }
+        if (entry.strategy.status() != StrategyStatus.ACTIVE) {
+            if (isWaitingForFill(entry.strategy)) {
+                Position latest = entry.cachedPosition();
+                BigDecimal latestPrice = tradingApi.getLatestPrice(entry.strategy.symbol());
+                if (latestPrice.compareTo(BigDecimal.ZERO) > 0) {
+                    latest.setLastPrice(latestPrice);
+                    entry.setCachedPosition(latest);
+                }
+                return latest;
+            }
             return entry.cachedPosition();
         }
         Position latest = tradingApi.getPosition(entry.strategy.symbol());
@@ -2277,6 +2338,7 @@ public class TradingFrame extends JFrame {
                     strategy.buyLimit1Quantity(),
                     strategy.buyLimit2Price(),
                     strategy.buyLimit2Quantity(),
+                    strategy.lossBuyLevelsEnabled(),
                     strategy.optionalLossExitEnabled(),
                     strategy.optionalLossExitPrice(),
                     strategy.pollingIntervalSeconds(),
@@ -2399,6 +2461,7 @@ public class TradingFrame extends JFrame {
             int progress = pollingProgressPercent(strategy);
             long secondsRemaining = pollingSecondsRemaining(strategy);
             long totalSeconds = Math.max(1L, strategy.strategy.pollingIntervalSeconds());
+            boolean showPollingProgress = shouldShowPollingIndicator(strategy);
 
             // Match the row background so no separate cell box is visible
             Color rowBg = selectionAwareRowColor(isSelected, table);
@@ -2410,16 +2473,29 @@ public class TradingFrame extends JFrame {
                     ? new Color(TABLE_SELECTION_BAR_BG.getRed(), TABLE_SELECTION_BAR_BG.getGreen(),
                                 TABLE_SELECTION_BAR_BG.getBlue(), 60)
                     : new Color(0, 0, 0, 0)); // fully transparent track on normal rows
-            progressBar.setForeground(strategy.isPaused()
+            progressBar.setForeground(!showPollingProgress && strategy.isPaused()
                     ? STATUS_TEXT_PAUSED
                     : isSelected ? new Color(60, 30, 140) : new Color(94, 53, 177));
             countdownLabel.setForeground(isSelected ? TABLE_SELECTION_FG : table.getForeground());
-            countdownLabel.setText(strategy.isPaused()
+            boolean closedMarketPaused = isAutoPausedForClosedMarket(strategy) && shouldSuppressBrokerBackedRefreshForClosedMarket();
+            countdownLabel.setText(closedMarketPaused
+                    ? "Market Closed"
+                    : showPollingProgress
+                    ? secondsRemaining + "s / " + totalSeconds + "s"
+                    : strategy.isPaused()
                     ? strategy.pauseLabel()
-                    : secondsRemaining + "s / " + totalSeconds + "s");
-            String tooltipText = TooltipStyler.text(strategy.isPaused()
+                    : "Idle");
+            String tooltipText = TooltipStyler.text(closedMarketPaused
+                    ? "Polling is paused because the market is closed. Alpaca refresh calls are suppressed until the next trading session opens."
+                    : showPollingProgress
+                    ? secondsRemaining + " seconds remaining out of " + totalSeconds + " seconds"
+                    : strategy.isPaused()
                     ? strategy.pauseTooltip()
-                    : secondsRemaining + " seconds remaining out of " + totalSeconds + " seconds");
+                    : "Polling is idle for this strategy");
+            if (closedMarketPaused) {
+                progressBar.setValue(0);
+                progressBar.setForeground(STATUS_TEXT_PAUSED);
+            }
             setToolTipText(tooltipText);
             progressBar.setToolTipText(tooltipText);
             countdownLabel.setToolTipText(tooltipText);

@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.nio.file.attribute.FileTime;
 import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -38,6 +39,7 @@ class DailyLogBundleServiceTest {
     void includesAppLogWhenFileModifiedToday() throws Exception {
         Path appLog = tempDir.resolve("app.log");
         Files.writeString(appLog, "[Apr 29th - 10:05 AM] UI started\n");
+        Files.setLastModifiedTime(appLog, FileTime.from(Instant.parse("2026-04-29T10:00:00Z")));
 
         DailyLogBundleService service = new DailyLogBundleService(
                 tempDir,
@@ -54,4 +56,3 @@ class DailyLogBundleServiceTest {
         return Clock.fixed(Instant.parse(instant), ZoneId.of("UTC"));
     }
 }
-

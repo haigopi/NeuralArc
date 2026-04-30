@@ -104,7 +104,7 @@ public class StrategyService {
         strategyRepository.save(strategy);
         stateMachine.transition(strategy, StrategyLifecycleState.VALIDATED, StrategyEventType.STRATEGY_CREATED, "Strategy validated", "{}");
 
-        StrategyOrder order = strategyEngine.submitBaseBuy(strategy);
+        StrategyOrder order = strategyEngine.submitBaseBuy(strategy, false);
         if (order == null || order.alpacaOrderId() == null || order.alpacaOrderId().isBlank()) {
             strategy.setStatus(StrategyStatus.FAILED);
             strategy.setCurrentState(StrategyLifecycleState.FAILED);

@@ -17,15 +17,26 @@ public record AutoAnalyzeResult(
         BigDecimal averageDailyClose,
         BigDecimal averageDailyLow,
         BigDecimal averageDailyHigh,
-        // Lowest daily low across the analysis period (monthsBack months).
+        BigDecimal oneWeekLow,
+        BigDecimal oneWeekHigh,
+        BigDecimal twoWeekLow,
+        BigDecimal twoWeekHigh,
+        BigDecimal oneMonthLow,
+        BigDecimal oneMonthHigh,
+        BigDecimal twoMonthLow,
+        BigDecimal twoMonthHigh,
+        BigDecimal fourMonthLow,
+        BigDecimal fourMonthHigh,
         BigDecimal sixMonthLow,
-        // Highest daily high across the analysis period (monthsBack months).
         BigDecimal sixMonthHigh,
-        BigDecimal fiftyTwoWeekLow,
-        BigDecimal fiftyTwoWeekHigh,
+        BigDecimal eightMonthLow,
+        BigDecimal eightMonthHigh,
+        BigDecimal oneYearLow,
+        BigDecimal oneYearHigh,
         BigDecimal todayStockPrice,
         BigDecimal todayOpen,
         BigDecimal todayHighSoFar,
+        BigDecimal todayLowSoFar,
         boolean todayCloseAvailable,
         BigDecimal todayClose,
         /**
@@ -37,4 +48,3 @@ public record AutoAnalyzeResult(
         int intradayBarsProcessed,
         Instant analyzedAt
 ) {}
-

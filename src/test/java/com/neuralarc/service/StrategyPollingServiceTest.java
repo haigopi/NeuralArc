@@ -59,6 +59,21 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void lossBuyLevelsDoNotTriggerWhenDisabled() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setLossBuyLevelsEnabled(false);
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        f.alpaca.latestPrice = new BigDecimal("5.00");
+
+        f.service.pollStrategy(strategy.id());
+
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).isEmpty());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_2).isEmpty());
+    }
+
+    @Test
     void stopLossTriggersAfterFillWhenPriceDropsBelowThreshold() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);

@@ -93,8 +93,12 @@ public class StrategyEngine {
     }
 
     public StrategyOrder submitBaseBuy(Strategy strategy) {
+        return submitBaseBuy(strategy, true);
+    }
+
+    public StrategyOrder submitBaseBuy(Strategy strategy, boolean enforceTradableSession) {
         return submitBuyOrder(strategy, StrategyStage.BASE_BUY, strategy.baseBuyQuantity(), strategy.baseBuyLimitPrice(),
-                StrategyLifecycleState.BASE_BUY_PLACED, "Base buy order submitted");
+                StrategyLifecycleState.BASE_BUY_PLACED, "Base buy order submitted", enforceTradableSession);
     }
 
     public void resumeStrategy(Strategy strategy) {
@@ -109,7 +113,7 @@ public class StrategyEngine {
 
         if (position.isEmpty() || !position.get().exists()) {
             if (!isStageFilled(orders, StrategyStage.BASE_BUY)) {
-                submitBaseBuy(strategy);
+                submitBaseBuy(strategy, false);
                 return;
             }
         }
@@ -142,23 +146,29 @@ public class StrategyEngine {
             return true;
         }
         if (isStageFilled(orders, StrategyStage.BASE_BUY)
+                && strategy.lossBuyLevelsEnabled()
                 && strategy.buyLimit1Quantity() > 0
                 && !isStageFilled(orders, StrategyStage.BUY_LIMIT_1)) {
             submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_1, strategy.buyLimit1Quantity(), strategy.buyLimit1Price(),
-                    StrategyLifecycleState.BUY_LIMIT_1_PLACED, "Buy Limit 1 recreated after missing Alpaca order");
+                    StrategyLifecycleState.BUY_LIMIT_1_PLACED, "Buy Limit 1 recreated after missing Alpaca order", true);
             return true;
         }
         if (isStageFilled(orders, StrategyStage.BUY_LIMIT_1)
+                && strategy.lossBuyLevelsEnabled()
                 && strategy.buyLimit2Quantity() > 0
                 && !isStageFilled(orders, StrategyStage.BUY_LIMIT_2)) {
             submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_2, strategy.buyLimit2Quantity(), strategy.buyLimit2Price(),
-                    StrategyLifecycleState.BUY_LIMIT_2_PLACED, "Buy Limit 2 recreated after missing Alpaca order");
+                    StrategyLifecycleState.BUY_LIMIT_2_PLACED, "Buy Limit 2 recreated after missing Alpaca order", true);
             return true;
         }
         return updatedLocalOrderState;
     }
 
     private void maybeSubmitBuyLimit1(Strategy strategy, BigDecimal latestPrice, List<StrategyOrder> orders) {
+        if (!strategy.lossBuyLevelsEnabled()) {
+            logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Loss buy levels disabled");
+            return;
+        }
         if (strategy.buyLimit1Quantity() <= 0 || strategy.buyLimit1Price().compareTo(BigDecimal.ZERO) <= 0) {
             logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Not configured");
             return;
@@ -182,10 +192,14 @@ public class StrategyEngine {
                         + " <= triggerPrice=" + strategy.buyLimit1Price().toPlainString()
                         + ", quantity=" + strategy.buyLimit1Quantity());
         submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_1, strategy.buyLimit1Quantity(), strategy.buyLimit1Price(),
-                StrategyLifecycleState.BUY_LIMIT_1_PLACED, "Buy Limit 1 submitted");
+                StrategyLifecycleState.BUY_LIMIT_1_PLACED, "Buy Limit 1 submitted", true);
     }
 
     private void maybeSubmitBuyLimit2(Strategy strategy, BigDecimal latestPrice, List<StrategyOrder> orders) {
+        if (!strategy.lossBuyLevelsEnabled()) {
+            logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Loss buy levels disabled");
+            return;
+        }
         if (strategy.buyLimit2Quantity() <= 0 || strategy.buyLimit2Price().compareTo(BigDecimal.ZERO) <= 0) {
             logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Not configured");
             return;
@@ -209,7 +223,7 @@ public class StrategyEngine {
                         + " <= triggerPrice=" + strategy.buyLimit2Price().toPlainString()
                         + ", quantity=" + strategy.buyLimit2Quantity());
         submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_2, strategy.buyLimit2Quantity(), strategy.buyLimit2Price(),
-                StrategyLifecycleState.BUY_LIMIT_2_PLACED, "Buy Limit 2 submitted");
+                StrategyLifecycleState.BUY_LIMIT_2_PLACED, "Buy Limit 2 submitted", true);
     }
 
     private void evaluateManagedStopLoss(Strategy strategy, AlpacaPositionData position, BigDecimal latestPrice, List<StrategyOrder> orders) {
@@ -435,7 +449,8 @@ public class StrategyEngine {
             int quantity,
             BigDecimal limitPrice,
             StrategyLifecycleState lifecycleState,
-            String message
+            String message,
+            boolean enforceTradableSession
     ) {
         RiskProjection projection = projectedRisk(strategy, BigDecimal.valueOf(quantity), limitPrice);
         if (!projection.allowed()) {
@@ -447,7 +462,7 @@ public class StrategyEngine {
             strategyRepository.save(strategy);
             return null;
         }
-        if (!ensureTradableSession(strategy, stage, limitPrice)) {
+        if (enforceTradableSession && !ensureTradableSession(strategy, stage, limitPrice)) {
             return null;
         }
         String clientOrderId = StrategyService.buildClientOrderId(strategy.id(), stage);

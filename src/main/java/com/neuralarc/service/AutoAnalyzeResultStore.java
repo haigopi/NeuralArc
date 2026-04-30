@@ -88,13 +88,29 @@ public class AutoAnalyzeResultStore {
         json.put("averageDailyClose", r.averageDailyClose().toPlainString());
         json.put("averageDailyLow", r.averageDailyLow().toPlainString());
         json.put("averageDailyHigh", r.averageDailyHigh().toPlainString());
+        json.put("oneWeekLow", r.oneWeekLow().toPlainString());
+        json.put("oneWeekHigh", r.oneWeekHigh().toPlainString());
+        json.put("twoWeekLow", r.twoWeekLow().toPlainString());
+        json.put("twoWeekHigh", r.twoWeekHigh().toPlainString());
+        json.put("oneMonthLow", r.oneMonthLow().toPlainString());
+        json.put("oneMonthHigh", r.oneMonthHigh().toPlainString());
+        json.put("twoMonthLow", r.twoMonthLow().toPlainString());
+        json.put("twoMonthHigh", r.twoMonthHigh().toPlainString());
+        json.put("fourMonthLow", r.fourMonthLow().toPlainString());
+        json.put("fourMonthHigh", r.fourMonthHigh().toPlainString());
         json.put("sixMonthLow", r.sixMonthLow().toPlainString());
         json.put("sixMonthHigh", r.sixMonthHigh().toPlainString());
-        json.put("fiftyTwoWeekLow", r.fiftyTwoWeekLow().toPlainString());
-        json.put("fiftyTwoWeekHigh", r.fiftyTwoWeekHigh().toPlainString());
+        json.put("eightMonthLow", r.eightMonthLow().toPlainString());
+        json.put("eightMonthHigh", r.eightMonthHigh().toPlainString());
+        json.put("oneYearLow", r.oneYearLow().toPlainString());
+        json.put("oneYearHigh", r.oneYearHigh().toPlainString());
+        // Legacy aliases for compatibility with older builds.
+        json.put("fiftyTwoWeekLow", r.oneYearLow().toPlainString());
+        json.put("fiftyTwoWeekHigh", r.oneYearHigh().toPlainString());
         json.put("todayStockPrice", r.todayStockPrice().toPlainString());
         json.put("todayOpen", r.todayOpen().toPlainString());
         json.put("todayHighSoFar", r.todayHighSoFar().toPlainString());
+        json.put("todayLowSoFar", r.todayLowSoFar().toPlainString());
         json.put("todayCloseAvailable", r.todayCloseAvailable());
         json.put("todayClose", r.todayClose().toPlainString());
         json.put("thresholdNumber", r.thresholdNumber().toPlainString());
@@ -105,9 +121,13 @@ public class AutoAnalyzeResultStore {
     }
 
     private AutoAnalyzeResult fromJson(JSONObject json) {
-        // Backward-compat: older cache files won't have range fields – fall back to averages.
+        // Backward-compat: older cache files won't have all range fields.
         String avgLow  = json.getString("averageDailyLow");
         String avgHigh = json.getString("averageDailyHigh");
+        String sixMonthLow = json.optString("sixMonthLow", avgLow);
+        String sixMonthHigh = json.optString("sixMonthHigh", avgHigh);
+        String oneYearLow = json.optString("oneYearLow", json.optString("fiftyTwoWeekLow", sixMonthLow));
+        String oneYearHigh = json.optString("oneYearHigh", json.optString("fiftyTwoWeekHigh", sixMonthHigh));
         return new AutoAnalyzeResult(
                 json.getString("symbol"),
                 LocalDate.parse(json.getString("startDate")),
@@ -117,13 +137,26 @@ public class AutoAnalyzeResultStore {
                 new BigDecimal(json.getString("averageDailyClose")),
                 new BigDecimal(avgLow),
                 new BigDecimal(avgHigh),
-                new BigDecimal(json.optString("sixMonthLow", avgLow)),
-                new BigDecimal(json.optString("sixMonthHigh", avgHigh)),
-                new BigDecimal(json.optString("fiftyTwoWeekLow", avgLow)),
-                new BigDecimal(json.optString("fiftyTwoWeekHigh", avgHigh)),
+                new BigDecimal(json.optString("oneWeekLow", sixMonthLow)),
+                new BigDecimal(json.optString("oneWeekHigh", sixMonthHigh)),
+                new BigDecimal(json.optString("twoWeekLow", sixMonthLow)),
+                new BigDecimal(json.optString("twoWeekHigh", sixMonthHigh)),
+                new BigDecimal(json.optString("oneMonthLow", sixMonthLow)),
+                new BigDecimal(json.optString("oneMonthHigh", sixMonthHigh)),
+                new BigDecimal(json.optString("twoMonthLow", sixMonthLow)),
+                new BigDecimal(json.optString("twoMonthHigh", sixMonthHigh)),
+                new BigDecimal(json.optString("fourMonthLow", sixMonthLow)),
+                new BigDecimal(json.optString("fourMonthHigh", sixMonthHigh)),
+                new BigDecimal(sixMonthLow),
+                new BigDecimal(sixMonthHigh),
+                new BigDecimal(json.optString("eightMonthLow", sixMonthLow)),
+                new BigDecimal(json.optString("eightMonthHigh", sixMonthHigh)),
+                new BigDecimal(oneYearLow),
+                new BigDecimal(oneYearHigh),
                 new BigDecimal(json.optString("todayStockPrice", "0")),
                 new BigDecimal(json.optString("todayOpen", "0")),
                 new BigDecimal(json.optString("todayHighSoFar", "0")),
+                new BigDecimal(json.optString("todayLowSoFar", "0")),
                 json.optBoolean("todayCloseAvailable", false),
                 new BigDecimal(json.optString("todayClose", "0")),
                 new BigDecimal(json.getString("thresholdNumber")),
@@ -133,4 +166,3 @@ public class AutoAnalyzeResultStore {
         );
     }
 }
-

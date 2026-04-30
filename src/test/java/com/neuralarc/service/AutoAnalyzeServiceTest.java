@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class AutoAnalyzeServiceTest {
 
     @Test
-    void todaysSnapshotUsesLatestIntradayPriceAndDailyOpenHigh() throws Exception {
+    void todaysSnapshotUsesLatestIntradayPriceAndDailyOpenHighLow() throws Exception {
         List<MarketBar> daily = List.of(
                 bar("AAPL", "10.00", "12.00", "9.00", "11.50"),
                 bar("AAPL", "20.00", "25.00", "18.00", "24.00")
@@ -36,6 +36,7 @@ class AutoAnalyzeServiceTest {
         assertEquals(new BigDecimal("24.10"), result.todayStockPrice());
         assertEquals(new BigDecimal("20.00"), result.todayOpen());
         assertEquals(new BigDecimal("25.00"), result.todayHighSoFar());
+        assertEquals(new BigDecimal("18.00"), result.todayLowSoFar());
         assertTrue(result.todayCloseAvailable());
         assertEquals(new BigDecimal("24.00"), result.todayClose());
     }
@@ -51,11 +52,11 @@ class AutoAnalyzeServiceTest {
     }
 
     // -------------------------------------------------------------------------
-    // 6-month and 52-week low/high
+    // Windowed low/high ranges
     // -------------------------------------------------------------------------
 
     @Test
-    void sixMonthLowAndHighAreMinMaxOfDailyBars() throws Exception {
+    void rangeWindowsExposeLowAndHighValues() throws Exception {
         List<MarketBar> daily = List.of(
                 bar("AAPL", "10.00", "11.00", "9.00",  "10.50"),
                 bar("AAPL", "12.00", "15.00", "11.00", "12.50"),
@@ -65,15 +66,29 @@ class AutoAnalyzeServiceTest {
         AutoAnalyzeResult result = service.analyze("AAPL", 6, 15);
 
         // FakeMarketDataApi returns the same daily list for all date ranges,
-        // so 52-week and 6-month use the same bars here.
+        // so all range windows collapse to the same min/max in this stub.
+        assertEquals(new BigDecimal("8.00"), result.oneWeekLow());
+        assertEquals(new BigDecimal("15.00"), result.oneWeekHigh());
+        assertEquals(new BigDecimal("8.00"), result.twoWeekLow());
+        assertEquals(new BigDecimal("15.00"), result.twoWeekHigh());
+        assertEquals(new BigDecimal("8.00"), result.oneMonthLow());
+        assertEquals(new BigDecimal("15.00"), result.oneMonthHigh());
+        assertEquals(new BigDecimal("8.00"), result.twoMonthLow());
+        assertEquals(new BigDecimal("15.00"), result.twoMonthHigh());
+        assertEquals(new BigDecimal("8.00"), result.fourMonthLow());
+        assertEquals(new BigDecimal("15.00"), result.fourMonthHigh());
         assertEquals(new BigDecimal("8.00"), result.sixMonthLow());
         assertEquals(new BigDecimal("15.00"), result.sixMonthHigh());
+        assertEquals(new BigDecimal("8.00"), result.eightMonthLow());
+        assertEquals(new BigDecimal("15.00"), result.eightMonthHigh());
+        assertEquals(new BigDecimal("8.00"), result.oneYearLow());
+        assertEquals(new BigDecimal("15.00"), result.oneYearHigh());
     }
 
     @Test
-    void fiftyTwoWeekLowAndHighAreDerivedFromYearlyFetch() throws Exception {
+    void oneYearLowAndHighAreDerivedFromYearlyFetch() throws Exception {
         // The stub returns the same list for all getDailyBars calls,
-        // so 52-week low/high should match min/max of that list.
+        // so 1-year low/high should match min/max of that list.
         List<MarketBar> daily = List.of(
                 bar("AAPL", "10.00", "20.00", "5.00", "10.50"),
                 bar("AAPL", "12.00", "18.00", "7.00", "12.50")
@@ -81,8 +96,8 @@ class AutoAnalyzeServiceTest {
         AutoAnalyzeService service = serviceWithDailyBars(daily);
         AutoAnalyzeResult result = service.analyze("AAPL", 6, 15);
 
-        assertEquals(new BigDecimal("5.00"), result.fiftyTwoWeekLow());
-        assertEquals(new BigDecimal("20.00"), result.fiftyTwoWeekHigh());
+        assertEquals(new BigDecimal("5.00"), result.oneYearLow());
+        assertEquals(new BigDecimal("20.00"), result.oneYearHigh());
     }
 
     // -------------------------------------------------------------------------
@@ -223,6 +238,23 @@ class AutoAnalyzeServiceTest {
         assertTrue(ex.getMessage().toLowerCase().contains("interval"));
     }
 
+    @Test
+    void monthsBackSupportsTwelveMonths() throws Exception {
+        AutoAnalyzeService service = serviceWithDailyBars(
+                List.of(bar("AAPL", "10.00", "11.00", "9.00", "10.50")));
+        AutoAnalyzeResult result = service.analyze("AAPL", 12, 15);
+        assertEquals("AAPL", result.symbol());
+    }
+
+    @Test
+    void monthsBackAboveTwelveThrowsAutoAnalyzeException() {
+        AutoAnalyzeService service = serviceWithDailyBars(
+                List.of(bar("AAPL", "10.00", "11.00", "9.00", "10.50")));
+        AutoAnalyzeException ex = assertThrows(AutoAnalyzeException.class,
+                () -> service.analyze("AAPL", 13, 15));
+        assertTrue(ex.getMessage().toLowerCase().contains("months back"));
+    }
+
     // -------------------------------------------------------------------------
     // Symbol normalisation
     // -------------------------------------------------------------------------
@@ -325,4 +357,3 @@ class AutoAnalyzeServiceTest {
         }
     }
 }
-

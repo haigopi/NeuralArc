@@ -100,6 +100,7 @@ public class FileStrategyRepository implements StrategyRepository {
                 if (!lastError.isBlank()) {
                     strategy.setLastError(lastError);
                 }
+                strategy.setLossBuyLevelsEnabled(o.optBoolean("lossBuyLevelsEnabled", true));
                 strategy.setLastEvent(o.optString("lastEvent", ""));
                 strategy.setLatestOrderStatus(o.optString("latestOrderStatus", ""));
                 strategy.setLatestAlpacaOrderId(o.optString("latestAlpacaOrderId", ""));
@@ -138,6 +139,7 @@ public class FileStrategyRepository implements StrategyRepository {
             o.put("buyLimit1Quantity", s.buyLimit1Quantity());
             o.put("buyLimit2Price", s.buyLimit2Price().toPlainString());
             o.put("buyLimit2Quantity", s.buyLimit2Quantity());
+            o.put("lossBuyLevelsEnabled", s.lossBuyLevelsEnabled());
             o.put("automatedStopLossEnabled", s.automatedStopLossEnabled());
             o.put("stopLossType", s.stopLossType().name());
             o.put("stopLossPrice", s.stopLossPrice().toPlainString());

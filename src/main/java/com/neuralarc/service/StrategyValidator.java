@@ -26,11 +26,13 @@ public class StrategyValidator {
         if (strategy.buyLimit1Quantity() < 0 || strategy.buyLimit2Quantity() < 0) {
             errors.add("Staged buy quantities must not be negative");
         }
-        if (strategy.buyLimit1Quantity() > 0 && strategy.buyLimit1Price().compareTo(Monetary.zero()) <= 0) {
-            errors.add("Buy Limit 1 price must be positive");
-        }
-        if (strategy.buyLimit2Quantity() > 0 && strategy.buyLimit2Price().compareTo(Monetary.zero()) <= 0) {
-            errors.add("Buy Limit 2 price must be positive");
+        if (strategy.lossBuyLevelsEnabled()) {
+            if (strategy.buyLimit1Quantity() > 0 && strategy.buyLimit1Price().compareTo(Monetary.zero()) <= 0) {
+                errors.add("Buy Limit 1 price must be positive");
+            }
+            if (strategy.buyLimit2Quantity() > 0 && strategy.buyLimit2Price().compareTo(Monetary.zero()) <= 0) {
+                errors.add("Buy Limit 2 price must be positive");
+            }
         }
         if (strategy.maxTotalQuantity() <= 0) {
             errors.add("Max total quantity must be positive");
