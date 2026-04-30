@@ -35,7 +35,7 @@ class RecommendationEngineTest {
 
     @Test
     void shortTermBreakdownScenarioProducesWatchAndDiscountedEntry() {
-        List<MarketBar> bars = shortTermRangeBars();
+        List<MarketBar> bars = shortTermBreakdownBars();
 
         StrategyRecommendation recommendation = engine.generateShortTermRecommendation(
                 "AAPL", bars, new BigDecimal("204.00"), new BigDecimal("209.00"));
@@ -216,11 +216,11 @@ class RecommendationEngineTest {
         for (int i = 0; i < 20; i++) {
             BigDecimal close = new BigDecimal("209.00");
             BigDecimal open = close;
-            BigDecimal low = i == 10 ? new BigDecimal("207.00") : close.subtract(BigDecimal.ONE);
-            BigDecimal high = i == 18 ? new BigDecimal("216.00") : close.add(new BigDecimal("4.00"));
+            BigDecimal low = close.subtract(BigDecimal.ONE);
+            BigDecimal high = i == 18 ? new BigDecimal("216.00") : new BigDecimal("214.00");
             if (i >= 6) {
-                open = i == 6 ? close : bars.get(i - 1).close();
-                low = i == 10 ? new BigDecimal("207.00") : open.multiply(new BigDecimal("0.978"));
+                open = new BigDecimal("210.10");
+                low = i == 10 ? new BigDecimal("207.00") : new BigDecimal("207.02");
             }
             bars.add(bar(start.plusDays(i), open, high, low, close, new BigDecimal("1000.00")));
         }
@@ -231,12 +231,25 @@ class RecommendationEngineTest {
         List<MarketBar> bars = new ArrayList<>();
         LocalDate start = LocalDate.of(2026, 2, 1);
         for (int i = 0; i < 20; i++) {
-            BigDecimal close = i == 19 ? new BigDecimal("218.00") : new BigDecimal("210.00");
+            BigDecimal close = i == 19 ? new BigDecimal("214.00") : new BigDecimal("210.00");
             BigDecimal open = close.subtract(BigDecimal.ONE);
             BigDecimal low = close.subtract(new BigDecimal("2.00"));
-            BigDecimal high = i < 19 ? new BigDecimal("216.00") : new BigDecimal("220.00");
+            BigDecimal high = i < 19 ? new BigDecimal("216.00") : new BigDecimal("216.00");
             BigDecimal volume = i == 19 ? lastVolume : new BigDecimal("1000.00");
             bars.add(bar(start.plusDays(i), open, high, low, close, volume));
+        }
+        return bars;
+    }
+
+    private List<MarketBar> shortTermBreakdownBars() {
+        List<MarketBar> bars = new ArrayList<>();
+        LocalDate start = LocalDate.of(2026, 2, 1);
+        for (int i = 0; i < 20; i++) {
+            BigDecimal close = i < 6 ? new BigDecimal("190.00") : new BigDecimal("209.00");
+            BigDecimal open = i < 6 ? new BigDecimal("191.00") : new BigDecimal("210.10");
+            BigDecimal low = i < 6 ? new BigDecimal("189.00") : (i == 10 ? new BigDecimal("207.00") : new BigDecimal("207.02"));
+            BigDecimal high = i < 6 ? new BigDecimal("193.00") : new BigDecimal("214.00");
+            bars.add(bar(start.plusDays(i), open, high, low, close, new BigDecimal("1000.00")));
         }
         return bars;
     }
@@ -245,7 +258,7 @@ class RecommendationEngineTest {
         List<MarketBar> bars = new ArrayList<>();
         LocalDate start = LocalDate.of(2026, 2, 1);
         for (int i = 0; i < 20; i++) {
-            BigDecimal close = i < 15 ? new BigDecimal("215.00") : new BigDecimal("205.00");
+            BigDecimal close = i < 6 ? new BigDecimal("215.00") : new BigDecimal("205.00");
             BigDecimal open = close.add(BigDecimal.ONE);
             BigDecimal low = i == 18 ? new BigDecimal("203.00") : close.subtract(BigDecimal.ONE);
             BigDecimal high = close.add(new BigDecimal("2.00"));
