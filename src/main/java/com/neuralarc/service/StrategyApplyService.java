@@ -9,8 +9,12 @@ public class StrategyApplyService {
         if (recommendation == null || !recommendation.isApplicable()) {
             throw new IllegalArgumentException("Recommendation is not applicable.");
         }
+        BigDecimal buyRulePrice = recommendation.recommendationType() == com.neuralarc.model.RecommendationType.LONG_TERM
+                && recommendation.adjustedBaseBuyPrice().compareTo(BigDecimal.ZERO) > 0
+                ? recommendation.adjustedBaseBuyPrice()
+                : recommendation.baseBuyPrice();
         return new AppliedStrategyValues(
-                recommendation.baseBuyPrice(),
+                buyRulePrice,
                 recommendation.buy1Price(),
                 recommendation.buy2Price(),
                 recommendation.stopLossPrice(),

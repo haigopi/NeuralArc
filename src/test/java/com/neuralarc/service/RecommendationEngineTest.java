@@ -1,6 +1,7 @@
 package com.neuralarc.service;
 
 import com.neuralarc.model.MarketBar;
+import com.neuralarc.model.MarketMode;
 import com.neuralarc.model.RecommendationAction;
 import com.neuralarc.model.StrategyRecommendation;
 import org.junit.jupiter.api.Test;
@@ -18,108 +19,184 @@ class RecommendationEngineTest {
     private final RecommendationEngine engine = new RecommendationEngine(new TechnicalIndicatorService());
 
     @Test
-    void shortTermCalculationUsesTwoWeekLowWhenCurrentPriceIsAboveSupport() {
-        List<MarketBar> bars = shortTermBars();
+    void closingPriceDiscountScenarioUsesBehaviorAdjustedDiscount() {
+        List<MarketBar> bars = dipModelBars(new BigDecimal("209.00"));
 
-        StrategyRecommendation recommendation = engine.generateShortTermRecommendation("AAPL", bars, new BigDecimal("100.00"));
+        StrategyRecommendation recommendation = engine.generateLongTermRecommendation(
+                "AAPL", bars, new BigDecimal("209.00"), new BigDecimal("209.00"));
 
-        assertTrue(recommendation.isApplicable());
-        assertFalse(recommendation.breakdownMode());
-        assertEquals(new BigDecimal("98.00"), recommendation.baseBuyPrice());
-        assertTrue(recommendation.buy1Price().compareTo(recommendation.baseBuyPrice()) < 0);
-        assertTrue(recommendation.buy2Price().compareTo(recommendation.buy1Price()) < 0);
-        assertTrue(recommendation.stopLossPrice().compareTo(recommendation.buy2Price()) < 0);
-        assertTrue(recommendation.sellPrice().compareTo(new BigDecimal("106.00")) >= 0);
-        assertTrue(recommendation.sellPrice().compareTo(recommendation.target1Price()) >= 0);
+        assertEquals(new BigDecimal("0.0110"), recommendation.expectedDipPct());
+        assertEquals(new BigDecimal("206.70"), recommendation.behaviorAdjustedBasePrice());
+        assertTrue(recommendation.adjustedBaseBuyPrice().compareTo(new BigDecimal("209.00")) < 0);
     }
 
     @Test
-    void shortTermCalculationEntersBreakdownModeBelowTwoWeekLow() {
-        List<MarketBar> bars = shortTermBars();
+    void qcomStyleScenarioUsesDiscountedMarketAwareBase() {
+        List<MarketBar> bars = accumulationBars();
 
-        StrategyRecommendation recommendation = engine.generateShortTermRecommendation("AAPL", bars, new BigDecimal("94.00"));
+        StrategyRecommendation recommendation = engine.generateLongTermRecommendation(
+                "QCOM", bars, new BigDecimal("156.00"), new BigDecimal("156.00"));
 
-        assertTrue(recommendation.breakdownMode());
-        assertEquals(new BigDecimal("90.00"), recommendation.baseBuyPrice());
-        assertTrue(recommendation.warningMessage().contains("Breakdown mode"));
+        assertEquals(new BigDecimal("172.61"), recommendation.originalCalculatedBasePrice());
+        assertEquals(new BigDecimal("156.00"), recommendation.effectiveMarketPrice());
+        assertEquals(new BigDecimal("154.44"), recommendation.behaviorAdjustedBasePrice());
+        assertEquals(new BigDecimal("154.44"), recommendation.adjustedBaseBuyPrice());
     }
 
     @Test
-    void longTermSupportBuyModeUsesSixMonthLow() {
-        List<MarketBar> bars = longTermBars(new BigDecimal("99.00"), false);
+    void breakoutScenarioUsesEffectiveMarketPriceWithoutDiscount() {
+        List<MarketBar> bars = breakoutBars(new BigDecimal("190.00"), new BigDecimal("120.00"), new BigDecimal("100.00"));
 
-        StrategyRecommendation recommendation = engine.generateLongTermRecommendation("AAPL", bars, new BigDecimal("102.00"));
+        StrategyRecommendation recommendation = engine.generateLongTermRecommendation(
+                "AAPL", bars, new BigDecimal("190.00"), new BigDecimal("190.00"));
 
-        assertTrue(recommendation.isApplicable());
-        assertEquals(new BigDecimal("100.00"), recommendation.baseBuyPrice());
-        assertFalse(recommendation.warningMessage().contains("middle of the six-month range"));
+        assertEquals(MarketMode.BREAKOUT, recommendation.marketMode());
+        assertEquals(new BigDecimal("190.00"), recommendation.adjustedBaseBuyPrice());
     }
 
     @Test
-    void longTermBreakoutModeUsesCurrentPrice() {
-        List<MarketBar> bars = longTermBars(new BigDecimal("99.00"), false);
+    void noNegativeGapsStillUsesVolatilityAndIntradayDip() {
+        List<MarketBar> bars = noNegativeGapBars();
 
-        StrategyRecommendation recommendation = engine.generateLongTermRecommendation("AAPL", bars, new BigDecimal("300.00"));
+        StrategyRecommendation recommendation = engine.generateLongTermRecommendation(
+                "AAPL", bars, new BigDecimal("150.00"), new BigDecimal("150.00"));
 
-        assertEquals(new BigDecimal("300.00"), recommendation.baseBuyPrice());
-        assertFalse(recommendation.warningMessage().contains("middle of the six-month range"));
+        assertEquals(new BigDecimal("0.0000"), recommendation.negativeGapPctAverage());
+        assertTrue(recommendation.expectedDipPct().compareTo(BigDecimal.ZERO) > 0);
     }
 
     @Test
-    void longTermMiddleRangeDefaultsToWatchBias() {
-        List<MarketBar> bars = longTermBars(new BigDecimal("80.00"), true);
+    void notEnoughTwoWeekCandlesFallsBackToOnePercentDiscount() {
+        List<MarketBar> bars = shortHistoryBars();
 
-        StrategyRecommendation recommendation = engine.generateLongTermRecommendation("AAPL", bars, new BigDecimal("130.00"));
+        StrategyRecommendation recommendation = engine.generateLongTermRecommendation(
+                "AAPL", bars, new BigDecimal("100.00"), new BigDecimal("100.00"));
 
+        assertEquals(new BigDecimal("0.0100"), recommendation.expectedDipPct());
+        assertEquals(new BigDecimal("99.00"), recommendation.behaviorAdjustedBasePrice());
+    }
+
+    @Test
+    void overextendedScenarioProducesWatch() {
+        List<MarketBar> bars = breakoutBars(new BigDecimal("190.00"), new BigDecimal("80.00"), new BigDecimal("100.00"));
+
+        StrategyRecommendation recommendation = engine.generateLongTermRecommendation(
+                "AAPL", bars, new BigDecimal("190.00"), new BigDecimal("190.00"));
+
+        assertEquals(MarketMode.OVEREXTENDED, recommendation.marketMode());
         assertEquals(RecommendationAction.WATCH, recommendation.recommendationAction());
-        assertTrue(recommendation.warningMessage().contains("middle of the six-month range"));
     }
 
     @Test
-    void riskRewardCalculationIsReflectedInOutput() {
-        List<MarketBar> bars = shortTermBars();
+    void weakAvoidScenarioProducesAvoid() {
+        List<MarketBar> bars = weakAvoidBars();
 
-        StrategyRecommendation recommendation = engine.generateShortTermRecommendation("AAPL", bars, new BigDecimal("100.00"));
+        StrategyRecommendation recommendation = engine.generateLongTermRecommendation(
+                "AAPL", bars, new BigDecimal("118.00"), new BigDecimal("118.00"));
 
-        assertEquals(new BigDecimal("0.50"), recommendation.riskRewardRatio());
+        assertEquals(MarketMode.WEAK_AVOID, recommendation.marketMode());
+        assertEquals(RecommendationAction.AVOID, recommendation.recommendationAction());
     }
 
     @Test
-    void confidenceScoreReflectsInputs() {
-        List<MarketBar> bars = shortTermBars();
+    void finalSafetyPreventsNonBreakoutBuyAtOrAboveClose() {
+        List<MarketBar> bars = accumulationBars();
 
-        StrategyRecommendation recommendation = engine.generateShortTermRecommendation("AAPL", bars, new BigDecimal("100.00"));
+        StrategyRecommendation recommendation = engine.generateLongTermRecommendation(
+                "AAPL", bars, new BigDecimal("156.00"), new BigDecimal("156.00"));
 
-        assertEquals(55, recommendation.confidenceScore());
+        assertTrue(recommendation.marketMode() != MarketMode.BREAKOUT);
+        assertTrue(recommendation.adjustedBaseBuyPrice().compareTo(recommendation.effectiveMarketPrice()) < 0);
     }
 
-    private List<MarketBar> shortTermBars() {
+    private List<MarketBar> accumulationBars() {
         List<MarketBar> bars = new ArrayList<>();
-        LocalDate start = LocalDate.of(2026, 4, 1);
-        for (int i = 0; i < 20; i++) {
-            BigDecimal low = new BigDecimal(i < 10 ? "101.00" : "98.00");
-            BigDecimal high = new BigDecimal(i < 10 ? "103.00" : "106.00");
-            BigDecimal close = new BigDecimal(i < 19 ? "101.00" : "102.00");
-            BigDecimal volume = new BigDecimal(i < 19 ? "1000" : "2000");
-            bars.add(bar(start.plusDays(i), close.subtract(BigDecimal.ONE), high, low, close, volume));
+        LocalDate start = LocalDate.of(2025, 8, 1);
+        for (int i = 0; i < 200; i++) {
+            BigDecimal close = i < 150 ? new BigDecimal("172.61") : new BigDecimal("172.61");
+            BigDecimal open = i == 199 ? new BigDecimal("156.00") : close;
+            BigDecimal low = i == 150 ? new BigDecimal("140.00") : close.subtract(new BigDecimal("2.00"));
+            if (i >= 186) {
+                open = close;
+                low = open.multiply(new BigDecimal("0.98"));
+            }
+            BigDecimal high = close.add(new BigDecimal("2.00"));
+            BigDecimal volume = i == 199 ? new BigDecimal("120.00") : new BigDecimal("100.00");
+            bars.add(bar(start.plusDays(i), open, high, low, close, volume));
         }
         return bars;
     }
 
-    private List<MarketBar> longTermBars(BigDecimal latestVolume, boolean neutralTrend) {
+    private List<MarketBar> dipModelBars(BigDecimal lastClose) {
         List<MarketBar> bars = new ArrayList<>();
         LocalDate start = LocalDate.of(2025, 8, 1);
         for (int i = 0; i < 200; i++) {
-            BigDecimal close;
-            if (neutralTrend) {
-                close = i < 150 ? new BigDecimal("120.00") : new BigDecimal("125.00");
-            } else {
-                close = BigDecimal.valueOf(90 + (i / 2.0));
+            BigDecimal close = i < 190 ? new BigDecimal("210.00") : lastClose;
+            BigDecimal open = close;
+            BigDecimal low = open.multiply(new BigDecimal("0.99"));
+            if (i >= 186) {
+                open = i == 186 ? close : bars.get(i - 1).close();
+                low = open.multiply(new BigDecimal("0.978"));
             }
-            BigDecimal low = i == 150 ? new BigDecimal("100.00") : close.subtract(new BigDecimal("3.00"));
-            BigDecimal high = i == 180 ? new BigDecimal("160.00") : close.add(new BigDecimal("3.00"));
-            BigDecimal volume = i == 199 ? latestVolume : new BigDecimal("90.00");
-            bars.add(bar(start.plusDays(i), close.subtract(BigDecimal.ONE), high, low, close, volume));
+            BigDecimal high = close.add(new BigDecimal("2.00"));
+            BigDecimal volume = new BigDecimal("120.00");
+            bars.add(bar(start.plusDays(i), open, high, low, close, volume));
+        }
+        return bars;
+    }
+
+    private List<MarketBar> breakoutBars(BigDecimal effectivePrice, BigDecimal latestVolume, BigDecimal avgVolume) {
+        List<MarketBar> bars = new ArrayList<>();
+        LocalDate start = LocalDate.of(2025, 8, 1);
+        for (int i = 0; i < 200; i++) {
+            BigDecimal close = i < 180 ? new BigDecimal("160.00") : new BigDecimal("175.00");
+            if (i == 199) {
+                close = effectivePrice;
+            }
+            BigDecimal open = close.subtract(BigDecimal.ONE);
+            BigDecimal low = i == 150 ? new BigDecimal("140.00") : close.subtract(new BigDecimal("2.00"));
+            BigDecimal high = i >= 180 ? new BigDecimal("180.00") : close.add(new BigDecimal("2.00"));
+            BigDecimal volume = i == 199 ? latestVolume : avgVolume;
+            bars.add(bar(start.plusDays(i), open, high, low, close, volume));
+        }
+        return bars;
+    }
+
+    private List<MarketBar> noNegativeGapBars() {
+        List<MarketBar> bars = new ArrayList<>();
+        LocalDate start = LocalDate.of(2025, 8, 1);
+        BigDecimal close = new BigDecimal("150.00");
+        for (int i = 0; i < 200; i++) {
+            BigDecimal open = close.multiply(new BigDecimal("1.001"));
+            BigDecimal low = open.multiply(new BigDecimal("0.997"));
+            BigDecimal high = close.add(new BigDecimal("2.00"));
+            bars.add(bar(start.plusDays(i), open, high, low, close, new BigDecimal("100.00")));
+        }
+        return bars;
+    }
+
+    private List<MarketBar> shortHistoryBars() {
+        List<MarketBar> bars = new ArrayList<>();
+        LocalDate start = LocalDate.of(2026, 1, 1);
+        for (int i = 0; i < 9; i++) {
+            BigDecimal close = new BigDecimal("100.00");
+            BigDecimal open = close;
+            BigDecimal low = close.subtract(BigDecimal.ONE);
+            BigDecimal high = close.add(BigDecimal.ONE);
+            bars.add(bar(start.plusDays(i), open, high, low, close, new BigDecimal("100.00")));
+        }
+        return bars;
+    }
+
+    private List<MarketBar> weakAvoidBars() {
+        List<MarketBar> bars = new ArrayList<>();
+        LocalDate start = LocalDate.of(2025, 8, 1);
+        for (int i = 0; i < 200; i++) {
+            BigDecimal close = i < 150 ? new BigDecimal("130.00") : new BigDecimal("118.00");
+            BigDecimal open = close.subtract(BigDecimal.ONE);
+            BigDecimal low = i == 150 ? new BigDecimal("110.00") : close.subtract(new BigDecimal("2.00"));
+            BigDecimal high = i >= 180 ? new BigDecimal("150.00") : close.add(new BigDecimal("2.00"));
+            bars.add(bar(start.plusDays(i), open, high, low, close, new BigDecimal("90.00")));
         }
         return bars;
     }

@@ -226,8 +226,12 @@ public class AutoAnalyzeService {
         BigDecimal currentPrice = result.todayStockPrice().compareTo(BigDecimal.ZERO) > 0
                 ? result.todayStockPrice()
                 : latestClose(history);
+        BigDecimal lastClosePrice = result.todayCloseAvailable() && result.todayClose().compareTo(BigDecimal.ZERO) > 0
+                ? result.todayClose()
+                : currentPrice;
         StrategyRecommendation shortTerm = recommendationEngine.generateShortTermRecommendation(result.symbol(), history, currentPrice);
-        StrategyRecommendation longTerm = recommendationEngine.generateLongTermRecommendation(result.symbol(), history, currentPrice);
+        StrategyRecommendation longTerm = recommendationEngine.generateLongTermRecommendation(
+                result.symbol(), history, currentPrice, lastClosePrice);
         return new AutoAnalyzeBundle(result, shortTerm, longTerm);
     }
 

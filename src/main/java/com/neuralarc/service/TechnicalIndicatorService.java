@@ -5,6 +5,7 @@ import com.neuralarc.util.Monetary;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -77,5 +78,93 @@ public class TechnicalIndicatorService {
             }
         }
         return Optional.of(Monetary.round(low));
+    }
+
+    public List<BigDecimal> calculateGapPercentages(List<MarketBar> candles) {
+        List<BigDecimal> gaps = new ArrayList<>();
+        if (candles == null || candles.size() < 2) {
+            return gaps;
+        }
+        for (int i = 1; i < candles.size(); i++) {
+            BigDecimal previousClose = candles.get(i - 1).close();
+            BigDecimal currentOpen = candles.get(i).open();
+            if (previousClose.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            gaps.add(currentOpen.subtract(previousClose)
+                    .divide(previousClose, CALC_SCALE, RoundingMode.HALF_UP));
+        }
+        return gaps;
+    }
+
+    public BigDecimal calculateAverageNegativeGapPct(List<BigDecimal> gapPercentages) {
+        if (gapPercentages == null || gapPercentages.isEmpty()) {
+            return BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+        }
+        BigDecimal sum = BigDecimal.ZERO;
+        int count = 0;
+        for (BigDecimal gap : gapPercentages) {
+            if (gap.compareTo(BigDecimal.ZERO) < 0) {
+                sum = sum.add(gap);
+                count++;
+            }
+        }
+        if (count == 0) {
+            return BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+        }
+        return sum.divide(BigDecimal.valueOf(count), CALC_SCALE, RoundingMode.HALF_UP).setScale(4, RoundingMode.HALF_UP);
+    }
+
+    public BigDecimal calculateGapVolatility(List<BigDecimal> gapPercentages) {
+        if (gapPercentages == null || gapPercentages.isEmpty()) {
+            return BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+        }
+        BigDecimal mean = BigDecimal.ZERO;
+        for (BigDecimal gap : gapPercentages) {
+            mean = mean.add(gap);
+        }
+        mean = mean.divide(BigDecimal.valueOf(gapPercentages.size()), CALC_SCALE, RoundingMode.HALF_UP);
+        BigDecimal variance = BigDecimal.ZERO;
+        for (BigDecimal gap : gapPercentages) {
+            BigDecimal diff = gap.subtract(mean);
+            variance = variance.add(diff.multiply(diff));
+        }
+        variance = variance.divide(BigDecimal.valueOf(gapPercentages.size()), CALC_SCALE, RoundingMode.HALF_UP);
+        double stdDev = Math.sqrt(variance.doubleValue());
+        return BigDecimal.valueOf(stdDev).setScale(4, RoundingMode.HALF_UP);
+    }
+
+    public BigDecimal calculateAverageIntradayDipPct(List<MarketBar> candles) {
+        if (candles == null || candles.isEmpty()) {
+            return BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+        }
+        BigDecimal sum = BigDecimal.ZERO;
+        int count = 0;
+        for (MarketBar candle : candles) {
+            if (candle.open().compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            BigDecimal dip = candle.low().subtract(candle.open())
+                    .divide(candle.open(), CALC_SCALE, RoundingMode.HALF_UP);
+            sum = sum.add(dip);
+            count++;
+        }
+        if (count == 0) {
+            return BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+        }
+        return sum.divide(BigDecimal.valueOf(count), CALC_SCALE, RoundingMode.HALF_UP).setScale(4, RoundingMode.HALF_UP);
+    }
+
+    public BigDecimal clamp(BigDecimal value, BigDecimal min, BigDecimal max) {
+        if (value == null) {
+            return min;
+        }
+        if (value.compareTo(min) < 0) {
+            return min;
+        }
+        if (value.compareTo(max) > 0) {
+            return max;
+        }
+        return value;
     }
 }

@@ -3,8 +3,10 @@ package com.neuralarc.ui;
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.model.AutoAnalyzeBundle;
 import com.neuralarc.model.AutoAnalyzeResult;
+import com.neuralarc.model.MarketMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.RecommendationAction;
+import com.neuralarc.model.RecommendationType;
 import com.neuralarc.model.StrategyConfig;
 import com.neuralarc.model.StrategyRecommendation;
 import com.neuralarc.service.AutoAnalyzeResultStore;
@@ -81,6 +83,8 @@ public class StrategyDialog extends JDialog {
     private static final Color AVOID_BADGE_BG = new Color(250, 223, 223);
     private static final Color AVOID_BADGE_TEXT = new Color(166, 45, 45);
     private static final Color WARNING_TEXT = new Color(166, 45, 45);
+    private static final Color INFO_TEXT = new Color(180, 115, 20);
+    private static final Color BREAKOUT_INFO_TEXT = new Color(35, 95, 180);
 
     private static final String DEFAULT_CONFIG_RESOURCE = "defaults-config.properties";
     private static final DialogDefaults DEFAULTS = loadDefaults();
@@ -1235,14 +1239,33 @@ public class StrategyDialog extends JDialog {
         addRecommendationRow(grid, "Trend Status:", view.trendStatusValue);
         addRecommendationRow(grid, "Volume Status:", view.volumeStatusValue);
         addRecommendationRow(grid, "Risk/Reward Ratio:", view.riskRewardValue);
+        if (typeLabel == RecommendationTypeLabel.LONG_TERM) {
+            addRecommendationRow(grid, "Original Calculated Base Price:", view.originalBaseValue);
+            addRecommendationRow(grid, "Effective Market Price:", view.effectiveMarketPriceValue);
+            addRecommendationRow(grid, "Last Close Price:", view.lastClosePriceValue);
+            addRecommendationRow(grid, "Current Price:", view.currentPriceValue);
+            addRecommendationRow(grid, "Expected Dip %:", view.expectedDipPctValue);
+            addRecommendationRow(grid, "Behavior Adjusted Base Price:", view.behaviorAdjustedBaseValue);
+            addRecommendationRow(grid, "Final Adjusted Base Buy Price:", view.adjustedBaseValue);
+            addRecommendationRow(grid, "Market Mode:", view.marketModeValue);
+            addRecommendationRow(grid, "Base Adjustment Reason:", view.baseAdjustmentReasonValue);
+        }
 
+        view.infoLabel.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        view.infoLabel.setForeground(INFO_TEXT);
         view.warningLabel.setFont(FontLoader.ui(Font.PLAIN, 10f));
         view.warningLabel.setForeground(WARNING_TEXT);
         view.warningLabel.setVerticalAlignment(SwingConstants.TOP);
 
         panel.add(topRow, BorderLayout.NORTH);
         panel.add(grid, BorderLayout.CENTER);
-        panel.add(view.warningLabel, BorderLayout.SOUTH);
+        JPanel messagesPanel = new JPanel();
+        messagesPanel.setOpaque(false);
+        messagesPanel.setLayout(new BoxLayout(messagesPanel, BoxLayout.Y_AXIS));
+        messagesPanel.add(view.infoLabel);
+        messagesPanel.add(Box.createVerticalStrut(4));
+        messagesPanel.add(view.warningLabel);
+        panel.add(messagesPanel, BorderLayout.SOUTH);
 
         setRecommendationState(view, null);
         return panel;
@@ -1274,7 +1297,17 @@ public class StrategyDialog extends JDialog {
             view.trendStatusValue.setText("Run Auto Analyze");
             view.volumeStatusValue.setText("Run Auto Analyze");
             view.riskRewardValue.setText("—");
+            view.originalBaseValue.setText("—");
+            view.expectedDipPctValue.setText("—");
+            view.behaviorAdjustedBaseValue.setText("—");
+            view.adjustedBaseValue.setText("—");
+            view.effectiveMarketPriceValue.setText("—");
+            view.lastClosePriceValue.setText("—");
+            view.currentPriceValue.setText("—");
+            view.marketModeValue.setText("—");
+            view.baseAdjustmentReasonValue.setText("—");
             view.confidenceValue.setText("—");
+            view.infoLabel.setText(" ");
             view.warningLabel.setText("Run Auto Analyze to populate this recommendation.");
             styleBadge(view.badge, null);
             view.badge.setText("PENDING");
@@ -1294,7 +1327,29 @@ public class StrategyDialog extends JDialog {
         view.riskRewardValue.setText(recommendation.riskRewardRatio().compareTo(BigDecimal.ZERO) > 0
                 ? recommendation.riskRewardRatio().toPlainString() + "x"
                 : "—");
+        view.originalBaseValue.setText(formatPriceOrDash(recommendation.originalCalculatedBasePrice()));
+        view.expectedDipPctValue.setText(formatPercentOrDash(recommendation.expectedDipPct()));
+        view.behaviorAdjustedBaseValue.setText(formatPriceOrDash(recommendation.behaviorAdjustedBasePrice()));
+        view.adjustedBaseValue.setText(formatPriceOrDash(recommendation.adjustedBaseBuyPrice()));
+        view.effectiveMarketPriceValue.setText(formatPriceOrDash(recommendation.effectiveMarketPrice()));
+        view.lastClosePriceValue.setText(formatPriceOrDash(recommendation.lastClosePrice()));
+        view.currentPriceValue.setText(formatPriceOrDash(recommendation.currentPrice()));
+        view.marketModeValue.setText(recommendation.marketMode().name());
+        view.baseAdjustmentReasonValue.setText(recommendation.baseAdjustmentReason().isBlank()
+                ? "—"
+                : recommendation.baseAdjustmentReason());
         view.confidenceValue.setText(recommendation.confidenceScore() + "/100");
+        if (recommendation.recommendationType() == RecommendationType.LONG_TERM
+                && recommendation.adjustedBaseBuyPrice().compareTo(recommendation.effectiveMarketPrice()) < 0) {
+            view.infoLabel.setForeground(INFO_TEXT);
+            view.infoLabel.setText("Base buy price reduced using two-week close-to-open and intraday dip behavior.");
+        } else if (recommendation.recommendationType() == RecommendationType.LONG_TERM
+                && recommendation.marketMode() == MarketMode.BREAKOUT) {
+            view.infoLabel.setForeground(BREAKOUT_INFO_TEXT);
+            view.infoLabel.setText("Breakout mode detected. Entry uses latest market price because the stock is trading above six-month resistance with trend and volume confirmation.");
+        } else {
+            view.infoLabel.setText(" ");
+        }
         view.warningLabel.setText(recommendation.warningMessage().isBlank()
                 ? "Recommendation ready. Review values before applying."
                 : "<html>" + escapeHtml(recommendation.warningMessage()) + "</html>");
@@ -1351,7 +1406,7 @@ public class StrategyDialog extends JDialog {
         JOptionPane.showMessageDialog(this,
                 typeLabel == RecommendationTypeLabel.SHORT_TERM
                         ? "Short-term recommendation applied. Please review and save strategy."
-                        : "Long-term recommendation applied. Please review and save strategy.",
+                        : "Long-term recommendation applied using behavior-adjusted discounted base price. Please review and save strategy.",
                 "Recommendation Applied",
                 JOptionPane.INFORMATION_MESSAGE);
     }
@@ -1380,6 +1435,12 @@ public class StrategyDialog extends JDialog {
                 : "—";
     }
 
+    private String formatPercentOrDash(BigDecimal value) {
+        return value != null && value.compareTo(BigDecimal.ZERO) > 0
+                ? value.multiply(new BigDecimal("100")).setScale(2, RoundingMode.HALF_UP).toPlainString() + "%"
+                : "—";
+    }
+
     private void updateResultsLoadingState(boolean loading, String message) {
         if (message != null && !message.isBlank()) {
             aaResultsLoadingLabel.setText(message);
@@ -1400,8 +1461,18 @@ public class StrategyDialog extends JDialog {
         private final JLabel trendStatusValue = new JLabel("—");
         private final JLabel volumeStatusValue = new JLabel("—");
         private final JLabel riskRewardValue = new JLabel("—");
+        private final JLabel originalBaseValue = new JLabel("—");
+        private final JLabel expectedDipPctValue = new JLabel("—");
+        private final JLabel behaviorAdjustedBaseValue = new JLabel("—");
+        private final JLabel adjustedBaseValue = new JLabel("—");
+        private final JLabel effectiveMarketPriceValue = new JLabel("—");
+        private final JLabel lastClosePriceValue = new JLabel("—");
+        private final JLabel currentPriceValue = new JLabel("—");
+        private final JLabel marketModeValue = new JLabel("—");
+        private final JLabel baseAdjustmentReasonValue = new JLabel("—");
         private final JLabel confidenceValue = new JLabel("—");
         private final JLabel badge = new JLabel("PENDING");
+        private final JLabel infoLabel = new JLabel(" ");
         private final JLabel warningLabel = new JLabel("Run Auto Analyze to populate this recommendation.");
         private final JButton applyButton = new JButton();
 
