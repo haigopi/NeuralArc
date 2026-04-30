@@ -7,6 +7,7 @@ import com.neuralarc.model.MarketMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.RecommendationAction;
 import com.neuralarc.model.RecommendationType;
+import com.neuralarc.model.ShortTermMarketMode;
 import com.neuralarc.model.StrategyConfig;
 import com.neuralarc.model.StrategyRecommendation;
 import com.neuralarc.service.AutoAnalyzeResultStore;
@@ -1239,6 +1240,18 @@ public class StrategyDialog extends JDialog {
         addRecommendationRow(grid, "Trend Status:", view.trendStatusValue);
         addRecommendationRow(grid, "Volume Status:", view.volumeStatusValue);
         addRecommendationRow(grid, "Risk/Reward Ratio:", view.riskRewardValue);
+        if (typeLabel == RecommendationTypeLabel.SHORT_TERM) {
+            addRecommendationRow(grid, "Effective Market Price:", view.effectiveMarketPriceValue);
+            addRecommendationRow(grid, "Last Close Price:", view.lastClosePriceValue);
+            addRecommendationRow(grid, "Current Price:", view.currentPriceValue);
+            addRecommendationRow(grid, "Two-Week Low:", view.twoWeekLowValue);
+            addRecommendationRow(grid, "Two-Week High:", view.twoWeekHighValue);
+            addRecommendationRow(grid, "Expected Dip %:", view.expectedDipPctValue);
+            addRecommendationRow(grid, "Behavior Adjusted Base Price:", view.behaviorAdjustedBaseValue);
+            addRecommendationRow(grid, "Final Base Buy Price:", view.adjustedBaseValue);
+            addRecommendationRow(grid, "Short-Term Market Mode:", view.marketModeValue);
+            addRecommendationRow(grid, "Base Adjustment Reason:", view.baseAdjustmentReasonValue);
+        }
         if (typeLabel == RecommendationTypeLabel.LONG_TERM) {
             addRecommendationRow(grid, "Original Calculated Base Price:", view.originalBaseValue);
             addRecommendationRow(grid, "Effective Market Price:", view.effectiveMarketPriceValue);
@@ -1304,6 +1317,8 @@ public class StrategyDialog extends JDialog {
             view.effectiveMarketPriceValue.setText("—");
             view.lastClosePriceValue.setText("—");
             view.currentPriceValue.setText("—");
+            view.twoWeekLowValue.setText("—");
+            view.twoWeekHighValue.setText("—");
             view.marketModeValue.setText("—");
             view.baseAdjustmentReasonValue.setText("—");
             view.confidenceValue.setText("—");
@@ -1334,12 +1349,24 @@ public class StrategyDialog extends JDialog {
         view.effectiveMarketPriceValue.setText(formatPriceOrDash(recommendation.effectiveMarketPrice()));
         view.lastClosePriceValue.setText(formatPriceOrDash(recommendation.lastClosePrice()));
         view.currentPriceValue.setText(formatPriceOrDash(recommendation.currentPrice()));
-        view.marketModeValue.setText(recommendation.marketMode().name());
+        view.twoWeekLowValue.setText(formatPriceOrDash(recommendation.twoWeekLow()));
+        view.twoWeekHighValue.setText(formatPriceOrDash(recommendation.twoWeekHigh()));
+        view.marketModeValue.setText(recommendation.recommendationType() == RecommendationType.SHORT_TERM
+                ? recommendation.shortTermMarketMode().name()
+                : recommendation.marketMode().name());
         view.baseAdjustmentReasonValue.setText(recommendation.baseAdjustmentReason().isBlank()
                 ? "—"
                 : recommendation.baseAdjustmentReason());
         view.confidenceValue.setText(recommendation.confidenceScore() + "/100");
-        if (recommendation.recommendationType() == RecommendationType.LONG_TERM
+        if (recommendation.recommendationType() == RecommendationType.SHORT_TERM
+                && recommendation.baseBuyPrice().compareTo(recommendation.effectiveMarketPrice()) < 0) {
+            view.infoLabel.setForeground(INFO_TEXT);
+            view.infoLabel.setText("Short-term base buy price reduced using two-week close-to-open and intraday dip behavior.");
+        } else if (recommendation.recommendationType() == RecommendationType.SHORT_TERM
+                && recommendation.shortTermMarketMode() == ShortTermMarketMode.SHORT_TERM_BREAKOUT) {
+            view.infoLabel.setForeground(BREAKOUT_INFO_TEXT);
+            view.infoLabel.setText("Short-term breakout detected. Entry uses current market price because the stock broke above two-week resistance with volume confirmation.");
+        } else if (recommendation.recommendationType() == RecommendationType.LONG_TERM
                 && recommendation.adjustedBaseBuyPrice().compareTo(recommendation.effectiveMarketPrice()) < 0) {
             view.infoLabel.setForeground(INFO_TEXT);
             view.infoLabel.setText("Base buy price reduced using two-week close-to-open and intraday dip behavior.");
@@ -1405,7 +1432,7 @@ public class StrategyDialog extends JDialog {
         tabs.setSelectedIndex(TAB_CURRENT_STRATEGY);
         JOptionPane.showMessageDialog(this,
                 typeLabel == RecommendationTypeLabel.SHORT_TERM
-                        ? "Short-term recommendation applied. Please review and save strategy."
+                        ? "Short-term recommendation applied using behavior-adjusted base price. Please review and save strategy."
                         : "Long-term recommendation applied using behavior-adjusted discounted base price. Please review and save strategy.",
                 "Recommendation Applied",
                 JOptionPane.INFORMATION_MESSAGE);
@@ -1468,6 +1495,8 @@ public class StrategyDialog extends JDialog {
         private final JLabel effectiveMarketPriceValue = new JLabel("—");
         private final JLabel lastClosePriceValue = new JLabel("—");
         private final JLabel currentPriceValue = new JLabel("—");
+        private final JLabel twoWeekLowValue = new JLabel("—");
+        private final JLabel twoWeekHighValue = new JLabel("—");
         private final JLabel marketModeValue = new JLabel("—");
         private final JLabel baseAdjustmentReasonValue = new JLabel("—");
         private final JLabel confidenceValue = new JLabel("—");

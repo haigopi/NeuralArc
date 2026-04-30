@@ -3,6 +3,7 @@ package com.neuralarc.service;
 import com.neuralarc.model.MarketMode;
 import com.neuralarc.model.RecommendationAction;
 import com.neuralarc.model.RecommendationType;
+import com.neuralarc.model.ShortTermMarketMode;
 import com.neuralarc.model.StrategyRecommendation;
 import org.junit.jupiter.api.Test;
 
@@ -22,10 +23,13 @@ class StrategyApplyServiceTest {
                 new BigDecimal("100.00"),
                 BigDecimal.ZERO,
                 new BigDecimal("100.00"),
+                new BigDecimal("94.00"),
+                new BigDecimal("106.00"),
                 BigDecimal.ZERO,
                 new BigDecimal("95.00"),
                 new BigDecimal("95.00"),
                 MarketMode.ACCUMULATION,
+                ShortTermMarketMode.RANGE_ENTRY,
                 "",
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,
@@ -67,10 +71,13 @@ class StrategyApplyServiceTest {
                 new BigDecimal("156.00"),
                 new BigDecimal("156.00"),
                 new BigDecimal("156.00"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
                 new BigDecimal("0.0100"),
                 new BigDecimal("154.44"),
                 new BigDecimal("154.44"),
                 MarketMode.ACCUMULATION,
+                ShortTermMarketMode.RANGE_ENTRY,
                 "Adjusted to current market price because calculated base was higher than latest confirmed price.",
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,

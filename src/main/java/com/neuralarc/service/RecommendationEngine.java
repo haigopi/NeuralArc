@@ -52,24 +52,23 @@ public class RecommendationEngine {
         if (currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0) {
             return StrategyRecommendation.unavailable(symbol, RecommendationType.SHORT_TERM, "Current price is missing.");
         }
-        if (prices == null || prices.size() < 20) {
+        if (prices == null || prices.size() < 10) {
             return StrategyRecommendation.unavailable(symbol, RecommendationType.SHORT_TERM,
-                    "At least 20 daily bars are required for the short-term recommendation.");
+                    "At least 10 daily bars are required for the short-term recommendation.");
         }
 
-        List<MarketBar> twoWeekBars = tail(prices, 10);
+        List<MarketBar> twoWeekBars = tail(prices, Math.min(prices.size(), 14));
         Optional<BigDecimal> twoWeekLow = indicators.calculateLow(twoWeekBars);
         Optional<BigDecimal> twoWeekHigh = indicators.calculateHigh(twoWeekBars);
-        Optional<BigDecimal> avgVolume10Day = indicators.calculateAverageVolume(prices, 10);
-        Optional<BigDecimal> sma20 = indicators.calculateSMA(prices, 20);
-        Optional<BigDecimal> atr14 = indicators.calculateATR(prices, 14);
+        Optional<BigDecimal> avgVolume10Day = indicators.calculateAverageVolume(prices, Math.min(10, prices.size()));
+        Optional<BigDecimal> sma20 = indicators.calculateSMA(prices, Math.min(20, prices.size()));
+        Optional<BigDecimal> atr14 = indicators.calculateATR(prices, Math.min(14, Math.max(1, prices.size() - 1)));
         if (twoWeekLow.isEmpty() || twoWeekHigh.isEmpty() || avgVolume10Day.isEmpty() || sma20.isEmpty() || atr14.isEmpty()) {
             return StrategyRecommendation.unavailable(symbol, RecommendationType.SHORT_TERM,
-                    "Short-term recommendation needs 20 bars, 14-bar ATR, and 10-day volume history.");
+                    "Short-term recommendation needs enough bars for two-week range, ATR, SMA, and 10-day volume history.");
         }
 
         BigDecimal effectiveMarketPrice = validPrice(lastClosePrice) ? lastClosePrice : currentPrice;
-        List<MarketBar> twoWeekBars = tail(prices, Math.min(prices.size(), 14));
         List<BigDecimal> gapPercentages = indicators.calculateGapPercentages(twoWeekBars);
         BigDecimal avgGapPct = average(gapPercentages);
         BigDecimal negativeGapPctAverage = indicators.calculateAverageNegativeGapPct(gapPercentages);
@@ -394,10 +393,13 @@ public class RecommendationEngine {
                 effectiveMarketPrice,
                 lastClosePrice == null ? BigDecimal.ZERO : lastClosePrice,
                 currentPrice,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
                 expectedDipPct,
                 behaviorAdjustedBasePrice,
                 adjustedBaseBuyPrice,
                 marketMode,
+                ShortTermMarketMode.RANGE_ENTRY,
                 baseAdjustmentReason,
                 avgGapPct,
                 negativeGapPctAverage,

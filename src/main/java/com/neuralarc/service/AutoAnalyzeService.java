@@ -229,7 +229,8 @@ public class AutoAnalyzeService {
         BigDecimal lastClosePrice = result.todayCloseAvailable() && result.todayClose().compareTo(BigDecimal.ZERO) > 0
                 ? result.todayClose()
                 : currentPrice;
-        StrategyRecommendation shortTerm = recommendationEngine.generateShortTermRecommendation(result.symbol(), history, currentPrice);
+        StrategyRecommendation shortTerm = recommendationEngine.generateShortTermRecommendation(
+                result.symbol(), history, currentPrice, lastClosePrice);
         StrategyRecommendation longTerm = recommendationEngine.generateLongTermRecommendation(
                 result.symbol(), history, currentPrice, lastClosePrice);
         return new AutoAnalyzeBundle(result, shortTerm, longTerm);
