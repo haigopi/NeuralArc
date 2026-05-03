@@ -27,6 +27,10 @@ public final class AppMetadata {
         return PROPERTIES.getProperty("app.version", "dev");
     }
 
+    public static String displayVersion() {
+        return normalizeDisplayVersion(version());
+    }
+
     public static String copyright() {
         return PROPERTIES.getProperty("app.copyright", "Copyright © 2026 NeuralArc. All rights reserved.");
     }
@@ -167,5 +171,14 @@ public final class AppMetadata {
             return env.trim();
         }
         return defaultValue;
+    }
+
+    private static String normalizeDisplayVersion(String version) {
+        if (version == null || version.isBlank()) {
+            return "dev";
+        }
+        String trimmed = version.trim();
+        String normalized = trimmed.replaceFirst("(?i)-SNAPSHOT$", "");
+        return normalized.isBlank() ? trimmed : normalized;
     }
 }

@@ -30,7 +30,7 @@ if (-not (Get-Command jpackage -ErrorAction SilentlyContinue)) {
 
 Set-Location $ProjectDir
 
-& (Join-Path $ProjectDir "gradlew.bat") clean installDist "-PreleaseVersion=$RawVersion"
+& (Join-Path $ProjectDir "gradlew.bat") clean installDist "-PreleaseVersion=$VersionArg"
 
 if ($RawVersion -ne $VersionArg) {
     Write-Host "Using package version $VersionArg derived from project version $RawVersion"

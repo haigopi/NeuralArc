@@ -45,7 +45,7 @@ public class AboutDialog extends JDialog {
     title.setFont(FontLoader.bold(24f));
     title.setForeground(new Color(86, 92, 102));
 
-    JLabel version = new JLabel("Version " + AppMetadata.version(), SwingConstants.CENTER);
+    JLabel version = new JLabel("Version " + AppMetadata.displayVersion(), SwingConstants.CENTER);
     version.setFont(FontLoader.bold(13f));
     version.setForeground(new Color(122, 128, 138));
 

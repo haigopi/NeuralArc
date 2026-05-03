@@ -32,7 +32,7 @@ fi
 
 cd "$PROJECT_DIR"
 
-"$PROJECT_DIR/gradlew" clean installDist -PreleaseVersion="$RAW_VERSION"
+"$PROJECT_DIR/gradlew" clean installDist -PreleaseVersion="$APP_VERSION"
 mkdir -p "$DEST_DIR"
 mkdir -p "$ARTIFACTS_DIR"
 mkdir -p "$(dirname "$ICON_ICNS")"

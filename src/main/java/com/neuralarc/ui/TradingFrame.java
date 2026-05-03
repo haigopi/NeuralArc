@@ -621,7 +621,7 @@ public class TradingFrame extends JFrame {
                 () -> showLegalDisclosureDialog(false)));
         moreButton.addActionListener(e -> moreMenu.show(moreButton, 0, moreButton.getHeight()));
 
-        JLabel appLabel = new JLabel(AppMetadata.name() + "  " + AppMetadata.version() + " | Patent Pending™");
+        JLabel appLabel = new JLabel(AppMetadata.name() + "  " + AppMetadata.displayVersion() + " | Patent Pending™");
         appLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         appLabel.setForeground(new Color(160, 160, 170));
         appLabel.setVerticalAlignment(SwingConstants.CENTER);
