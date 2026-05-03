@@ -91,6 +91,7 @@ public class TradingFrame extends JFrame {
     private final JLabel rulesSectionTitle = new JLabel("Rules Triggered");
     private final JLabel statusBar = new JLabel("Broker: Not connected");
     private final JLabel statusStrategyCount = new JLabel("Strategies: Active 0 | Inactive 0");
+    private final JLabel marketStatus = new JLabel("Market: Unknown");
     private final JLabel streamStatus = new JLabel("Trade Stream: idle");
     private final JLabel headerStatus = new JLabel("Status: waiting for settings");
     private static final Color STATUS_OK = new Color(34, 139, 34);
@@ -280,7 +281,7 @@ public class TradingFrame extends JFrame {
     private final PersistentAggregatePnlStore aggregatePnlStore;
     private boolean connectionOk;
     private boolean appLaunchedPublished;
-    private String selectedStrategySymbol;
+    private String selectedStrategyId;
     private BrokerType currentBrokerType = BrokerType.ALPACA;
     private boolean preservingSelection;
     private Color liveBlinkPrimary = HEADER_STATUS_DEFAULT;
@@ -467,8 +468,8 @@ public class TradingFrame extends JFrame {
         strategyTable.getColumnModel().getColumn(9).setCellRenderer(new ActionsRenderer());
         strategyTable.getColumnModel().getColumn(7).setPreferredWidth(240);
         strategyTable.getColumnModel().getColumn(7).setMinWidth(220);
-        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(270);
-        strategyTable.getColumnModel().getColumn(9).setMinWidth(270);
+        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(380);
+        strategyTable.getColumnModel().getColumn(9).setMinWidth(360);
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
         // Using mousePressed (not mouseClicked) gives instant response — mouseClicked only fires
@@ -485,7 +486,7 @@ public class TradingFrame extends JFrame {
                     strategyTable.setRowSelectionInterval(viewRow, viewRow);
                 }
 
-                // Dispatch the action button (column 9 only) via zone thirds.
+                // Dispatch the action buttons (column 9 only) via four equal zones.
                 // Use invokeLater so the action runs AFTER ALL mousePressed handlers
                 // (ours + BasicTableUI) have finished — this is critical because:
                 //   • BasicTableUI fires its own mousePressed AFTER ours (LIFO order).
@@ -495,7 +496,7 @@ public class TradingFrame extends JFrame {
                 if (viewRow < 0 || viewRow >= strategies.size() || viewCol != 9) return;
                 java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, viewCol, false);
                 int xInCell  = e.getX() - cellRect.x;
-                int section  = cellRect.width / 3;
+                int section  = Math.max(1, cellRect.width / 4);
                 final int capturedRow     = viewRow;
                 final int capturedX       = xInCell;
                 final int capturedSection = section;
@@ -504,6 +505,8 @@ public class TradingFrame extends JFrame {
                         editStrategy(capturedRow);
                     } else if (capturedX < capturedSection * 2) {
                         togglePauseResume(capturedRow);
+                    } else if (capturedX < capturedSection * 3) {
+                        previewLivePromotion(capturedRow);
                     } else {
                         deleteStrategy(capturedRow);
                     }
@@ -564,6 +567,10 @@ public class TradingFrame extends JFrame {
         statusStrategyCount.setForeground(new Color(150, 150, 160));
         statusStrategyCount.setVerticalAlignment(SwingConstants.CENTER);
         statusStrategyCount.setBorder(new EmptyBorder(0, 0, 0, 12));
+        marketStatus.setFont(BASE_FONT.deriveFont(Font.PLAIN, 11f));
+        marketStatus.setForeground(BOTTOM_STATUS_ACCENT);
+        marketStatus.setVerticalAlignment(SwingConstants.CENTER);
+        marketStatus.setBorder(new EmptyBorder(0, 0, 0, 12));
         streamStatus.setFont(BASE_FONT.deriveFont(Font.PLAIN, 11f));
         streamStatus.setForeground(BOTTOM_STATUS_ACCENT);
         streamStatus.setVerticalAlignment(SwingConstants.CENTER);
@@ -626,6 +633,9 @@ public class TradingFrame extends JFrame {
         leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
         statusLeft.add(statusStrategyCount, leftGbc);
         leftGbc.gridx = 2;
+        leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
+        statusLeft.add(marketStatus, leftGbc);
+        leftGbc.gridx = 3;
         leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
         statusLeft.add(streamStatus, leftGbc);
 
@@ -1202,12 +1212,14 @@ public class TradingFrame extends JFrame {
             return;
         }
 
-        if (findStrategy(config.symbol()) != null) {
+        StrategyMode targetMode = settingsDialog.applicationMode() == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER;
+        if (findStrategy(config.symbol(), targetMode, false) != null) {
             JOptionPane.showMessageDialog(this, "A strategy for this symbol already exists. Use Edit on the grid row.", "Duplicate Symbol", JOptionPane.WARNING_MESSAGE);
             return;
         }
         boolean symbolExistsInRepository = strategyRepository.findAll().stream()
-                .anyMatch(existing -> existing.symbol().equalsIgnoreCase(config.symbol()));
+                .filter(existing -> existing.status() != StrategyStatus.ARCHIVED)
+                .anyMatch(existing -> existing.symbol().equalsIgnoreCase(config.symbol()) && existing.mode() == targetMode);
         if (symbolExistsInRepository) {
             JOptionPane.showMessageDialog(this, "A strategy for this symbol already exists. Use Edit on the grid row.", "Duplicate Symbol", JOptionPane.WARNING_MESSAGE);
             syncStrategiesFromRepository();
@@ -1219,7 +1231,7 @@ public class TradingFrame extends JFrame {
                 UUID.randomUUID().toString(),
                 config.symbol() + " Strategy",
                 config,
-                settingsDialog.applicationMode() == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER
+                targetMode
         );
         StrategyService.StrategyCreationResult creationResult = strategyService.createAndActivate(strategy);
         if (!creationResult.success()) {
@@ -1246,7 +1258,7 @@ public class TradingFrame extends JFrame {
         syncStrategiesFromRepository();
         updateHeaderModeStatus(currentBrokerType);
         refreshStrategyTableData();
-        selectedStrategySymbol = config.symbol();
+        selectedStrategyId = strategy.id();
         restoreSelectedRow();
         int selectedModelRow = strategyTable.getSelectedRow() >= 0
                 ? strategyTable.convertRowIndexToModel(strategyTable.getSelectedRow())
@@ -1274,7 +1286,7 @@ public class TradingFrame extends JFrame {
             return;
         }
 
-        ManagedStrategy duplicate = findStrategy(updated.symbol());
+        ManagedStrategy duplicate = findStrategy(updated.symbol(), entry.strategy.mode(), false);
         if (duplicate != null && duplicate != entry) {
             JOptionPane.showMessageDialog(this, "A strategy for this symbol already exists.", "Duplicate Symbol", JOptionPane.WARNING_MESSAGE);
             return;
@@ -1312,6 +1324,9 @@ public class TradingFrame extends JFrame {
         }
 
         ManagedStrategy entry = strategies.get(row);
+        if (entry.strategy.status() == StrategyStatus.ARCHIVED) {
+            return;
+        }
         if (entry.isPauseResumeBusy()) {
             return;
         }
@@ -1369,6 +1384,54 @@ public class TradingFrame extends JFrame {
         worker.execute();
     }
 
+    private void previewLivePromotion(int viewRow) {
+        int row = strategyTable.convertRowIndexToModel(viewRow);
+        if (row < 0 || row >= strategies.size()) {
+            return;
+        }
+
+        ManagedStrategy entry = strategies.get(row);
+        if (entry.strategy.mode() != StrategyMode.PAPER || entry.strategy.status() == StrategyStatus.ARCHIVED) {
+            return;
+        }
+
+        String eligibilityMessage = livePromotionEligibilityMessage(entry.strategy);
+        boolean promotionAllowed = eligibilityMessage == null;
+        LivePromotionDialog dialog = new LivePromotionDialog(this, entry.strategy, promotionAllowed,
+                promotionAllowed
+                        ? "The LIVE clone will submit its first live limit buy after you confirm promotion."
+                        : eligibilityMessage);
+        if (!dialog.showDialog()) {
+            return;
+        }
+
+        StrategyService.LivePromotionResult result = strategyService.promotePaperStrategyToLive(entry.strategy.id());
+        if (!result.success()) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    result.error(),
+                    "Live Promotion Failed",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return;
+        }
+
+        syncStrategiesFromRepository();
+        refreshStrategyTableData();
+        selectedStrategyId = result.liveStrategyId();
+        restoreSelectedRow();
+        updateSelectedStrategy();
+        refreshPanels();
+        updateStatusBar();
+        log("[" + entry.strategy.symbol() + "] Promoted paper strategy to LIVE and archived the paper copy.");
+        JOptionPane.showMessageDialog(
+                this,
+                "LIVE strategy created successfully.\nPaper strategy archived locally.\nLive Order ID: " + result.alpacaOrderId(),
+                "Promotion Complete",
+                JOptionPane.INFORMATION_MESSAGE
+        );
+    }
+
     private void deleteStrategy(int viewRow) {
         int row = strategyTable.convertRowIndexToModel(viewRow);
         if (row < 0 || row >= strategies.size()) {
@@ -1416,15 +1479,15 @@ public class TradingFrame extends JFrame {
         }
 
         if (strategies.isEmpty()) {
-            selectedStrategySymbol = null;
+            selectedStrategyId = null;
         } else {
             int nextModelRow = Math.min(row, strategies.size() - 1);
-            selectedStrategySymbol = strategies.get(nextModelRow).strategy.symbol();
+            selectedStrategyId = strategies.get(nextModelRow).strategy.id();
         }
 
         updateHeaderModeStatus(currentBrokerType);
         refreshStrategyTableData();
-        if (selectedStrategySymbol != null) {
+        if (selectedStrategyId != null) {
             restoreSelectedRow();
         } else {
             strategyTable.clearSelection();
@@ -1558,6 +1621,12 @@ public class TradingFrame extends JFrame {
         if (strategy == null) {
             return "";
         }
+        if (strategy.status() == StrategyStatus.ARCHIVED) {
+            return "Archived";
+        }
+        if (strategy.status() == StrategyStatus.ACTIVE && strategy.pauseReason() == PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE) {
+            return formatLifecycleStateForDisplay(strategy.currentState()) + " (Market Closed)";
+        }
         if (strategy.status() == StrategyStatus.PAUSED && strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED) {
             return "Auto Paused (Market Closed)";
         }
@@ -1568,6 +1637,32 @@ public class TradingFrame extends JFrame {
             return "Paused (System Error)";
         }
         return formatLifecycleStateForDisplay(strategy.currentState());
+    }
+
+    private String livePromotionEligibilityMessage(Strategy strategy) {
+        if (strategy == null) {
+            return "Strategy not found.";
+        }
+        if (strategy.mode() != StrategyMode.PAPER) {
+            return "Only paper strategies can be promoted to LIVE.";
+        }
+        if (strategy.status() == StrategyStatus.ARCHIVED) {
+            return "Archived strategies cannot be promoted to LIVE.";
+        }
+        if (!AppMetadata.liveTradingEnabled()) {
+            return "LIVE mode is disabled. Set trading.live.enabled=true in app.properties first.";
+        }
+        if (settingsDialog.applicationMode() != ApplicationMode.LIVE) {
+            return "Switch Settings to LIVE mode and reconnect before promoting this strategy.";
+        }
+        if (!connectionOk) {
+            return "Connect successfully in LIVE mode before promoting this strategy.";
+        }
+        ManagedStrategy duplicateLive = findStrategy(strategy.symbol(), StrategyMode.LIVE, false);
+        if (duplicateLive != null) {
+            return "A non-archived LIVE strategy for " + strategy.symbol() + " already exists.";
+        }
+        return null;
     }
 
     private String formatTimestampForDisplay(Instant timestamp) {
@@ -1756,28 +1851,28 @@ public class TradingFrame extends JFrame {
         }
         int modelRow = strategyTable.convertRowIndexToModel(viewRow);
         if (modelRow >= 0 && modelRow < strategies.size()) {
-            String newSymbol = strategies.get(modelRow).strategy.symbol();
-            boolean changed = selectedStrategySymbol == null || !selectedStrategySymbol.equalsIgnoreCase(newSymbol);
-            selectedStrategySymbol = newSymbol;
+            String newId = strategies.get(modelRow).strategy.id();
+            boolean changed = selectedStrategyId == null || !selectedStrategyId.equals(newId);
+            selectedStrategyId = newId;
             return changed;
         }
         return false;
     }
 
     private void restoreSelectedRow() {
-        if (selectedStrategySymbol == null || strategies.isEmpty()) {
+        if (selectedStrategyId == null || strategies.isEmpty()) {
             return;
         }
         preservingSelection = true;
         int modelRow = -1;
         for (int i = 0; i < strategies.size(); i++) {
-            if (strategies.get(i).strategy.symbol().equalsIgnoreCase(selectedStrategySymbol)) {
+            if (strategies.get(i).strategy.id().equals(selectedStrategyId)) {
                 modelRow = i;
                 break;
             }
         }
         if (modelRow < 0) {
-            selectedStrategySymbol = null;
+            selectedStrategyId = null;
             strategyTable.clearSelection();
             preservingSelection = false;
             return;
@@ -1817,15 +1912,18 @@ public class TradingFrame extends JFrame {
         }
         int modelRow = strategyTable.convertRowIndexToModel(viewRow);
         if (modelRow >= 0 && modelRow < strategies.size()) {
-            selectedStrategySymbol = strategies.get(modelRow).strategy.symbol();
+            selectedStrategyId = strategies.get(modelRow).strategy.id();
         }
     }
 
     private ManagedStrategy selectedManagedStrategy() {
-        if (selectedStrategySymbol == null) {
+        if (selectedStrategyId == null) {
             return null;
         }
-        return findStrategy(selectedStrategySymbol);
+        return strategies.stream()
+                .filter(entry -> entry.strategy.id().equals(selectedStrategyId))
+                .findFirst()
+                .orElse(null);
     }
 
     private void refreshStrategyTableData() {
@@ -1848,7 +1946,7 @@ public class TradingFrame extends JFrame {
         if (strategies.isEmpty()) {
             strategyTableModel.fireTableDataChanged();
             strategyTable.clearSelection();
-            selectedStrategySymbol = null;
+            selectedStrategyId = null;
             return;
         }
         // Row count can change between polls; full refresh keeps sorter/model indexes consistent.
@@ -1863,10 +1961,21 @@ public class TradingFrame extends JFrame {
     }
 
     private ManagedStrategy findStrategy(String symbol) {
+        return findStrategy(symbol, null, true);
+    }
+
+    private ManagedStrategy findStrategy(String symbol, StrategyMode mode, boolean includeArchived) {
         for (ManagedStrategy strategy : strategies) {
-            if (strategy.strategy.symbol().equalsIgnoreCase(symbol)) {
-                return strategy;
+            if (!strategy.strategy.symbol().equalsIgnoreCase(symbol)) {
+                continue;
             }
+            if (mode != null && strategy.strategy.mode() != mode) {
+                continue;
+            }
+            if (!includeArchived && strategy.strategy.status() == StrategyStatus.ARCHIVED) {
+                continue;
+            }
+                return strategy;
         }
         return null;
     }
@@ -1971,8 +2080,11 @@ public class TradingFrame extends JFrame {
 
     private boolean isAutoPausedForClosedMarket(ManagedStrategy entry) {
         return entry != null
-                && entry.strategy.status() == StrategyStatus.PAUSED
-                && entry.strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED;
+                && shouldSuppressBrokerBackedRefreshForClosedMarket()
+                && ((entry.strategy.status() == StrategyStatus.PAUSED
+                    && entry.strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED)
+                    || (entry.strategy.status() == StrategyStatus.ACTIVE
+                    && entry.strategy.pauseReason() == PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE));
     }
 
     private void setStatus(String message, Color color) {
@@ -2002,8 +2114,12 @@ public class TradingFrame extends JFrame {
     private void updateStatusBar() {
         long running = strategies.stream().filter(s -> s.strategy.status() == StrategyStatus.ACTIVE).count();
         long inactive = Math.max(0L, strategies.size() - running);
+        AppSettingsService.AppSettings settings = appSettingsService.load();
+        boolean marketOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
         SwingUtilities.invokeLater(() -> {
             statusStrategyCount.setText("Strategies: Active " + running + " | Inactive " + inactive);
+            marketStatus.setText("Market: " + (marketOpen ? "Open" : "Closed"));
+            marketStatus.setForeground(marketOpen ? STATUS_OK : STATUS_WARN);
             if (!connectionOk) {
                 statusBar.setText("Broker: Not connected");
                 statusBar.setForeground(STATUS_ERR);
@@ -2381,7 +2497,9 @@ public class TradingFrame extends JFrame {
                 } else {
                     setBackground(table.getBackground());
                     if (column == 1) {
-                        if (strategies.get(modelRow).strategy.pauseReason() == PauseReason.SYSTEM_ERROR) {
+                        if (strategies.get(modelRow).strategy.status() == StrategyStatus.ARCHIVED) {
+                            setForeground(new Color(108, 117, 125));
+                        } else if (strategies.get(modelRow).strategy.pauseReason() == PauseReason.SYSTEM_ERROR) {
                             setForeground(STATUS_ERR);
                         } else {
                             setForeground(paused ? STATUS_TEXT_PAUSED : STATUS_TEXT_RUNNING);
@@ -2506,19 +2624,23 @@ public class TradingFrame extends JFrame {
     private final class ActionsRenderer extends JPanel implements TableCellRenderer {
         private final JButton editButton = new JButton("Edit");
         private final JButton toggleButton = new JButton();
+        private final JButton promoteButton = new JButton("Live");
         private final JButton deleteButton = new JButton("Delete");
 
         private ActionsRenderer() {
-            super(new GridLayout(1, 3, 6, 0));
+            super(new GridLayout(1, 4, 6, 0));
             setOpaque(true);
             applyButtonIcon(editButton, "icons/edit.svg", 13);
             applyButtonIcon(toggleButton, "icons/pause.svg", 13);
+            applyButtonIcon(promoteButton, "icons/add-stock-strategy.svg", 13);
             applyButtonIcon(deleteButton, "icons/delete.svg", 13);
             styleActionButton(editButton, new Color(63, 81, 181));
             styleActionButton(toggleButton, new Color(198, 40, 40));
+            styleActionButton(promoteButton, new Color(25, 118, 210));
             styleActionButton(deleteButton, new Color(156, 39, 39));
             add(editButton);
             add(toggleButton);
+            add(promoteButton);
             add(deleteButton);
         }
 
@@ -2528,9 +2650,15 @@ public class TradingFrame extends JFrame {
             ManagedStrategy strategy = strategies.get(modelRow);
             boolean paused = strategy.isPaused();
             boolean busy = strategy.isPauseResumeBusy();
+            boolean archived = strategy.strategy.status() == StrategyStatus.ARCHIVED;
+            boolean canPromote = strategy.strategy.mode() == StrategyMode.PAPER && !archived;
             toggleButton.setText(busy ? strategy.pauseResumeBusyText() : paused ? "Resume" : "Pause");
-            styleActionButton(toggleButton, busy ? new Color(120, 144, 156)
+            styleActionButton(toggleButton, archived ? new Color(120, 144, 156)
+                    : busy ? new Color(120, 144, 156)
                     : paused ? new Color(46, 125, 50) : new Color(198, 40, 40));
+            toggleButton.setEnabled(!archived);
+            promoteButton.setEnabled(canPromote);
+            styleActionButton(promoteButton, canPromote ? new Color(25, 118, 210) : new Color(120, 144, 156));
             setBackground(selectionAwareRowColor(isSelected, table));
             return this;
         }

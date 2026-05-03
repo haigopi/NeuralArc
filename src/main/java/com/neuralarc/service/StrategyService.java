@@ -158,6 +158,7 @@ public class StrategyService {
     public void pause(String strategyId) {
         strategyRepository.findById(strategyId).ifPresent(strategy -> {
             cancelPendingRemoteOrders(strategy);
+            rememberResumeStateBeforePause(strategy);
             strategy.setStatus(StrategyStatus.PAUSED);
             strategy.setCurrentState(StrategyLifecycleState.PAUSED);
             strategy.setPauseReason(PauseReason.USER_PAUSED);
@@ -169,14 +170,15 @@ public class StrategyService {
     public void resume(String strategyId) {
         strategyRepository.findById(strategyId).ifPresent(strategy -> {
             strategy.setStatus(StrategyStatus.ACTIVE);
-            if (strategy.currentState() == StrategyLifecycleState.PAUSED) {
-                strategy.setCurrentState(StrategyLifecycleState.VALIDATED);
-            }
-            strategy.setPauseReason(PauseReason.NONE);
+            restoreResumeStateAfterPause(strategy);
+            boolean marketClosed = shouldSuppressPollingForMarketClose();
+            strategy.setPauseReason(marketClosed ? PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE : PauseReason.NONE);
             strategy.clearLastError();
             strategyRepository.save(strategy);
             stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.STRATEGY_RESUMED, "Strategy resumed", "{}");
-            strategyEngine.resumeStrategy(strategy);
+            if (!marketClosed) {
+                strategyEngine.resumeStrategy(strategy);
+            }
         });
     }
 
@@ -185,6 +187,10 @@ public class StrategyService {
             if (strategy.status() != StrategyStatus.ACTIVE) {
                 return;
             }
+            if (strategy.pauseReason() == PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE) {
+                return;
+            }
+            rememberResumeStateBeforePause(strategy);
             strategy.setStatus(StrategyStatus.PAUSED);
             strategy.setCurrentState(StrategyLifecycleState.PAUSED);
             strategy.setPauseReason(PauseReason.AUTO_MARKET_CLOSED);
@@ -200,9 +206,7 @@ public class StrategyService {
                 return;
             }
             strategy.setStatus(StrategyStatus.ACTIVE);
-            if (strategy.currentState() == StrategyLifecycleState.PAUSED) {
-                strategy.setCurrentState(StrategyLifecycleState.VALIDATED);
-            }
+            restoreResumeStateAfterPause(strategy);
             strategy.setPauseReason(PauseReason.NONE);
             strategy.clearLastError();
             strategyRepository.save(strategy);
@@ -227,6 +231,48 @@ public class StrategyService {
         strategyRepository.deleteById(strategyId);
         orderRepository.deleteByStrategyId(strategyId);
         eventRepository.deleteByStrategyId(strategyId);
+    }
+
+    public LivePromotionResult promotePaperStrategyToLive(String strategyId) {
+        Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
+        if (maybeStrategy.isEmpty()) {
+            return LivePromotionResult.failed("Strategy not found.");
+        }
+        Strategy paperStrategy = maybeStrategy.get();
+        if (paperStrategy.mode() != StrategyMode.PAPER) {
+            return LivePromotionResult.failed("Only paper strategies can be promoted to LIVE.");
+        }
+        if (paperStrategy.status() == StrategyStatus.ARCHIVED) {
+            return LivePromotionResult.failed("This paper strategy is already archived.");
+        }
+        if (!liveTradingEnabled) {
+            return LivePromotionResult.failed("LIVE mode is disabled. Set trading.live.enabled=true to allow live trading.");
+        }
+        if (defaultStrategyMode != StrategyMode.LIVE) {
+            return LivePromotionResult.failed("Switch the application connection to LIVE mode before promoting a strategy.");
+        }
+        boolean hasExistingLiveStrategy = strategyRepository.findAll().stream()
+                .filter(existing -> !existing.id().equals(paperStrategy.id()))
+                .filter(existing -> existing.mode() == StrategyMode.LIVE)
+                .filter(existing -> existing.status() != StrategyStatus.ARCHIVED)
+                .anyMatch(existing -> existing.symbol().equalsIgnoreCase(paperStrategy.symbol()));
+        if (hasExistingLiveStrategy) {
+            return LivePromotionResult.failed("A non-archived LIVE strategy for " + paperStrategy.symbol() + " already exists.");
+        }
+
+        Strategy liveStrategy = cloneStrategyForLivePromotion(paperStrategy);
+        StrategyCreationResult creationResult = createAndActivate(liveStrategy);
+        if (!creationResult.success()) {
+            return LivePromotionResult.failed(creationResult.error());
+        }
+
+        archivePaperStrategyAfterPromotion(paperStrategy, liveStrategy.id());
+        return LivePromotionResult.success(
+                paperStrategy.id(),
+                liveStrategy.id(),
+                creationResult.alpacaOrderId(),
+                creationResult.clientOrderId()
+        );
     }
 
     public List<Strategy> syncRemoteStrategies() {
@@ -417,6 +463,97 @@ public class StrategyService {
         return strategy;
     }
 
+    private void rememberResumeStateBeforePause(Strategy strategy) {
+        if (strategy.currentState() != null && strategy.currentState() != StrategyLifecycleState.PAUSED) {
+            strategy.setResumeStateBeforePause(strategy.currentState());
+        }
+    }
+
+    private Strategy cloneStrategyForLivePromotion(Strategy paperStrategy) {
+        Strategy liveStrategy = new Strategy(
+                UUID.randomUUID().toString(),
+                liveStrategyName(paperStrategy),
+                paperStrategy.symbol(),
+                StrategyMode.LIVE,
+                StrategyStatus.CREATED,
+                StrategyLifecycleState.CREATED,
+                paperStrategy.baseBuyLimitPrice(),
+                paperStrategy.baseBuyQuantity(),
+                paperStrategy.buyLimit1Price(),
+                paperStrategy.buyLimit1Quantity(),
+                paperStrategy.buyLimit2Price(),
+                paperStrategy.buyLimit2Quantity(),
+                paperStrategy.automatedStopLossEnabled(),
+                paperStrategy.stopLossType(),
+                paperStrategy.stopLossPrice(),
+                paperStrategy.stopLossPercent(),
+                paperStrategy.optionalLossExitEnabled(),
+                paperStrategy.optionalLossExitPrice(),
+                paperStrategy.targetSellEnabled(),
+                paperStrategy.targetSellPrice(),
+                paperStrategy.targetSellQuantityOrPercent(),
+                paperStrategy.targetSellPercentBased(),
+                paperStrategy.profitHoldEnabled(),
+                paperStrategy.profitHoldType(),
+                paperStrategy.profitHoldPercent(),
+                paperStrategy.profitHoldAmount(),
+                BigDecimal.ZERO,
+                paperStrategy.restartAfterExitEnabled(),
+                paperStrategy.maxTotalQuantity(),
+                paperStrategy.maxCapitalAllowed(),
+                paperStrategy.pollingIntervalSeconds(),
+                Instant.now(),
+                Instant.now()
+        );
+        liveStrategy.setLossBuyLevelsEnabled(paperStrategy.lossBuyLevelsEnabled());
+        liveStrategy.setPauseReason(PauseReason.NONE);
+        liveStrategy.setResumeStateBeforePause(StrategyLifecycleState.CREATED);
+        return liveStrategy;
+    }
+
+    private void archivePaperStrategyAfterPromotion(Strategy paperStrategy, String promotedLiveStrategyId) {
+        paperStrategy.setStatus(StrategyStatus.ARCHIVED);
+        paperStrategy.setCurrentState(StrategyLifecycleState.STOPPED);
+        paperStrategy.setPauseReason(PauseReason.NONE);
+        paperStrategy.setResumeStateBeforePause(StrategyLifecycleState.STOPPED);
+        paperStrategy.setLastEvent("Archived after promotion to LIVE strategy " + promotedLiveStrategyId);
+        paperStrategy.clearLastError();
+        strategyRepository.save(paperStrategy);
+        stateMachine.transition(
+                paperStrategy,
+                StrategyLifecycleState.STOPPED,
+                StrategyEventType.STRATEGY_ARCHIVED,
+                "Paper strategy archived after live promotion",
+                "{}"
+        );
+    }
+
+    private String liveStrategyName(Strategy paperStrategy) {
+        String currentName = paperStrategy.name() == null ? "" : paperStrategy.name().trim();
+        if (currentName.isBlank()) {
+            return paperStrategy.symbol() + " Live Strategy";
+        }
+        if (currentName.toLowerCase().contains("live")) {
+            return currentName;
+        }
+        return currentName + " Live";
+    }
+
+    private void restoreResumeStateAfterPause(Strategy strategy) {
+        if (strategy.currentState() == StrategyLifecycleState.PAUSED) {
+            StrategyLifecycleState restoreState = strategy.resumeStateBeforePause();
+            strategy.setCurrentState(restoreState == null || restoreState == StrategyLifecycleState.PAUSED
+                    ? StrategyLifecycleState.VALIDATED
+                    : restoreState);
+        }
+    }
+
+    private boolean shouldSuppressPollingForMarketClose() {
+        AppSettingsService.AppSettings settings = appSettingsService.load();
+        return settings.autoPausePollingWhenMarketClosed()
+                && !marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
+    }
+
     private StrategyOrder buildRemoteOrder(Strategy strategy, com.neuralarc.api.AlpacaOrderData remoteOrder) {
         Instant submittedAt = remoteOrder.submittedAt() == null ? Instant.now() : remoteOrder.submittedAt();
         return new StrategyOrder(
@@ -480,6 +617,23 @@ public class StrategyService {
 
         public static StrategyCreationResult failed(String error) {
             return new StrategyCreationResult(false, null, null, null, null, error == null ? "Unknown error" : error);
+        }
+    }
+
+    public record LivePromotionResult(
+            boolean success,
+            String paperStrategyId,
+            String liveStrategyId,
+            String alpacaOrderId,
+            String clientOrderId,
+            String error
+    ) {
+        public static LivePromotionResult success(String paperStrategyId, String liveStrategyId, String alpacaOrderId, String clientOrderId) {
+            return new LivePromotionResult(true, paperStrategyId, liveStrategyId, alpacaOrderId, clientOrderId, null);
+        }
+
+        public static LivePromotionResult failed(String error) {
+            return new LivePromotionResult(false, null, null, null, null, error == null ? "Unknown error" : error);
         }
     }
 }

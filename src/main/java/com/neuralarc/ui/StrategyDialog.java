@@ -52,8 +52,8 @@ public class StrategyDialog extends JDialog {
     private static final int SECTION_INNER_PADDING = 10;
     private static final int RISK_CONTROLS_HORIZONTAL_PADDING = 12;
     private static final int MAX_MONTHS_BACK = 12;
-    private static final int DIALOG_TARGET_WIDTH = 920;
-    private static final int DIALOG_TARGET_HEIGHT = 760;
+    private static final int DIALOG_TARGET_WIDTH = 860;
+    private static final int DIALOG_TARGET_HEIGHT = 720;
     private static final double DIALOG_MAX_SCREEN_HEIGHT_RATIO = 0.88d;
     private static final int DIALOG_SCREEN_MARGIN = 48;
     private static final DateTimeFormatter DISPLAY_FMT =
@@ -289,7 +289,7 @@ public class StrategyDialog extends JDialog {
         addRow(profitHoldFields, "Trailing percent:", profitHoldPercentField);
         addRow(profitHoldFields, "Trailing amount:", profitHoldAmountField);
         profitHoldPanel.add(profitHoldFields, BorderLayout.NORTH);
-        JLabel help = new JLabel("<html>Use profit hold after the target sell trigger. Percent trailing follows gains by a percentage. Fixed amount trailing exits after a fixed dollar pullback from the highest observed price.</html>");
+        JLabel help = new JLabel("<html>Use profit hold after the target sell trigger.<br>Percent trailing follows gains by a percentage, while fixed amount trailing exits after a fixed dollar pullback from the highest observed price.</html>");
         help.setForeground(TEXT_MUTED);
         help.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
         profitHoldPanel.add(help, BorderLayout.CENTER);
@@ -1188,15 +1188,35 @@ public class StrategyDialog extends JDialog {
         aaEightMonthHighLabel.setText("$" + r.eightMonthHigh().toPlainString());
         aaOneYearLowLabel.setText("$" + r.oneYearLow().toPlainString());
         aaOneYearHighLabel.setText("$" + r.oneYearHigh().toPlainString());
-        aaTodayStockPriceLabel.setText(formatPriceOrDash(r.todayStockPrice()));
-        aaTodayOpenLabel.setText(formatPriceOrDash(r.todayOpen()));
-        aaTodayHighSoFarLabel.setText(formatPriceOrDash(r.todayHighSoFar()));
-        aaTodayLowSoFarLabel.setText(formatPriceOrDash(r.todayLowSoFar()));
-        aaTodayCloseLabel.setText(r.todayCloseAvailable() ? formatPriceOrDash(r.todayClose()) : "—");
+        BigDecimal snapshotPrice = firstPositive(r.todayStockPrice(), r.todayClose(), r.averageDailyClose());
+        BigDecimal snapshotOpen = firstPositive(r.todayOpen(), snapshotPrice, r.averageDailyOpen());
+        BigDecimal snapshotHigh = firstPositive(r.todayHighSoFar(), r.todayClose(), snapshotPrice, snapshotOpen);
+        BigDecimal snapshotLow = firstPositive(r.todayLowSoFar(), snapshotOpen, snapshotPrice, r.averageDailyLow());
+        BigDecimal snapshotClose = firstPositive(r.todayClose(), snapshotPrice);
+
+        aaTodayStockPriceLabel.setText(formatPriceOrDash(snapshotPrice));
+        aaTodayOpenLabel.setText(formatPriceOrDash(snapshotOpen));
+        aaTodayHighSoFarLabel.setText(formatPriceOrDash(snapshotHigh));
+        aaTodayLowSoFarLabel.setText(formatPriceOrDash(snapshotLow));
+        aaTodayCloseLabel.setText(r.todayCloseAvailable() || snapshotClose.compareTo(BigDecimal.ZERO) > 0
+                ? formatPriceOrDash(snapshotClose)
+                : "—");
         aaThresholdLabel.setText("$" + r.thresholdNumber().toPlainString());
         aaDailyBarsLabel.setText(String.valueOf(r.dailyBarsProcessed()));
         aaIntradayBarsLabel.setText(String.valueOf(r.intradayBarsProcessed()));
         aaAnalyzedAtLabel.setText(DISPLAY_FMT.format(r.analyzedAt()));
+    }
+
+    private BigDecimal firstPositive(BigDecimal... values) {
+        if (values == null) {
+            return BigDecimal.ZERO;
+        }
+        for (BigDecimal value : values) {
+            if (value != null && value.compareTo(BigDecimal.ZERO) > 0) {
+                return value;
+            }
+        }
+        return BigDecimal.ZERO;
     }
 
     private JPanel buildRecommendationSection(RecommendationView view, RecommendationTypeLabel typeLabel) {
@@ -1228,7 +1248,7 @@ public class StrategyDialog extends JDialog {
         view.applyButton.addActionListener(e -> applyRecommendationToCurrentStrategy(typeLabel));
         topRow.add(view.applyButton, BorderLayout.EAST);
 
-        JPanel grid = new JPanel(new GridLayout(0, 4, FIELD_GAP, FIELD_GAP));
+        JPanel grid = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
         grid.setOpaque(false);
         addRecommendationRow(grid, "Base Buy Price:", view.baseBuyValue);
         addRecommendationRow(grid, "Buy Level 1:", view.buy1Value);
@@ -1354,9 +1374,7 @@ public class StrategyDialog extends JDialog {
         view.marketModeValue.setText(recommendation.recommendationType() == RecommendationType.SHORT_TERM
                 ? recommendation.shortTermMarketMode().name()
                 : recommendation.marketMode().name());
-        view.baseAdjustmentReasonValue.setText(recommendation.baseAdjustmentReason().isBlank()
-                ? "—"
-                : recommendation.baseAdjustmentReason());
+        view.baseAdjustmentReasonValue.setText(formatWrappedTextOrDash(recommendation.baseAdjustmentReason(), 360));
         view.confidenceValue.setText(recommendation.confidenceScore() + "/100");
         if (recommendation.recommendationType() == RecommendationType.SHORT_TERM
                 && recommendation.baseBuyPrice().compareTo(recommendation.effectiveMarketPrice()) < 0) {
@@ -1466,6 +1484,13 @@ public class StrategyDialog extends JDialog {
         return value != null && value.compareTo(BigDecimal.ZERO) > 0
                 ? value.multiply(new BigDecimal("100")).setScale(2, RoundingMode.HALF_UP).toPlainString() + "%"
                 : "—";
+    }
+
+    private String formatWrappedTextOrDash(String value, int widthPx) {
+        if (value == null || value.isBlank()) {
+            return "—";
+        }
+        return "<html><div style='width:" + widthPx + "px;'>" + escapeHtml(value) + "</div></html>";
     }
 
     private void updateResultsLoadingState(boolean loading, String message) {

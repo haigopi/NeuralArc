@@ -1,6 +1,7 @@
 package com.neuralarc.service;
 
 import com.neuralarc.model.ProfitHoldType;
+import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyLifecycleState;
@@ -104,6 +105,11 @@ public class FileStrategyRepository implements StrategyRepository {
                 strategy.setLastEvent(o.optString("lastEvent", ""));
                 strategy.setLatestOrderStatus(o.optString("latestOrderStatus", ""));
                 strategy.setLatestAlpacaOrderId(o.optString("latestAlpacaOrderId", ""));
+                strategy.setPauseReason(parsePauseReason(o.optString("pauseReason", "NONE")));
+                strategy.setResumeStateBeforePause(parseLifecycleState(
+                        o.optString("resumeStateBeforePause", strategy.currentState().name()),
+                        strategy.currentState()
+                ));
                 result.add(strategy);
             }
             return result;
@@ -166,6 +172,8 @@ public class FileStrategyRepository implements StrategyRepository {
             o.put("lastEvent", s.lastEvent() == null ? "" : s.lastEvent());
             o.put("latestOrderStatus", s.latestOrderStatus() == null ? "" : s.latestOrderStatus());
             o.put("latestAlpacaOrderId", s.latestAlpacaOrderId() == null ? "" : s.latestAlpacaOrderId());
+            o.put("pauseReason", s.pauseReason().name());
+            o.put("resumeStateBeforePause", s.resumeStateBeforePause().name());
             arr.put(o);
         }
         try {
@@ -185,6 +193,22 @@ public class FileStrategyRepository implements StrategyRepository {
             return new BigDecimal(value);
         } catch (NumberFormatException ex) {
             return BigDecimal.ZERO;
+        }
+    }
+
+    private PauseReason parsePauseReason(String value) {
+        try {
+            return PauseReason.valueOf(value == null || value.isBlank() ? "NONE" : value);
+        } catch (IllegalArgumentException ex) {
+            return PauseReason.NONE;
+        }
+    }
+
+    private StrategyLifecycleState parseLifecycleState(String value, StrategyLifecycleState fallback) {
+        try {
+            return StrategyLifecycleState.valueOf(value == null || value.isBlank() ? fallback.name() : value);
+        } catch (IllegalArgumentException ex) {
+            return fallback;
         }
     }
 }

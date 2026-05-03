@@ -159,6 +159,54 @@ class StrategyServiceTest {
     }
 
     @Test
+    void resumeRestoresLifecycleStateBeforePause() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca, new AlwaysClosedMarketHoursService());
+
+        Strategy strategy = baseStrategy("TSLA", 10, new BigDecimal("350.00"));
+        strategy.setStatus(StrategyStatus.PAUSED);
+        strategy.setCurrentState(StrategyLifecycleState.PAUSED);
+        strategy.setResumeStateBeforePause(StrategyLifecycleState.BUY_LIMIT_1_PLACED);
+        strategy.setPauseReason(PauseReason.USER_PAUSED);
+        strategies.save(strategy);
+
+        service.resume(strategy.id());
+
+        Strategy resumed = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, resumed.status());
+        assertEquals(StrategyLifecycleState.BUY_LIMIT_1_PLACED, resumed.currentState());
+        assertEquals(PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE, resumed.pauseReason());
+    }
+
+    @Test
+    void manualResumeDuringMarketCloseIsNotOverwrittenByAutoPause() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca, new AlwaysClosedMarketHoursService());
+
+        Strategy strategy = baseStrategy("TSLA", 10, new BigDecimal("350.00"));
+        strategy.setStatus(StrategyStatus.PAUSED);
+        strategy.setCurrentState(StrategyLifecycleState.PAUSED);
+        strategy.setResumeStateBeforePause(StrategyLifecycleState.BUY_LIMIT_1_PLACED);
+        strategy.setPauseReason(PauseReason.AUTO_MARKET_CLOSED);
+        strategies.save(strategy);
+
+        service.resume(strategy.id());
+        service.autoPauseForMarketClose(strategy.id(), "Strategy auto-paused because market is closed");
+
+        Strategy resumed = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, resumed.status());
+        assertEquals(StrategyLifecycleState.BUY_LIMIT_1_PLACED, resumed.currentState());
+        assertEquals(PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE, resumed.pauseReason());
+        assertTrue(alpaca.submittedOrders.isEmpty());
+    }
+
+    @Test
     void updateActiveStrategyCancelsOpenOrdersAndRecreatesWithUpdatedConfig() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

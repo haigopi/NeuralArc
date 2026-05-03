@@ -6,5 +6,6 @@ public enum StrategyStatus {
     PAUSED,
     COMPLETED,
     FAILED,
-    STOPPED
+    STOPPED,
+    ARCHIVED
 }
