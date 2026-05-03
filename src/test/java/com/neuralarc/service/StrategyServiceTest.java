@@ -288,6 +288,131 @@ class StrategyServiceTest {
         assertTrue(orders.findByStrategyId(syncedStrategy.id()).stream().anyMatch(order -> "ord-remote".equals(order.alpacaOrderId())));
     }
 
+    @Test
+    void promotePaperStrategyToLiveClonesAndArchivesPaperStrategy() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(
+                strategies, orders, events, alpaca,
+                new AlwaysOpenMarketHoursService(),
+                true,
+                StrategyMode.LIVE,
+                ApplicationMode.LIVE
+        );
+
+        Strategy paper = baseStrategy("TSLA", 10, new BigDecimal("350.00"));
+        paper.setStatus(StrategyStatus.ACTIVE);
+        paper.setCurrentState(StrategyLifecycleState.VALIDATED);
+        paper.setMaxCapitalAllowed(new BigDecimal("10000.00"));
+        strategies.save(paper);
+
+        StrategyService.LivePromotionResult result = service.promotePaperStrategyToLive(paper.id());
+
+        assertTrue(result.success());
+        Strategy archivedPaper = strategies.findById(paper.id()).orElseThrow();
+        assertEquals(StrategyStatus.ARCHIVED, archivedPaper.status());
+        assertEquals(StrategyLifecycleState.STOPPED, archivedPaper.currentState());
+
+        Strategy live = strategies.findById(result.liveStrategyId()).orElseThrow();
+        assertEquals(StrategyMode.LIVE, live.mode());
+        assertEquals(StrategyStatus.ACTIVE, live.status());
+        assertEquals("TSLA", live.symbol());
+        assertEquals(paper.baseBuyLimitPrice(), live.baseBuyLimitPrice());
+        assertEquals(1, alpaca.submittedOrders.size());
+    }
+
+    @Test
+    void promotePaperStrategyToLiveBlocksDuplicateLiveSymbol() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(
+                strategies, orders, events, alpaca,
+                new AlwaysOpenMarketHoursService(),
+                true,
+                StrategyMode.LIVE,
+                ApplicationMode.LIVE
+        );
+
+        Strategy paper = baseStrategy("TSLA", 10, new BigDecimal("350.00"));
+        strategies.save(paper);
+        Strategy live = strategyWithId(UUID.randomUUID().toString(), "TSLA", 10, new BigDecimal("352.00"));
+        live.setMode(StrategyMode.LIVE);
+        live.setStatus(StrategyStatus.ACTIVE);
+        strategies.save(live);
+
+        StrategyService.LivePromotionResult result = service.promotePaperStrategyToLive(paper.id());
+
+        assertFalse(result.success());
+        assertTrue(result.error().contains("already exists"));
+        assertEquals(0, alpaca.submittedOrders.size());
+        assertEquals(StrategyStatus.CREATED, strategies.findById(paper.id()).orElseThrow().status());
+    }
+
+    @Test
+    void promotePaperStrategyToLiveBlocksPendingPaperOrders() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(
+                strategies, orders, events, alpaca,
+                new AlwaysOpenMarketHoursService(),
+                true,
+                StrategyMode.LIVE,
+                ApplicationMode.LIVE
+        );
+
+        Strategy paper = baseStrategy("AAPL", 10, new BigDecimal("180.00"));
+        paper.setMaxCapitalAllowed(new BigDecimal("10000.00"));
+        strategies.save(paper);
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), paper.id(), StrategyStage.BASE_BUY, "ord-paper", "client-paper", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("180.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        ));
+
+        StrategyService.LivePromotionPreview preview = service.previewLivePromotion(paper.id());
+        StrategyService.LivePromotionResult result = service.promotePaperStrategyToLive(paper.id());
+
+        assertFalse(preview.eligible());
+        assertEquals(1, preview.pendingPaperOrders());
+        assertFalse(result.success());
+        assertTrue(result.error().contains("pending local order"));
+    }
+
+    @Test
+    void promotePaperStrategyToLiveBlocksExistingLivePosition() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.position = Optional.of(new AlpacaPositionData("MSFT", new BigDecimal("5"), new BigDecimal("420.00"), new BigDecimal("425.00"), "{}"));
+        StrategyService service = service(
+                strategies, orders, events, alpaca,
+                new AlwaysOpenMarketHoursService(),
+                true,
+                StrategyMode.LIVE,
+                ApplicationMode.LIVE
+        );
+
+        Strategy paper = baseStrategy("MSFT", 10, new BigDecimal("410.00"));
+        paper.setMaxCapitalAllowed(new BigDecimal("10000.00"));
+        strategies.save(paper);
+
+        StrategyService.LivePromotionPreview preview = service.previewLivePromotion(paper.id());
+        StrategyService.LivePromotionResult result = service.promotePaperStrategyToLive(paper.id());
+
+        assertFalse(preview.eligible());
+        assertEquals(0, preview.livePositionQuantity().compareTo(new BigDecimal("5")));
+        assertFalse(result.success());
+        assertTrue(result.error().contains("open position"));
+    }
+
     private StrategyService service(
             InMemoryStrategyRepository strategies,
             InMemoryOrderRepository orders,
@@ -304,6 +429,19 @@ class StrategyServiceTest {
             FakeAlpacaClient alpaca,
             MarketHoursService marketHoursService
     ) {
+        return service(strategies, orders, events, alpaca, marketHoursService, false, StrategyMode.PAPER, ApplicationMode.PAPER);
+    }
+
+    private StrategyService service(
+            InMemoryStrategyRepository strategies,
+            InMemoryOrderRepository orders,
+            InMemoryEventRepository events,
+            FakeAlpacaClient alpaca,
+            MarketHoursService marketHoursService,
+            boolean liveTradingEnabled,
+            StrategyMode defaultStrategyMode,
+            ApplicationMode applicationMode
+    ) {
         try {
             AppSettingsService settingsService = new AppSettingsService(java.nio.file.Files.createTempDirectory("neuralarc-service-test").resolve("settings.properties"));
             settingsService.save(new AppSettingsService.AppSettings(
@@ -312,7 +450,7 @@ class StrategyServiceTest {
                     true,
                     false,
                     BrokerType.ALPACA,
-                    ApplicationMode.PAPER
+                    applicationMode
             ));
             return new StrategyService(
                     strategies,
@@ -320,8 +458,8 @@ class StrategyServiceTest {
                     events,
                     alpaca,
                     new StrategyValidator(),
-                    false,
-                    StrategyMode.PAPER,
+                    liveTradingEnabled,
+                    defaultStrategyMode,
                     settingsService,
                     marketHoursService
             );

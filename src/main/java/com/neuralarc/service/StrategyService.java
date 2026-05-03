@@ -233,32 +233,80 @@ public class StrategyService {
         eventRepository.deleteByStrategyId(strategyId);
     }
 
-    public LivePromotionResult promotePaperStrategyToLive(String strategyId) {
+    public LivePromotionPreview previewLivePromotion(String strategyId) {
         Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
         if (maybeStrategy.isEmpty()) {
-            return LivePromotionResult.failed("Strategy not found.");
+            return LivePromotionPreview.missing("Strategy not found.");
         }
-        Strategy paperStrategy = maybeStrategy.get();
-        if (paperStrategy.mode() != StrategyMode.PAPER) {
-            return LivePromotionResult.failed("Only paper strategies can be promoted to LIVE.");
+        Strategy strategy = maybeStrategy.get();
+        List<String> issues = new java.util.ArrayList<>();
+        if (strategy.mode() != StrategyMode.PAPER) {
+            issues.add("Only paper strategies can be promoted to LIVE.");
         }
-        if (paperStrategy.status() == StrategyStatus.ARCHIVED) {
-            return LivePromotionResult.failed("This paper strategy is already archived.");
+        if (strategy.status() == StrategyStatus.ARCHIVED) {
+            issues.add("Archived strategies cannot be promoted to LIVE.");
         }
         if (!liveTradingEnabled) {
-            return LivePromotionResult.failed("LIVE mode is disabled. Set trading.live.enabled=true to allow live trading.");
+            issues.add("LIVE mode is disabled. Set trading.live.enabled=true in app.properties first.");
         }
         if (defaultStrategyMode != StrategyMode.LIVE) {
-            return LivePromotionResult.failed("Switch the application connection to LIVE mode before promoting a strategy.");
+            issues.add("Switch the application connection to LIVE mode before promoting this strategy.");
         }
-        boolean hasExistingLiveStrategy = strategyRepository.findAll().stream()
-                .filter(existing -> !existing.id().equals(paperStrategy.id()))
+        List<String> validationErrors = validator.validate(strategy);
+        if (!validationErrors.isEmpty()) {
+            issues.add("Strategy validation must pass before live promotion.");
+        }
+
+        int pendingPaperOrders = (int) orderRepository.findByStrategyId(strategy.id()).stream()
+                .filter(StrategyOrder::isPending)
+                .count();
+        if (pendingPaperOrders > 0) {
+            issues.add("Paper strategy still has " + pendingPaperOrders + " pending local order(s).");
+        }
+
+        boolean liveStrategyConflict = strategyRepository.findAll().stream()
+                .filter(existing -> !existing.id().equals(strategy.id()))
                 .filter(existing -> existing.mode() == StrategyMode.LIVE)
                 .filter(existing -> existing.status() != StrategyStatus.ARCHIVED)
-                .anyMatch(existing -> existing.symbol().equalsIgnoreCase(paperStrategy.symbol()));
-        if (hasExistingLiveStrategy) {
-            return LivePromotionResult.failed("A non-archived LIVE strategy for " + paperStrategy.symbol() + " already exists.");
+                .anyMatch(existing -> existing.symbol().equalsIgnoreCase(strategy.symbol()));
+        if (liveStrategyConflict) {
+            issues.add("A non-archived LIVE strategy for " + strategy.symbol() + " already exists.");
         }
+
+        List<com.neuralarc.api.AlpacaOrderData> liveOpenOrders = alpacaClient.getOpenOrders(strategy.symbol());
+        if (!liveOpenOrders.isEmpty()) {
+            issues.add("The LIVE account already has " + liveOpenOrders.size() + " open order(s) for " + strategy.symbol() + ".");
+        }
+        Optional<com.neuralarc.api.AlpacaPositionData> livePosition = alpacaClient.getPosition(strategy.symbol());
+        if (livePosition.isPresent() && livePosition.get().exists()) {
+            issues.add("The LIVE account already has an open position for " + strategy.symbol() + ".");
+        }
+
+        AppSettingsService.AppSettings settings = appSettingsService.load();
+        boolean marketSessionOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
+        return new LivePromotionPreview(
+                strategy,
+                issues.isEmpty(),
+                List.copyOf(issues),
+                List.copyOf(validationErrors),
+                pendingPaperOrders,
+                liveOpenOrders.size(),
+                livePosition.filter(com.neuralarc.api.AlpacaPositionData::exists)
+                        .map(com.neuralarc.api.AlpacaPositionData::quantity)
+                        .orElse(BigDecimal.ZERO),
+                marketSessionOpen
+        );
+    }
+
+    public LivePromotionResult promotePaperStrategyToLive(String strategyId) {
+        LivePromotionPreview preview = previewLivePromotion(strategyId);
+        if (!preview.exists()) {
+            return LivePromotionResult.failed(preview.issues().isEmpty() ? "Strategy not found." : preview.issues().getFirst());
+        }
+        if (!preview.eligible()) {
+            return LivePromotionResult.failed(String.join(" ", preview.issues()));
+        }
+        Strategy paperStrategy = preview.strategy();
 
         Strategy liveStrategy = cloneStrategyForLivePromotion(paperStrategy);
         StrategyCreationResult creationResult = createAndActivate(liveStrategy);
@@ -634,6 +682,25 @@ public class StrategyService {
 
         public static LivePromotionResult failed(String error) {
             return new LivePromotionResult(false, null, null, null, null, error == null ? "Unknown error" : error);
+        }
+    }
+
+    public record LivePromotionPreview(
+            Strategy strategy,
+            boolean eligible,
+            List<String> issues,
+            List<String> validationErrors,
+            int pendingPaperOrders,
+            int liveOpenOrders,
+            BigDecimal livePositionQuantity,
+            boolean marketSessionOpen
+    ) {
+        public static LivePromotionPreview missing(String issue) {
+            return new LivePromotionPreview(null, false, List.of(issue), List.of(), 0, 0, BigDecimal.ZERO, false);
+        }
+
+        public boolean exists() {
+            return strategy != null;
         }
     }
 }

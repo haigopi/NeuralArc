@@ -21,7 +21,9 @@ public class StrategyStateMachine {
     public void transition(Strategy strategy, StrategyLifecycleState state, StrategyEventType type, String message, String metadataJson) {
         strategy.setCurrentState(state);
         strategy.setLastEvent(message);
-        if (state == StrategyLifecycleState.PAUSED) {
+        if (type == StrategyEventType.STRATEGY_ARCHIVED || strategy.status() == StrategyStatus.ARCHIVED) {
+            strategy.setStatus(StrategyStatus.ARCHIVED);
+        } else if (state == StrategyLifecycleState.PAUSED) {
             strategy.setStatus(StrategyStatus.PAUSED);
         } else if (state == StrategyLifecycleState.COMPLETED) {
             strategy.setStatus(StrategyStatus.COMPLETED);

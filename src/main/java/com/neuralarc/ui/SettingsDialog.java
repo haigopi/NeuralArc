@@ -73,9 +73,19 @@ public class SettingsDialog extends JDialog {
     private transient Function<Path, StrategyTransferResult> strategyExportHandler;
     private transient Function<Path, StrategyTransferResult> strategyImportHandler;
     private final Map<ApplicationMode, String[]> credentialCache = new EnumMap<>(ApplicationMode.class);
+    private final Map<ApplicationMode, String[]> appliedCredentialCache = new EnumMap<>(ApplicationMode.class);
     private ApplicationMode displayedCredentialMode = ApplicationMode.PAPER;
     private boolean suppressModeSwitchHandling;
     private final Color defaultApiLabelColor = UIManager.getColor("Label.foreground");
+    private AppSettingsService.AppSettings appliedSettings = new AppSettingsService.AppSettings(
+            "",
+            true,
+            AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED,
+            AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED,
+            BrokerType.ALPACA,
+            ApplicationMode.PAPER
+    );
+    private boolean savedDuringOpen;
 
     public SettingsDialog(JFrame owner) {
         super(owner, "Settings", true);
@@ -320,9 +330,24 @@ public class SettingsDialog extends JDialog {
         ApplicationMode mode = (ApplicationMode) appModeBox.getSelectedItem();
         return mode == null ? ApplicationMode.PAPER : mode;
     }
+    public BrokerType appliedBrokerType() { return appliedSettings.brokerType(); }
+    public ApplicationMode appliedApplicationMode() { return appliedSettings.applicationMode(); }
+    public boolean appliedExtendedHoursTradingEnabled() { return appliedSettings.extendedHoursTradingEnabled(); }
+    public boolean appliedAutoPausePollingWhenMarketClosed() { return appliedSettings.autoPausePollingWhenMarketClosed(); }
     public String getUserEmail() { return emailField.getText().trim(); }
     public String getApiKey() { return apiKeyField.getText().trim(); }
     public String getApiSecret() { return new String(apiSecretField.getPassword()); }
+    public String appliedUserEmail() { return appliedSettings.userEmail(); }
+    public String savedApiKey(ApplicationMode mode) {
+        String[] creds = appliedCredentialCache.get(mode == null ? ApplicationMode.PAPER : mode);
+        return creds == null ? "" : creds[0];
+    }
+    public String savedApiSecret(ApplicationMode mode) {
+        String[] creds = appliedCredentialCache.get(mode == null ? ApplicationMode.PAPER : mode);
+        return creds == null ? "" : creds[1];
+    }
+    public boolean wasSavedDuringOpen() { return savedDuringOpen; }
+    public void prepareForOpen() { savedDuringOpen = false; }
     public void selectBrokerAndMode(BrokerType brokerType, ApplicationMode mode) {
         suppressModeSwitchHandling = true;
         if (brokerType != null) {
@@ -393,6 +418,16 @@ public class SettingsDialog extends JDialog {
                 }
                 credentialManager.save(key, secret.toCharArray(), credentialFileForMode(mode), buildPassphrase(email));
             }
+            appliedSettings = new AppSettingsService.AppSettings(
+                    email,
+                    telemetryEnabled(),
+                    autoPausePollingWhenMarketClosed(),
+                    extendedHoursTradingEnabled(),
+                    brokerType() == null ? BrokerType.ALPACA : brokerType(),
+                    applicationMode()
+            );
+            syncAppliedCredentialCache();
+            savedDuringOpen = true;
             JOptionPane.showMessageDialog(this, "Settings saved successfully.", "Saved", JOptionPane.INFORMATION_MESSAGE);
             return true;
         } catch (IOException ex) {
@@ -427,8 +462,30 @@ public class SettingsDialog extends JDialog {
                 }
                 String mode = settings.getProperty("applicationMode", ApplicationMode.PAPER.name());
                 appModeBox.setSelectedItem(ApplicationMode.valueOf(mode));
+                appliedSettings = new AppSettingsService.AppSettings(
+                        settings.getProperty("userEmail", "").trim(),
+                        Boolean.parseBoolean(settings.getProperty("telemetryEnabled", "true")),
+                        Boolean.parseBoolean(settings.getProperty(
+                                "autoPausePollingWhenMarketClosed",
+                                String.valueOf(AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED)
+                        )),
+                        Boolean.parseBoolean(settings.getProperty(
+                                "extendedHoursTradingEnabled",
+                                String.valueOf(AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED)
+                        )),
+                        parseBroker(settings.getProperty("broker", BrokerType.ALPACA.name())),
+                        parseMode(settings.getProperty("applicationMode", ApplicationMode.PAPER.name()))
+                );
             } catch (Exception ignored) {
                 appModeBox.setSelectedItem(ApplicationMode.PAPER);
+                appliedSettings = new AppSettingsService.AppSettings(
+                        "",
+                        true,
+                        AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED,
+                        AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED,
+                        BrokerType.ALPACA,
+                        ApplicationMode.PAPER
+                );
             }
         }
 
@@ -447,6 +504,7 @@ public class SettingsDialog extends JDialog {
         }
         displayedCredentialMode = applicationMode();
         applyModeCredentialsToFields(displayedCredentialMode);
+        syncAppliedCredentialCache();
         suppressModeSwitchHandling = false;
     }
 
@@ -502,6 +560,7 @@ public class SettingsDialog extends JDialog {
     }
 
     private void closeDialog() {
+        loadAll();
         setVisible(false);
     }
 
@@ -540,6 +599,15 @@ public class SettingsDialog extends JDialog {
             brokerBox.setSelectedItem(BrokerType.ALPACA);
             appModeBox.setSelectedItem(ApplicationMode.PAPER);
             displayedCredentialMode = ApplicationMode.PAPER;
+            appliedSettings = new AppSettingsService.AppSettings(
+                    "",
+                    true,
+                    AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED,
+                    AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED,
+                    BrokerType.ALPACA,
+                    ApplicationMode.PAPER
+            );
+            appliedCredentialCache.clear();
             connectionStatus.setText("All local data deleted");
             connectionStatus.setForeground(TEXT_MUTED);
             updateBrokerControlState();
@@ -685,6 +753,36 @@ public class SettingsDialog extends JDialog {
 
     private void updateCollapsibleSectionButton(JButton button, String title, boolean expanded) {
         button.setText((expanded ? "▼  " : "▶  ") + title);
+    }
+
+    private void syncAppliedCredentialCache() {
+        appliedCredentialCache.clear();
+        String email = appliedSettings.userEmail();
+        if (email == null || email.isBlank()) {
+            for (ApplicationMode mode : ApplicationMode.values()) {
+                appliedCredentialCache.put(mode, new String[]{"", ""});
+            }
+            return;
+        }
+        for (ApplicationMode mode : ApplicationMode.values()) {
+            appliedCredentialCache.put(mode, loadCredentialsForMode(mode, email));
+        }
+    }
+
+    private BrokerType parseBroker(String broker) {
+        try {
+            return BrokerType.valueOf(broker);
+        } catch (Exception ignored) {
+            return BrokerType.ALPACA;
+        }
+    }
+
+    private ApplicationMode parseMode(String mode) {
+        try {
+            return ApplicationMode.valueOf(mode);
+        } catch (Exception ignored) {
+            return ApplicationMode.PAPER;
+        }
     }
 
     private Border createSectionBorder(String title) {

@@ -324,7 +324,11 @@ public class TradingFrame extends JFrame {
                 AppMetadata.appDataDirectory().resolve("aggregate-pnl.json")
         );
         legalDisclosureAccepted = loadLegalDisclosureAcceptance();
-        refreshStrategyRuntimeServices(settingsDialog.getApiKey(), settingsDialog.getApiSecret());
+        refreshStrategyRuntimeServices(
+                settingsDialog.savedApiKey(settingsDialog.appliedApplicationMode()),
+                settingsDialog.savedApiSecret(settingsDialog.appliedApplicationMode()),
+                settingsDialog.appliedApplicationMode()
+        );
         settingsDialog.setStrategyExportHandler(this::exportStrategiesToFile);
         settingsDialog.setStrategyImportHandler(this::importStrategiesFromFile);
         strategyPollingTimer = new Timer(1000, e -> {
@@ -725,7 +729,14 @@ public class TradingFrame extends JFrame {
 
         wireEvents();
         updateLegalDisclosureUiState();
-        settingsDialog.setConnectionVerifier(request -> runConnectionTest(request.brokerType(), request.apiKey(), request.apiSecret(), true));
+        settingsDialog.setConnectionVerifier(request -> runConnectionTest(
+                request.brokerType(),
+                settingsDialog.applicationMode(),
+                request.apiKey(),
+                request.apiSecret(),
+                true,
+                false
+        ));
         strategyTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 if (preservingSelection) {
@@ -1010,36 +1021,44 @@ public class TradingFrame extends JFrame {
 
     private void openSettingsDialog() {
         stopTradingEventStream();
+        settingsDialog.prepareForOpen();
         settingsDialog.setVisible(true);
-        connectionOk = false;
-        setStatus("Not connected — verify connection in Settings after changes.", STATUS_WARN);
-        updateHeaderModeStatus(currentBrokerType);
-        updateStatusBar();
-        if (settingsDialog.hasRequiredSettings()) {
+        if (settingsDialog.wasSavedDuringOpen()) {
+            connectionOk = false;
+            setStatus("Not connected — verify connection in Settings after changes.", STATUS_WARN);
+            updateHeaderModeStatus(currentBrokerType);
+            updateStatusBar();
             autoInitializeConnection();
         }
     }
 
     private boolean autoInitializeConnection() {
+        ApplicationMode mode = settingsDialog.appliedApplicationMode();
+        String apiKey = settingsDialog.savedApiKey(mode);
+        String apiSecret = settingsDialog.savedApiSecret(mode);
+        if (apiKey.isBlank() || apiSecret.isBlank()) {
+            return false;
+        }
         SettingsDialog.ConnectionResult result = runConnectionTest(
-                settingsDialog.brokerType(),
-                settingsDialog.getApiKey(),
-                settingsDialog.getApiSecret(),
-                false
+                settingsDialog.appliedBrokerType(),
+                mode,
+                apiKey,
+                apiSecret,
+                false,
+                true
         );
         return result.connected();
     }
 
-    private void refreshStrategyRuntimeServices(String apiKey, String apiSecret) {
+    private void refreshStrategyRuntimeServices(String apiKey, String apiSecret, ApplicationMode mode) {
         runtimeApiKey = apiKey == null ? "" : apiKey.trim();
         runtimeApiSecret = apiSecret == null ? "" : apiSecret;
-        ApplicationMode mode = settingsDialog.applicationMode();
         HttpAlpacaClient alpacaClient = new HttpAlpacaClient(
                 runtimeApiKey,
                 runtimeApiSecret,
                 AppMetadata.alpacaTradingBaseUrl(mode),
                 AppMetadata.alpacaDataUrl(),
-                settingsDialog.extendedHoursTradingEnabled()
+                settingsDialog.appliedExtendedHoursTradingEnabled()
         );
         strategyService = new StrategyService(
                 strategyRepository,
@@ -1062,40 +1081,51 @@ public class TradingFrame extends JFrame {
         );
     }
 
-    private SettingsDialog.ConnectionResult runConnectionTest(BrokerType brokerType, String apiKey, String apiSecret, boolean manualTrigger) {
+    private SettingsDialog.ConnectionResult runConnectionTest(BrokerType brokerType, ApplicationMode mode, String apiKey, String apiSecret, boolean manualTrigger, boolean applyRuntimeChanges) {
         if (brokerType == null) {
             log("Connection test: FAILED (broker not set in Settings)");
             updateHeaderModeStatus(null);
             headerStatus.setText("Status: broker not configured");
             return new SettingsDialog.ConnectionResult(false, "Broker not configured");
         }
-        if (settingsDialog.applicationMode() == ApplicationMode.LIVE && !AppMetadata.liveTradingEnabled()) {
+        if (mode == ApplicationMode.LIVE && !AppMetadata.liveTradingEnabled()) {
             String message = "LIVE mode is disabled. Set trading.live.enabled=true in app.properties.";
             settingsDialog.markConnectionStatus(false, message);
             setStatus(message, STATUS_ERR);
             return new SettingsDialog.ConnectionResult(false, message);
         }
 
-        tradingApi = TradingApiFactory.create(brokerType, settingsDialog.applicationMode());
-        currentBrokerType = brokerType;
-        tradingApi.authenticate(apiKey, apiSecret);
-        connectionOk = tradingApi.testConnection();
-        log((manualTrigger ? "Connection test: " : "Auto connection test: ") + (connectionOk ? "SUCCESS" : "FAILED"));
-        if (connectionOk) {
-            refreshStrategyRuntimeServices(apiKey, apiSecret);
-            startTradingEventStreamIfConfigured(apiKey, apiSecret);
-            setStatus("Connected — broker " + brokerType.name() + " ready.", STATUS_OK);
-            updateHeaderModeStatus(brokerType);
+        TradingApi candidateApi = TradingApiFactory.create(brokerType, mode);
+        candidateApi.authenticate(apiKey, apiSecret);
+        boolean connected = candidateApi.testConnection();
+        log((manualTrigger ? "Connection test: " : "Auto connection test: ") + (connected ? "SUCCESS" : "FAILED"));
+        if (connected) {
+            settingsDialog.markConnectionStatus(true, "Connected to " + brokerType.name() + " (" + mode.name() + ")");
+            if (applyRuntimeChanges) {
+                tradingApi = candidateApi;
+                currentBrokerType = brokerType;
+                connectionOk = true;
+                refreshStrategyRuntimeServices(apiKey, apiSecret, mode);
+                startTradingEventStreamIfConfigured(apiKey, apiSecret);
+                setStatus("Connected — broker " + brokerType.name() + " ready.", STATUS_OK);
+                updateHeaderModeStatus(brokerType);
+                updateStatusBar();
+                initPersistenceAndRestore();
+            }
+            if (!applyRuntimeChanges) {
+                return new SettingsDialog.ConnectionResult(true, "Connected to " + brokerType.name() + " (" + mode.name() + ")");
+            }
             settingsDialog.markConnectionStatus(true, "Connected to " + brokerType.name());
-            updateStatusBar();
-            initPersistenceAndRestore();
             return new SettingsDialog.ConnectionResult(true, "Connected to " + brokerType.name());
         } else {
-            stopTradingEventStream();
-            setStatus("Connection failed — check API credentials in Settings.", STATUS_ERR);
-            updateHeaderModeStatus(brokerType);
+            if (applyRuntimeChanges) {
+                stopTradingEventStream();
+                connectionOk = false;
+                setStatus("Connection failed — check API credentials in Settings.", STATUS_ERR);
+                updateHeaderModeStatus(brokerType);
+                updateStatusBar();
+            }
             settingsDialog.markConnectionStatus(false, "Connection failed");
-            updateStatusBar();
             return new SettingsDialog.ConnectionResult(false, "Connection failed");
         }
     }
@@ -1212,7 +1242,7 @@ public class TradingFrame extends JFrame {
             return;
         }
 
-        StrategyMode targetMode = settingsDialog.applicationMode() == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER;
+        StrategyMode targetMode = settingsDialog.appliedApplicationMode() == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER;
         if (findStrategy(config.symbol(), targetMode, false) != null) {
             JOptionPane.showMessageDialog(this, "A strategy for this symbol already exists. Use Edit on the grid row.", "Duplicate Symbol", JOptionPane.WARNING_MESSAGE);
             return;
@@ -1395,12 +1425,11 @@ public class TradingFrame extends JFrame {
             return;
         }
 
-        String eligibilityMessage = livePromotionEligibilityMessage(entry.strategy);
-        boolean promotionAllowed = eligibilityMessage == null;
-        LivePromotionDialog dialog = new LivePromotionDialog(this, entry.strategy, promotionAllowed,
-                promotionAllowed
-                        ? "The LIVE clone will submit its first live limit buy after you confirm promotion."
-                        : eligibilityMessage);
+        StrategyService.LivePromotionPreview preview = strategyService.previewLivePromotion(entry.strategy.id());
+        Position paperPosition = loadPositionForStrategy(entry.strategy);
+        String realizedPnl = Monetary.round(realizedPnlForStrategy(entry.strategy.id())).toPlainString();
+        String unrealizedPnl = Monetary.round(paperPosition.unrealizedPnl()).toPlainString();
+        LivePromotionDialog dialog = new LivePromotionDialog(this, preview, realizedPnl, unrealizedPnl);
         if (!dialog.showDialog()) {
             return;
         }
@@ -1414,6 +1443,11 @@ public class TradingFrame extends JFrame {
                     JOptionPane.ERROR_MESSAGE
             );
             return;
+        }
+
+        String cleanupSummary = "";
+        if (dialog.shouldClosePaperPositions()) {
+            cleanupSummary = closePaperAccountState(entry.strategy);
         }
 
         syncStrategiesFromRepository();
@@ -1430,6 +1464,15 @@ public class TradingFrame extends JFrame {
                 "Promotion Complete",
                 JOptionPane.INFORMATION_MESSAGE
         );
+        if (!cleanupSummary.isBlank()) {
+            log("[" + entry.strategy.symbol() + "] " + cleanupSummary);
+            JOptionPane.showMessageDialog(
+                    this,
+                    cleanupSummary,
+                    "Paper Cleanup",
+                    cleanupSummary.contains("skipped") ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE
+            );
+        }
     }
 
     private void deleteStrategy(int viewRow) {
@@ -1442,8 +1485,8 @@ public class TradingFrame extends JFrame {
         String statusLabel = entry.strategy.status().name();
         String modeLabel = entry.strategy.mode() == StrategyMode.PAPER ? "Paper Trading" : "Live Trading";
         String positionNote;
-        if (tradingApi != null) {
-            int shares = tradingApi.getPosition(entry.strategy.symbol()).getTotalShares();
+        if (currentBrokerType == BrokerType.ALPACA || tradingApi != null) {
+            int shares = loadPositionForStrategy(entry.strategy).getTotalShares();
             positionNote = shares > 0
                     ? "• Open position: " + shares + " share(s) held — these will NOT be automatically sold."
                     : "• No open position.";
@@ -1494,6 +1537,44 @@ public class TradingFrame extends JFrame {
         }
         updateStatusBar();
         refreshPanels();
+    }
+
+    private String closePaperAccountState(Strategy strategy) {
+        if (strategy == null) {
+            return "";
+        }
+        HttpAlpacaClient paperClient = alpacaClientForStrategyMode(StrategyMode.PAPER);
+        if (paperClient == null) {
+            return "Paper cleanup skipped because saved paper credentials are not available.";
+        }
+
+        int canceled = 0;
+        for (com.neuralarc.api.AlpacaOrderData openOrder : paperClient.getOpenOrders(strategy.symbol())) {
+            if (paperClient.cancelOrder(openOrder.orderId())) {
+                canceled++;
+            }
+        }
+
+        int closedQuantity = 0;
+        Optional<com.neuralarc.api.AlpacaPositionData> paperPosition = paperClient.getPosition(strategy.symbol());
+        if (paperPosition.isPresent() && paperPosition.get().exists()) {
+            int quantity = paperPosition.get().quantity().setScale(0, java.math.RoundingMode.DOWN).intValue();
+            BigDecimal latestPrice = paperPosition.get().marketPrice().compareTo(BigDecimal.ZERO) > 0
+                    ? paperPosition.get().marketPrice()
+                    : paperClient.getLatestPrice(strategy.symbol());
+            if (quantity > 0 && latestPrice.compareTo(BigDecimal.ZERO) > 0) {
+                String clientOrderId = "neuralarc-paper-close-" + strategy.id() + "-" + System.currentTimeMillis();
+                com.neuralarc.api.AlpacaOrderData sellOrder = paperClient.submitLimitSellOrder(strategy.symbol(), quantity, latestPrice, clientOrderId);
+                if (sellOrder.orderId() != null && !sellOrder.orderId().isBlank()) {
+                    closedQuantity = quantity;
+                }
+            }
+        }
+
+        if (canceled == 0 && closedQuantity == 0) {
+            return "Paper cleanup requested, but there were no open paper orders or paper position to close.";
+        }
+        return "Paper cleanup requested: canceled " + canceled + " paper order(s) and submitted close order for " + closedQuantity + " paper share(s).";
     }
 
     private void stopPoller(ManagedStrategy entry) {
@@ -1637,32 +1718,6 @@ public class TradingFrame extends JFrame {
             return "Paused (System Error)";
         }
         return formatLifecycleStateForDisplay(strategy.currentState());
-    }
-
-    private String livePromotionEligibilityMessage(Strategy strategy) {
-        if (strategy == null) {
-            return "Strategy not found.";
-        }
-        if (strategy.mode() != StrategyMode.PAPER) {
-            return "Only paper strategies can be promoted to LIVE.";
-        }
-        if (strategy.status() == StrategyStatus.ARCHIVED) {
-            return "Archived strategies cannot be promoted to LIVE.";
-        }
-        if (!AppMetadata.liveTradingEnabled()) {
-            return "LIVE mode is disabled. Set trading.live.enabled=true in app.properties first.";
-        }
-        if (settingsDialog.applicationMode() != ApplicationMode.LIVE) {
-            return "Switch Settings to LIVE mode and reconnect before promoting this strategy.";
-        }
-        if (!connectionOk) {
-            return "Connect successfully in LIVE mode before promoting this strategy.";
-        }
-        ManagedStrategy duplicateLive = findStrategy(strategy.symbol(), StrategyMode.LIVE, false);
-        if (duplicateLive != null) {
-            return "A non-archived LIVE strategy for " + strategy.symbol() + " already exists.";
-        }
-        return null;
     }
 
     private String formatTimestampForDisplay(Instant timestamp) {
@@ -2095,18 +2150,19 @@ public class TradingFrame extends JFrame {
     }
 
     private String connectionModeStatus(BrokerType brokerType) {
-        String mode = settingsDialog.applicationMode() == ApplicationMode.LIVE ? "Live" : "Paper";
+        String mode = settingsDialog.appliedApplicationMode() == ApplicationMode.LIVE ? "Live" : "Paper";
         return "Broker: Alpaca | Mode: " + mode;
     }
 
-    private String gridBrokerModeLabel() {
-        return settingsDialog.applicationMode() == ApplicationMode.LIVE
-                ? "Alpaca Live"
-                : "Alpaca Paper Mode";
+    private String gridBrokerModeLabel(Strategy strategy) {
+        if (strategy == null) {
+            return "Alpaca";
+        }
+        return strategy.mode() == StrategyMode.LIVE ? "Alpaca Live" : "Alpaca Paper";
     }
 
-    private Color gridBrokerModeColor() {
-        return settingsDialog.applicationMode() == ApplicationMode.LIVE
+    private Color gridBrokerModeColor(Strategy strategy) {
+        return strategy != null && strategy.mode() == StrategyMode.LIVE
                 ? MODE_TEXT_ALPACA_LIVE
                 : MODE_TEXT_ALPACA_PAPER;
     }
@@ -2201,7 +2257,7 @@ public class TradingFrame extends JFrame {
     private void updateHeaderModeStatus(BrokerType brokerType) {
         BrokerType effectiveBroker = brokerType == null ? BrokerType.ALPACA : brokerType;
         headerStatus.setText(connectionModeStatus(effectiveBroker));
-        boolean blinkLiveAlpaca = effectiveBroker == BrokerType.ALPACA && settingsDialog.applicationMode() == ApplicationMode.LIVE;
+        boolean blinkLiveAlpaca = effectiveBroker == BrokerType.ALPACA && settingsDialog.appliedApplicationMode() == ApplicationMode.LIVE;
         if (!blinkLiveAlpaca) {
             liveModeBlinkTimer.stop();
             headerStatus.setForeground(HEADER_STATUS_DEFAULT);
@@ -2229,7 +2285,7 @@ public class TradingFrame extends JFrame {
     }
 
     private void toggleLiveHeaderBlink() {
-        if (settingsDialog.applicationMode() != ApplicationMode.LIVE) {
+        if (settingsDialog.appliedApplicationMode() != ApplicationMode.LIVE) {
             headerStatus.setForeground(HEADER_STATUS_DEFAULT);
             liveModeBlinkTimer.stop();
             return;
@@ -2255,7 +2311,7 @@ public class TradingFrame extends JFrame {
         if (entry.strategy.status() != StrategyStatus.ACTIVE) {
             if (isWaitingForFill(entry.strategy)) {
                 Position latest = entry.cachedPosition();
-                BigDecimal latestPrice = tradingApi.getLatestPrice(entry.strategy.symbol());
+                BigDecimal latestPrice = latestPriceForStrategy(entry.strategy);
                 if (latestPrice.compareTo(BigDecimal.ZERO) > 0) {
                     latest.setLastPrice(latestPrice);
                     entry.setCachedPosition(latest);
@@ -2264,15 +2320,76 @@ public class TradingFrame extends JFrame {
             }
             return entry.cachedPosition();
         }
-        Position latest = tradingApi.getPosition(entry.strategy.symbol());
+        Position latest = loadPositionForStrategy(entry.strategy);
         if (latest.getTotalShares() == 0 && isWaitingForFill(entry.strategy)) {
-            BigDecimal latestPrice = tradingApi.getLatestPrice(entry.strategy.symbol());
+            BigDecimal latestPrice = latestPriceForStrategy(entry.strategy);
             if (latestPrice.compareTo(BigDecimal.ZERO) > 0) {
                 latest.setLastPrice(latestPrice);
             }
         }
         entry.setCachedPosition(latest);
         return latest;
+    }
+
+    private Position loadPositionForStrategy(Strategy strategy) {
+        if (strategy == null) {
+            return new Position("");
+        }
+        if (currentBrokerType != BrokerType.ALPACA) {
+            return tradingApi == null ? new Position(strategy.symbol()) : tradingApi.getPosition(strategy.symbol());
+        }
+        HttpAlpacaClient client = alpacaClientForStrategyMode(strategy.mode());
+        if (client == null) {
+            return new Position(strategy.symbol());
+        }
+        Optional<com.neuralarc.api.AlpacaPositionData> remote = client.getPosition(strategy.symbol());
+        Position position = new Position(strategy.symbol());
+        if (remote.isPresent() && remote.get().exists()) {
+            com.neuralarc.api.AlpacaPositionData remotePosition = remote.get();
+            int quantity = remotePosition.quantity().setScale(0, java.math.RoundingMode.DOWN).intValue();
+            if (quantity > 0) {
+                position.applyBuy(quantity, remotePosition.avgEntryPrice());
+                position.setLastPrice(remotePosition.marketPrice());
+            }
+        } else {
+            BigDecimal latestPrice = client.getLatestPrice(strategy.symbol());
+            if (latestPrice.compareTo(BigDecimal.ZERO) > 0) {
+                position.setLastPrice(latestPrice);
+            }
+        }
+        return position;
+    }
+
+    private BigDecimal latestPriceForStrategy(Strategy strategy) {
+        if (strategy == null) {
+            return BigDecimal.ZERO;
+        }
+        if (currentBrokerType != BrokerType.ALPACA) {
+            return tradingApi == null ? BigDecimal.ZERO : tradingApi.getLatestPrice(strategy.symbol());
+        }
+        HttpAlpacaClient client = alpacaClientForStrategyMode(strategy.mode());
+        return client == null ? BigDecimal.ZERO : client.getLatestPrice(strategy.symbol());
+    }
+
+    private HttpAlpacaClient alpacaClientForStrategyMode(StrategyMode mode) {
+        ApplicationMode applicationMode = mode == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER;
+        String apiKey = settingsDialog.savedApiKey(applicationMode);
+        String apiSecret = settingsDialog.savedApiSecret(applicationMode);
+        if (apiKey.isBlank() || apiSecret.isBlank()) {
+            if (applicationMode == settingsDialog.appliedApplicationMode() && !runtimeApiKey.isBlank() && !runtimeApiSecret.isBlank()) {
+                apiKey = runtimeApiKey;
+                apiSecret = runtimeApiSecret;
+            } else {
+                return null;
+            }
+        }
+        return new HttpAlpacaClient(
+                apiKey,
+                apiSecret,
+                AppMetadata.alpacaTradingBaseUrl(applicationMode),
+                AppMetadata.alpacaDataUrl(),
+                settingsDialog.appliedExtendedHoursTradingEnabled()
+        );
     }
 
     private void log(String message) {
@@ -2371,7 +2488,7 @@ public class TradingFrame extends JFrame {
                 case 5 -> "-";
                 case 6 -> "-";
                 case 7 -> entry.strategy.pollingIntervalSeconds();
-                case 8 -> gridBrokerModeLabel();
+                case 8 -> gridBrokerModeLabel(entry.strategy);
                 case 9 -> displayStatusLabel(entry.strategy);
                 default -> "";
             };
@@ -2505,7 +2622,7 @@ public class TradingFrame extends JFrame {
                             setForeground(paused ? STATUS_TEXT_PAUSED : STATUS_TEXT_RUNNING);
                         }
                     } else if (column == 8) {
-                        setForeground(gridBrokerModeColor());
+                        setForeground(gridBrokerModeColor(strategies.get(modelRow).strategy));
                     } else {
                         setForeground(table.getForeground());
                     }
@@ -2652,7 +2769,7 @@ public class TradingFrame extends JFrame {
             boolean busy = strategy.isPauseResumeBusy();
             boolean archived = strategy.strategy.status() == StrategyStatus.ARCHIVED;
             boolean canPromote = strategy.strategy.mode() == StrategyMode.PAPER && !archived;
-            toggleButton.setText(busy ? strategy.pauseResumeBusyText() : paused ? "Resume" : "Pause");
+            toggleButton.setText(archived ? "Archived" : busy ? strategy.pauseResumeBusyText() : paused ? "Resume" : "Pause");
             styleActionButton(toggleButton, archived ? new Color(120, 144, 156)
                     : busy ? new Color(120, 144, 156)
                     : paused ? new Color(46, 125, 50) : new Color(198, 40, 40));
@@ -2725,7 +2842,7 @@ public class TradingFrame extends JFrame {
             return;
         }
         String streamUrl = AppMetadata.alpacaTradingEventsWebSocketUrl(
-                settingsDialog.applicationMode() == ApplicationMode.LIVE
+                settingsDialog.appliedApplicationMode() == ApplicationMode.LIVE
         );
         tradingWebSocketClient = new AlpacaTradingWebSocketClient(
                 streamUrl,
