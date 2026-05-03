@@ -14,6 +14,7 @@ import com.neuralarc.service.FileStrategyOrderRepository;
 import com.neuralarc.service.FileStrategyRepository;
 import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.MarketHoursService;
+import com.neuralarc.service.OnboardingStateStore;
 import com.neuralarc.service.PersistentAggregatePnlStore;
 import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.service.StrategyPollingService;
@@ -296,6 +297,7 @@ public class TradingFrame extends JFrame {
     private String runtimeApiKey = "";
     private String runtimeApiSecret = "";
     private final AutoAnalyzeResultStore autoAnalyzeResultStore = new AutoAnalyzeResultStore();
+    private final OnboardingStateStore onboardingStateStore = new OnboardingStateStore();
 
     public TradingFrame() {
         liveModeBlinkTimer = new Timer(500, _ -> toggleLiveHeaderBlink());
@@ -1010,12 +1012,23 @@ public class TradingFrame extends JFrame {
         if (!ensureLegalDisclosureAccepted()) {
             return;
         }
+        maybeShowFirstRunOnboarding();
         if (!settingsDialog.hasRequiredSettings()) {
             openSettingsDialog();
             return;
         }
         if (!autoInitializeConnection()) {
             openSettingsDialog();
+        }
+    }
+
+    private void maybeShowFirstRunOnboarding() {
+        if (onboardingStateStore.isCompleted()) {
+            return;
+        }
+        FirstRunOnboardingDialog dialog = new FirstRunOnboardingDialog(this);
+        if (dialog.showDialog()) {
+            onboardingStateStore.markCompleted();
         }
     }
 

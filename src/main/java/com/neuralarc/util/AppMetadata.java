@@ -94,6 +94,10 @@ public final class AppMetadata {
         return PROPERTIES.getProperty("app.update.github.latestReleaseUrl", "").trim();
     }
 
+    public static String alpacaSignupUrl() {
+        return PROPERTIES.getProperty("alpaca.signup.url", "https://app.alpaca.markets/signup").trim();
+    }
+
     public static String mailjetApiKey() {
         return configuredOrEnv("mailjet.api.key", "MAILJET_API_KEY", "");
     }

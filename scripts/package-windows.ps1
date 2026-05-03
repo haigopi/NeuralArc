@@ -30,7 +30,7 @@ if (-not (Get-Command jpackage -ErrorAction SilentlyContinue)) {
 
 Set-Location $ProjectDir
 
-& (Join-Path $ProjectDir "gradlew.bat") clean installDist
+& (Join-Path $ProjectDir "gradlew.bat") clean installDist "-PreleaseVersion=$RawVersion"
 
 if ($RawVersion -ne $VersionArg) {
     Write-Host "Using package version $VersionArg derived from project version $RawVersion"
@@ -91,7 +91,9 @@ if (-not $DistDir) {
 
 $InputDir = Join-Path $DistDir.FullName "lib"
 $DestDir = Join-Path $ProjectDir "build\installer\windows"
+$ArtifactsDir = Join-Path $ProjectDir "artifacts\windows"
 New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
+New-Item -ItemType Directory -Force -Path $ArtifactsDir | Out-Null
 
 $MainJar = Get-ChildItem $InputDir -Filter *.jar | Where-Object { $_.Name -notlike "*-plain*" } | Select-Object -First 1
 if (-not $MainJar) {
@@ -110,4 +112,13 @@ jpackage `
   --vendor "NeuralArc" `
   --copyright "Copyright © 2026 NeuralArc | Patent Pending."
 
+$FinalExe = Get-ChildItem $DestDir -Filter *.exe | Select-Object -First 1
+if (-not $FinalExe) {
+    throw "Unable to locate generated EXE in $DestDir"
+}
+
+$VersionedExe = Join-Path $ArtifactsDir "$AppName-$VersionArg.exe"
+Copy-Item -Force $FinalExe.FullName $VersionedExe
+
 Write-Host "Windows installer created in $DestDir"
+Write-Host "Release artifact copied to $VersionedExe"

@@ -9,6 +9,7 @@ MAIN_CLASS="com.neuralarc.NeuralArc"
 RAW_VERSION="${1:-$("$PROJECT_DIR/gradlew" -q properties --property version | tail -n 1 | awk '{print $2}')}"
 APP_VERSION="$(printf '%s' "$RAW_VERSION" | sed -E 's/[^0-9.].*$//')"
 DEST_DIR="$PROJECT_DIR/build/installer/macos"
+ARTIFACTS_DIR="$PROJECT_DIR/artifacts/macos"
 # Packaging icon source of truth. Keep this aligned with the runtime app icon.
 LOGO_PNG="$PROJECT_DIR/src/main/resources/logo.png"
 ICONSET_DIR="$PROJECT_DIR/build/jpackage/macos/NeuralArc.iconset"
@@ -31,8 +32,9 @@ fi
 
 cd "$PROJECT_DIR"
 
-"$PROJECT_DIR/gradlew" clean installDist
+"$PROJECT_DIR/gradlew" clean installDist -PreleaseVersion="$RAW_VERSION"
 mkdir -p "$DEST_DIR"
+mkdir -p "$ARTIFACTS_DIR"
 mkdir -p "$(dirname "$ICON_ICNS")"
 
 if [[ "$RAW_VERSION" != "$APP_VERSION" ]]; then
@@ -80,4 +82,14 @@ jpackage \
   --vendor "NeuralArc" \
   --copyright "Copyright © 2026 NeuralArc | Patent Pending."
 
+FINAL_DMG="$(find "$DEST_DIR" -maxdepth 1 -type f -name "*.dmg" | head -n 1)"
+if [[ -z "${FINAL_DMG:-}" ]]; then
+  echo "Unable to locate generated DMG in $DEST_DIR" >&2
+  exit 1
+fi
+
+VERSIONED_DMG="$ARTIFACTS_DIR/${APP_NAME}-${APP_VERSION}.dmg"
+cp -f "$FINAL_DMG" "$VERSIONED_DMG"
+
 echo "macOS installer created in $DEST_DIR"
+echo "Release artifact copied to $VERSIONED_DMG"
