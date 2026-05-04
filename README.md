@@ -29,6 +29,64 @@ Duplicate triggers are prevented through strategy state tracking and rule flags.
 ./gradlew run
 ```
 
+## Build and release scripts (consolidated)
+Use these four scripts in `scripts/`:
+- `scripts/package-macos.sh` - build macOS DMG on macOS
+- `scripts/package-windows.ps1` - build Windows EXE on Windows
+- `scripts/build-all.sh` - run the platform build for the current host and print next cross-OS step
+- `scripts/release-all.sh` - run build flow and create/upload GitHub release
+
+### Build only
+On macOS:
+```zsh
+cd /Users/gopimac/Documents/Workspace/NeuralArc
+./scripts/package-macos.sh 1.0.0
+```
+
+On Windows (PowerShell):
+```powershell
+cd C:\path\to\NeuralArc
+.\scripts\package-windows.ps1 1.0.0
+```
+
+Host-aware build wrapper:
+```zsh
+cd /Users/gopimac/Documents/Workspace/NeuralArc
+./scripts/build-all.sh --version 1.0.0
+```
+
+### Build and create GitHub release
+Default (draft release):
+```zsh
+cd /Users/gopimac/Documents/Workspace/NeuralArc
+./scripts/release-all.sh --version 1.0.0
+```
+
+Publish immediately (non-draft):
+```zsh
+cd /Users/gopimac/Documents/Workspace/NeuralArc
+./scripts/release-all.sh --version 1.0.0 --publish
+```
+
+Release existing artifacts only:
+```zsh
+cd /Users/gopimac/Documents/Workspace/NeuralArc
+./scripts/release-all.sh --version 1.0.0 --skip-build
+```
+
+Dry run preview:
+```zsh
+cd /Users/gopimac/Documents/Workspace/NeuralArc
+./scripts/release-all.sh --version 1.0.0 --dry-run
+```
+
+### Release prerequisites
+- `gh` CLI installed and authenticated (`gh auth login`)
+- Both artifacts must exist for the same version:
+  - `artifacts/macos/NeuralArc-<version>.dmg`
+  - `artifacts/windows/NeuralArc-<version>.exe`
+- Release notes are sourced from `artifacts/macos/README-<version>.md` when present (fallback: Windows README, then generic notes)
+
 ## Safety warning
 This app is for personal and paper trading use first. It is **not financial advice** and is not a managed brokerage platform.
 Live trading must be manually enabled by configuration and is used at the user’s own risk.

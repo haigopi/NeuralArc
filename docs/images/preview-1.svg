@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-label="NeuralArc strategy preview background">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0a2231"/>
+      <stop offset="100%" stop-color="#174d6e"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="700" fill="url(#g1)"/>
+  <circle cx="220" cy="160" r="200" fill="#7cf6c4" opacity="0.18"/>
+  <circle cx="1020" cy="120" r="160" fill="#4aa0ff" opacity="0.16"/>
+  <g stroke="#dbeaf7" stroke-opacity="0.38" stroke-width="3" fill="none">
+    <path d="M80 520 L250 470 L410 500 L560 420 L760 450 L1120 360"/>
+    <path d="M80 585 L280 560 L470 600 L650 540 L840 565 L1120 490"/>
+  </g>
+</svg>

@@ -61,6 +61,7 @@ import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.math.BigDecimal;
+import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -71,6 +72,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.UUID;
@@ -94,6 +96,8 @@ public class TradingFrame extends JFrame {
     private final JLabel statusStrategyCount = new JLabel("Strategies: Active 0 | Inactive 0");
     private final JLabel marketStatus = new JLabel("Market: Unknown");
     private final JLabel streamStatus = new JLabel("Trade Stream: idle");
+    private final JLabel cpuUsageStatus = new JLabel("CPU: -");
+    private final JLabel memoryUsageStatus = new JLabel("Memory: -");
     private final JLabel headerStatus = new JLabel("Status: waiting for settings");
     private static final Color STATUS_OK = new Color(34, 139, 34);
     private static final Color STATUS_WARN = new Color(180, 100, 0);
@@ -581,6 +585,14 @@ public class TradingFrame extends JFrame {
         streamStatus.setForeground(BOTTOM_STATUS_ACCENT);
         streamStatus.setVerticalAlignment(SwingConstants.CENTER);
         streamStatus.setBorder(new EmptyBorder(0, 12, 0, 0));
+        cpuUsageStatus.setFont(BASE_FONT.deriveFont(Font.PLAIN, 11f));
+        cpuUsageStatus.setForeground(BOTTOM_STATUS_ACCENT);
+        cpuUsageStatus.setVerticalAlignment(SwingConstants.CENTER);
+        cpuUsageStatus.setBorder(new EmptyBorder(0, 12, 0, 0));
+        memoryUsageStatus.setFont(BASE_FONT.deriveFont(Font.PLAIN, 11f));
+        memoryUsageStatus.setForeground(BOTTOM_STATUS_ACCENT);
+        memoryUsageStatus.setVerticalAlignment(SwingConstants.CENTER);
+        memoryUsageStatus.setBorder(new EmptyBorder(0, 12, 0, 0));
 
         JButton faqsButton = new JButton("Faqs");
         applyButtonIcon(faqsButton, "icons/faqs.svg", 15);
@@ -644,6 +656,12 @@ public class TradingFrame extends JFrame {
         leftGbc.gridx = 3;
         leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
         statusLeft.add(streamStatus, leftGbc);
+        leftGbc.gridx = 4;
+        leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
+        statusLeft.add(cpuUsageStatus, leftGbc);
+        leftGbc.gridx = 5;
+        leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
+        statusLeft.add(memoryUsageStatus, leftGbc);
 
         JPanel statusRight = new JPanel(new GridBagLayout());
         statusRight.setOpaque(false);
@@ -2185,10 +2203,14 @@ public class TradingFrame extends JFrame {
         long inactive = Math.max(0L, strategies.size() - running);
         AppSettingsService.AppSettings settings = appSettingsService.load();
         boolean marketOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
+        String cpuText = formatCpuUsageText();
+        String memoryText = formatMemoryUsageText();
         SwingUtilities.invokeLater(() -> {
             statusStrategyCount.setText("Strategies: Active " + running + " | Inactive " + inactive);
             marketStatus.setText("Market: " + (marketOpen ? "Open" : "Closed"));
             marketStatus.setForeground(marketOpen ? STATUS_OK : STATUS_WARN);
+            cpuUsageStatus.setText(cpuText);
+            memoryUsageStatus.setText(memoryText);
             if (!connectionOk) {
                 statusBar.setText("Broker: Not connected");
                 statusBar.setForeground(STATUS_ERR);
@@ -2203,6 +2225,30 @@ public class TradingFrame extends JFrame {
                 statusBar.setForeground(STATUS_WARN);
             }
         });
+    }
+
+    private String formatCpuUsageText() {
+        try {
+            com.sun.management.OperatingSystemMXBean osBean =
+                    ManagementFactory.getPlatformMXBean(com.sun.management.OperatingSystemMXBean.class);
+            if (osBean == null) {
+                return "CPU: -";
+            }
+            double processCpuLoad = osBean.getProcessCpuLoad();
+            if (processCpuLoad < 0.0) {
+                return "CPU: -";
+            }
+            return String.format(Locale.US, "CPU: %.1f%%", processCpuLoad * 100.0d);
+        } catch (Exception ex) {
+            return "CPU: -";
+        }
+    }
+
+    private String formatMemoryUsageText() {
+        Runtime runtime = Runtime.getRuntime();
+        long usedBytes = runtime.totalMemory() - runtime.freeMemory();
+        long usedMb = usedBytes / (1024L * 1024L);
+        return "Memory: " + usedMb + " MB";
     }
 
     private void ensureAnalyticsPublisher() {

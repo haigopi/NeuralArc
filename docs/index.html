@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NeuralArc | Privacy-First Personal Desktop AI Trader</title>
+  <meta name="description" content="NeuralArc is a privacy-first personal desktop AI trader that runs locally on your machine.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="NeuralArc | Privacy-First Personal Desktop AI Trader">
+  <meta property="og:description" content="Simulation-first strategy automation, local execution, and AI-assisted trading workflows.">
+  <meta property="og:image" content="./og-image.png">
+  <meta property="og:image:alt" content="NeuralArc landing page preview">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="NeuralArc | Privacy-First Personal Desktop AI Trader">
+  <meta name="twitter:description" content="Simulation-first strategy automation with local execution and privacy-first design.">
+  <meta name="twitter:image" content="./og-image.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="./logo.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./logo.png">
+  <link rel="apple-touch-icon" href="./logo.png">
+  <style>
+    :root {
+      --bg: #06101a;
+      --bg-soft: #0b1724;
+      --panel: rgba(14, 28, 41, 0.76);
+      --panel-soft: rgba(18, 34, 48, 0.62);
+      --line: rgba(134, 170, 203, 0.22);
+      --text: #eef6fb;
+      --muted: #b7c8d7;
+      --accent: #7cf6c4;
+      --accent-blue: #78b9ff;
+      --peacock: linear-gradient(90deg, #48cae4 0%, #00b4d8 26%, #0284c7 54%, #43aa8b 78%, #90be6d 100%);
+      --shadow: 0 24px 64px rgba(0, 0, 0, 0.34);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-snap-type: y proximity;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 8% 0%, rgba(124, 246, 196, 0.16), transparent 26%),
+        radial-gradient(circle at 92% 0%, rgba(120, 185, 255, 0.18), transparent 28%),
+        linear-gradient(180deg, #06101a 0%, #09131f 32%, #050a11 100%);
+      overflow-x: hidden;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .shell {
+      width: min(1480px, calc(100% - 28px));
+      margin: 0 auto;
+      padding-bottom: 24px;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 18px;
+      margin: 0 0 22px;
+      border: 1px solid transparent;
+      border-radius: 0 0 16px 16px;
+      background: transparent;
+      box-shadow: none;
+      backdrop-filter: none;
+      transition: background .2s ease, border-color .2s ease, box-shadow .2s ease, backdrop-filter .2s ease;
+    }
+
+    body.is-scrolled .topbar {
+      border-color: var(--line);
+      background: rgba(8, 20, 32, 0.76);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+
+    .dot-nav {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .dot-link {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      text-decoration: none;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+    }
+
+    .dot-link:hover {
+      transform: translateY(-1px) scale(1.06);
+      border-color: rgba(255, 255, 255, 0.32);
+      box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.04);
+    }
+
+    .dot-link:focus-visible,
+    .top-home:focus-visible,
+    .button:focus-visible,
+    .button-secondary:focus-visible {
+      outline: 2px solid rgba(143, 217, 255, 0.92);
+      outline-offset: 3px;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: block;
+    }
+
+    .dot.red { background: linear-gradient(180deg, #ff8bb2, #ff5d87); }
+    .dot.yellow { background: linear-gradient(180deg, #ffe38f, #ffc94a); }
+    .dot.green { background: linear-gradient(180deg, #98f8dd, #58e7b8); }
+
+    .tooltip {
+      position: absolute;
+      left: 50%;
+      top: calc(100% + 14px);
+      transform: translateX(-50%) translateY(-4px);
+      opacity: 0;
+      pointer-events: none;
+      white-space: nowrap;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(6, 15, 24, 0.92);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.26);
+      font-size: .76rem;
+      font-weight: 700;
+      letter-spacing: .03em;
+      background-image: linear-gradient(90deg, #7cf6c4 0%, #8fd9ff 22%, #bba8ff 48%, #ff9ec7 72%, #ffd27a 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      transition: opacity .18s ease, transform .18s ease;
+    }
+
+    .dot-link:hover .tooltip,
+    .dot-link:focus-visible .tooltip {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .top-home {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      text-decoration: none;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-4px);
+      transition: opacity .18s ease, transform .18s ease, background .18s ease, border-color .18s ease;
+    }
+
+    body.is-scrolled .top-home {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+
+    .top-home:hover {
+      background: rgba(120, 185, 255, 0.08);
+      border-color: rgba(120, 185, 255, 0.28);
+    }
+
+    .top-home svg {
+      width: 18px;
+      height: 18px;
+      display: block;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.16fr .84fr;
+      gap: 28px;
+      min-height: calc(100svh - 128px);
+      align-items: center;
+      padding: 10px 0 24px;
+    }
+
+    .hero-copy {
+      padding: 34px 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .brand img {
+      width: 60px;
+      height: 60px;
+      border-radius: 16px;
+      padding: 5px;
+      object-fit: contain;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .brand strong {
+      font-size: clamp(1.8rem, 2.8vw, 2.45rem);
+      letter-spacing: -0.03em;
+      background: linear-gradient(90deg, #7cf6c4 0%, #8fd9ff 20%, #bba8ff 48%, #ff9ec7 74%, #ffd27a 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      width: fit-content;
+      max-width: max-content;
+      padding: 10px 16px;
+      border-radius: 999px;
+      background: var(--peacock);
+      color: #05101a;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      font-size: .82rem;
+    }
+
+    h1, h2, h3, p, ul {
+      margin: 0;
+    }
+
+    h1 {
+      margin-top: 20px;
+      font-size: clamp(3rem, 7vw, 6.2rem);
+      line-height: 0.93;
+      letter-spacing: -0.05em;
+    }
+
+    .lead {
+      margin-top: 18px;
+      max-width: 60ch;
+      font-size: 1.08rem;
+      line-height: 1.82;
+      color: var(--muted);
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .button,
+    .button-secondary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 18px;
+      border-radius: 12px;
+      text-decoration: none;
+      font-weight: 700;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease;
+    }
+
+    .button:hover,
+    .button-secondary:hover {
+      transform: translateY(-1px);
+    }
+
+    .button {
+      background: rgba(124, 246, 196, 0.14);
+      color: var(--accent);
+      border: 1px solid rgba(124, 246, 196, 0.24);
+    }
+
+    .button:hover {
+      background: linear-gradient(90deg, #7cf6c4 0%, #8fd9ff 20%, #bba8ff 46%, #ff9ec7 72%, #ffd27a 100%);
+      color: #06101a;
+      border-color: rgba(255, 255, 255, 0.26);
+    }
+
+    .button-secondary {
+      border: 1px solid var(--line);
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .panel-button {
+      margin-top: 24px;
+    }
+
+    .terminal-panel {
+      align-self: center;
+      padding: 28px;
+      border-radius: 26px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, rgba(15, 30, 44, 0.92), rgba(10, 20, 30, 0.84)),
+        radial-gradient(circle at 18% 18%, rgba(124, 246, 196, 0.12), transparent 28%);
+      box-shadow: var(--shadow);
+    }
+
+    .terminal {
+      margin: 0;
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .97rem;
+      line-height: 1.9;
+      color: #dce9f5;
+      white-space: pre-wrap;
+    }
+
+    .accent {
+      color: var(--accent);
+    }
+
+    .cluster-grid,
+    .rest-grid {
+      display: grid;
+      gap: 22px;
+      margin-top: 16px;
+    }
+
+    .cluster-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .rest-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .panel {
+      position: relative;
+      overflow: hidden;
+      min-height: 100%;
+      padding: 26px 24px 28px;
+      border-radius: 30px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, rgba(11, 23, 34, 0.82), rgba(11, 23, 34, 0.62)),
+        radial-gradient(circle at 0% 0%, rgba(124, 246, 196, 0.07), transparent 32%);
+      box-shadow: var(--shadow);
+    }
+
+    .panel::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(circle at 90% 10%, rgba(120, 185, 255, 0.1), transparent 26%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+      pointer-events: none;
+    }
+
+    .panel::after {
+      content: "";
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      width: min(52%, 520px);
+      height: min(78%, 660px);
+      background-position: right bottom;
+      background-repeat: no-repeat;
+      background-size: contain;
+      opacity: 0.16;
+      pointer-events: none;
+    }
+
+    .panel > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .section-chip {
+      display: inline-flex;
+      width: fit-content;
+      max-width: max-content;
+      align-items: center;
+      min-height: 42px;
+      padding: 0 18px;
+      border-radius: 999px;
+      border: 1px solid rgba(96, 196, 216, 0.28);
+      background: var(--peacock);
+      color: #06101a;
+      font-size: .94rem;
+      font-weight: 700;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    .panel h2 {
+      margin-top: 16px;
+      font-size: clamp(1.8rem, 3vw, 2.8rem);
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    .panel--heroish {
+      min-height: calc(100svh - 104px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      scroll-snap-align: start;
+      text-align: center;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+      border-radius: 0;
+      padding: 40px 24px;
+    }
+
+    .panel--heroish.trust::after {
+      inset: 0;
+      width: auto;
+      height: auto;
+      background-image:
+        linear-gradient(180deg, rgba(5, 12, 19, 0.12) 0%, rgba(5, 12, 19, 0.52) 100%),
+        url("./images/private-design-bg.svg");
+      background-position: center center;
+      background-size: cover;
+      opacity: 0.24;
+      animation: sectionGlow 10s ease-in-out infinite;
+    }
+
+    .panel--heroish.automation::after {
+      inset: 0;
+      width: auto;
+      height: auto;
+      background-image:
+        linear-gradient(180deg, rgba(5, 12, 19, 0.12) 0%, rgba(5, 12, 19, 0.54) 100%),
+        url("./images/automation-bg.svg");
+      background-position: center center;
+      background-size: cover;
+      opacity: 0.24;
+      animation: sectionGlow 10s ease-in-out infinite 1.4s;
+    }
+
+    .panel--heroish.risk::after {
+      inset: 0;
+      width: auto;
+      height: auto;
+      background-image:
+        linear-gradient(180deg, rgba(5, 12, 19, 0.12) 0%, rgba(5, 12, 19, 0.56) 100%),
+        url("./images/autonomous-risk-bg.svg");
+      background-position: center center;
+      background-size: cover;
+      opacity: 0.24;
+      animation: sectionGlow 10s ease-in-out infinite 2.8s;
+    }
+
+    .panel--full-screen {
+      min-height: calc(100svh - 104px);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      scroll-snap-align: start;
+    }
+
+    .panel--heroish::before {
+      background:
+        radial-gradient(circle at 50% 16%, rgba(255, 255, 255, 0.08), transparent 22%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.01), rgba(255, 255, 255, 0));
+      opacity: 0.8;
+    }
+
+    .panel--heroish .section-chip {
+      margin: 0 auto;
+    }
+
+    .panel--heroish h2 {
+      max-width: 14ch;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .panel--heroish .panel-button {
+      margin-top: 28px;
+    }
+
+    @keyframes sectionGlow {
+      0% { opacity: 0.18; transform: scale(1); }
+      50% { opacity: 0.28; transform: scale(1.02); }
+      100% { opacity: 0.18; transform: scale(1); }
+    }
+
+    .panel-intro {
+      margin-top: 14px;
+      color: var(--muted);
+      line-height: 1.8;
+      max-width: 50ch;
+    }
+
+    .benefit,
+    .step-card,
+    .feature-card,
+    .info-card,
+    .tech-card {
+      padding: 18px 18px 20px;
+      border-radius: 22px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .benefit h3,
+    .step-card h3,
+    .feature-card h3,
+    .info-card h3,
+    .tech-card h3 {
+      font-size: 1.02rem;
+      margin-bottom: 12px;
+    }
+
+    .benefit ul,
+    .step-card ul,
+    .feature-card ul,
+    .info-card ul {
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: .93rem;
+      line-height: 1.8;
+    }
+
+    .benefit li::marker,
+    .step-card li::marker,
+    .feature-card li::marker,
+    .info-card li::marker {
+      color: var(--accent);
+    }
+
+    .step-grid,
+    .feature-grid,
+    .card-grid {
+      display: grid;
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .step-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .feature-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .step-card small {
+      display: inline-block;
+      margin-bottom: 8px;
+      color: var(--accent);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      font-size: .74rem;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .preview-card {
+      overflow: hidden;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.035);
+      box-shadow: var(--shadow);
+    }
+
+    .preview-visual {
+      height: 220px;
+      background: #0d1d2b;
+    }
+
+    .preview-visual img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+      filter: saturate(1.04) brightness(0.92);
+    }
+
+    .preview-copy {
+      padding: 16px 16px 18px;
+      color: var(--muted);
+      line-height: 1.75;
+      font-size: .92rem;
+    }
+
+    .teaser {
+      position: relative;
+      overflow: hidden;
+      min-height: 420px;
+    }
+
+    .teaser::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: url("./images/nano-jetson-super.svg") right 22px bottom 12px / min(42%, 440px) auto no-repeat;
+      opacity: 0.18;
+      filter: saturate(0.7) brightness(0.62);
+    }
+
+    .teaser::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(6, 15, 24, 0.9) 0%, rgba(6, 15, 24, 0.62) 34%, rgba(6, 15, 24, 0.22) 62%, rgba(6, 15, 24, 0.56) 100%),
+        radial-gradient(circle at 16% 50%, rgba(124, 246, 196, 0.14), transparent 34%),
+        radial-gradient(circle at 84% 82%, rgba(84, 174, 255, 0.1), transparent 28%);
+    }
+
+    .teaser > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .teaser h2 {
+      margin-top: 18px;
+      font-size: clamp(2rem, 3vw, 3.1rem);
+      line-height: 1.04;
+      letter-spacing: -0.04em;
+      max-width: 13ch;
+    }
+
+    .teaser p {
+      margin-top: 16px;
+      max-width: 56ch;
+      color: #d7f8ec;
+      font-size: 1rem;
+      line-height: 1.84;
+    }
+
+    .tech-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .tech-card p {
+      color: var(--muted);
+      line-height: 1.84;
+      font-size: .96rem;
+    }
+
+    .footer {
+      margin-top: 22px;
+      padding: 22px 0 8px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: .84rem;
+    }
+
+    .footer span:last-child {
+      text-align: right;
+    }
+
+    #trust-privacy,
+    #automation-velocity,
+    #autonomous-risk,
+    #get-started {
+      scroll-margin-top: 86px;
+    }
+
+    @media (max-width: 1180px) {
+      .hero {
+        grid-template-columns: 1fr;
+        min-height: auto;
+      }
+
+      .cluster-grid,
+      .rest-grid,
+      .feature-grid,
+      .preview-grid,
+      .tech-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .step-grid,
+      .card-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .shell {
+        width: min(100%, calc(100% - 20px));
+      }
+
+      .topbar {
+        padding: 12px 14px;
+      }
+
+      .tooltip {
+        display: none;
+      }
+
+      .hero {
+        padding: 10px 0 18px;
+      }
+
+      h1 {
+        font-size: clamp(2.6rem, 12vw, 4rem);
+      }
+
+      .panel,
+      .terminal-panel {
+        padding: 22px 18px 24px;
+      }
+
+      .panel--heroish {
+        min-height: calc(100svh - 90px);
+      }
+
+      .panel--full-screen {
+        min-height: calc(100svh - 90px);
+      }
+
+      .panel::after {
+        width: min(62%, 300px);
+        height: min(56%, 260px);
+        opacity: 0.14;
+      }
+
+      .panel--heroish::after {
+        width: auto;
+        height: auto;
+        background-size: cover;
+      }
+
+      .preview-visual {
+        height: 200px;
+      }
+
+      .teaser {
+        min-height: 360px;
+      }
+
+      .teaser::before {
+        background-position: right 10px bottom 12px;
+        background-size: min(52%, 280px) auto;
+      }
+
+      #trust-privacy,
+      #automation-velocity,
+      #autonomous-risk,
+      #get-started {
+        scroll-margin-top: 74px;
+      }
+    }
+  </style>
+</head>
+<body id="top">
+  <div class="shell">
+    <header class="topbar">
+      <div class="dot-nav">
+        <a class="dot-link" href="#trust-privacy" aria-label="Go to Private by Design section">
+          <span class="dot red"></span>
+          <span class="tooltip">Private by Design</span>
+        </a>
+        <a class="dot-link" href="#automation-velocity" aria-label="Go to Move Faster with Automation section">
+          <span class="dot yellow"></span>
+          <span class="tooltip">Move Faster with Automation</span>
+        </a>
+        <a class="dot-link" href="#autonomous-risk" aria-label="Go to Autonomous and Risk section">
+          <span class="dot green"></span>
+          <span class="tooltip">Autonomous &amp; Risk</span>
+        </a>
+      </div>
+      <a class="top-home" href="#top" aria-label="Back to top">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 10.5 12 4l8 6.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M6.5 9.5V20h11V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </a>
+    </header>
+
+    <main>
+      <section class="hero">
+        <article class="hero-copy">
+          <div class="brand">
+            <img src="./logo.png" alt="NeuralArc logo">
+            <strong>NeuralArc</strong>
+          </div>
+          <span class="eyebrow">Privacy-First Personal Desktop AI Trader</span>
+          <h1>TRADE LOCAL.<br>STAY PRIVATE.<br>BE AUTONOMOUS.</h1>
+          <p class="lead">Start in simulation mode, verify your strategies, and promote to live when ready. Security, trust, and AI, all in one and local to your machine.</p>
+          <div class="hero-actions">
+            <a class="button" href="#get-started">Download App</a>
+            <a class="button-secondary" href="#get-started">Get Started</a>
+          </div>
+        </article>
+
+        <aside class="terminal-panel">
+          <pre class="terminal"><span class="accent">$ neuralarc trust</span>
+privacy: first
+cloud: doesn't exist
+runtime: your local machine
+
+<span class="accent">$ neuralarc mode</span>
+default: paper[simulation]
+live: manual promotion only</pre>
+        </aside>
+      </section>
+
+      <section class="cluster-grid screen--cluster">
+        <article class="panel panel--heroish trust" id="trust-privacy">
+          <span class="section-chip">Private by Design</span>
+          <h2>Keep your workflow yours.</h2>
+          <a class="button-secondary panel-button" href="#get-started">Learn more</a>
+        </article>
+
+        <article class="panel panel--heroish automation" id="automation-velocity">
+          <span class="section-chip">Move Faster with Automation</span>
+          <h2>Go from setup to action with less friction.</h2>
+          <a class="button-secondary panel-button" href="#get-started">Learn more</a>
+        </article>
+
+        <article class="panel panel--heroish risk" id="autonomous-risk">
+          <span class="section-chip">Autonomous &amp; Risk</span>
+          <h2>Let the system carry the routine.</h2>
+          <a class="button-secondary panel-button" href="#get-started">Learn more</a>
+        </article>
+      </section>
+
+      <section class="rest-grid screen--rest">
+        <article class="panel">
+          <span class="section-chip">Built for Everyday Operators</span>
+          <h2>Designed to be usable, not intimidating.</h2>
+          <div class="card-grid">
+            <section class="info-card">
+              <h3>For Basic Computer Knowledge</h3>
+              <ul>
+                <li>You do not need to be a software engineer to use the app carefully.</li>
+                <li>If you can install an app and read settings clearly, you can get started.</li>
+              </ul>
+            </section>
+            <section class="info-card">
+              <h3>What You Still Need</h3>
+              <ul>
+                <li>Be comfortable copying API keys and reviewing strategy values.</li>
+                <li>Know when to pause, edit, or stop a strategy based on your judgment.</li>
+              </ul>
+            </section>
+          </div>
+        </article>
+
+        <article class="panel">
+          <span class="section-chip">Local Encryption Mechanics</span>
+          <h2>Keep sensitive details protected at rest.</h2>
+          <div class="card-grid">
+            <section class="info-card">
+              <h3>Credentials Stay Local</h3>
+              <ul>
+                <li>Saved credentials remain on the user's machine for normal operation.</li>
+                <li>The app avoids sending normal connection secrets into a central cloud dependency.</li>
+              </ul>
+            </section>
+            <section class="info-card">
+              <h3>Protected at Rest</h3>
+              <ul>
+                <li>Local encryption mechanics reduce casual exposure of saved credentials.</li>
+                <li>The same machine can reconnect without sacrificing basic local protection.</li>
+              </ul>
+            </section>
+          </div>
+        </article>
+
+        <article class="panel">
+          <span class="section-chip">Technology</span>
+          <h2>Simple on the surface. Serious underneath.</h2>
+          <div class="tech-grid">
+            <section class="tech-card">
+              <h3>Java Desktop Runtime</h3>
+              <p>NeuralArc is written in Java as a high-performance desktop application built for strong local execution on your own machine. It combines responsive UI behavior and long-running strategy monitoring without pushing your workflow into a complicated cloud stack.</p>
+            </section>
+            <section class="tech-card">
+              <h3>Performance Scales with Usage</h3>
+              <p>System usage scales with how many strategies you run, how frequent your polling intervals are, and how many real-time trading events are being processed. NeuralArc uses system resources as needed for responsive performance, while still allowing you to start small.</p>
+            </section>
+          </div>
+        </article>
+
+        <article class="panel" id="get-started">
+          <span class="section-chip">Get Started</span>
+          <h2>Get into the app in minutes.</h2>
+          <div class="card-grid">
+            <section class="info-card">
+              <h3>1. Create Your Alpaca Account</h3>
+              <ul>
+                <li>Create your Alpaca account first for your trading workflow.</li>
+                <li>Use those API keys inside NeuralArc for secure local setup.</li>
+              </ul>
+            </section>
+            <section class="info-card">
+              <h3>2. Download and Run NeuralArc</h3>
+              <ul>
+                <li>Open the app and follow the guided first-run setup.</li>
+                <li>The initial path takes only a few minutes and a few clicks.</li>
+              </ul>
+            </section>
+          </div>
+          <div class="feature-card" style="margin-top: 18px;">
+            <h3>What Happens Next</h3>
+            <ul>
+              <li>You begin safely in simulation mode first.</li>
+              <li>Once your workflow looks right, you can promote strategies to live.</li>
+            </ul>
+          </div>
+        </article>
+
+        <article class="panel" style="grid-column: 1 / -1;">
+          <span class="section-chip">Product Preview</span>
+          <h2>See how the workflow feels in practice.</h2>
+          <div class="preview-grid">
+            <article class="preview-card">
+              <div class="preview-visual"><img src="./images/preview-1.svg" alt="NeuralArc strategy controls preview"></div>
+              <div class="preview-copy">Strategy configuration and risk controls built for clear review before action.</div>
+            </article>
+            <article class="preview-card">
+              <div class="preview-visual"><img src="./images/preview-2.svg" alt="NeuralArc auto analyze preview"></div>
+              <div class="preview-copy">Auto Analyze ranges and recommendation cards that move you from reading to setup faster.</div>
+            </article>
+            <article class="preview-card">
+              <div class="preview-visual"><img src="./images/preview-3.svg" alt="NeuralArc local operator status preview"></div>
+              <div class="preview-copy">Local-first status, monitoring, and operator feedback designed for day-to-day control.</div>
+            </article>
+          </div>
+        </article>
+
+        <article class="panel teaser" style="grid-column: 1 / -1;">
+          <span class="section-chip">Coming Soon</span>
+          <h2>AI Integration with Jetson Orin Nano Super Developer Kit</h2>
+          <p>NeuralArc is expanding toward local AI integration with the Jetson Orin Nano Super Developer Kit to bring faster on-device intelligence, stronger decision support, and privacy-first acceleration directly into your trading workflow. Once the app is installed, use the Contact Us button inside the application for further guidance on this integration path.</p>
+        </article>
+
+        <article class="panel" style="grid-column: 1 / -1;">
+          <span class="section-chip">Disclaimer</span>
+          <p class="panel-intro">NeuralArc is a decision-support and execution utility for personal use. It is not financial advice, not a managed brokerage service, and does not guarantee profit or loss prevention. Simulation should be used first. Live trading must be manually enabled and is used at your own risk.</p>
+        </article>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>NeuralArc • Simulation First • Local First</span>
+      <span>Proprietary Information • Patent Pending • Not financial advice • Live trading at your own risk • Clarity-ready</span>
+    </footer>
+  </div>
+
+  <script>
+    if ("scrollRestoration" in history) {
+      history.scrollRestoration = "manual";
+    }
+    window.scrollTo(0, 0);
+  </script>
+  <script>
+    (function () {
+      window.addEventListener("pageshow", () => window.scrollTo(0, 0));
+      const onScroll = () => {
+        document.body.classList.toggle("is-scrolled", window.scrollY > 24);
+      };
+      onScroll();
+      window.addEventListener("scroll", onScroll, { passive: true });
+    })();
+  </script>
+  <script>
+    window.NEURALARC_CLARITY_PROJECT_ID = "";
+    if (window.NEURALARC_CLARITY_PROJECT_ID) {
+      (function (c, l, a, r, i, t, y) {
+        c[a] = c[a] || function () { (c[a].q = c[a].q || []).push(arguments); };
+        t = l.createElement(r);
+        t.async = 1;
+        t.src = "https://www.clarity.ms/tag/" + i;
+        y = l.getElementsByTagName(r)[0];
+        y.parentNode.insertBefore(t, y);
+      })(window, document, "clarity", "script", window.NEURALARC_CLARITY_PROJECT_ID);
+    }
+  </script>
+</body>
+</html>

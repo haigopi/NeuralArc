@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NeuralArc | Privacy-First Desktop Trading</title>
+  <meta name="description" content="NeuralArc is a privacy-first desktop trading utility. No cloud dependency. Runs on your local machine.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="NeuralArc | Privacy-First Desktop Trading">
+  <meta property="og:description" content="Paper-first, local-first trading utility with Auto Analyze and proprietary NeuralArc recommendations.">
+  <meta property="og:image" content="./og-image.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="NeuralArc privacy-first desktop trading preview">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="NeuralArc | Privacy-First Desktop Trading">
+  <meta name="twitter:description" content="No cloud dependency. Runs on your local machine.">
+  <meta name="twitter:image" content="./og-image.png">
+  <meta name="twitter:image:alt" content="NeuralArc privacy-first desktop trading preview">
+  <link rel="icon" type="image/png" sizes="32x32" href="./logo.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./logo.png">
+  <link rel="apple-touch-icon" href="./logo.png">
+  <link rel="stylesheet" href="https://unpkg.com/aos@2.3.4/dist/aos.css">
+  <style>
+    :root {
+      --bg: #07101a;
+      --panel: rgba(12, 24, 36, 0.56);
+      --panel-strong: rgba(9, 20, 31, 0.76);
+      --line: rgba(125, 169, 207, 0.24);
+      --text: #ebf4fb;
+      --muted: #b9cbda;
+      --accent: #7cf6c4;
+      --accent-soft: rgba(124, 246, 196, 0.16);
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(124, 246, 196, 0.12), transparent 32%),
+        radial-gradient(circle at 100% 0%, rgba(89, 146, 255, 0.15), transparent 30%),
+        linear-gradient(180deg, #06101a 0%, #08131f 42%, #050b12 100%);
+      padding: 0 20px 20px;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    .app {
+      width: min(1440px, calc(100% - 20px));
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 12;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      border: 1px solid transparent;
+      border-radius: 14px;
+      padding: 14px 18px;
+      background: transparent;
+      box-shadow: none;
+      backdrop-filter: none;
+      font-size: 0.84rem;
+      color: var(--muted);
+      margin-top: 0;
+      margin-bottom: 18px;
+      transition: border-color .2s ease, background .2s ease, box-shadow .2s ease, backdrop-filter .2s ease;
+    }
+
+    body.is-scrolled .topbar {
+      border-color: var(--line);
+      background: rgba(7, 18, 28, 0.74);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+
+    .topbar-home {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      text-decoration: none;
+      box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.04);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-4px);
+      transition: opacity .2s ease, transform .2s ease, border-color .2s ease, background .2s ease;
+    }
+
+    .topbar-home:hover {
+      border-color: rgba(143, 217, 255, 0.32);
+      background: rgba(143, 217, 255, 0.08);
+    }
+
+    .topbar-home:focus-visible {
+      outline: 2px solid rgba(143, 217, 255, 0.9);
+      outline-offset: 3px;
+    }
+
+    .topbar-home svg {
+      width: 18px;
+      height: 18px;
+      display: block;
+    }
+
+    body.is-scrolled .topbar-home {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+
+    .dots {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .dot-link {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      text-decoration: none;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.08);
+      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+    }
+
+    .dot-link:hover {
+      transform: translateY(-1px) scale(1.08);
+      border-color: rgba(255, 255, 255, 0.32);
+      box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.04);
+    }
+
+    .dot-link:focus-visible {
+      outline: 2px solid rgba(143, 217, 255, 0.9);
+      outline-offset: 3px;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: block;
+    }
+
+    .dot.red { background: linear-gradient(180deg, #ff8bb2, #ff5d87); }
+    .dot.yellow { background: linear-gradient(180deg, #ffe38f, #ffc94a); }
+    .dot.green { background: linear-gradient(180deg, #98f8dd, #58e7b8); }
+
+    .dot-tooltip {
+      position: absolute;
+      left: 50%;
+      top: calc(100% + 14px);
+      transform: translateX(-50%) translateY(-4px);
+      opacity: 0;
+      pointer-events: none;
+      white-space: nowrap;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(7, 18, 28, 0.9);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+      font-size: .76rem;
+      font-weight: 700;
+      letter-spacing: .03em;
+      transition: opacity .18s ease, transform .18s ease;
+      background-image: linear-gradient(
+        90deg,
+        #7cf6c4 0%,
+        #8fd9ff 22%,
+        #bba8ff 48%,
+        #ff9ec7 72%,
+        #ffd27a 100%
+      );
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .dot-link:hover .dot-tooltip,
+    .dot-link:focus-visible .dot-tooltip {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .content { display: grid; gap: 0; }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      padding: 30px;
+      background: linear-gradient(180deg, rgba(9, 20, 31, 0.64), rgba(9, 20, 31, 0.82));
+      transition: transform .2s ease, border-color .2s ease;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(124, 246, 196, 0.35);
+    }
+
+    .content > .card {
+      position: relative;
+      border: 0;
+      border-radius: 0;
+      padding: 40px 30px;
+      background: transparent;
+      box-shadow: none;
+      backdrop-filter: none;
+      overflow: hidden;
+    }
+
+    .content > .card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(180deg, rgba(6, 15, 24, 0) 0%, rgba(9, 20, 31, 0.18) 16%, rgba(9, 20, 31, 0.18) 84%, rgba(6, 15, 24, 0) 100%),
+        radial-gradient(circle at 18% 50%, rgba(124, 246, 196, 0.08), transparent 38%),
+        radial-gradient(circle at 82% 50%, rgba(84, 174, 255, 0.08), transparent 38%);
+      z-index: 0;
+    }
+
+    .content > .card:hover {
+      transform: none;
+      border-color: transparent;
+    }
+
+    .content > .card > .section-stack {
+      position: relative;
+      z-index: 1;
+    }
+
+    .content > .card:nth-of-type(odd)::before {
+      background:
+        linear-gradient(180deg, rgba(6, 15, 24, 0) 0%, rgba(9, 20, 31, 0.2) 16%, rgba(9, 20, 31, 0.16) 84%, rgba(6, 15, 24, 0) 100%),
+        radial-gradient(circle at 16% 50%, rgba(124, 246, 196, 0.09), transparent 36%),
+        radial-gradient(circle at 86% 48%, rgba(84, 174, 255, 0.05), transparent 40%);
+    }
+
+    .content > .card:nth-of-type(even)::before {
+      background:
+        linear-gradient(180deg, rgba(6, 15, 24, 0) 0%, rgba(11, 24, 36, 0.18) 16%, rgba(9, 20, 31, 0.14) 84%, rgba(6, 15, 24, 0) 100%),
+        radial-gradient(circle at 22% 52%, rgba(84, 174, 255, 0.07), transparent 34%),
+        radial-gradient(circle at 78% 44%, rgba(124, 246, 196, 0.06), transparent 36%);
+    }
+
+    .screen {
+      min-height: auto;
+    }
+
+    .screen--hero {
+      min-height: calc(100svh - 220px);
+      display: flex;
+      align-items: center;
+    }
+
+    .screen--cluster {
+      min-height: calc(100svh - 118px);
+      display: flex;
+      align-items: center;
+    }
+
+    .screen--rest {
+      min-height: calc(100svh - 118px);
+      display: flex;
+      align-items: flex-start;
+    }
+
+    .content [id] {
+      scroll-margin-top: 92px;
+    }
+
+    .cluster-layout {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 18px;
+      width: 100%;
+    }
+
+    .cluster-panel,
+    .rest-panel {
+      padding: 24px 22px;
+    }
+
+    .cluster-panel .section-flow,
+    .rest-panel .section-flow {
+      gap: 20px;
+    }
+
+    .cluster-panel--trust {
+      grid-column: span 4;
+    }
+
+    .cluster-panel--trust .pillars {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .cluster-panel--automation {
+      grid-column: span 8;
+    }
+
+    .cluster-panel--automation .steps {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .cluster-panel--risk {
+      grid-column: 1 / -1;
+    }
+
+    .cluster-panel--risk .feature-grid {
+      gap: 16px;
+    }
+
+    .rest-layout {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      width: 100%;
+      align-content: start;
+    }
+
+    .rest-panel--wide,
+    .rest-panel--full,
+    .footer {
+      grid-column: 1 / -1;
+    }
+
+    .section-stack {
+      width: min(1160px, 100%);
+      margin: 0 auto;
+    }
+
+    .section-flow {
+      display: grid;
+      gap: 26px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 28px;
+      align-items: stretch;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .brand img {
+      width: 58px;
+      height: 58px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.05);
+      object-fit: contain;
+      padding: 5px;
+    }
+
+    .brand strong {
+      font-size: clamp(1.55rem, 2.8vw, 2.2rem);
+      letter-spacing: -0.03em;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      font-size: .66rem;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: #06101a;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: linear-gradient(
+        90deg,
+        rgba(72, 202, 228, 0.94) 0%,
+        rgba(0, 180, 216, 0.94) 22%,
+        rgba(2, 132, 199, 0.94) 44%,
+        rgba(67, 170, 139, 0.94) 70%,
+        rgba(144, 190, 109, 0.94) 100%
+      );
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-weight: 700;
+      width: fit-content;
+    }
+
+    .hero-text-stack {
+      display: grid;
+      row-gap: 16px;
+      margin-top: 6px;
+    }
+
+    h1, h2, p { margin: 0; }
+
+    h1 {
+      font-size: clamp(2.4rem, 5.8vw, 4.9rem);
+      line-height: 0.98;
+      letter-spacing: -0.03em;
+    }
+
+    .rainbow-text {
+      background: linear-gradient(
+        90deg,
+        #7cf6c4 0%,
+        #8fd9ff 18%,
+        #bba8ff 36%,
+        #ff9ec7 56%,
+        #ffd27a 76%,
+        #7cf6c4 100%
+      );
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .btn.primary.rainbow-button {
+      color: var(--accent);
+      background: rgba(124, 246, 196, 0.13);
+      border-color: rgba(124, 246, 196, 0.22);
+      box-shadow: none;
+      font-weight: 600;
+    }
+
+    .btn.primary.rainbow-button:hover {
+      color: #06101a;
+      background: linear-gradient(
+        90deg,
+        #7cf6c4 0%,
+        #8fd9ff 20%,
+        #bba8ff 42%,
+        #ff9ec7 66%,
+        #ffd27a 86%,
+        #7cf6c4 100%
+      );
+      border-color: rgba(255, 255, 255, 0.34);
+      box-shadow: 0 18px 36px rgba(0, 0, 0, 0.26);
+    }
+
+    .lead {
+      color: var(--muted);
+      line-height: 1.8;
+      max-width: 58ch;
+      font-size: 1.04rem;
+    }
+
+    .actions {
+      margin-top: 18px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .btn {
+      text-decoration: none;
+      border-radius: 11px;
+      border: 1px solid var(--line);
+      color: var(--text);
+      padding: 10px 14px;
+      font-size: .9rem;
+      transition: transform .15s ease, border-color .15s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(124, 246, 196, 0.45);
+    }
+
+    .btn.primary {
+      color: var(--accent);
+      background: rgba(124, 246, 196, 0.13);
+    }
+
+    .terminal {
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .96rem;
+      line-height: 1.85;
+      color: #dce9f5;
+      white-space: pre-wrap;
+      margin: 0;
+      text-align: left;
+    }
+
+    .hero aside.card {
+      display: flex;
+      align-items: center;
+    }
+
+    .accent { color: var(--accent); }
+
+    .pillars {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .pillar {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 22px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .pillar h3 {
+      margin: 0 0 6px 0;
+      font-size: 1.05rem;
+      color: #f2f8fc;
+    }
+
+    .pillar p {
+      margin: 0;
+      color: var(--muted);
+      font-size: .96rem;
+      line-height: 1.75;
+    }
+
+    .pillar ul,
+    .step ul,
+    .feature ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: .92rem;
+      line-height: 1.8;
+    }
+
+    .pillar li::marker,
+    .step li::marker,
+    .feature li::marker {
+      color: var(--accent);
+    }
+
+    .pillar li + li,
+    .step li + li,
+    .feature li + li {
+      margin-top: 4px;
+    }
+
+    .teaser {
+      border: 0;
+      background: transparent;
+    }
+
+    .content > .card.teaser-visual::before {
+      background: none;
+    }
+
+    .teaser-visual {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .teaser-visual::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: url("./images/nano-jetson-super.svg") right 18px bottom 10px / min(46%, 460px) auto no-repeat;
+      z-index: 0;
+      opacity: 0.18;
+      filter: saturate(0.72) brightness(0.62);
+    }
+
+    .teaser-visual::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(6, 15, 24, 0.88) 0%, rgba(6, 15, 24, 0.58) 30%, rgba(6, 15, 24, 0.26) 58%, rgba(6, 15, 24, 0.54) 100%),
+        radial-gradient(circle at 16% 50%, rgba(124, 246, 196, 0.12), transparent 34%),
+        radial-gradient(circle at 86% 84%, rgba(84, 174, 255, 0.1), transparent 26%);
+      z-index: 0;
+    }
+
+    .teaser-visual > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .teaser h2 {
+      font-size: 1.05rem;
+      margin-bottom: 6px;
+      color: var(--accent);
+    }
+
+    .teaser p {
+      color: #d7f8ec;
+      line-height: 1.6;
+      font-size: .92rem;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 20px;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+    }
+
+    .feature {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 24px 22px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .feature h3 {
+      margin: 0 0 14px 0;
+      font-size: 1rem;
+    }
+
+    .feature p {
+      margin: 0;
+      color: var(--muted);
+      font-size: .92rem;
+      line-height: 1.8;
+    }
+
+    .disclaimer {
+      border: 0;
+      background: transparent;
+    }
+
+    .disclaimer p {
+      color: #ffd6d1;
+      line-height: 1.65;
+      font-size: .9rem;
+    }
+
+    .section-anchor-label {
+      display: inline-block;
+      margin-bottom: 4px;
+      width: fit-content;
+      max-width: max-content;
+      padding: 10px 18px;
+      border-radius: 999px;
+      border: 1px solid rgba(96, 196, 216, 0.32);
+      background: linear-gradient(
+        90deg,
+        rgba(72, 202, 228, 0.92) 0%,
+        rgba(0, 180, 216, 0.92) 24%,
+        rgba(2, 132, 199, 0.92) 52%,
+        rgba(67, 170, 139, 0.92) 78%,
+        rgba(144, 190, 109, 0.92) 100%
+      );
+      color: #06101a;
+      font-size: .96rem;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 22px;
+    }
+
+    .step {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 26px 22px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .step small {
+      display: inline-block;
+      margin-bottom: 8px;
+      color: var(--accent);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      font-size: .72rem;
+    }
+
+    .step h3 {
+      margin: 0 0 14px 0;
+      font-size: 1.06rem;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--muted);
+      font-size: .92rem;
+      line-height: 1.85;
+    }
+
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 22px;
+    }
+
+    .shot {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .shot-visual {
+      height: 200px;
+      position: relative;
+      overflow: hidden;
+      background: #0d1d2b;
+    }
+
+    .shot-visual::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(6, 15, 24, 0.18), rgba(6, 15, 24, 0.38));
+      pointer-events: none;
+    }
+
+    .shot-visual img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+      filter: saturate(1.05) brightness(0.9);
+      transform: scale(1.01);
+    }
+
+    .shot p {
+      margin: 0;
+      padding: 16px 14px 18px;
+      color: var(--muted);
+      font-size: .9rem;
+      line-height: 1.7;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: var(--muted);
+      font-size: .82rem;
+      margin-top: 2px;
+    }
+
+    @media (max-width: 920px) {
+      .hero { grid-template-columns: 1fr; }
+      .pillars { grid-template-columns: 1fr; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .info-grid { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .gallery { grid-template-columns: 1fr; }
+      .screen { min-height: auto; }
+      .screen--hero { min-height: calc(100svh - 176px); }
+      .screen--cluster,
+      .screen--rest { min-height: auto; }
+      .cluster-layout,
+      .rest-layout { grid-template-columns: 1fr; }
+      .cluster-panel--trust,
+      .cluster-panel--automation,
+      .cluster-panel--risk,
+      .rest-panel--wide,
+      .rest-panel--full,
+      .footer { grid-column: auto; }
+    }
+
+    @media (max-width: 560px) {
+      body { padding: 0 10px 10px; }
+      .card { padding: 18px; }
+      .content > .card { padding: 32px 18px; }
+      .topbar { top: 0; font-size: .75rem; padding: 10px 12px; margin-top: 0; }
+      .dot-link { width: 16px; height: 16px; }
+      .dot { width: 10px; height: 10px; }
+      .dot-tooltip { display: none; }
+      .steps { grid-template-columns: 1fr; }
+      .screen--hero { min-height: calc(100svh - 148px); }
+      .screen--hero { min-height: calc(100svh - 112px); }
+      .content [id] { scroll-margin-top: 78px; }
+      .cluster-panel,
+      .rest-panel { padding: 20px 18px; }
+      .cluster-panel--automation .steps { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body id="top">
+  <main class="app">
+    <header class="topbar">
+      <div class="dots">
+        <a class="dot-link" href="#trust-privacy" aria-label="Go to Trust and Privacy section">
+          <span class="dot red"></span>
+          <span class="dot-tooltip">Private by Design</span>
+        </a>
+        <a class="dot-link" href="#automation-velocity" aria-label="Go to Automation and Velocity section">
+          <span class="dot yellow"></span>
+          <span class="dot-tooltip">Move Faster with Automation</span>
+        </a>
+        <a class="dot-link" href="#autonomous-risk" aria-label="Go to Autonomous and Risk section">
+          <span class="dot green"></span>
+          <span class="dot-tooltip">Autonomous &amp; Risk</span>
+        </a>
+      </div>
+      <a class="topbar-home" href="#top" aria-label="Back to top">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 10.5 12 4l8 6.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M6.5 9.5V20h11V9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </a>
+    </header>
+
+    <div class="content">
+      <section class="card screen screen--hero" data-aos="fade-up" data-aos-duration="900">
+        <div class="section-stack hero">
+          <article>
+            <div class="brand">
+              <img src="./logo.png" alt="NeuralArc logo">
+              <strong class="rainbow-text">NeuralArc</strong>
+            </div>
+            <div class="hero-text-stack">
+              <span class="eyebrow">Privacy-First Personal Desktop AI Trader</span>
+              <h1>TRADE LOCAL.<br>STAY PRIVATE.<br>BE AUTONOMOUS.</h1>
+              <p class="lead">Start in simulation mode, verify your strategies, and promote to live when ready. Security, trust, and AI, all in one and local to your machine.</p>
+            </div>
+            <div class="actions">
+              <a class="btn primary rainbow-button" href="#get-started">Download App</a>
+              <a class="btn" href="#get-started">Get Started</a>
+            </div>
+          </article>
+
+          <aside class="card">
+            <pre class="terminal"><span class="accent">$ neuralarc trust</span>
+privacy: first
+cloud: doesn't exist
+runtime: your local machine
+
+<span class="accent">$ neuralarc mode</span>
+default: paper[simulation]
+live: manual promotion only</pre>
+          </aside>
+        </div>
+      </section>
+
+      <section class="card screen screen--cluster">
+        <div class="section-stack cluster-layout">
+          <section class="card cluster-panel cluster-panel--trust" id="trust-privacy">
+            <div class="section-flow">
+              <span class="section-anchor-label">Private by Design</span>
+              <div class="pillars">
+                <article class="pillar">
+                  <h3>Privacy First</h3>
+                  <ul>
+                    <li>Keep your trading workflow on your own machine from day one.</li>
+                    <li>Protect visibility and control without depending on a cloud-first stack.</li>
+                  </ul>
+                </article>
+                <article class="pillar">
+                  <h3>No Cloud</h3>
+                  <ul>
+                    <li>Run core strategy logic locally without requiring remote infrastructure.</li>
+                    <li>Reduce moving parts between your intent and the platform behavior.</li>
+                  </ul>
+                </article>
+                <article class="pillar">
+                  <h3>Runs on Your Local</h3>
+                  <ul>
+                    <li>Use a desktop-native workflow with clear checkpoints and review points.</li>
+                    <li>Keep execution closer to your own system, preferences, and pace.</li>
+                  </ul>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section class="card cluster-panel cluster-panel--automation" id="automation-velocity">
+            <div class="section-flow">
+              <span class="section-anchor-label">Move Faster with Automation</span>
+              <div class="steps">
+                <article class="step">
+                  <small>Step 01</small>
+                  <h3>Connect</h3>
+                  <ul>
+                    <li>Get connected quickly with guided credential setup.</li>
+                    <li>Verify your trading connection before moving deeper into the platform.</li>
+                  </ul>
+                </article>
+                <article class="step">
+                  <small>Step 02</small>
+                  <h3>Configure</h3>
+                  <ul>
+                    <li>Define buy levels, stop loss, and sell targets with less friction.</li>
+                    <li>Turn your strategy intent into a clearer operating plan.</li>
+                  </ul>
+                </article>
+                <article class="step">
+                  <small>Step 03</small>
+                  <h3>Observe</h3>
+                  <ul>
+                    <li>Track rule triggers and position behavior in one place.</li>
+                    <li>Stay informed without constant manual watching.</li>
+                  </ul>
+                </article>
+                <article class="step">
+                  <small>Step 04</small>
+                  <h3>Promote</h3>
+                  <ul>
+                    <li>Promote to live only after building confidence in simulation.</li>
+                    <li>Keep a safer path between testing and real-money execution.</li>
+                  </ul>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section class="card cluster-panel cluster-panel--risk" id="autonomous-risk">
+            <div class="section-flow">
+              <span class="section-anchor-label">Autonomous &amp; Risk</span>
+              <div class="feature-grid">
+                <article class="feature">
+                  <h3>Auto Analyze</h3>
+                  <ul>
+                    <li>Understand market structure faster with multi-window analysis</li>
+                    <li>Surface important threshold opportunities without manual scanning</li>
+                    <li>Review live market context in one guided workflow</li>
+                  </ul>
+                </article>
+                <article class="feature">
+                  <h3>Auto Recommendations</h3>
+                  <ul>
+                    <li>Receive short-term and long-term trade ideas instantly</li>
+                    <li>See confidence, risk/reward, and actionable price levels clearly</li>
+                    <li>Move from analysis to action with less guesswork</li>
+                  </ul>
+                </article>
+                <article class="feature">
+                  <h3>Customize &amp; Personalize - The way you want</h3>
+                  <ul>
+                    <li>Shape the platform around the way you want to trade</li>
+                    <li>Let the system continue the next steps based on your defined rules</li>
+                    <li>Keep risk, flow, and decision control in your hands</li>
+                  </ul>
+                </article>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="card screen screen--rest">
+        <div class="section-stack rest-layout">
+          <section class="card rest-panel">
+            <div class="section-flow">
+              <span class="section-anchor-label">Built for Everyday Operators</span>
+              <div class="info-grid">
+                <article class="feature">
+                  <h3>For People with Basic Computer Knowledge</h3>
+                  <p>NeuralArc is intended for users who know the basics of operating a desktop app, entering settings, and reviewing simple trading values. You do not need to be a software engineer to use the app carefully.</p>
+                </article>
+                <article class="feature">
+                  <h3>What You Still Need to Be Comfortable With</h3>
+                  <p>You should be able to install an application, open settings, copy API keys, read strategy values, and understand when to pause, edit, or stop a strategy. The app helps, but it does not replace judgment.</p>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section class="card rest-panel">
+            <div class="section-flow">
+              <span class="section-anchor-label">Local Encryption Mechanics</span>
+              <div class="info-grid">
+                <article class="feature">
+                  <h3>Credentials Stay Local</h3>
+                  <p>When credentials are saved, NeuralArc stores them locally on the user’s machine instead of pushing them to a central cloud service for normal app operation.</p>
+                </article>
+                <article class="feature">
+                  <h3>Protected at Rest</h3>
+                  <p>The app uses local encryption mechanics to protect saved API credentials at rest. This reduces accidental exposure if someone casually browses the saved files, while still allowing the app to reconnect on the same machine.</p>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section class="card rest-panel rest-panel--wide">
+            <div class="section-flow">
+              <span class="section-anchor-label">Technology</span>
+              <div class="info-grid">
+                <article class="feature">
+                  <h3>Java Desktop Runtime</h3>
+                  <p>NeuralArc is written in Java as a high-performance desktop application built for strong local execution on your own machine. It combines responsive UI behavior and reliable long-running strategy monitoring in one place. While the platform feels simple to use, underneath it is designed to handle continuous polling, real-time trading events, strategy evaluation, risk controls, and local state management so you can operate your workflows with more control, privacy, and autonomy without depending on a complicated cloud stack.</p>
+                </article>
+                <article class="feature">
+                  <h3>Performance Scales with Usage</h3>
+                  <p>System usage scales with how many strategies you run, how frequent your polling intervals are, and how many real-time trading events are being processed. NeuralArc automatically uses threads based on available system resources and consumes CPU and memory as needed for responsive performance. You can still start with a bare-minimum system configuration as well.</p>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section class="card rest-panel" id="get-started">
+            <div class="section-flow">
+              <span class="section-anchor-label">Get Started</span>
+              <div class="info-grid">
+                <article class="feature">
+                  <h3>1. Create Your Alpaca Account</h3>
+                  <p>Create your Alpaca account for your trades first. Once that is ready, you can use those API keys inside NeuralArc for secure local setup.</p>
+                </article>
+                <article class="feature">
+                  <h3>2. Download and Run NeuralArc</h3>
+                  <p>Download the app, open it, and follow the guided first-run setup. The app walks you through the initial steps automatically.</p>
+                </article>
+              </div>
+              <article class="feature">
+                <h3>What Happens Next</h3>
+                <p>From there, you will be directed through the initial configuration in just a few minutes and a few clicks. You can start in no time, beginning safely in simulation mode before promoting strategies to live when ready.</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="card rest-panel rest-panel--full">
+            <div class="section-flow">
+              <span class="section-anchor-label">Product Preview</span>
+              <div class="gallery">
+                <article class="shot">
+                  <div class="shot-visual"><img src="./images/preview-1.svg" alt="NeuralArc strategy controls preview"></div>
+                  <p>Strategy configuration and risk controls.</p>
+                </article>
+                <article class="shot">
+                  <div class="shot-visual"><img src="./images/preview-2.svg" alt="NeuralArc auto analyze preview"></div>
+                  <p>Auto Analyze ranges and recommendation cards.</p>
+                </article>
+                <article class="shot">
+                  <div class="shot-visual"><img src="./images/preview-3.svg" alt="NeuralArc local operator status preview"></div>
+                  <p>Local-first status and operator feedback views.</p>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <section class="card teaser teaser-visual rest-panel rest-panel--full">
+            <div class="section-flow">
+              <span class="section-anchor-label">Coming Soon</span>
+              <h2>AI Integration with Jetson Orin Nano Super Developer Kit</h2>
+              <p>NeuralArc is expanding toward local AI integration with the Jetson Orin Nano Super Developer Kit to bring faster on-device intelligence, stronger decision support, and privacy-first acceleration directly into your trading workflow. Once the app is installed, use the Contact Us button inside the application for further guidance on this integration path.</p>
+            </div>
+          </section>
+
+          <section class="card disclaimer rest-panel rest-panel--full">
+            <div class="section-flow">
+              <span class="section-anchor-label">Disclaimer</span>
+              <p>NeuralArc is a decision-support and execution utility for personal use. It is not financial advice, not a managed brokerage service, and does not guarantee profit or loss prevention. Paper trading should be used first. Live trading must be manually enabled and is used at your own risk.</p>
+            </div>
+          </section>
+
+          <footer class="footer">
+            <span>NeuralArc • Paper First • Local First</span>
+            <span>Proprietary Information • Patent Pending • Not financial advice • Live trading at your own risk • Clarity-ready</span>
+          </footer>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="https://unpkg.com/aos@2.3.4/dist/aos.js"></script>
+  <script>
+    if ("scrollRestoration" in history) {
+      history.scrollRestoration = "manual";
+    }
+    window.scrollTo(0, 0);
+  </script>
+  <script>
+    AOS.init({
+      once: true,
+      duration: 850,
+      easing: "ease-out-cubic",
+      offset: 72,
+      mirror: false
+    });
+  </script>
+
+  <script>
+    (function () {
+      window.addEventListener("pageshow", () => window.scrollTo(0, 0));
+      const onScroll = () => {
+        document.body.classList.toggle("is-scrolled", window.scrollY > 24);
+      };
+      onScroll();
+      window.addEventListener("scroll", onScroll, { passive: true });
+    })();
+  </script>
+
+  <script>
+    window.NEURALARC_CLARITY_PROJECT_ID = "";
+    if (window.NEURALARC_CLARITY_PROJECT_ID) {
+      (function (c, l, a, r, i, t, y) {
+        c[a] = c[a] || function () { (c[a].q = c[a].q || []).push(arguments); };
+        t = l.createElement(r);
+        t.async = 1;
+        t.src = "https://www.clarity.ms/tag/" + i;
+        y = l.getElementsByTagName(r)[0];
+        y.parentNode.insertBefore(t, y);
+      })(window, document, "clarity", "script", window.NEURALARC_CLARITY_PROJECT_ID);
+    }
+  </script>
+</body>
+</html>
