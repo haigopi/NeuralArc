@@ -6,7 +6,11 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 APP_NAME="NeuralArc"
 MAIN_CLASS="com.neuralarc.NeuralArc"
-RAW_VERSION="${1:-$("$SCRIPT_DIR/next-release-version.sh" patch)}"
+version_from_gradle() {
+  "$PROJECT_DIR/gradlew" -q properties --property version | tail -n 1 | awk '{print $2}'
+}
+
+RAW_VERSION="${1:-$(version_from_gradle)}"
 APP_VERSION="$(printf '%s' "$RAW_VERSION" | sed -E 's/[^0-9.].*$//')"
 DEST_DIR="$PROJECT_DIR/build/installer/macos"
 ARTIFACTS_DIR="$PROJECT_DIR/artifacts/macos"
@@ -16,7 +20,7 @@ ICONSET_DIR="$PROJECT_DIR/build/jpackage/macos/NeuralArc.iconset"
 ICON_ICNS="$PROJECT_DIR/build/jpackage/macos/NeuralArc.icns"
 
 if [[ -z "$APP_VERSION" ]]; then
-  echo "Unable to derive a valid numeric app version from [$RAW_VERSION]. Pass an explicit release version, e.g. ./package-macos.sh 1.0.0" >&2
+  echo "Unable to derive a valid numeric app version from [$RAW_VERSION]. Pass an explicit release version, e.g. ./scripts/package-macos.sh 1.0.0" >&2
   exit 1
 fi
 

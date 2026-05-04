@@ -17,6 +17,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="./logo.png">
   <link rel="icon" type="image/png" sizes="192x192" href="./logo.png">
   <link rel="apple-touch-icon" href="./logo.png">
+  <link rel="stylesheet" href="https://unpkg.com/aos@2.3.4/dist/aos.css">
   <style>
     :root {
       --bg: #06101a;
@@ -46,10 +47,7 @@
       min-height: 100vh;
       font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       color: var(--text);
-      background:
-        radial-gradient(circle at 8% 0%, rgba(124, 246, 196, 0.16), transparent 26%),
-        radial-gradient(circle at 92% 0%, rgba(120, 185, 255, 0.18), transparent 28%),
-        linear-gradient(180deg, #06101a 0%, #09131f 32%, #050a11 100%);
+      background: #06101a;
       overflow-x: hidden;
     }
 
@@ -196,12 +194,30 @@
     }
 
     .hero {
+      position: relative;
+      overflow: hidden;
       display: grid;
       grid-template-columns: 1.16fr .84fr;
       gap: 28px;
       min-height: calc(100svh - 128px);
       align-items: center;
-      padding: 10px 0 24px;
+      padding: 18px 28px 30px;
+      border-radius: 34px;
+      background: transparent;
+      box-shadow: var(--shadow);
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: none;
+      pointer-events: none;
+    }
+
+    .hero > * {
+      position: relative;
+      z-index: 1;
     }
 
     .hero-copy {
@@ -511,7 +527,7 @@
     }
 
     .panel--full-screen h2 {
-      max-width: 16ch;
+      max-width: 28ch;
       margin-left: auto;
       margin-right: auto;
     }
@@ -543,7 +559,7 @@
     }
 
     .panel--heroish h2 {
-      max-width: 14ch;
+      max-width: 24ch;
       margin-left: auto;
       margin-right: auto;
     }
@@ -740,7 +756,8 @@
       }
 
       .hero {
-        padding: 10px 0 18px;
+        padding: 18px 18px 22px;
+        border-radius: 26px;
       }
 
       h1 {
@@ -812,8 +829,8 @@
     </header>
 
     <main>
-      <section class="hero">
-        <article class="hero-copy">
+      <section class="hero" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
+        <article class="hero-copy" data-aos="fade-up" data-aos-delay="80" data-aos-duration="900">
           <div class="brand">
             <img src="./logo.png" alt="NeuralArc logo">
             <strong>NeuralArc</strong>
@@ -827,7 +844,7 @@
           </div>
         </article>
 
-        <aside class="terminal-panel">
+        <aside class="terminal-panel" data-aos="fade-left" data-aos-delay="140" data-aos-duration="950">
           <pre class="terminal"><span class="accent">$ neuralarc trust</span>
 privacy: first
 cloud: doesn't exist
@@ -994,6 +1011,16 @@ live: manual promotion only</pre>
       history.scrollRestoration = "manual";
     }
     window.scrollTo(0, 0);
+  </script>
+  <script src="https://unpkg.com/aos@2.3.4/dist/aos.js"></script>
+  <script>
+    AOS.init({
+      once: true,
+      duration: 900,
+      easing: "ease-out-cubic",
+      offset: 56,
+      mirror: false
+    });
   </script>
   <script>
     (function () {
