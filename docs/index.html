@@ -478,7 +478,57 @@
       display: flex;
       flex-direction: column;
       justify-content: center;
+      align-items: center;
       scroll-snap-align: start;
+      scroll-snap-stop: always;
+      text-align: center;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+      border-radius: 0;
+      padding: 42px 24px;
+      overflow: hidden;
+    }
+
+    .panel--full-screen::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(180deg, rgba(6, 15, 24, 0) 0%, rgba(9, 20, 31, 0.22) 18%, rgba(9, 20, 31, 0.18) 82%, rgba(6, 15, 24, 0) 100%),
+        radial-gradient(circle at 18% 46%, rgba(124, 246, 196, 0.1), transparent 30%),
+        radial-gradient(circle at 82% 54%, rgba(84, 174, 255, 0.1), transparent 32%);
+      pointer-events: none;
+    }
+
+    .panel--full-screen > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .panel--full-screen .section-chip {
+      margin: 0 auto;
+    }
+
+    .panel--full-screen h2 {
+      max-width: 16ch;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .panel--full-screen .tech-grid,
+    .panel--full-screen .card-grid,
+    .panel--full-screen .feature-card {
+      width: min(1080px, 100%);
+    }
+
+    .panel--full-screen .feature-card {
+      text-align: left;
+    }
+
+    .panel--full-screen .tech-card,
+    .panel--full-screen .info-card {
+      text-align: left;
     }
 
     .panel--heroish::before {
@@ -513,6 +563,11 @@
       color: var(--muted);
       line-height: 1.8;
       max-width: 50ch;
+    }
+
+    .panel-intro--wide {
+      max-width: none;
+      width: 100%;
     }
 
     .benefit,
@@ -616,52 +671,6 @@
       font-size: .92rem;
     }
 
-    .teaser {
-      position: relative;
-      overflow: hidden;
-      min-height: 420px;
-    }
-
-    .teaser::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: url("./images/nano-jetson-super.svg") right 22px bottom 12px / min(42%, 440px) auto no-repeat;
-      opacity: 0.18;
-      filter: saturate(0.7) brightness(0.62);
-    }
-
-    .teaser::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background:
-        linear-gradient(90deg, rgba(6, 15, 24, 0.9) 0%, rgba(6, 15, 24, 0.62) 34%, rgba(6, 15, 24, 0.22) 62%, rgba(6, 15, 24, 0.56) 100%),
-        radial-gradient(circle at 16% 50%, rgba(124, 246, 196, 0.14), transparent 34%),
-        radial-gradient(circle at 84% 82%, rgba(84, 174, 255, 0.1), transparent 28%);
-    }
-
-    .teaser > * {
-      position: relative;
-      z-index: 1;
-    }
-
-    .teaser h2 {
-      margin-top: 18px;
-      font-size: clamp(2rem, 3vw, 3.1rem);
-      line-height: 1.04;
-      letter-spacing: -0.04em;
-      max-width: 13ch;
-    }
-
-    .teaser p {
-      margin-top: 16px;
-      max-width: 56ch;
-      color: #d7f8ec;
-      font-size: 1rem;
-      line-height: 1.84;
-    }
-
     .tech-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -749,6 +758,7 @@
 
       .panel--full-screen {
         min-height: calc(100svh - 90px);
+        padding: 28px 18px;
       }
 
       .panel::after {
@@ -765,15 +775,6 @@
 
       .preview-visual {
         height: 200px;
-      }
-
-      .teaser {
-        min-height: 360px;
-      }
-
-      .teaser::before {
-        background-position: right 10px bottom 12px;
-        background-size: min(52%, 280px) auto;
       }
 
       #trust-privacy,
@@ -881,14 +882,14 @@ live: manual promotion only</pre>
         </article>
 
         <article class="panel">
-          <span class="section-chip">Local Encryption Mechanics</span>
+          <span class="section-chip">Security</span>
           <h2>Keep sensitive details protected at rest.</h2>
           <div class="card-grid">
             <section class="info-card">
               <h3>Credentials Stay Local</h3>
               <ul>
-                <li>Saved credentials remain on the user's machine for normal operation.</li>
-                <li>The app avoids sending normal connection secrets into a central cloud dependency.</li>
+                <li>Saved credentials remain on the user's machine for normal operation encrypted.</li>
+                <li>The app never share any secrets as part of telemetry nor the user details.</li>
               </ul>
             </section>
             <section class="info-card">
@@ -898,49 +899,6 @@ live: manual promotion only</pre>
                 <li>The same machine can reconnect without sacrificing basic local protection.</li>
               </ul>
             </section>
-          </div>
-        </article>
-
-        <article class="panel">
-          <span class="section-chip">Technology</span>
-          <h2>Simple on the surface. Serious underneath.</h2>
-          <div class="tech-grid">
-            <section class="tech-card">
-              <h3>Java Desktop Runtime</h3>
-              <p>NeuralArc is written in Java as a high-performance desktop application built for strong local execution on your own machine. It combines responsive UI behavior and long-running strategy monitoring without pushing your workflow into a complicated cloud stack.</p>
-            </section>
-            <section class="tech-card">
-              <h3>Performance Scales with Usage</h3>
-              <p>System usage scales with how many strategies you run, how frequent your polling intervals are, and how many real-time trading events are being processed. NeuralArc uses system resources as needed for responsive performance, while still allowing you to start small.</p>
-            </section>
-          </div>
-        </article>
-
-        <article class="panel" id="get-started">
-          <span class="section-chip">Get Started</span>
-          <h2>Get into the app in minutes.</h2>
-          <div class="card-grid">
-            <section class="info-card">
-              <h3>1. Create Your Alpaca Account</h3>
-              <ul>
-                <li>Create your Alpaca account first for your trading workflow.</li>
-                <li>Use those API keys inside NeuralArc for secure local setup.</li>
-              </ul>
-            </section>
-            <section class="info-card">
-              <h3>2. Download and Run NeuralArc</h3>
-              <ul>
-                <li>Open the app and follow the guided first-run setup.</li>
-                <li>The initial path takes only a few minutes and a few clicks.</li>
-              </ul>
-            </section>
-          </div>
-          <div class="feature-card" style="margin-top: 18px;">
-            <h3>What Happens Next</h3>
-            <ul>
-              <li>You begin safely in simulation mode first.</li>
-              <li>Once your workflow looks right, you can promote strategies to live.</li>
-            </ul>
           </div>
         </article>
 
@@ -963,22 +921,71 @@ live: manual promotion only</pre>
           </div>
         </article>
 
-        <article class="panel teaser" style="grid-column: 1 / -1;">
-          <span class="section-chip">Coming Soon</span>
-          <h2>AI Integration with Jetson Orin Nano Super Developer Kit</h2>
-          <p>NeuralArc is expanding toward local AI integration with the Jetson Orin Nano Super Developer Kit to bring faster on-device intelligence, stronger decision support, and privacy-first acceleration directly into your trading workflow. Once the app is installed, use the Contact Us button inside the application for further guidance on this integration path.</p>
-        </article>
-
         <article class="panel" style="grid-column: 1 / -1;">
           <span class="section-chip">Disclaimer</span>
-          <p class="panel-intro">NeuralArc is a decision-support and execution utility for personal use. It is not financial advice, not a managed brokerage service, and does not guarantee profit or loss prevention. Simulation should be used first. Live trading must be manually enabled and is used at your own risk.</p>
+          <p class="panel-intro panel-intro--wide">NeuralArc is a decision-support and execution utility for personal use. It is not financial advice, not a managed brokerage service, and does not guarantee profit or loss prevention. Simulation should be used first. Live trading must be manually enabled and is used at your own risk.</p>
         </article>
+      </section>
+
+      <section class="panel panel--full-screen">
+        <span class="section-chip">Technology</span>
+        <h2>Simple on the surface. Serious underneath.</h2>
+        <div class="tech-grid">
+          <section class="tech-card">
+            <h3>Java Desktop Runtime</h3>
+            <p>NeuralArc is written in Java as a high-performance desktop application built for strong local execution on your own machine. It combines responsive UI behavior and long-running strategy monitoring without pushing your workflow into a complicated cloud stack.</p>
+          </section>
+          <section class="tech-card">
+            <h3>Performance Scales with Usage</h3>
+            <p>System usage scales with how many strategies you run, how frequent your polling intervals are, and how many real-time trading events are being processed. NeuralArc uses system resources as needed for responsive performance, while still allowing you to start small.</p>
+          </section>
+        </div>
+      </section>
+
+      <section class="panel panel--full-screen" id="get-started">
+        <span class="section-chip">Get Started</span>
+        <h2>Get into the app in minutes.</h2>
+        <div class="card-grid">
+          <section class="info-card">
+            <h3>1. Create Your Alpaca Account</h3>
+            <ul>
+              <li>Create your Alpaca account first for your trading workflow.</li>
+              <li>Use those API keys inside NeuralArc for secure local setup.</li>
+            </ul>
+          </section>
+          <section class="info-card">
+            <h3>2. Download and Run NeuralArc</h3>
+            <ul>
+              <li>Open the app and follow the guided first-run setup.</li>
+              <li>The initial path takes only a few minutes and a few clicks.</li>
+            </ul>
+          </section>
+        </div>
+        <div class="feature-card" style="margin-top: 18px;">
+          <h3>What Happens Next</h3>
+          <ul>
+            <li>You begin safely in simulation mode first.</li>
+            <li>Once your workflow looks right, you can promote strategies to live.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="panel panel--full-screen">
+        <span class="section-chip">NVIDIA AI Ready</span>
+        <h2>Prepared for local AI using Jetson Orin Nano Super Developer Kit.</h2>
+        <div class="feature-card" style="margin-top: 18px;">
+          <h3>AI Integration Path</h3>
+          <ul>
+            <li>This path is designed to bring faster on-device intelligence and stronger decision support into your workflow.</li>
+            <li>After installing the app, use the Contact Us button for further guidance on this integration.</li>
+          </ul>
+        </div>
       </section>
     </main>
 
     <footer class="footer">
-      <span>NeuralArc • Simulation First • Local First</span>
-      <span>Proprietary Information • Patent Pending • Not financial advice • Live trading at your own risk • Clarity-ready</span>
+      <span>NeuralArc</span>
+      <span>• Not financial advice • Live trading at your own risk</span>
     </footer>
   </div>
 
