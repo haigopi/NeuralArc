@@ -50,6 +50,8 @@ public class StrategyEngine {
     }
 
     public void reconcile(Strategy strategy) {
+        AppSettingsService.AppSettings settings = appSettingsService.load();
+        boolean sessionOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
         refreshOrderStatuses(strategy);
         Optional<AlpacaPositionData> position = alpacaClient.getPosition(strategy.symbol());
         // Extract marketPrice from position response (avoids redundant /trades/latest API call)
@@ -65,6 +67,15 @@ public class StrategyEngine {
                         + ", openOrders=" + remoteOpenOrders.size());
 
         if (ensureRemoteOrderPresence(strategy, orders, remoteOpenOrders, position)) {
+            orders = orderRepository.findByStrategyId(strategy.id());
+        }
+
+        if (strategy.currentState() == StrategyLifecycleState.QUEUED_FOR_OPEN
+                && sessionOpen
+                && (position.isEmpty() || !position.get().exists())
+                && !isStageFilled(orders, StrategyStage.BASE_BUY)
+                && !hasPendingStage(orders, StrategyStage.BASE_BUY)) {
+            submitBaseBuy(strategy, false);
             orders = orderRepository.findByStrategyId(strategy.id());
         }
 
@@ -119,6 +130,12 @@ public class StrategyEngine {
         }
 
         reconcile(strategy);
+    }
+
+    public boolean canAutoRetryFailed(Strategy strategy) {
+        List<AlpacaOrderData> remoteOpenOrders = alpacaClient.getOpenOrders(strategy.symbol());
+        Optional<AlpacaPositionData> position = alpacaClient.getPosition(strategy.symbol());
+        return remoteOpenOrders.isEmpty() && (position.isEmpty() || !position.get().exists());
     }
 
     private boolean ensureRemoteOrderPresence(
@@ -468,9 +485,7 @@ public class StrategyEngine {
             strategyRepository.save(strategy);
             return null;
         }
-        if (enforceTradableSession && !ensureTradableSession(strategy, stage, limitPrice)) {
-            return null;
-        }
+        // Broker should be the source of truth for whether off-hours orders are accepted.
         String clientOrderId = StrategyService.buildClientOrderId(strategy.id(), stage);
         AlpacaOrderData submitted = alpacaClient.submitLimitBuyOrder(strategy.symbol(), quantity, limitPrice, clientOrderId);
         Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
@@ -494,6 +509,31 @@ public class StrategyEngine {
                 null,
                 submitted.rawJson()
         );
+        if (order.status() == StrategyOrderStatus.REJECTED || order.status() == StrategyOrderStatus.FAILED) {
+            orderRepository.save(order);
+            String failureMessage = failureMessage(submitted.rawJson(), stage);
+            if (isQueueableSessionRejection(submitted.rawJson())) {
+                strategy.clearLastError();
+                strategy.setLatestOrderStatus("QUEUED_FOR_OPEN");
+                strategy.setLatestAlpacaOrderId("");
+                strategy.setLastTriggeredRuleType(mapStageToRuleName(stage));
+                stateMachine.transition(strategy, StrategyLifecycleState.QUEUED_FOR_OPEN,
+                        StrategyEventType.ORDER_STATUS_UPDATED,
+                        "Order queued for next market open after broker rejection",
+                        submitted.rawJson());
+                strategyRepository.save(strategy);
+                return order;
+            }
+            strategy.setLastError(failureMessage);
+            strategy.setLatestOrderStatus(order.status().name());
+            strategy.setLatestAlpacaOrderId("");
+            stateMachine.transition(strategy, StrategyLifecycleState.FAILED,
+                    StrategyEventType.STRATEGY_FAILED,
+                    failureMessage,
+                    submitted.rawJson());
+            strategyRepository.save(strategy);
+            return order;
+        }
         orderRepository.save(order);
         strategy.setLatestOrderStatus(order.status().name());
         strategy.setLatestAlpacaOrderId(submitted.orderId());
@@ -514,9 +554,6 @@ public class StrategyEngine {
     ) {
         int requestedQuantity = quantity.setScale(0, java.math.RoundingMode.DOWN).intValue();
         if (requestedQuantity <= 0) {
-            return null;
-        }
-        if (!ensureTradableSession(strategy, stage, limitPrice)) {
             return null;
         }
         String clientOrderId = StrategyService.buildClientOrderId(strategy.id(), stage);
@@ -542,6 +579,31 @@ public class StrategyEngine {
                 null,
                 submitted.rawJson()
         );
+        if (order.status() == StrategyOrderStatus.REJECTED || order.status() == StrategyOrderStatus.FAILED) {
+            orderRepository.save(order);
+            String failureMessage = failureMessage(submitted.rawJson(), stage);
+            if (isQueueableSessionRejection(submitted.rawJson())) {
+                strategy.clearLastError();
+                strategy.setLatestOrderStatus("QUEUED_FOR_OPEN");
+                strategy.setLatestAlpacaOrderId("");
+                strategy.setLastTriggeredRuleType(mapStageToRuleName(stage));
+                stateMachine.transition(strategy, StrategyLifecycleState.QUEUED_FOR_OPEN,
+                        StrategyEventType.ORDER_STATUS_UPDATED,
+                        "Order queued for next market open after broker rejection",
+                        submitted.rawJson());
+                strategyRepository.save(strategy);
+                return order;
+            }
+            strategy.setLastError(failureMessage);
+            strategy.setLatestOrderStatus(order.status().name());
+            strategy.setLatestAlpacaOrderId("");
+            stateMachine.transition(strategy, StrategyLifecycleState.FAILED,
+                    StrategyEventType.STRATEGY_FAILED,
+                    failureMessage,
+                    submitted.rawJson());
+            strategyRepository.save(strategy);
+            return order;
+        }
         orderRepository.save(order);
         strategy.setLatestOrderStatus(order.status().name());
         strategy.setLatestAlpacaOrderId(submitted.orderId());
@@ -637,20 +699,24 @@ public class StrategyEngine {
 
     private record RiskProjection(boolean allowed, String reason) {}
 
-    private boolean ensureTradableSession(Strategy strategy, StrategyStage stage, BigDecimal limitPrice) {
-        AppSettingsService.AppSettings settings = appSettingsService.load();
-        if (marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled())) {
-            return true;
+    private boolean isQueueableSessionRejection(String rawJson) {
+        String normalized = rawJson == null ? "" : rawJson.toLowerCase();
+        return normalized.contains("market is closed")
+                || normalized.contains("outside market hours")
+                || normalized.contains("extended_hours")
+                || normalized.contains("time_in_force")
+                || normalized.contains("session");
+    }
+
+    private String failureMessage(String rawJson, StrategyStage stage) {
+        if (rawJson == null || rawJson.isBlank()) {
+            return "Broker rejected " + stage.name() + " order";
         }
-        String sessionLabel = settings.extendedHoursTradingEnabled()
-                ? "extended trading session"
-                : "regular market hours";
-        String message = "Blocked " + stage.name() + " order at $" + Monetary.round(limitPrice).toPlainString()
-                + " because the " + sessionLabel + " is closed.";
-        strategy.setLastError(message);
-        strategyRepository.save(strategy);
-        logRule(strategy, stage.name(), "SKIPPED", message);
-        return false;
+        String compact = rawJson.replace('\n', ' ').replace('\r', ' ').trim();
+        if (compact.length() > 220) {
+            compact = compact.substring(0, 220) + "...";
+        }
+        return "Broker rejected " + stage.name() + " order: " + compact;
     }
 
     private void logPoll(Strategy strategy, String scope, String status, String details) {

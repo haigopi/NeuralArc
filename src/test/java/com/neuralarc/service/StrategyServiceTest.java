@@ -292,6 +292,61 @@ class StrategyServiceTest {
     }
 
     @Test
+    void updateActiveStrategyDuringMarketCloseKeepsManualMarketClosedOverride() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca, new AlwaysClosedMarketHoursService());
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
+        strategy.setPauseReason(PauseReason.NONE);
+        strategies.save(strategy);
+
+        Strategy updated = strategyWithId(strategy.id(), "AAPL", 10, new BigDecimal("7.50"));
+        updated.setStatus(StrategyStatus.ACTIVE);
+        updated.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
+
+        Optional<Strategy> result = service.updateStrategy(updated);
+
+        assertTrue(result.isPresent());
+        Strategy persisted = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, persisted.status());
+        assertEquals(StrategyLifecycleState.BASE_BUY_PLACED, persisted.currentState());
+        assertEquals(PauseReason.NONE, persisted.pauseReason());
+        assertEquals(1, alpaca.submittedOrders.size());
+    }
+
+    @Test
+    void updateActiveStrategyQueuesForOpenWhenBrokerRejectsClosedSession() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.rejectBuyOrdersWithSessionMessage = true;
+        StrategyService service = service(strategies, orders, events, alpaca, new AlwaysClosedMarketHoursService());
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
+        strategies.save(strategy);
+
+        Strategy updated = strategyWithId(strategy.id(), "AAPL", 10, new BigDecimal("7.50"));
+        updated.setStatus(StrategyStatus.ACTIVE);
+        updated.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
+
+        Optional<Strategy> result = service.updateStrategy(updated);
+
+        assertTrue(result.isPresent());
+        Strategy persisted = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, persisted.status());
+        assertEquals(StrategyLifecycleState.QUEUED_FOR_OPEN, persisted.currentState());
+        assertTrue(persisted.lastError() == null || persisted.lastError().isBlank());
+    }
+
+    @Test
     void updatePausedStrategyDoesNotCancelOrRecreateOrders() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
@@ -564,9 +619,24 @@ class StrategyServiceTest {
         private final List<String> canceledOrderIds = new ArrayList<>();
         private List<AlpacaPositionData> allPositions = List.of();
         private final List<AlpacaOrderData> submittedOrders = new ArrayList<>();
+        private boolean rejectBuyOrdersWithSessionMessage;
 
         @Override
         public AlpacaOrderData submitLimitBuyOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
+            if (rejectBuyOrdersWithSessionMessage) {
+                return new AlpacaOrderData(
+                        "",
+                        clientOrderId,
+                        symbol,
+                        "buy",
+                        "limit",
+                        limitPrice,
+                        Monetary.zero(),
+                        Monetary.zero(),
+                        "rejected",
+                        "{\"message\":\"order rejected: market is closed for this order type\"}"
+                );
+            }
             counter++;
             AlpacaOrderData order = new AlpacaOrderData("ord-" + counter, clientOrderId, symbol, "buy", "limit", limitPrice, Monetary.zero(), Monetary.zero(), "new", "{\"qty\":\"" + quantity + "\"}");
             submittedOrders.add(order);

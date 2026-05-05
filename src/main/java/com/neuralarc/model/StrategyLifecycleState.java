@@ -16,6 +16,7 @@ public enum StrategyLifecycleState {
     PROFIT_HOLD_ACTIVE,
     SELL_PLACED,
     SELL_PARTIALLY_FILLED,
+    QUEUED_FOR_OPEN,
     COMPLETED,
     PAUSED,
     FAILED,

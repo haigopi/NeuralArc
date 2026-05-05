@@ -207,6 +207,23 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void failedWithoutPositionAutoRetriesBySubmittingBaseBuy() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        f.strategies.save(strategy);
+        f.alpaca.position = Optional.empty();
+        f.alpaca.orderById.clear();
+
+        f.service.pollDueStrategies();
+
+        Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, updated.status());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).isPresent());
+    }
+
+    @Test
     void profitableExitRestartsCycleWhenRepeatAfterProfitEnabled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);

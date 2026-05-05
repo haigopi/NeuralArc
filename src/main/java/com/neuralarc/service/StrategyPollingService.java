@@ -36,6 +36,7 @@ public class StrategyPollingService {
     private volatile Instant lastStreamingEventAt;
     private volatile Boolean lastTradingSessionOpen;
     private volatile PollListener pollListener = PollListener.NOOP;
+    private volatile PollCycleSnapshot lastPollCycleSnapshot = new PollCycleSnapshot(false, false, 0, 0, 0, 0);
 
     public StrategyPollingService(
             StrategyRepository strategyRepository,
@@ -94,24 +95,40 @@ public class StrategyPollingService {
         });
     }
 
-    public void pollDueStrategies() {
+    public int pollDueStrategies() {
         Instant now = Instant.now();
         AppSettingsService.AppSettings settings = appSettingsService.load();
+        int totalStrategies = 0;
+        int eligibleStrategies = 0;
+        int skippedNotDue = 0;
         if (settings.autoPausePollingWhenMarketClosed()) {
             boolean marketOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
             handleMarketSessionTransition(marketOpen, settings.extendedHoursTradingEnabled(), now);
             if (!marketOpen) {
-                return;
+                lastPollCycleSnapshot = new PollCycleSnapshot(true, true, 0, 0, 0, 0);
+                if (LOGGER.isLoggable(Level.INFO)) {
+                    LOGGER.info("[POLL][CYCLE] marketOpen=false autoPause=true scanned=0 eligible=0 due=0 skippedNotDue=0");
+                }
+                return 0;
             }
         } else {
             lastTradingSessionOpen = null;
         }
 
+        int dueStrategies = 0;
         List<Future<?>> futures = new ArrayList<>();
-        for (Strategy strategy : strategyRepository.findActive()) {
+        for (Strategy strategy : strategyRepository.findAll()) {
+            totalStrategies++;
+            if (!isPollEligible(strategy)) {
+                continue;
+            }
+            eligibleStrategies++;
             if (shouldPoll(strategy, now)) {
                 String strategyId = strategy.id();
+                dueStrategies++;
                 futures.add(pollExecutor.submit(() -> pollStrategy(strategyId)));
+            } else {
+                skippedNotDue++;
             }
         }
         for (Future<?> future : futures) {
@@ -121,6 +138,26 @@ public class StrategyPollingService {
                 LOGGER.log(Level.WARNING, "Failed waiting for poll task completion", ex);
             }
         }
+        if (LOGGER.isLoggable(Level.INFO)) {
+            LOGGER.info("[POLL][CYCLE] marketOpen=true autoPause=" + settings.autoPausePollingWhenMarketClosed()
+                    + " scanned=" + totalStrategies
+                    + " eligible=" + eligibleStrategies
+                    + " due=" + dueStrategies
+                    + " skippedNotDue=" + skippedNotDue);
+        }
+        lastPollCycleSnapshot = new PollCycleSnapshot(
+                true,
+                false,
+                totalStrategies,
+                eligibleStrategies,
+                dueStrategies,
+                skippedNotDue
+        );
+        return dueStrategies;
+    }
+
+    public PollCycleSnapshot lastPollCycleSnapshot() {
+        return lastPollCycleSnapshot;
     }
 
     public void pollActiveStrategies() {
@@ -133,6 +170,16 @@ public class StrategyPollingService {
             return;
         }
         Strategy strategy = maybeStrategy.get();
+        if (strategy.status() == StrategyStatus.FAILED) {
+            if (!strategyEngine.canAutoRetryFailed(strategy)) {
+                return;
+            }
+            strategy.setStatus(StrategyStatus.ACTIVE);
+            strategy.setCurrentState(StrategyLifecycleState.CREATED);
+            strategy.setPauseReason(PauseReason.NONE);
+            strategy.clearLastError();
+            strategyRepository.save(strategy);
+        }
         if (strategy.status() != StrategyStatus.ACTIVE) {
             return;
         }
@@ -200,6 +247,13 @@ public class StrategyPollingService {
         return elapsedSeconds >= pollInterval;
     }
 
+    private boolean isPollEligible(Strategy strategy) {
+        if (strategy == null) {
+            return false;
+        }
+        return strategy.status() == StrategyStatus.ACTIVE || strategy.status() == StrategyStatus.FAILED;
+    }
+
     private boolean isStreamHealthy(Instant now) {
         return lastStreamingEventAt != null
                 && Duration.between(lastStreamingEventAt, now).getSeconds() <= STREAM_HEALTHY_GRACE_SECONDS;
@@ -253,4 +307,13 @@ public class StrategyPollingService {
         default void onPollCompleted(String strategyId) {}
         default void onPollFailed(String strategyId) {}
     }
+
+    public record PollCycleSnapshot(
+            boolean cycleEvaluated,
+            boolean marketClosedSuppressed,
+            int scanned,
+            int eligible,
+            int due,
+            int skippedNotDue
+    ) {}
 }
