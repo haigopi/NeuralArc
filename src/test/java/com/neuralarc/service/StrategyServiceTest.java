@@ -207,6 +207,52 @@ class StrategyServiceTest {
     }
 
     @Test
+    void staleRestartFailureIsRecoveredAfterProfitableExit() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.position = Optional.empty();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("TSLA", 10, new BigDecimal("373.00"));
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLastError("Projected quantity exceeds maxTotalQuantity");
+        strategy.setRestartAfterExitEnabled(true);
+        strategies.save(strategy);
+
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY, "base", "client-base", "TSLA",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("373.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), new BigDecimal("10"), new BigDecimal("372.85"), StrategyOrderStatus.FILLED,
+                Instant.now(), Instant.now(), Instant.now(), "{}"
+        ));
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.TARGET_SELL, "sell", "client-sell", "TSLA",
+                StrategyOrderSide.SELL, StrategyOrderType.LIMIT, new BigDecimal("392.17"), BigDecimal.ZERO,
+                new BigDecimal("10"), new BigDecimal("10"), new BigDecimal("392.36"), StrategyOrderStatus.FILLED,
+                Instant.now(), Instant.now(), Instant.now(), "{}"
+        ));
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BUY_LIMIT_1, "stale-buy", "client-stale", "TSLA",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("370.00"), BigDecimal.ZERO,
+                new BigDecimal("5"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        ));
+        alpaca.openOrders.add(new AlpacaOrderData("stale-buy", "client-stale", "TSLA", "buy", "limit",
+                new BigDecimal("370.00"), BigDecimal.ZERO, BigDecimal.ZERO, "new", "{\"qty\":\"5\"}"));
+
+        Strategy recovered = service.recoverStaleRestartFailure(strategy.id()).orElseThrow();
+
+        assertEquals(StrategyStatus.ACTIVE, recovered.status());
+        assertEquals(StrategyLifecycleState.CREATED, recovered.currentState());
+        assertTrue(recovered.lastError() == null || recovered.lastError().isBlank());
+        assertTrue(alpaca.canceledOrderIds.contains("stale-buy"));
+        assertEquals(StrategyOrderStatus.CANCELED, orders.findByAlpacaOrderId("stale-buy").orElseThrow().status());
+    }
+
+    @Test
     void updateActiveStrategyCancelsOpenOrdersAndRecreatesWithUpdatedConfig() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

@@ -71,11 +71,17 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 public class TradingFrame extends JFrame {
     private static final Font BASE_FONT = createBaseFont();
@@ -112,6 +118,8 @@ public class TradingFrame extends JFrame {
     private static final Color BOTTOM_STATUS_ACCENT = new Color(180, 160, 110);
     private static final Color LOG_LINE_EVEN = new Color(63, 72, 82);
     private static final Color LOG_LINE_ODD = new Color(110, 118, 128);
+    private static final int MAX_EVENT_LOG_LINES = 1500;
+    private static final long CLOSED_MARKET_POLL_INTERVAL_MILLIS = 10L * 60L * 1000L;
     private static final Color HEADER_STATUS_DEFAULT = new Color(220, 220, 255);
     private static final Color HEADER_STATUS_LIVE_ALERT = new Color(255, 82, 82);
     private static final Color HEADER_STATUS_LIVE_ALERT_DIM = new Color(255, 205, 210);
@@ -125,6 +133,8 @@ public class TradingFrame extends JFrame {
     private final Timer logFlushTimer;
     private final Timer pollingIndicatorTimer;
     private final Timer strategyPollingTimer;
+    private final Timer connectionRetryTimer;
+    private final ExecutorService uiPollingExecutor;
     private final AppSettingsService appSettingsService = new AppSettingsService();
     private final MarketHoursService marketHoursService = new MarketHoursService();
     private final Path appLogFile = AppMetadata.appDataDirectory().resolve("app.log");
@@ -285,10 +295,12 @@ public class TradingFrame extends JFrame {
     private final FileStrategyExecutionEventRepository strategyEventRepository;
     private final PersistentAggregatePnlStore aggregatePnlStore;
     private boolean connectionOk;
+    private boolean connectionRetryPending;
     private boolean appLaunchedPublished;
     private String selectedStrategyId;
     private BrokerType currentBrokerType = BrokerType.ALPACA;
     private boolean preservingSelection;
+    private final AtomicBoolean pollingCycleInFlight = new AtomicBoolean(false);
     private Color liveBlinkPrimary = HEADER_STATUS_DEFAULT;
     private Color liveBlinkSecondary = HEADER_STATUS_DEFAULT;
     private boolean liveBlinkPrimaryActive;
@@ -300,18 +312,30 @@ public class TradingFrame extends JFrame {
     private long lastBrokerBackedUiRefreshAtMillis;
     private String runtimeApiKey = "";
     private String runtimeApiSecret = "";
+    private volatile HttpAlpacaClient paperModeClient;
+    private volatile HttpAlpacaClient liveModeClient;
+    private volatile long lastBatchGridPriceRefreshAtMillis;
+    private volatile long lastClosedMarketPollingCycleAtMillis;
     private final AutoAnalyzeResultStore autoAnalyzeResultStore = new AutoAnalyzeResultStore();
     private final OnboardingStateStore onboardingStateStore = new OnboardingStateStore();
 
     public TradingFrame() {
-        liveModeBlinkTimer = new Timer(500, _ -> toggleLiveHeaderBlink());
+        liveModeBlinkTimer = new Timer(500, ignored -> toggleLiveHeaderBlink());
         liveModeBlinkTimer.setInitialDelay(0);
-        logFlushTimer = new Timer(10000, _ -> flushLogsToFile());
+        logFlushTimer = new Timer(10000, ignored -> flushLogsToFile());
         logFlushTimer.setInitialDelay(10000);
         logFlushTimer.start();
         pollingIndicatorTimer = new Timer(250, e -> strategyTable.repaint());
         pollingIndicatorTimer.setInitialDelay(250);
         pollingIndicatorTimer.start();
+        connectionRetryTimer = new Timer(10000, ignored -> retryBrokerConnectionIfConfigured());
+        connectionRetryTimer.setInitialDelay(10000);
+        connectionRetryTimer.setRepeats(false);
+        uiPollingExecutor = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "neuralarc-ui-polling");
+            thread.setDaemon(true);
+            return thread;
+        });
         setTitle("NeuralArc Trader Application");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
@@ -338,13 +362,7 @@ public class TradingFrame extends JFrame {
         settingsDialog.setStrategyExportHandler(this::exportStrategiesToFile);
         settingsDialog.setStrategyImportHandler(this::importStrategiesFromFile);
         strategyPollingTimer = new Timer(1000, e -> {
-            strategyPollingService.pollDueStrategies();
-            syncStrategiesFromRepository();
-            if (shouldRunBrokerBackedUiRefresh()) {
-                refreshStrategyTableContent();
-                refreshPanels();
-            }
-            updateStatusBar();
+            triggerPollingCycle();
         });
         strategyPollingTimer.setInitialDelay(1000);
         strategyPollingTimer.start();
@@ -1084,13 +1102,23 @@ public class TradingFrame extends JFrame {
     private void refreshStrategyRuntimeServices(String apiKey, String apiSecret, ApplicationMode mode) {
         runtimeApiKey = apiKey == null ? "" : apiKey.trim();
         runtimeApiSecret = apiSecret == null ? "" : apiSecret;
-        HttpAlpacaClient alpacaClient = new HttpAlpacaClient(
+        HttpAlpacaClient runtimeClient = new HttpAlpacaClient(
                 runtimeApiKey,
                 runtimeApiSecret,
                 AppMetadata.alpacaTradingBaseUrl(mode),
                 AppMetadata.alpacaDataUrl(),
                 settingsDialog.appliedExtendedHoursTradingEnabled()
         );
+        if (mode == ApplicationMode.LIVE) {
+            liveModeClient = runtimeClient;
+        } else {
+            paperModeClient = runtimeClient;
+        }
+        refreshCachedAlpacaClients();
+        if (strategyPollingService != null) {
+            strategyPollingService.shutdown();
+        }
+        HttpAlpacaClient alpacaClient = runtimeClient;
         strategyService = new StrategyService(
                 strategyRepository,
                 strategyOrderRepository,
@@ -1110,6 +1138,56 @@ public class TradingFrame extends JFrame {
                 appSettingsService,
                 marketHoursService
         );
+        strategyPollingService.setPollListener(new StrategyPollingService.PollListener() {
+            @Override
+            public void onPollStarted(String strategyId) {
+                SwingUtilities.invokeLater(() -> onStrategyPollStarted(strategyId));
+            }
+
+            @Override
+            public void onPollCompleted(String strategyId) {
+                SwingUtilities.invokeLater(() -> onStrategyPollCompleted(strategyId));
+            }
+
+            @Override
+            public void onPollFailed(String strategyId) {
+                SwingUtilities.invokeLater(() -> onStrategyPollFailed(strategyId));
+            }
+        });
+    }
+
+    private void refreshCachedAlpacaClients() {
+        paperModeClient = createModeClient(ApplicationMode.PAPER);
+        liveModeClient = createModeClient(ApplicationMode.LIVE);
+    }
+
+    private HttpAlpacaClient createModeClient(ApplicationMode mode) {
+        if (mode == ApplicationMode.LIVE && !AppMetadata.liveTradingEnabled()) {
+            return null;
+        }
+        String apiKey = settingsDialog.savedApiKey(mode);
+        String apiSecret = settingsDialog.savedApiSecret(mode);
+        if ((apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank())
+                && mode == settingsDialog.appliedApplicationMode()
+                && !runtimeApiKey.isBlank()
+                && !runtimeApiSecret.isBlank()) {
+            apiKey = runtimeApiKey;
+            apiSecret = runtimeApiSecret;
+        }
+        if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
+            return null;
+        }
+        return new HttpAlpacaClient(
+                apiKey,
+                apiSecret,
+                AppMetadata.alpacaTradingBaseUrl(mode),
+                AppMetadata.alpacaDataUrl(),
+                settingsDialog.appliedExtendedHoursTradingEnabled()
+        );
+    }
+
+    private HttpAlpacaClient alpacaClientForMode(ApplicationMode mode) {
+        return mode == ApplicationMode.LIVE ? liveModeClient : paperModeClient;
     }
 
     private SettingsDialog.ConnectionResult runConnectionTest(BrokerType brokerType, ApplicationMode mode, String apiKey, String apiSecret, boolean manualTrigger, boolean applyRuntimeChanges) {
@@ -1131,6 +1209,8 @@ public class TradingFrame extends JFrame {
         boolean connected = candidateApi.testConnection();
         log((manualTrigger ? "Connection test: " : "Auto connection test: ") + (connected ? "SUCCESS" : "FAILED"));
         if (connected) {
+            connectionRetryPending = false;
+            connectionRetryTimer.stop();
             settingsDialog.markConnectionStatus(true, "Connected to " + brokerType.name() + " (" + mode.name() + ")");
             if (applyRuntimeChanges) {
                 tradingApi = candidateApi;
@@ -1152,7 +1232,9 @@ public class TradingFrame extends JFrame {
             if (applyRuntimeChanges) {
                 stopTradingEventStream();
                 connectionOk = false;
-                setStatus("Connection failed — check API credentials in Settings.", STATUS_ERR);
+                connectionRetryPending = true;
+                setStatus("FAILED Retrying...", STATUS_ERR);
+                scheduleConnectionRetry();
                 updateHeaderModeStatus(brokerType);
                 updateStatusBar();
             }
@@ -1161,9 +1243,162 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    private void scheduleConnectionRetry() {
+        if (connectionRetryTimer.isRunning()) {
+            return;
+        }
+        connectionRetryTimer.restart();
+    }
+
+    private void retryBrokerConnectionIfConfigured() {
+        if (!connectionRetryPending) {
+            return;
+        }
+        BrokerType brokerType = settingsDialog.appliedBrokerType();
+        ApplicationMode mode = settingsDialog.appliedApplicationMode();
+        String apiKey = settingsDialog.savedApiKey(mode);
+        String apiSecret = settingsDialog.savedApiSecret(mode);
+        if (brokerType == null || apiKey.isBlank() || apiSecret.isBlank()) {
+            connectionRetryPending = false;
+            return;
+        }
+        runConnectionTest(brokerType, mode, apiKey, apiSecret, false, true);
+    }
+
     private void initPersistenceAndRestore() {
         ensureAnalyticsPublisher();
         restoreStrategies();
+    }
+
+    private void triggerPollingCycle() {
+        if (strategyPollingService == null || !shouldRunPollingCycleNow() || !pollingCycleInFlight.compareAndSet(false, true)) {
+            return;
+        }
+        uiPollingExecutor.submit(() -> {
+            try {
+                strategyPollingService.pollDueStrategies();
+                List<Strategy> stored = strategyRepository.findAll();
+                Map<String, Position> positionSnapshots = shouldRunBatchGridPriceRefresh()
+                        ? loadPositionSnapshotsForStrategies(stored)
+                        : Map.of();
+                SwingUtilities.invokeLater(() -> {
+                    try {
+                        syncStrategies(stored);
+                        applyPositionSnapshots(positionSnapshots);
+                        if (shouldRunBrokerBackedUiRefresh()) {
+                            refreshStrategyTableContent();
+                            refreshPanels();
+                        }
+                        updateStatusBar();
+                    } finally {
+                        pollingCycleInFlight.set(false);
+                    }
+                });
+            } catch (Exception ex) {
+                log("Polling cycle failed: " + ex.getMessage());
+                SwingUtilities.invokeLater(() -> {
+                    updateStatusBar();
+                    pollingCycleInFlight.set(false);
+                });
+            }
+        });
+    }
+
+    private boolean shouldRunPollingCycleNow() {
+        if (!shouldSuppressBrokerBackedRefreshForClosedMarket()) {
+            return true;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastClosedMarketPollingCycleAtMillis >= CLOSED_MARKET_POLL_INTERVAL_MILLIS) {
+            lastClosedMarketPollingCycleAtMillis = now;
+            return true;
+        }
+        return false;
+    }
+
+    private boolean shouldRunBatchGridPriceRefresh() {
+        long now = System.currentTimeMillis();
+        if (now - lastBatchGridPriceRefreshAtMillis >= 5_000L) {
+            lastBatchGridPriceRefreshAtMillis = now;
+            return true;
+        }
+        return false;
+    }
+
+    private Map<String, Position> loadPositionSnapshotsForStrategies(List<Strategy> stored) {
+        if (stored == null || stored.isEmpty() || currentBrokerType != BrokerType.ALPACA) {
+            return Map.of();
+        }
+        Map<String, Position> snapshots = new LinkedHashMap<>();
+        loadPositionSnapshotsForMode(stored, StrategyMode.PAPER, alpacaClientForMode(ApplicationMode.PAPER), snapshots);
+        loadPositionSnapshotsForMode(stored, StrategyMode.LIVE, alpacaClientForMode(ApplicationMode.LIVE), snapshots);
+        return snapshots;
+    }
+
+    private void loadPositionSnapshotsForMode(
+            List<Strategy> stored,
+            StrategyMode mode,
+            HttpAlpacaClient client,
+            Map<String, Position> target
+    ) {
+        if (client == null) {
+            return;
+        }
+        List<Strategy> strategiesForMode = stored.stream()
+                .filter(strategy -> strategy.mode() == mode)
+                .filter(strategy -> strategy.symbol() != null && !strategy.symbol().isBlank())
+                .toList();
+        if (strategiesForMode.isEmpty()) {
+            return;
+        }
+        List<String> symbols = new ArrayList<>();
+        for (Strategy strategy : strategiesForMode) {
+            if (!symbols.contains(strategy.symbol().toUpperCase(Locale.ROOT))) {
+                symbols.add(strategy.symbol().toUpperCase(Locale.ROOT));
+            }
+        }
+        if (symbols.isEmpty()) {
+            return;
+        }
+        Map<String, BigDecimal> latestPrices = client.getLatestPrices(symbols);
+        Map<String, com.neuralarc.api.AlpacaPositionData> positionsBySymbol = client.getPositions().stream()
+                .collect(Collectors.toMap(
+                        position -> position.symbol().toUpperCase(Locale.ROOT),
+                        position -> position,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+        for (Strategy strategy : strategiesForMode) {
+            Position snapshot = new Position(strategy.symbol());
+            com.neuralarc.api.AlpacaPositionData remotePosition = positionsBySymbol.get(strategy.symbol().toUpperCase(Locale.ROOT));
+            if (remotePosition != null && remotePosition.exists()) {
+                int quantity = remotePosition.quantity().setScale(0, java.math.RoundingMode.DOWN).intValue();
+                if (quantity > 0) {
+                    snapshot.applyBuy(quantity, remotePosition.avgEntryPrice());
+                }
+                if (remotePosition.marketPrice() != null && remotePosition.marketPrice().compareTo(BigDecimal.ZERO) > 0) {
+                    snapshot.setLastPrice(remotePosition.marketPrice());
+                }
+            }
+            BigDecimal latestPrice = latestPrices.get(strategy.symbol().toUpperCase(Locale.ROOT));
+            if (latestPrice != null && latestPrice.compareTo(BigDecimal.ZERO) > 0) {
+                snapshot.setLastPrice(latestPrice);
+            }
+            target.put(strategy.id(), snapshot);
+        }
+    }
+
+    private void applyPositionSnapshots(Map<String, Position> snapshots) {
+        if (snapshots == null || snapshots.isEmpty()) {
+            return;
+        }
+        for (ManagedStrategy entry : strategies) {
+            Position snapshot = snapshots.get(entry.strategy.id());
+            if (snapshot == null) {
+                continue;
+            }
+            entry.setCachedPosition(snapshot);
+        }
     }
 
     private SettingsDialog.StrategyTransferResult exportStrategiesToFile(Path targetPath) {
@@ -1175,9 +1410,10 @@ public class TradingFrame extends JFrame {
             if (exportParent != null) {
                 Files.createDirectories(exportParent);
             }
-            String content = Files.exists(strategiesFilePath) ? Files.readString(strategiesFilePath) : "[]";
+            strategyRepository.flushNow();
+            String content = strategyRepository.exportJson(true);
             JSONArray parsed = new JSONArray(content.isBlank() ? "[]" : content);
-            Files.writeString(targetPath, parsed.toString(2));
+            Files.writeString(targetPath, content);
             return new SettingsDialog.StrategyTransferResult(true,
                     "Exported " + parsed.length() + " strategies to " + targetPath.toAbsolutePath());
         } catch (Exception ex) {
@@ -1193,8 +1429,7 @@ public class TradingFrame extends JFrame {
         try {
             String incoming = Files.readString(sourcePath);
             JSONArray parsed = new JSONArray(incoming.isBlank() ? "[]" : incoming);
-            Files.createDirectories(strategiesFilePath.getParent());
-            Files.writeString(strategiesFilePath, parsed.toString());
+            strategyRepository.replaceAllFromJson(parsed.toString());
             syncStrategiesFromRepository();
             refreshStrategyTableData();
             refreshPanels();
@@ -1213,6 +1448,7 @@ public class TradingFrame extends JFrame {
         List<Strategy> syncedRemoteStrategies = strategyService.syncRemoteStrategies();
         storedStrategies = strategyRepository.findAll();
         for (Strategy strategy : storedStrategies) {
+            strategy = strategyService.recoverStaleRestartFailure(strategy.id()).orElse(strategy);
             ManagedStrategy managed = new ManagedStrategy(strategy);
             resetPollingCountdown(managed);
             strategies.add(managed);
@@ -1825,7 +2061,7 @@ public class TradingFrame extends JFrame {
         if (latestOrder != null && latestOrder.limitPrice().compareTo(BigDecimal.ZERO) > 0) {
             return latestOrder.limitPrice();
         }
-        Position position = displayedPosition(entry);
+        Position position = entry.cachedPosition();
         return position.getLastPrice();
     }
 
@@ -1862,7 +2098,7 @@ public class TradingFrame extends JFrame {
         for (ManagedStrategy strategy : strategies) {
             BigDecimal unrealized = tradingApi == null
                     ? BigDecimal.ZERO
-                    : displayedPosition(strategy).unrealizedPnl();
+                    : strategy.cachedPosition().unrealizedPnl();
             BigDecimal realized = realizedPnlForStrategy(strategy.strategy.id());
             if (strategy.strategy.mode() == StrategyMode.PAPER) {
                 paperTotal = paperTotal.add(unrealized);
@@ -2068,6 +2304,10 @@ public class TradingFrame extends JFrame {
 
     private void syncStrategiesFromRepository() {
         List<Strategy> stored = strategyRepository.findAll();
+        syncStrategies(stored);
+    }
+
+    private void syncStrategies(List<Strategy> stored) {
         // Remove accidental duplicate in-memory entries first (same persisted strategy id).
         java.util.HashSet<String> seenIds = new java.util.HashSet<>();
         strategies.removeIf(entry -> !seenIds.add(entry.strategy.id()));
@@ -2091,12 +2331,23 @@ public class TradingFrame extends JFrame {
 
     private void resetPollingCountdown(ManagedStrategy entry) {
         entry.pollIntervalMillis = Math.max(1L, entry.strategy.pollingIntervalSeconds()) * 1000L;
+        if (entry.pollInFlight) {
+            return;
+        }
         if (shouldShowPollingIndicator(entry)) {
-            entry.countdownActive = true;
             long baseTime = entry.strategy.lastPolledAt() == null
                     ? System.currentTimeMillis()
                     : entry.strategy.lastPolledAt().toEpochMilli();
-            entry.nextPollDueAtMillis = baseTime + entry.pollIntervalMillis;
+            long derivedNextDueAtMillis = baseTime + entry.pollIntervalMillis;
+            if (!entry.countdownActive || entry.nextPollDueAtMillis <= 0L) {
+                entry.countdownActive = true;
+                entry.nextPollDueAtMillis = derivedNextDueAtMillis;
+                return;
+            }
+            if (entry.strategy.lastPolledAt() != null
+                    && Math.abs(derivedNextDueAtMillis - entry.nextPollDueAtMillis) > 500L) {
+                entry.nextPollDueAtMillis = derivedNextDueAtMillis;
+            }
         } else {
             entry.countdownActive = false;
             entry.nextPollDueAtMillis = 0L;
@@ -2120,6 +2371,51 @@ public class TradingFrame extends JFrame {
         entry.nextPollDueAtMillis = 0L;
     }
 
+    private void onStrategyPollStarted(String strategyId) {
+        ManagedStrategy entry = findStrategyById(strategyId);
+        if (entry == null) {
+            return;
+        }
+        entry.pollInFlight = true;
+        entry.countdownActive = false;
+        refreshStrategyTableRow(strategyId);
+    }
+
+    private void onStrategyPollCompleted(String strategyId) {
+        ManagedStrategy entry = findStrategyById(strategyId);
+        if (entry == null) {
+            return;
+        }
+        entry.pollInFlight = false;
+        markPollingCycleCompleted(entry);
+        refreshStrategyTableRow(strategyId);
+    }
+
+    private void onStrategyPollFailed(String strategyId) {
+        ManagedStrategy entry = findStrategyById(strategyId);
+        if (entry == null) {
+            return;
+        }
+        entry.pollInFlight = false;
+        stopPollingCountdown(entry);
+        refreshStrategyTableRow(strategyId);
+    }
+
+    private void refreshStrategyTableRow(String strategyId) {
+        ManagedStrategy entry = findStrategyById(strategyId);
+        if (entry == null) {
+            return;
+        }
+        int modelRow = strategies.indexOf(entry);
+        if (modelRow < 0) {
+            return;
+        }
+        strategyTableModel.fireTableRowsUpdated(modelRow, modelRow);
+        if (selectedStrategyId != null && selectedStrategyId.equals(strategyId)) {
+            refreshPanels();
+        }
+    }
+
     private int pollingProgressPercent(ManagedStrategy entry) {
         if (!shouldShowPollingIndicator(entry) || entry.pollIntervalMillis <= 0L) {
             return 0;
@@ -2129,8 +2425,12 @@ public class TradingFrame extends JFrame {
             entry.nextPollDueAtMillis = System.currentTimeMillis() + entry.pollIntervalMillis;
         }
         long remainingMillis = Math.max(0L, entry.nextPollDueAtMillis - System.currentTimeMillis());
-        int progress = (int) Math.min(100L, Math.round((remainingMillis * 100.0d) / entry.pollIntervalMillis));
-        if (remainingMillis > 0L && progress == 0) {
+        long elapsedMillis = Math.max(0L, entry.pollIntervalMillis - remainingMillis);
+        int progress = (int) Math.min(100L, Math.round((elapsedMillis * 100.0d) / entry.pollIntervalMillis));
+        if (remainingMillis > 0L && progress == 100) {
+            return 99;
+        }
+        if (elapsedMillis > 0L && progress == 0) {
             return 1;
         }
         return progress;
@@ -2150,7 +2450,21 @@ public class TradingFrame extends JFrame {
 
     private boolean shouldShowPollingIndicator(ManagedStrategy entry) {
         return entry != null
-                && (entry.strategy.status() == StrategyStatus.ACTIVE || isWaitingForFill(entry.strategy));
+                && (entry.strategy.status() == StrategyStatus.ACTIVE
+                || entry.strategy.status() == StrategyStatus.PAUSED
+                || isWaitingForFill(entry.strategy));
+    }
+
+    private ManagedStrategy findStrategyById(String strategyId) {
+        if (strategyId == null || strategyId.isBlank()) {
+            return null;
+        }
+        for (ManagedStrategy entry : strategies) {
+            if (strategyId.equals(entry.strategy.id())) {
+                return entry;
+            }
+        }
+        return null;
     }
 
     private boolean shouldSuppressBrokerBackedRefreshForClosedMarket() {
@@ -2175,7 +2489,11 @@ public class TradingFrame extends JFrame {
 
     private void setStatus(String message, Color color) {
         SwingUtilities.invokeLater(() -> {
-            statusBar.setText("Broker: " + message);
+            if (message != null && message.startsWith("FAILED")) {
+                statusBar.setText("<html>Broker: <b>FAILED</b> Retrying...</html>");
+            } else {
+                statusBar.setText("Broker: " + message);
+            }
             statusBar.setForeground(color == null ? BOTTOM_STATUS_ACCENT : color);
         });
     }
@@ -2211,7 +2529,10 @@ public class TradingFrame extends JFrame {
             marketStatus.setForeground(marketOpen ? STATUS_OK : STATUS_WARN);
             cpuUsageStatus.setText(cpuText);
             memoryUsageStatus.setText(memoryText);
-            if (!connectionOk) {
+            if (connectionRetryPending) {
+                statusBar.setText("<html>Broker: <b>FAILED</b> Retrying...</html>");
+                statusBar.setForeground(STATUS_ERR);
+            } else if (!connectionOk) {
                 statusBar.setText("Broker: Not connected");
                 statusBar.setForeground(STATUS_ERR);
             } else if (running > 0) {
@@ -2275,9 +2596,14 @@ public class TradingFrame extends JFrame {
 
     private void shutdownAllStrategies() {
         stopTradingEventStream();
+        connectionRetryTimer.stop();
         logFlushTimer.stop();
         pollingIndicatorTimer.stop();
         strategyPollingTimer.stop();
+        uiPollingExecutor.shutdownNow();
+        if (strategyPollingService != null) {
+            strategyPollingService.shutdown();
+        }
         flushLogsToFile();
         if (analyticsPublisher != null) {
             analyticsPublisher.publish(new AnalyticsEvent("APP_EXIT"));
@@ -2358,36 +2684,7 @@ public class TradingFrame extends JFrame {
     }
 
     private Position displayedPosition(ManagedStrategy entry) {
-        if (tradingApi == null) {
-            return entry.cachedPosition();
-        }
-        if (shouldSuppressBrokerBackedRefreshForClosedMarket()) {
-            return entry.cachedPosition();
-        }
-        if (!entry.shouldRefreshDisplayedPosition()) {
-            return entry.cachedPosition();
-        }
-        if (entry.strategy.status() != StrategyStatus.ACTIVE) {
-            if (isWaitingForFill(entry.strategy)) {
-                Position latest = entry.cachedPosition();
-                BigDecimal latestPrice = latestPriceForStrategy(entry.strategy);
-                if (latestPrice.compareTo(BigDecimal.ZERO) > 0) {
-                    latest.setLastPrice(latestPrice);
-                    entry.setCachedPosition(latest);
-                }
-                return latest;
-            }
-            return entry.cachedPosition();
-        }
-        Position latest = loadPositionForStrategy(entry.strategy);
-        if (latest.getTotalShares() == 0 && isWaitingForFill(entry.strategy)) {
-            BigDecimal latestPrice = latestPriceForStrategy(entry.strategy);
-            if (latestPrice.compareTo(BigDecimal.ZERO) > 0) {
-                latest.setLastPrice(latestPrice);
-            }
-        }
-        entry.setCachedPosition(latest);
-        return latest;
+        return entry == null ? new Position("") : entry.cachedPosition();
     }
 
     private Position loadPositionForStrategy(Strategy strategy) {
@@ -2419,36 +2716,9 @@ public class TradingFrame extends JFrame {
         return position;
     }
 
-    private BigDecimal latestPriceForStrategy(Strategy strategy) {
-        if (strategy == null) {
-            return BigDecimal.ZERO;
-        }
-        if (currentBrokerType != BrokerType.ALPACA) {
-            return tradingApi == null ? BigDecimal.ZERO : tradingApi.getLatestPrice(strategy.symbol());
-        }
-        HttpAlpacaClient client = alpacaClientForStrategyMode(strategy.mode());
-        return client == null ? BigDecimal.ZERO : client.getLatestPrice(strategy.symbol());
-    }
-
     private HttpAlpacaClient alpacaClientForStrategyMode(StrategyMode mode) {
         ApplicationMode applicationMode = mode == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER;
-        String apiKey = settingsDialog.savedApiKey(applicationMode);
-        String apiSecret = settingsDialog.savedApiSecret(applicationMode);
-        if (apiKey.isBlank() || apiSecret.isBlank()) {
-            if (applicationMode == settingsDialog.appliedApplicationMode() && !runtimeApiKey.isBlank() && !runtimeApiSecret.isBlank()) {
-                apiKey = runtimeApiKey;
-                apiSecret = runtimeApiSecret;
-            } else {
-                return null;
-            }
-        }
-        return new HttpAlpacaClient(
-                apiKey,
-                apiSecret,
-                AppMetadata.alpacaTradingBaseUrl(applicationMode),
-                AppMetadata.alpacaDataUrl(),
-                settingsDialog.appliedExtendedHoursTradingEnabled()
-        );
+        return alpacaClientForMode(applicationMode);
     }
 
     private void log(String message) {
@@ -2472,7 +2742,26 @@ public class TradingFrame extends JFrame {
         } catch (BadLocationException e) {
             throw new IllegalStateException("Failed to append log entry", e);
         }
+        trimEventLog(document);
         eventLog.setCaretPosition(document.getLength());
+    }
+
+    private void trimEventLog(StyledDocument document) {
+        javax.swing.text.Element root = document.getDefaultRootElement();
+        while (root.getElementCount() > MAX_EVENT_LOG_LINES) {
+            javax.swing.text.Element firstLine = root.getElement(0);
+            if (firstLine == null) {
+                break;
+            }
+            int removeLength = firstLine.getEndOffset();
+            try {
+                document.remove(0, removeLength);
+                logLineCount = Math.max(0, logLineCount - 1);
+            } catch (BadLocationException e) {
+                break;
+            }
+            root = document.getDefaultRootElement();
+        }
     }
 
     private void flushLogsToFile() {
@@ -2527,8 +2816,8 @@ public class TradingFrame extends JFrame {
         @Override
         public Object getValueAt(int rowIndex, int columnIndex) {
             ManagedStrategy entry = strategies.get(rowIndex);
-            if (columnIndex >= 2 && columnIndex <= 6 && tradingApi != null && currentBrokerType == BrokerType.ALPACA) {
-                Position p = displayedPosition(entry);
+            if (columnIndex >= 2 && columnIndex <= 6) {
+                Position p = entry.cachedPosition();
                 return switch (columnIndex) {
                     case 2 -> p.getTotalShares();
                     case 3 -> p.getTotalShares() > 0 ? p.getAverageCost().toPlainString() : "-";
@@ -2566,6 +2855,7 @@ public class TradingFrame extends JFrame {
         private volatile long pollIntervalMillis;
         private volatile long nextPollDueAtMillis;
         private volatile boolean countdownActive;
+        private volatile boolean pollInFlight;
         private volatile boolean pauseResumeBusy;
         private volatile String pauseResumeBusyText = "";
 
@@ -2688,8 +2978,15 @@ public class TradingFrame extends JFrame {
                 }
             }
             setOpaque(true);
-            setHorizontalAlignment(CENTER);
+            setHorizontalAlignment(alignmentForColumn(column));
             return this;
+        }
+
+        private int alignmentForColumn(int column) {
+            return switch (column) {
+                case 1 -> CENTER;
+                default -> LEFT;
+            };
         }
     }
 
@@ -2709,10 +3006,10 @@ public class TradingFrame extends JFrame {
             progressBar.setBorder(BorderFactory.createEmptyBorder());
             progressBar.setStringPainted(false);
             // Fixed thin size — the wrapper panel enforces this height.
-            progressBar.setPreferredSize(new Dimension(88, 6));
-            progressBar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 6));
+            progressBar.setPreferredSize(new Dimension(94, 8));
+            progressBar.setMaximumSize(new Dimension(Integer.MAX_VALUE, 8));
             progressBar.setComponentOrientation(java.awt.ComponentOrientation.RIGHT_TO_LEFT);
-            progressBar.setForeground(new Color(94, 53, 177));
+            progressBar.setForeground(new Color(66, 133, 244));
             // Custom UI: pill-shaped fill, no visible track background.
             progressBar.setUI(new BasicProgressBarUI() {
                 @Override
@@ -2742,7 +3039,7 @@ public class TradingFrame extends JFrame {
             // regardless of how tall the containing row is.
             JPanel barWrapper = new JPanel(new GridBagLayout());
             barWrapper.setOpaque(false);
-            barWrapper.setPreferredSize(new Dimension(90, 0)); // fixed width, height from parent
+            barWrapper.setPreferredSize(new Dimension(96, 0)); // fixed width, height from parent
             barWrapper.add(progressBar, new GridBagConstraints());
             add(barWrapper, BorderLayout.WEST);
             add(countdownLabel, BorderLayout.CENTER);
@@ -2752,7 +3049,8 @@ public class TradingFrame extends JFrame {
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
             int modelRow = table.convertRowIndexToModel(row);
             ManagedStrategy strategy = strategies.get(modelRow);
-            int progress = pollingProgressPercent(strategy);
+            boolean pollInFlight = strategy.pollInFlight;
+            int progress = pollInFlight ? animatedPollingProgressPercent() : pollingProgressPercent(strategy);
             long secondsRemaining = pollingSecondsRemaining(strategy);
             long totalSeconds = Math.max(1L, strategy.strategy.pollingIntervalSeconds());
             boolean showPollingProgress = shouldShowPollingIndicator(strategy);
@@ -2766,20 +3064,26 @@ public class TradingFrame extends JFrame {
             progressBar.setBackground(isSelected
                     ? new Color(TABLE_SELECTION_BAR_BG.getRed(), TABLE_SELECTION_BAR_BG.getGreen(),
                                 TABLE_SELECTION_BAR_BG.getBlue(), 60)
-                    : new Color(0, 0, 0, 0)); // fully transparent track on normal rows
-            progressBar.setForeground(!showPollingProgress && strategy.isPaused()
+                    : new Color(76, 96, 120, 70));
+            progressBar.setForeground(pollInFlight
+                    ? new Color(124, 246, 196)
+                    : !showPollingProgress && strategy.isPaused()
                     ? STATUS_TEXT_PAUSED
-                    : isSelected ? new Color(60, 30, 140) : new Color(94, 53, 177));
+                    : isSelected ? new Color(60, 30, 140) : new Color(66, 133, 244));
             countdownLabel.setForeground(isSelected ? TABLE_SELECTION_FG : table.getForeground());
             boolean closedMarketPaused = isAutoPausedForClosedMarket(strategy) && shouldSuppressBrokerBackedRefreshForClosedMarket();
-            countdownLabel.setText(closedMarketPaused
+            countdownLabel.setText(pollInFlight
+                    ? "Polling..."
+                    : closedMarketPaused
                     ? "Market Closed"
                     : showPollingProgress
                     ? secondsRemaining + "s / " + totalSeconds + "s"
                     : strategy.isPaused()
                     ? strategy.pauseLabel()
                     : "Idle");
-            String tooltipText = TooltipStyler.text(closedMarketPaused
+            String tooltipText = TooltipStyler.text(pollInFlight
+                    ? "Polling broker data now. Countdown resumes after the current request/response cycle completes."
+                    : closedMarketPaused
                     ? "Polling is paused because the market is closed. Alpaca refresh calls are suppressed until the next trading session opens."
                     : showPollingProgress
                     ? secondsRemaining + " seconds remaining out of " + totalSeconds + " seconds"
@@ -2794,6 +3098,11 @@ public class TradingFrame extends JFrame {
             progressBar.setToolTipText(tooltipText);
             countdownLabel.setToolTipText(tooltipText);
             return this;
+        }
+
+        private int animatedPollingProgressPercent() {
+            long phase = (System.currentTimeMillis() / 120L) % 100L;
+            return (int) Math.max(8L, Math.min(92L, phase));
         }
     }
 
@@ -2969,8 +3278,16 @@ public class TradingFrame extends JFrame {
         if (entry == null) {
             return;
         }
-        Position latest = tradingApi.getPosition(symbol);
-        entry.setCachedPosition(latest);
+        uiPollingExecutor.submit(() -> {
+            Position latest = loadPositionForStrategy(entry.strategy);
+            SwingUtilities.invokeLater(() -> {
+                entry.setCachedPosition(latest);
+                refreshStrategyTableContent();
+                if (selectedStrategyId != null && selectedStrategyId.equals(entry.strategy.id())) {
+                    refreshPanels();
+                }
+            });
+        });
     }
 
     private void updateStreamStatus(String status, Color color) {

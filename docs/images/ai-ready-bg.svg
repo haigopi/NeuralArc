@@ -1,0 +1,48 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="900" fill="#06101A"/>
+  <defs>
+    <radialGradient id="coreGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 450) rotate(90) scale(430 680)">
+      <stop stop-color="#173F57" stop-opacity="0.82"/>
+      <stop offset="1" stop-color="#173F57" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="circuit" x1="84" y1="450" x2="1512" y2="450" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7CF6C4" stop-opacity="0.86"/>
+      <stop offset="0.52" stop-color="#8FD9FF" stop-opacity="0.82"/>
+      <stop offset="1" stop-color="#6EAFFF" stop-opacity="0.72"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#coreGlow)"/>
+
+  <g opacity="0.82">
+    <rect x="430" y="158" width="740" height="584" rx="38" fill="#081521" stroke="#8FD9FF" stroke-opacity="0.24"/>
+    <rect x="540" y="248" width="520" height="404" rx="26" fill="#0A1B29" stroke="#7CF6C4" stroke-opacity="0.18"/>
+    <circle cx="800" cy="450" r="138" stroke="#7CF6C4" stroke-opacity="0.62" stroke-width="3"/>
+    <circle cx="800" cy="450" r="220" stroke="#8FD9FF" stroke-opacity="0.18" stroke-width="2"/>
+  </g>
+
+  <g opacity="0.9" stroke="url(#circuit)" stroke-width="5" stroke-linecap="round">
+    <path d="M-40 228H212L332 320H430"/>
+    <path d="M1640 228H1388L1268 320H1170"/>
+    <path d="M-40 672H212L332 580H430"/>
+    <path d="M1640 672H1388L1268 580H1170"/>
+    <path d="M636 158V44H496"/>
+    <path d="M964 742V856H1112"/>
+  </g>
+
+  <g fill="#8FD9FF" opacity="0.82">
+    <circle cx="212" cy="228" r="11"/>
+    <circle cx="1388" cy="228" r="11"/>
+    <circle cx="212" cy="672" r="11"/>
+    <circle cx="1388" cy="672" r="11"/>
+    <circle cx="496" cy="44" r="11"/>
+    <circle cx="1112" cy="856" r="11"/>
+  </g>
+
+  <g opacity="0.36" stroke="#8FD9FF" stroke-width="3">
+    <path d="M694 382L796 450L694 518"/>
+    <path d="M906 382L804 450L906 518"/>
+    <path d="M620 286H980"/>
+    <path d="M620 614H980"/>
+  </g>
+</svg>

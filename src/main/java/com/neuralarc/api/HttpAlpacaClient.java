@@ -15,7 +15,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -83,8 +86,10 @@ public class HttpAlpacaClient implements AlpacaClient {
         String endpoint = tradingBaseUrl + "/v2/orders/" + orderId;
         HttpRequest request = baseRequest(endpoint).DELETE().build();
         try {
+            logRequest("DELETE", endpoint, null);
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             recordRequestId("cancelOrder", "DELETE", endpoint, response);
+            logResponse("DELETE", endpoint, response.statusCode(), response.body());
             return response.statusCode() >= 200 && response.statusCode() < 300;
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Failed to cancel order " + orderId, ex);
@@ -100,8 +105,10 @@ public class HttpAlpacaClient implements AlpacaClient {
         String endpoint = tradingBaseUrl + "/v2/positions/" + URLEncoder.encode(symbol.toUpperCase(), StandardCharsets.UTF_8);
         HttpRequest request = baseRequest(endpoint).GET().build();
         try {
+            logRequest("GET", endpoint, null);
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             recordRequestId("getPosition", "GET", endpoint, response);
+            logResponse("GET", endpoint, response.statusCode(), response.body());
             if (response.statusCode() == 404) {
                 return Optional.empty();
             }
@@ -176,6 +183,51 @@ public class HttpAlpacaClient implements AlpacaClient {
         }
     }
 
+    public Map<String, BigDecimal> getLatestPrices(List<String> symbols) {
+        if (symbols == null || symbols.isEmpty()) {
+            return Map.of();
+        }
+        LinkedHashSet<String> normalizedSymbols = new LinkedHashSet<>();
+        for (String symbol : symbols) {
+            if (symbol != null && !symbol.isBlank()) {
+                normalizedSymbols.add(symbol.trim().toUpperCase());
+            }
+        }
+        if (normalizedSymbols.isEmpty()) {
+            return Map.of();
+        }
+        String endpoint = dataBaseUrl + "/v2/stocks/trades/latest?symbols="
+                + URLEncoder.encode(String.join(",", normalizedSymbols), StandardCharsets.UTF_8);
+        HttpRequest request = baseRequest(endpoint).GET().build();
+        Optional<String> body = executeBody(request);
+        if (body.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            JSONObject json = new JSONObject(body.get());
+            JSONObject trades = json.optJSONObject("trades");
+            if (trades == null) {
+                return Map.of();
+            }
+            Map<String, BigDecimal> prices = new LinkedHashMap<>();
+            for (String symbol : normalizedSymbols) {
+                JSONObject trade = trades.optJSONObject(symbol);
+                if (trade == null) {
+                    continue;
+                }
+                Object price = trade.opt("p");
+                BigDecimal parsed = parseMoney(price == null ? "0" : String.valueOf(price));
+                if (parsed.compareTo(BigDecimal.ZERO) > 0) {
+                    prices.put(symbol, parsed);
+                }
+            }
+            return prices;
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "Failed to parse batch latest prices", ex);
+            return Map.of();
+        }
+    }
+
     private AlpacaOrderData submitLimitOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId, String side) {
         JSONObject payload = new JSONObject()
                 .put("symbol", symbol == null ? "" : symbol.toUpperCase())
@@ -195,9 +247,11 @@ public class HttpAlpacaClient implements AlpacaClient {
                 .build();
 
         try {
+            logRequest("POST", endpoint, payload.toString());
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             recordRequestId("submitLimitOrder", "POST", endpoint, response);
             String body = response.body() == null ? "{}" : response.body();
+            logResponse("POST", endpoint, response.statusCode(), body);
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 JSONObject error = parseObject(body);
                 return new AlpacaOrderData(
@@ -230,8 +284,10 @@ public class HttpAlpacaClient implements AlpacaClient {
 
     private Optional<String> executeBody(HttpRequest request) {
         try {
+            logRequest(request.method(), request.uri().toString(), null);
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             recordRequestId("executeBody", request.method(), request.uri().toString(), response);
+            logResponse(request.method(), request.uri().toString(), response.statusCode(), response.body());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 return Optional.empty();
             }
@@ -273,6 +329,47 @@ public class HttpAlpacaClient implements AlpacaClient {
 
     private Optional<JSONObject> executeJson(HttpRequest request) {
         return executeBody(request).map(this::parseObject);
+    }
+
+    private void logRequest(String method, String endpoint, String body) {
+        if (!LOGGER.isLoggable(Level.INFO)) {
+            return;
+        }
+        String suffix = body == null || body.isBlank() ? "" : System.lineSeparator() + "body=" + formatBodyForLog(body);
+        LOGGER.info(() -> "Request: " + endpoint + suffix);
+    }
+
+    private void logResponse(String method, String endpoint, int statusCode, String body) {
+        if (!LOGGER.isLoggable(Level.INFO)) {
+            return;
+        }
+        LOGGER.info(() -> " -> Response: " + endpoint
+                + " status=" + statusCode
+                + System.lineSeparator() + "body=" + formatBodyForLog(body));
+    }
+
+    private String formatBodyForLog(String body) {
+        if (body == null || body.isBlank()) {
+            return "<empty>";
+        }
+        String pretty = tryPrettyJson(body);
+        int maxLength = 4000;
+        return pretty.length() <= maxLength ? pretty : pretty.substring(0, maxLength) + System.lineSeparator() + "...";
+    }
+
+    private String tryPrettyJson(String body) {
+        String trimmed = body == null ? "" : body.trim();
+        try {
+            if (trimmed.startsWith("{")) {
+                return new JSONObject(trimmed).toString(2);
+            }
+            if (trimmed.startsWith("[")) {
+                return new JSONArray(trimmed).toString(2);
+            }
+        } catch (Exception ignored) {
+            // Fall through to plain text formatting for non-JSON or malformed content.
+        }
+        return trimmed.replaceAll("\\s+", " ").trim();
     }
 
     private void recordRequestId(String source, String method, String endpoint, HttpResponse<String> response) {

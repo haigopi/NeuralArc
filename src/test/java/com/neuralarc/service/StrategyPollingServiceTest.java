@@ -226,6 +226,47 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void profitableExitDoesNotRecreateStaleLossBuyBeforeRestart() {
+        Fixture f = new Fixture();
+        Strategy strategy = new Strategy(
+                UUID.randomUUID().toString(), "s", "TSLA", StrategyMode.PAPER, StrategyStatus.ACTIVE,
+                StrategyLifecycleState.BUY_LIMIT_1_PLACED,
+                new BigDecimal("373.00"), 10,
+                new BigDecimal("370.00"), 5,
+                new BigDecimal("365.00"), 5,
+                true, StopLossType.FIXED_PRICE, new BigDecimal("360.00"), BigDecimal.ZERO,
+                false, BigDecimal.ZERO,
+                true, new BigDecimal("380.00"), new BigDecimal("100.00"), true,
+                false, ProfitHoldType.PERCENT_TRAILING, new BigDecimal("10.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                true, 20, new BigDecimal("7405.00"), 2, Instant.now(), Instant.now()
+        );
+        strategy.setMaxCapitalAllowed(new BigDecimal("10000.00"));
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("373.00")));
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.TARGET_SELL, 10, new BigDecimal("392.17")));
+        f.alpaca.position = Optional.empty();
+        f.alpaca.latestPrice = new BigDecimal("392.17");
+
+        f.service.pollStrategy(strategy.id());
+
+        Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+        List<StrategyOrder> strategyOrders = f.orders.findByStrategyId(strategy.id());
+        long submittedBuyLimit1Orders = strategyOrders.stream()
+                .filter(order -> order.stage() == StrategyStage.BUY_LIMIT_1)
+                .filter(StrategyOrder::isPending)
+                .count();
+        long submittedBaseOrders = strategyOrders.stream()
+                .filter(order -> order.stage() == StrategyStage.BASE_BUY)
+                .filter(StrategyOrder::isPending)
+                .count();
+
+        assertEquals(0, submittedBuyLimit1Orders);
+        assertEquals(1, submittedBaseOrders);
+        assertEquals(StrategyStatus.ACTIVE, updated.status());
+        assertNotEquals(StrategyLifecycleState.FAILED, updated.currentState());
+    }
+
+    @Test
     void stopLossExitDoesNotRestartCycleWhenRepeatAfterProfitEnabled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);

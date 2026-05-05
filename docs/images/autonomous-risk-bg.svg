@@ -1,17 +1,53 @@
-<svg width="1200" height="900" viewBox="0 0 1200 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="900" fill="#06101A"/>
   <defs>
-    <radialGradient id="r1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(860 230) rotate(130.4) scale(364.228 320.061)">
-      <stop stop-color="#8FD9FF" stop-opacity="0.18"/>
-      <stop offset="1" stop-color="#8FD9FF" stop-opacity="0"/>
+    <radialGradient id="riskGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(820 446) rotate(90) scale(420 700)">
+      <stop stop-color="#173E56" stop-opacity="0.82"/>
+      <stop offset="1" stop-color="#173E56" stop-opacity="0"/>
     </radialGradient>
+    <linearGradient id="riskCircuit" x1="56" y1="450" x2="1544" y2="450" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7CF6C4" stop-opacity="0.86"/>
+      <stop offset="0.5" stop-color="#8FD9FF" stop-opacity="0.82"/>
+      <stop offset="1" stop-color="#71B1FF" stop-opacity="0.7"/>
+    </linearGradient>
   </defs>
-  <rect width="1200" height="900" fill="url(#r1)"/>
-  <path d="M690 560C690 483.785 751.785 422 828 422H918C994.215 422 1056 360.215 1056 284V248" stroke="#8FD9FF" stroke-opacity="0.24" stroke-width="5" stroke-linecap="round"/>
-  <path d="M690 560C690 494.294 636.706 441 571 441H482C416.294 441 363 387.706 363 322V286" stroke="#7CF6C4" stroke-opacity="0.26" stroke-width="5" stroke-linecap="round"/>
-  <path d="M690 560V654" stroke="#C8EFFF" stroke-opacity="0.2" stroke-width="5" stroke-linecap="round"/>
-  <circle cx="690" cy="560" r="72" fill="#0C1926" fill-opacity="0.82" stroke="#C8EFFF" stroke-opacity="0.2"/>
-  <circle cx="690" cy="560" r="108" stroke="#7CF6C4" stroke-opacity="0.2" stroke-width="2"/>
-  <circle cx="1056" cy="248" r="12" fill="#8FD9FF" fill-opacity="0.8"/>
-  <circle cx="363" cy="286" r="12" fill="#7CF6C4" fill-opacity="0.8"/>
-  <circle cx="690" cy="654" r="12" fill="#C8EFFF" fill-opacity="0.72"/>
+
+  <rect width="1600" height="900" fill="url(#riskGlow)"/>
+
+  <g opacity="0.72">
+    <rect x="392" y="128" width="816" height="644" rx="48" fill="#081521" stroke="#8FD9FF" stroke-opacity="0.18" stroke-width="2"/>
+    <rect x="506" y="226" width="588" height="448" rx="30" fill="#0A1A28" stroke="#7CF6C4" stroke-opacity="0.16" stroke-width="2"/>
+    <circle cx="800" cy="450" r="164" stroke="#7CF6C4" stroke-opacity="0.54" stroke-width="3"/>
+    <circle cx="800" cy="450" r="244" stroke="#8FD9FF" stroke-opacity="0.16" stroke-width="2"/>
+  </g>
+
+  <g opacity="0.88" stroke="url(#riskCircuit)" stroke-width="5" stroke-linecap="round">
+    <path d="M-40 236H204L352 330H392"/>
+    <path d="M1640 236H1396L1248 330H1208"/>
+    <path d="M-40 664H204L352 570H392"/>
+    <path d="M1640 664H1396L1248 570H1208"/>
+    <path d="M620 128V36H474"/>
+    <path d="M980 772V864H1126"/>
+  </g>
+
+  <g fill="#8FD9FF" opacity="0.8">
+    <circle cx="204" cy="236" r="10"/>
+    <circle cx="1396" cy="236" r="10"/>
+    <circle cx="204" cy="664" r="10"/>
+    <circle cx="1396" cy="664" r="10"/>
+    <circle cx="474" cy="36" r="10"/>
+    <circle cx="1126" cy="864" r="10"/>
+  </g>
+
+  <g opacity="0.4" stroke="#8FD9FF" stroke-width="3">
+    <path d="M660 378L790 450L660 522"/>
+    <path d="M940 378L810 450L940 522"/>
+    <path d="M612 302H988"/>
+    <path d="M612 598H988"/>
+  </g>
+
+  <g opacity="0.24" stroke="#7CF6C4" stroke-width="2">
+    <rect x="126" y="96" width="232" height="146" rx="20"/>
+    <rect x="1242" y="564" width="234" height="152" rx="20"/>
+  </g>
 </svg>

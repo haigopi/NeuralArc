@@ -1,25 +1,45 @@
-<svg width="1200" height="900" viewBox="0 0 1200 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="900" fill="#06101A"/>
   <defs>
-    <radialGradient id="g1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(860 220) rotate(134.695) scale(446.954 378.433)">
-      <stop stop-color="#7CF6C4" stop-opacity="0.22"/>
-      <stop offset="1" stop-color="#7CF6C4" stop-opacity="0"/>
+    <radialGradient id="privacyGlowLeft" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(330 460) rotate(90) scale(430 620)">
+      <stop stop-color="#173F57" stop-opacity="0.78"/>
+      <stop offset="1" stop-color="#173F57" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="g2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(980 540) rotate(145.749) scale(355.737 287.023)">
-      <stop stop-color="#8FD9FF" stop-opacity="0.18"/>
-      <stop offset="1" stop-color="#8FD9FF" stop-opacity="0"/>
+    <radialGradient id="privacyGlowRight" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1250 420) rotate(90) scale(360 540)">
+      <stop stop-color="#102C40" stop-opacity="0.56"/>
+      <stop offset="1" stop-color="#102C40" stop-opacity="0"/>
     </radialGradient>
+    <linearGradient id="privacyStroke" x1="122" y1="226" x2="1458" y2="682" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7CF6C4" stop-opacity="0.92"/>
+      <stop offset="0.55" stop-color="#8FD9FF" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#73DFC6" stop-opacity="0.68"/>
+    </linearGradient>
   </defs>
-  <rect width="1200" height="900" fill="url(#g1)"/>
-  <rect width="1200" height="900" fill="url(#g2)"/>
-  <circle cx="870" cy="322" r="182" stroke="#8FD9FF" stroke-opacity="0.2" stroke-width="2"/>
-  <circle cx="870" cy="322" r="134" stroke="#7CF6C4" stroke-opacity="0.28" stroke-width="2"/>
-  <circle cx="870" cy="322" r="84" fill="#0B1A27" fill-opacity="0.7" stroke="#C8EFFF" stroke-opacity="0.18"/>
-  <path d="M640 320H760" stroke="#7CF6C4" stroke-opacity="0.26" stroke-width="4" stroke-linecap="round"/>
-  <path d="M980 320H1100" stroke="#8FD9FF" stroke-opacity="0.26" stroke-width="4" stroke-linecap="round"/>
-  <path d="M868 90V170" stroke="#8FD9FF" stroke-opacity="0.2" stroke-width="4" stroke-linecap="round"/>
-  <path d="M868 470V552" stroke="#7CF6C4" stroke-opacity="0.2" stroke-width="4" stroke-linecap="round"/>
-  <circle cx="760" cy="320" r="10" fill="#7CF6C4" fill-opacity="0.85"/>
-  <circle cx="980" cy="320" r="10" fill="#8FD9FF" fill-opacity="0.85"/>
-  <circle cx="868" cy="170" r="10" fill="#8FD9FF" fill-opacity="0.75"/>
-  <circle cx="868" cy="552" r="10" fill="#7CF6C4" fill-opacity="0.75"/>
+
+  <rect width="1600" height="900" fill="url(#privacyGlowLeft)"/>
+  <rect width="1600" height="900" fill="url(#privacyGlowRight)"/>
+
+  <g opacity="0.68" stroke="url(#privacyStroke)">
+    <path d="M-80 284H354L470 190H1130L1264 284H1680" stroke-width="4.5" stroke-linecap="round"/>
+    <path d="M-120 654H320L464 756H1142L1284 654H1700" stroke-width="4.5" stroke-linecap="round"/>
+    <path d="M126 180V724" stroke-width="2.5" stroke-linecap="round" stroke-opacity="0.56"/>
+    <path d="M1476 180V724" stroke-width="2.5" stroke-linecap="round" stroke-opacity="0.56"/>
+  </g>
+
+  <g opacity="0.72">
+    <rect x="410" y="138" width="780" height="624" rx="46" fill="#081521" stroke="#8FD9FF" stroke-opacity="0.18" stroke-width="2"/>
+    <rect x="490" y="216" width="620" height="468" rx="34" fill="#0A1927" stroke="#7CF6C4" stroke-opacity="0.16" stroke-width="2"/>
+    <path d="M800 278C888 278 960 350 960 438V516C960 640 892 714 800 756C708 714 640 640 640 516V438C640 350 712 278 800 278Z" fill="#0B1E2D" stroke="#8FD9FF" stroke-opacity="0.38" stroke-width="3"/>
+    <path d="M800 350C851 350 892 391 892 442C892 486 862 523 821 533V585H779V533C738 523 708 486 708 442C708 391 749 350 800 350Z" fill="none" stroke="#7CF6C4" stroke-opacity="0.78" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="800" cy="442" r="34" fill="none" stroke="#8FD9FF" stroke-opacity="0.52" stroke-width="3"/>
+  </g>
+
+  <g fill="#8FD9FF" opacity="0.74">
+    <circle cx="214" cy="284" r="8"/>
+    <circle cx="1390" cy="284" r="8"/>
+    <circle cx="196" cy="654" r="8"/>
+    <circle cx="1408" cy="654" r="8"/>
+    <circle cx="800" cy="214" r="7"/>
+    <circle cx="800" cy="686" r="7"/>
+  </g>
 </svg>

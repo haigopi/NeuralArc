@@ -9,36 +9,90 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class FileStrategyExecutionEventRepository implements StrategyExecutionEventRepository {
+    private static final long FLUSH_DELAY_MILLIS = 500L;
+
     private final Path filePath;
+    private final List<StrategyExecutionEvent> events = new ArrayList<>();
+    private final Map<String, List<StrategyExecutionEvent>> eventsByStrategyId = new HashMap<>();
+    private final ScheduledExecutorService flushExecutor;
+    private boolean dirty;
+    private boolean flushScheduled;
 
     public FileStrategyExecutionEventRepository(Path filePath) {
         this.filePath = filePath;
+        this.flushExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "neuralarc-strategy-event-repo");
+            thread.setDaemon(true);
+            return thread;
+        });
+        reloadFromDisk();
+        Runtime.getRuntime().addShutdownHook(new Thread(this::close, "neuralarc-strategy-event-repo-shutdown"));
     }
 
     @Override
     public synchronized void save(StrategyExecutionEvent event) {
-        List<StrategyExecutionEvent> all = findAll();
-        all.add(event);
-        writeAll(all);
+        events.add(event);
+        eventsByStrategyId.computeIfAbsent(event.strategyId(), ignored -> new ArrayList<>()).add(event);
+        markDirty();
     }
 
     @Override
     public synchronized List<StrategyExecutionEvent> findByStrategyId(String strategyId) {
-        return findAll().stream().filter(e -> e.strategyId().equals(strategyId)).toList();
+        return new ArrayList<>(eventsByStrategyId.getOrDefault(strategyId, List.of()));
     }
 
     @Override
     public synchronized void deleteByStrategyId(String strategyId) {
-        List<StrategyExecutionEvent> remaining = findAll().stream()
-                .filter(event -> !event.strategyId().equals(strategyId))
-                .toList();
-        writeAll(remaining);
+        if (events.removeIf(event -> event.strategyId().equals(strategyId))) {
+            rebuildIndexes();
+            markDirty();
+        }
     }
 
-    private List<StrategyExecutionEvent> findAll() {
+    public synchronized void reloadFromDisk() {
+        events.clear();
+        events.addAll(readAllFromDisk());
+        rebuildIndexes();
+        dirty = false;
+        flushScheduled = false;
+    }
+
+    public void flushNow() {
+        List<StrategyExecutionEvent> snapshot;
+        synchronized (this) {
+            if (!dirty) {
+                return;
+            }
+            snapshot = new ArrayList<>(events);
+            dirty = false;
+            flushScheduled = false;
+        }
+        persistSnapshot(snapshot);
+    }
+
+    public void close() {
+        flushNow();
+        flushExecutor.shutdownNow();
+    }
+
+    private synchronized void markDirty() {
+        dirty = true;
+        if (flushScheduled) {
+            return;
+        }
+        flushScheduled = true;
+        flushExecutor.schedule(this::flushNow, FLUSH_DELAY_MILLIS, TimeUnit.MILLISECONDS);
+    }
+
+    private List<StrategyExecutionEvent> readAllFromDisk() {
         if (!Files.exists(filePath)) {
             return new ArrayList<>();
         }
@@ -62,7 +116,14 @@ public class FileStrategyExecutionEventRepository implements StrategyExecutionEv
         }
     }
 
-    private void writeAll(List<StrategyExecutionEvent> events) {
+    private synchronized void rebuildIndexes() {
+        eventsByStrategyId.clear();
+        for (StrategyExecutionEvent event : events) {
+            eventsByStrategyId.computeIfAbsent(event.strategyId(), ignored -> new ArrayList<>()).add(event);
+        }
+    }
+
+    private void persistSnapshot(List<StrategyExecutionEvent> events) {
         JSONArray arr = new JSONArray();
         for (StrategyExecutionEvent e : events) {
             JSONObject o = new JSONObject();

@@ -1,0 +1,58 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="900" fill="#06101A"/>
+  <defs>
+    <radialGradient id="techGlowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(220 450) rotate(90) scale(460 620)">
+      <stop stop-color="#184A61" stop-opacity="0.82"/>
+      <stop offset="1" stop-color="#184A61" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="techGlowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1380 430) rotate(90) scale(440 600)">
+      <stop stop-color="#18364F" stop-opacity="0.72"/>
+      <stop offset="1" stop-color="#18364F" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="techStrokeA" x1="0" y1="220" x2="1600" y2="700" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7CF6C4" stop-opacity="0.95"/>
+      <stop offset="0.48" stop-color="#8FD9FF" stop-opacity="0.84"/>
+      <stop offset="1" stop-color="#79EED1" stop-opacity="0.72"/>
+    </linearGradient>
+    <linearGradient id="techStrokeB" x1="0" y1="760" x2="1600" y2="180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4AD0B0" stop-opacity="0.58"/>
+      <stop offset="1" stop-color="#69B8FF" stop-opacity="0.62"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#techGlowA)"/>
+  <rect width="1600" height="900" fill="url(#techGlowB)"/>
+
+  <g opacity="0.9">
+    <path d="M-80 246C120 188 294 190 468 260C635 328 760 404 918 438C1088 474 1248 442 1688 256" stroke="url(#techStrokeA)" stroke-width="6" stroke-linecap="round"/>
+    <path d="M-120 650C110 574 270 564 448 606C618 646 766 674 940 646C1110 620 1298 554 1700 652" stroke="url(#techStrokeA)" stroke-width="6" stroke-linecap="round"/>
+    <path d="M-40 840C204 690 404 634 600 634C792 634 954 682 1138 760C1292 826 1456 842 1650 786" stroke="url(#techStrokeB)" stroke-width="4" stroke-linecap="round"/>
+    <path d="M120 -40C326 104 486 268 632 434C768 590 940 678 1176 692C1364 702 1530 642 1678 534" stroke="url(#techStrokeB)" stroke-width="4" stroke-linecap="round"/>
+  </g>
+
+  <g opacity="0.5" stroke="#8FD9FF">
+    <rect x="438" y="158" width="728" height="584" rx="36"/>
+    <rect x="520" y="236" width="564" height="428" rx="28"/>
+    <rect x="610" y="314" width="384" height="272" rx="18"/>
+  </g>
+
+  <g fill="#8FD9FF" opacity="0.88">
+    <circle cx="112" cy="214" r="9"/>
+    <circle cx="286" cy="208" r="7"/>
+    <circle cx="470" cy="262" r="8"/>
+    <circle cx="718" cy="390" r="9"/>
+    <circle cx="1044" cy="454" r="8"/>
+    <circle cx="1362" cy="402" r="9"/>
+    <circle cx="1518" cy="334" r="8"/>
+  </g>
+
+  <g fill="#7CF6C4" opacity="0.82">
+    <circle cx="96" cy="648" r="8"/>
+    <circle cx="306" cy="600" r="9"/>
+    <circle cx="572" cy="634" r="8"/>
+    <circle cx="852" cy="668" r="9"/>
+    <circle cx="1120" cy="630" r="8"/>
+    <circle cx="1400" cy="574" r="9"/>
+    <circle cx="1542" cy="612" r="8"/>
+  </g>
+</svg>

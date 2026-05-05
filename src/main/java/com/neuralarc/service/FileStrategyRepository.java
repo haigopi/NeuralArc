@@ -15,121 +15,196 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class FileStrategyRepository implements StrategyRepository {
+    private static final long FLUSH_DELAY_MILLIS = 200L;
+
     private final Path filePath;
+    private final Map<String, Strategy> strategiesById = new LinkedHashMap<>();
+    private final ScheduledExecutorService flushExecutor;
+    private boolean dirty;
+    private boolean flushScheduled;
 
     public FileStrategyRepository(Path filePath) {
         this.filePath = filePath;
+        this.flushExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "neuralarc-strategy-repo");
+            thread.setDaemon(true);
+            return thread;
+        });
+        reloadFromDisk();
+        Runtime.getRuntime().addShutdownHook(new Thread(this::close, "neuralarc-strategy-repo-shutdown"));
     }
 
     @Override
     public synchronized void save(Strategy strategy) {
-        List<Strategy> all = findAll();
-        boolean replaced = false;
-        for (int i = 0; i < all.size(); i++) {
-            if (all.get(i).id().equals(strategy.id())) {
-                all.set(i, strategy);
-                replaced = true;
-                break;
-            }
-        }
-        if (!replaced) {
-            all.add(strategy);
-        }
-        writeAll(all);
+        strategiesById.put(strategy.id(), strategy);
+        markDirty();
     }
 
     @Override
     public synchronized Optional<Strategy> findById(String id) {
-        return findAll().stream().filter(s -> s.id().equals(id)).findFirst();
+        return Optional.ofNullable(strategiesById.get(id));
     }
 
     @Override
     public synchronized List<Strategy> findAll() {
+        return new ArrayList<>(strategiesById.values());
+    }
+
+    @Override
+    public synchronized List<Strategy> findActive() {
+        List<Strategy> active = new ArrayList<>();
+        for (Strategy strategy : strategiesById.values()) {
+            if (strategy.status() == StrategyStatus.ACTIVE) {
+                active.add(strategy);
+            }
+        }
+        return active;
+    }
+
+    @Override
+    public synchronized void deleteById(String id) {
+        if (strategiesById.remove(id) != null) {
+            markDirty();
+        }
+    }
+
+    public synchronized void reloadFromDisk() {
+        strategiesById.clear();
+        for (Strategy strategy : readAllFromDisk()) {
+            strategiesById.put(strategy.id(), strategy);
+        }
+        dirty = false;
+        flushScheduled = false;
+    }
+
+    public synchronized void replaceAllFromJson(String json) {
+        JSONArray arr = new JSONArray(json == null || json.isBlank() ? "[]" : json);
+        strategiesById.clear();
+        List<Strategy> loaded = parseStrategies(arr);
+        for (Strategy strategy : loaded) {
+            strategiesById.put(strategy.id(), strategy);
+        }
+        dirty = false;
+        flushScheduled = false;
+        persistSnapshot(new ArrayList<>(strategiesById.values()));
+    }
+
+    public synchronized String exportJson(boolean pretty) {
+        JSONArray arr = toJsonArray(new ArrayList<>(strategiesById.values()));
+        return pretty ? arr.toString(2) : arr.toString();
+    }
+
+    public void flushNow() {
+        List<Strategy> snapshot;
+        synchronized (this) {
+            if (!dirty) {
+                return;
+            }
+            snapshot = new ArrayList<>(strategiesById.values());
+            dirty = false;
+            flushScheduled = false;
+        }
+        persistSnapshot(snapshot);
+    }
+
+    public void close() {
+        flushNow();
+        flushExecutor.shutdownNow();
+    }
+
+    private synchronized void markDirty() {
+        dirty = true;
+        if (flushScheduled) {
+            return;
+        }
+        flushScheduled = true;
+        flushExecutor.schedule(this::flushNow, FLUSH_DELAY_MILLIS, TimeUnit.MILLISECONDS);
+    }
+
+    private List<Strategy> readAllFromDisk() {
         if (!Files.exists(filePath)) {
             return new ArrayList<>();
         }
         try {
             String json = Files.readString(filePath);
             JSONArray arr = new JSONArray(json.isBlank() ? "[]" : json);
-            List<Strategy> result = new ArrayList<>();
-            for (int i = 0; i < arr.length(); i++) {
-                JSONObject o = arr.getJSONObject(i);
-                Strategy strategy = new Strategy(
-                        o.getString("id"),
-                        o.optString("name", ""),
-                        o.optString("symbol", ""),
-                        StrategyMode.valueOf(o.optString("mode", "PAPER")),
-                        StrategyStatus.valueOf(o.optString("status", "CREATED")),
-                        StrategyLifecycleState.valueOf(o.optString("currentState", "CREATED")),
-                        decimal(o, "baseBuyLimitPrice", o.optString("initialBuyLimitPrice", "0.00")),
-                        o.optInt("baseBuyQuantity", o.optInt("initialBuyQuantity", 0)),
-                        decimal(o, "buyLimit1Price", o.optString("lossBuyLevel1Price", "0.00")),
-                        o.optInt("buyLimit1Quantity", o.optInt("lossBuyLevel1Quantity", 0)),
-                        decimal(o, "buyLimit2Price", o.optString("lossBuyLevel2Price", "0.00")),
-                        o.optInt("buyLimit2Quantity", o.optInt("lossBuyLevel2Quantity", 0)),
-                        o.optBoolean("automatedStopLossEnabled", decimal(o, "stopLossPrice", "0.00").compareTo(BigDecimal.ZERO) > 0),
-                        StopLossType.valueOf(o.optString("stopLossType", "FIXED_PRICE")),
-                        decimal(o, "stopLossPrice", "0.00"),
-                        decimal(o, "stopLossPercent", "0.00"),
-                        o.optBoolean("optionalLossExitEnabled", false),
-                        decimal(o, "optionalLossExitPrice", "0.00"),
-                        o.optBoolean("targetSellEnabled", true),
-                        decimal(o, "targetSellPrice", "0.00"),
-                        decimal(o, "targetSellQuantityOrPercent", "100.00"),
-                        o.optBoolean("targetSellPercentBased", true),
-                        o.optBoolean("profitHoldEnabled", false),
-                        ProfitHoldType.valueOf(o.optString("profitHoldType", "PERCENT_TRAILING")),
-                        decimal(o, "profitHoldPercent", o.optString("profitHoldPercentOrAmount", "0.00")),
-                        decimal(o, "profitHoldAmount", "0.00"),
-                        decimal(o, "highestObservedPriceAfterTarget", o.optString("highestPriceAfterTarget", "0.00")),
-                        o.optBoolean("restartAfterExitEnabled", false),
-                        o.optInt("maxTotalQuantity", 0),
-                        decimal(o, "maxCapitalAllowed", "0.00"),
-                        o.optInt("pollingIntervalSeconds", o.optInt("pollingSeconds", 10)),
-                        Instant.parse(o.optString("createdAt", Instant.now().toString())),
-                        Instant.parse(o.optString("updatedAt", Instant.now().toString()))
-                );
-                String lastPolledAt = o.optString("lastPolledAt", "");
-                if (!lastPolledAt.isBlank()) {
-                    strategy.setLastPolledAt(Instant.parse(lastPolledAt));
-                }
-                String lastError = o.optString("lastError", "");
-                if (!lastError.isBlank()) {
-                    strategy.setLastError(lastError);
-                }
-                strategy.setLossBuyLevelsEnabled(o.optBoolean("lossBuyLevelsEnabled", true));
-                strategy.setLastEvent(o.optString("lastEvent", ""));
-                strategy.setLatestOrderStatus(o.optString("latestOrderStatus", ""));
-                strategy.setLatestAlpacaOrderId(o.optString("latestAlpacaOrderId", ""));
-                strategy.setPauseReason(parsePauseReason(o.optString("pauseReason", "NONE")));
-                strategy.setResumeStateBeforePause(parseLifecycleState(
-                        o.optString("resumeStateBeforePause", strategy.currentState().name()),
-                        strategy.currentState()
-                ));
-                result.add(strategy);
-            }
-            return result;
+            return parseStrategies(arr);
         } catch (Exception ex) {
             return new ArrayList<>();
         }
     }
 
-    @Override
-    public synchronized List<Strategy> findActive() {
-        return findAll().stream().filter(s -> s.status() == StrategyStatus.ACTIVE).toList();
+    private List<Strategy> parseStrategies(JSONArray arr) {
+        List<Strategy> result = new ArrayList<>();
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject o = arr.getJSONObject(i);
+            Strategy strategy = new Strategy(
+                    o.getString("id"),
+                    o.optString("name", ""),
+                    o.optString("symbol", ""),
+                    StrategyMode.valueOf(o.optString("mode", "PAPER")),
+                    StrategyStatus.valueOf(o.optString("status", "CREATED")),
+                    StrategyLifecycleState.valueOf(o.optString("currentState", "CREATED")),
+                    decimal(o, "baseBuyLimitPrice", o.optString("initialBuyLimitPrice", "0.00")),
+                    o.optInt("baseBuyQuantity", o.optInt("initialBuyQuantity", 0)),
+                    decimal(o, "buyLimit1Price", o.optString("lossBuyLevel1Price", "0.00")),
+                    o.optInt("buyLimit1Quantity", o.optInt("lossBuyLevel1Quantity", 0)),
+                    decimal(o, "buyLimit2Price", o.optString("lossBuyLevel2Price", "0.00")),
+                    o.optInt("buyLimit2Quantity", o.optInt("lossBuyLevel2Quantity", 0)),
+                    o.optBoolean("automatedStopLossEnabled", decimal(o, "stopLossPrice", "0.00").compareTo(BigDecimal.ZERO) > 0),
+                    StopLossType.valueOf(o.optString("stopLossType", "FIXED_PRICE")),
+                    decimal(o, "stopLossPrice", "0.00"),
+                    decimal(o, "stopLossPercent", "0.00"),
+                    o.optBoolean("optionalLossExitEnabled", false),
+                    decimal(o, "optionalLossExitPrice", "0.00"),
+                    o.optBoolean("targetSellEnabled", true),
+                    decimal(o, "targetSellPrice", "0.00"),
+                    decimal(o, "targetSellQuantityOrPercent", "100.00"),
+                    o.optBoolean("targetSellPercentBased", true),
+                    o.optBoolean("profitHoldEnabled", false),
+                    ProfitHoldType.valueOf(o.optString("profitHoldType", "PERCENT_TRAILING")),
+                    decimal(o, "profitHoldPercent", o.optString("profitHoldPercentOrAmount", "0.00")),
+                    decimal(o, "profitHoldAmount", "0.00"),
+                    decimal(o, "highestObservedPriceAfterTarget", o.optString("highestPriceAfterTarget", "0.00")),
+                    o.optBoolean("restartAfterExitEnabled", false),
+                    o.optInt("maxTotalQuantity", 0),
+                    decimal(o, "maxCapitalAllowed", "0.00"),
+                    o.optInt("pollingIntervalSeconds", o.optInt("pollingSeconds", 10)),
+                    Instant.parse(o.optString("createdAt", Instant.now().toString())),
+                    Instant.parse(o.optString("updatedAt", Instant.now().toString()))
+            );
+            String lastPolledAt = o.optString("lastPolledAt", "");
+            if (!lastPolledAt.isBlank()) {
+                strategy.setLastPolledAt(Instant.parse(lastPolledAt));
+            }
+            String lastError = o.optString("lastError", "");
+            if (!lastError.isBlank()) {
+                strategy.setLastError(lastError);
+            }
+            strategy.setLossBuyLevelsEnabled(o.optBoolean("lossBuyLevelsEnabled", true));
+            strategy.setLastEvent(o.optString("lastEvent", ""));
+            strategy.setLatestOrderStatus(o.optString("latestOrderStatus", ""));
+            strategy.setLatestAlpacaOrderId(o.optString("latestAlpacaOrderId", ""));
+            strategy.setPauseReason(parsePauseReason(o.optString("pauseReason", "NONE")));
+            strategy.setResumeStateBeforePause(parseLifecycleState(
+                    o.optString("resumeStateBeforePause", strategy.currentState().name()),
+                    strategy.currentState()
+            ));
+            result.add(strategy);
+        }
+        return result;
     }
 
-    @Override
-    public synchronized void deleteById(String id) {
-        List<Strategy> all = findAll().stream().filter(s -> !s.id().equals(id)).toList();
-        writeAll(all);
-    }
-
-    private void writeAll(List<Strategy> strategies) {
+    private JSONArray toJsonArray(List<Strategy> strategies) {
         JSONArray arr = new JSONArray();
         for (Strategy s : strategies) {
             JSONObject o = new JSONObject();
@@ -176,9 +251,13 @@ public class FileStrategyRepository implements StrategyRepository {
             o.put("resumeStateBeforePause", s.resumeStateBeforePause().name());
             arr.put(o);
         }
+        return arr;
+    }
+
+    private void persistSnapshot(List<Strategy> strategies) {
         try {
             Files.createDirectories(filePath.getParent());
-            Files.writeString(filePath, arr.toString());
+            Files.writeString(filePath, toJsonArray(strategies).toString());
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to persist strategies", ex);
         }

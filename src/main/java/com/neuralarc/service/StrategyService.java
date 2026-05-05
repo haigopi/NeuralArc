@@ -1,6 +1,7 @@
 package com.neuralarc.service;
 
 import com.neuralarc.api.AlpacaClient;
+import com.neuralarc.api.AlpacaPositionData;
 import com.neuralarc.model.*;
 import org.json.JSONObject;
 
@@ -231,6 +232,58 @@ public class StrategyService {
         strategyRepository.deleteById(strategyId);
         orderRepository.deleteByStrategyId(strategyId);
         eventRepository.deleteByStrategyId(strategyId);
+    }
+
+    public Optional<Strategy> recoverStaleRestartFailure(String strategyId) {
+        Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
+        if (maybeStrategy.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Strategy strategy = maybeStrategy.get();
+        if (strategy.status() != StrategyStatus.FAILED
+                || strategy.currentState() != StrategyLifecycleState.FAILED
+                || !"Projected quantity exceeds maxTotalQuantity".equals(strategy.lastError())) {
+            return Optional.of(strategy);
+        }
+
+        List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
+        Optional<StrategyOrder> latestFilledExitOrder = orders.stream()
+                .filter(order -> order.side() == StrategyOrderSide.SELL)
+                .filter(order -> order.status() == StrategyOrderStatus.FILLED)
+                .max(Comparator.comparing(order -> order.filledAt() == null ? Instant.EPOCH : order.filledAt()));
+        if (latestFilledExitOrder.isEmpty()) {
+            return Optional.of(strategy);
+        }
+
+        Optional<AlpacaPositionData> position = alpacaClient.getPosition(strategy.symbol());
+        if (position.isPresent() && position.get().exists()) {
+            return Optional.of(strategy);
+        }
+
+        cancelPendingRemoteOrders(strategy);
+        for (StrategyOrder order : orders) {
+            if (!order.isPending()) {
+                continue;
+            }
+            order.setStatus(StrategyOrderStatus.CANCELED);
+            orderRepository.save(order);
+        }
+
+        strategy.clearLastError();
+        strategy.setPauseReason(PauseReason.NONE);
+        strategy.clearProfitHoldTracking();
+        if (strategy.restartAfterExitEnabled() && isProfitableExitStage(latestFilledExitOrder.get().stage())) {
+            strategy.setCurrentState(StrategyLifecycleState.CREATED);
+            strategy.setStatus(StrategyStatus.ACTIVE);
+            strategy.setLastEvent("Recovered from stale restart failure");
+        } else {
+            strategy.setCurrentState(StrategyLifecycleState.COMPLETED);
+            strategy.setStatus(StrategyStatus.COMPLETED);
+            strategy.setLastEvent("Recovered from stale failure after completed exit");
+        }
+        strategyRepository.save(strategy);
+        return Optional.of(strategy);
     }
 
     public LivePromotionPreview previewLivePromotion(String strategyId) {
@@ -515,6 +568,10 @@ public class StrategyService {
         if (strategy.currentState() != null && strategy.currentState() != StrategyLifecycleState.PAUSED) {
             strategy.setResumeStateBeforePause(strategy.currentState());
         }
+    }
+
+    private boolean isProfitableExitStage(StrategyStage stage) {
+        return stage == StrategyStage.TARGET_SELL || stage == StrategyStage.PROFIT_EXIT;
     }
 
     private Strategy cloneStrategyForLivePromotion(Strategy paperStrategy) {

@@ -14,36 +14,56 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class FileStrategyOrderRepository implements StrategyOrderRepository {
+    private static final long FLUSH_DELAY_MILLIS = 200L;
+
     private final Path filePath;
+    private final List<StrategyOrder> orders = new ArrayList<>();
+    private final Map<String, StrategyOrder> orderById = new HashMap<>();
+    private final Map<String, List<StrategyOrder>> ordersByStrategyId = new HashMap<>();
+    private final Map<String, StrategyOrder> latestByAlpacaOrderId = new HashMap<>();
+    private final Map<String, StrategyOrder> latestByClientOrderId = new HashMap<>();
+    private final ScheduledExecutorService flushExecutor;
+    private boolean dirty;
+    private boolean flushScheduled;
 
     public FileStrategyOrderRepository(Path filePath) {
         this.filePath = filePath;
+        this.flushExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "neuralarc-strategy-order-repo");
+            thread.setDaemon(true);
+            return thread;
+        });
+        reloadFromDisk();
+        Runtime.getRuntime().addShutdownHook(new Thread(this::close, "neuralarc-strategy-order-repo-shutdown"));
     }
 
     @Override
     public synchronized void save(StrategyOrder order) {
-        List<StrategyOrder> all = findAll();
-        boolean replaced = false;
-        for (int i = 0; i < all.size(); i++) {
-            if (all.get(i).id().equals(order.id())) {
-                all.set(i, order);
-                replaced = true;
-                break;
+        StrategyOrder existing = orderById.get(order.id());
+        if (existing == null) {
+            orders.add(order);
+        } else {
+            int index = orders.indexOf(existing);
+            if (index >= 0) {
+                orders.set(index, order);
             }
         }
-        if (!replaced) {
-            all.add(order);
-        }
-        writeAll(all);
+        rebuildIndexes();
+        markDirty();
     }
 
     @Override
     public synchronized List<StrategyOrder> findByStrategyId(String strategyId) {
-        return findAll().stream().filter(o -> o.strategyId().equals(strategyId)).toList();
+        return new ArrayList<>(ordersByStrategyId.getOrDefault(strategyId, List.of()));
     }
 
     @Override
@@ -58,9 +78,7 @@ public class FileStrategyOrderRepository implements StrategyOrderRepository {
         if (alpacaOrderId == null || alpacaOrderId.isBlank()) {
             return Optional.empty();
         }
-        return findAll().stream()
-                .filter(order -> alpacaOrderId.equals(order.alpacaOrderId()))
-                .max(Comparator.comparing(StrategyOrder::submittedAt));
+        return Optional.ofNullable(latestByAlpacaOrderId.get(alpacaOrderId));
     }
 
     @Override
@@ -68,18 +86,53 @@ public class FileStrategyOrderRepository implements StrategyOrderRepository {
         if (clientOrderId == null || clientOrderId.isBlank()) {
             return Optional.empty();
         }
-        return findAll().stream()
-                .filter(order -> clientOrderId.equals(order.clientOrderId()))
-                .max(Comparator.comparing(StrategyOrder::submittedAt));
+        return Optional.ofNullable(latestByClientOrderId.get(clientOrderId));
     }
 
     @Override
     public synchronized void deleteByStrategyId(String strategyId) {
-        List<StrategyOrder> remaining = findAll().stream().filter(o -> !o.strategyId().equals(strategyId)).toList();
-        writeAll(remaining);
+        if (orders.removeIf(order -> order.strategyId().equals(strategyId))) {
+            rebuildIndexes();
+            markDirty();
+        }
     }
 
-    private List<StrategyOrder> findAll() {
+    public synchronized void reloadFromDisk() {
+        orders.clear();
+        orders.addAll(readAllFromDisk());
+        rebuildIndexes();
+        dirty = false;
+        flushScheduled = false;
+    }
+
+    public void flushNow() {
+        List<StrategyOrder> snapshot;
+        synchronized (this) {
+            if (!dirty) {
+                return;
+            }
+            snapshot = new ArrayList<>(orders);
+            dirty = false;
+            flushScheduled = false;
+        }
+        persistSnapshot(snapshot);
+    }
+
+    public void close() {
+        flushNow();
+        flushExecutor.shutdownNow();
+    }
+
+    private synchronized void markDirty() {
+        dirty = true;
+        if (flushScheduled) {
+            return;
+        }
+        flushScheduled = true;
+        flushExecutor.schedule(this::flushNow, FLUSH_DELAY_MILLIS, TimeUnit.MILLISECONDS);
+    }
+
+    private List<StrategyOrder> readAllFromDisk() {
         if (!Files.exists(filePath)) {
             return new ArrayList<>();
         }
@@ -115,7 +168,28 @@ public class FileStrategyOrderRepository implements StrategyOrderRepository {
         }
     }
 
-    private void writeAll(List<StrategyOrder> orders) {
+    private void rebuildIndexes() {
+        orderById.clear();
+        ordersByStrategyId.clear();
+        latestByAlpacaOrderId.clear();
+        latestByClientOrderId.clear();
+        for (StrategyOrder order : orders) {
+            orderById.put(order.id(), order);
+            ordersByStrategyId.computeIfAbsent(order.strategyId(), ignored -> new ArrayList<>()).add(order);
+            if (order.alpacaOrderId() != null && !order.alpacaOrderId().isBlank()) {
+                latestByAlpacaOrderId.merge(order.alpacaOrderId(), order, this::latestOrder);
+            }
+            if (order.clientOrderId() != null && !order.clientOrderId().isBlank()) {
+                latestByClientOrderId.merge(order.clientOrderId(), order, this::latestOrder);
+            }
+        }
+    }
+
+    private StrategyOrder latestOrder(StrategyOrder left, StrategyOrder right) {
+        return Comparator.comparing(StrategyOrder::submittedAt).compare(left, right) >= 0 ? left : right;
+    }
+
+    private void persistSnapshot(List<StrategyOrder> orders) {
         JSONArray arr = new JSONArray();
         for (StrategyOrder o : orders) {
             JSONObject json = new JSONObject();

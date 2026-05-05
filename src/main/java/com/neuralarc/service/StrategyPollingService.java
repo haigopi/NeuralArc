@@ -11,8 +11,13 @@ import com.neuralarc.model.StrategyStatus;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -27,8 +32,10 @@ public class StrategyPollingService {
     private final StrategyService strategyService;
     private final AppSettingsService appSettingsService;
     private final MarketHoursService marketHoursService;
+    private final ExecutorService pollExecutor;
     private volatile Instant lastStreamingEventAt;
     private volatile Boolean lastTradingSessionOpen;
+    private volatile PollListener pollListener = PollListener.NOOP;
 
     public StrategyPollingService(
             StrategyRepository strategyRepository,
@@ -79,6 +86,12 @@ public class StrategyPollingService {
                 appSettingsService,
                 marketHoursService
         );
+        int threadCount = Math.max(2, Math.min(6, Runtime.getRuntime().availableProcessors()));
+        this.pollExecutor = Executors.newFixedThreadPool(threadCount, runnable -> {
+            Thread thread = new Thread(runnable, "neuralarc-poll-worker");
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 
     public void pollDueStrategies() {
@@ -94,9 +107,18 @@ public class StrategyPollingService {
             lastTradingSessionOpen = null;
         }
 
+        List<Future<?>> futures = new ArrayList<>();
         for (Strategy strategy : strategyRepository.findActive()) {
             if (shouldPoll(strategy, now)) {
-                pollStrategy(strategy.id());
+                String strategyId = strategy.id();
+                futures.add(pollExecutor.submit(() -> pollStrategy(strategyId)));
+            }
+        }
+        for (Future<?> future : futures) {
+            try {
+                future.get();
+            } catch (Exception ex) {
+                LOGGER.log(Level.WARNING, "Failed waiting for poll task completion", ex);
             }
         }
     }
@@ -116,9 +138,11 @@ public class StrategyPollingService {
         }
 
         try {
+            pollListener.onPollStarted(strategy.id());
             strategyEngine.reconcile(strategy);
             eventRepository.save(event(strategy.id(), StrategyEventType.POLL_SUCCESS,
                     "Poll completed", "{\"strategyId\":\"" + strategy.id() + "\"}"));
+            pollListener.onPollCompleted(strategy.id());
         } catch (Exception ex) {
             strategy.setStatus(StrategyStatus.PAUSED);
             strategy.setCurrentState(StrategyLifecycleState.PAUSED);
@@ -127,8 +151,17 @@ public class StrategyPollingService {
             strategy.setLastError(ex.getMessage());
             strategyRepository.save(strategy);
             eventRepository.save(event(strategy.id(), StrategyEventType.POLL_ERROR, ex.getMessage(), "{}"));
+            pollListener.onPollFailed(strategy.id());
             LOGGER.log(Level.WARNING, "Polling failed for strategy " + strategy.id(), ex);
         }
+    }
+
+    public void setPollListener(PollListener pollListener) {
+        this.pollListener = pollListener == null ? PollListener.NOOP : pollListener;
+    }
+
+    public void shutdown() {
+        pollExecutor.shutdownNow();
     }
 
     public void onTradeUpdate(AlpacaTradeUpdateEvent updateEvent) {
@@ -211,5 +244,13 @@ public class StrategyPollingService {
 
     private StrategyExecutionEvent event(String strategyId, StrategyEventType type, String message, String metadataJson) {
         return new StrategyExecutionEvent(UUID.randomUUID().toString(), strategyId, type, message, metadataJson, Instant.now());
+    }
+
+    public interface PollListener {
+        PollListener NOOP = new PollListener() {};
+
+        default void onPollStarted(String strategyId) {}
+        default void onPollCompleted(String strategyId) {}
+        default void onPollFailed(String strategyId) {}
     }
 }

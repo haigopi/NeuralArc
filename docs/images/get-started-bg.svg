@@ -1,0 +1,44 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="900" fill="#06101A"/>
+  <defs>
+    <linearGradient id="pathGlow" x1="40" y1="790" x2="1540" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7CF6C4" stop-opacity="0.9"/>
+      <stop offset="0.48" stop-color="#8FD9FF" stop-opacity="0.82"/>
+      <stop offset="1" stop-color="#B8A4FF" stop-opacity="0.72"/>
+    </linearGradient>
+    <radialGradient id="leftFog" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(250 620) rotate(90) scale(420 560)">
+      <stop stop-color="#184A61" stop-opacity="0.76"/>
+      <stop offset="1" stop-color="#184A61" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rightFog" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1310 260) rotate(90) scale(360 520)">
+      <stop stop-color="#252E5A" stop-opacity="0.52"/>
+      <stop offset="1" stop-color="#252E5A" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#leftFog)"/>
+  <rect width="1600" height="900" fill="url(#rightFog)"/>
+
+  <g opacity="0.92">
+    <path d="M-80 760C120 704 270 656 424 584C560 520 674 434 822 374C994 304 1188 270 1690 80" stroke="url(#pathGlow)" stroke-width="8" stroke-linecap="round"/>
+    <path d="M-10 820L240 720L454 598L646 486L862 380L1118 292L1382 188L1624 88" stroke="#8FD9FF" stroke-opacity="0.28" stroke-width="4" stroke-linecap="round" stroke-dasharray="14 16"/>
+  </g>
+
+  <g opacity="0.96">
+    <circle cx="264" cy="708" r="68" fill="#0B1926" stroke="#7CF6C4" stroke-opacity="0.72" stroke-width="3"/>
+    <circle cx="672" cy="470" r="68" fill="#0B1926" stroke="#8FD9FF" stroke-opacity="0.72" stroke-width="3"/>
+    <circle cx="1120" cy="294" r="68" fill="#0B1926" stroke="#B8A4FF" stroke-opacity="0.68" stroke-width="3"/>
+  </g>
+
+  <g fill="#EAF6FF" font-family="Inter, Arial, sans-serif" font-size="42" font-weight="700" text-anchor="middle">
+    <text x="264" y="722">1</text>
+    <text x="672" y="484">2</text>
+    <text x="1120" y="308">3</text>
+  </g>
+
+  <g opacity="0.34" stroke="#8FD9FF" stroke-width="2.5">
+    <rect x="58" y="180" width="364" height="196" rx="24"/>
+    <rect x="1210" y="520" width="324" height="188" rx="24"/>
+    <rect x="870" y="92" width="286" height="148" rx="22"/>
+  </g>
+</svg>

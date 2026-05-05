@@ -402,7 +402,7 @@
       background-position: right bottom;
       background-repeat: no-repeat;
       background-size: contain;
-      opacity: 0.16;
+      opacity: 0.04;
       pointer-events: none;
     }
 
@@ -459,7 +459,7 @@
         url("./images/private-design-bg.svg");
       background-position: center center;
       background-size: cover;
-      opacity: 0.24;
+      opacity: 0.05;
       animation: sectionGlow 10s ease-in-out infinite;
     }
 
@@ -472,7 +472,7 @@
         url("./images/automation-bg.svg");
       background-position: center center;
       background-size: cover;
-      opacity: 0.24;
+      opacity: 0.05;
       animation: sectionGlow 10s ease-in-out infinite 1.4s;
     }
 
@@ -485,7 +485,7 @@
         url("./images/autonomous-risk-bg.svg");
       background-position: center center;
       background-size: cover;
-      opacity: 0.24;
+      opacity: 0.05;
       animation: sectionGlow 10s ease-in-out infinite 2.8s;
     }
 
@@ -515,6 +515,45 @@
         radial-gradient(circle at 18% 46%, rgba(124, 246, 196, 0.1), transparent 30%),
         radial-gradient(circle at 82% 54%, rgba(84, 174, 255, 0.1), transparent 32%);
       pointer-events: none;
+    }
+
+    .panel--full-screen.technology::after {
+      inset: 0;
+      width: auto;
+      height: auto;
+      background-image:
+        linear-gradient(180deg, rgba(5, 12, 19, 0.14) 0%, rgba(5, 12, 19, 0.52) 100%),
+        url("./images/technology-bg.svg");
+      background-position: center 56%;
+      background-size: cover;
+      opacity: 0.035;
+      animation: sectionGlow 11s ease-in-out infinite 0.7s;
+    }
+
+    .panel--full-screen.get-started::after {
+      inset: 0;
+      width: auto;
+      height: auto;
+      background-image:
+        linear-gradient(180deg, rgba(5, 12, 19, 0.14) 0%, rgba(5, 12, 19, 0.52) 100%),
+        url("./images/get-started-bg.svg");
+      background-position: center 60%;
+      background-size: cover;
+      opacity: 0.035;
+      animation: sectionGlow 11s ease-in-out infinite 1.8s;
+    }
+
+    .panel--full-screen.ai-ready::after {
+      inset: 0;
+      width: auto;
+      height: auto;
+      background-image:
+
+        url("./images/ai-ready-bg.svg");
+      background-position: center 58%;
+      background-size: cover;
+      opacity: 0.03;
+      animation: sectionGlow 11s ease-in-out infinite 2.9s;
     }
 
     .panel--full-screen > * {
@@ -568,10 +607,94 @@
       margin-top: 28px;
     }
 
+    .panel--heroish .panel-button:hover,
+    .panel--heroish .panel-button:focus-visible {
+      background: linear-gradient(90deg, #7cf6c4 0%, #8fd9ff 20%, #bba8ff 46%, #ff9ec7 72%, #ffd27a 100%);
+      border-color: rgba(255, 255, 255, 0.28);
+      color: #06101a;
+      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.24);
+    }
+
+    .details-dialog {
+      width: min(640px, calc(100% - 24px));
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 0;
+      background:
+        linear-gradient(180deg, rgba(12, 26, 39, 0.98), rgba(8, 18, 29, 0.96)),
+        radial-gradient(circle at 16% 18%, rgba(124, 246, 196, 0.12), transparent 28%);
+      color: var(--text);
+      box-shadow: var(--shadow);
+    }
+
+    .details-dialog::backdrop {
+      background: rgba(3, 10, 16, 0.72);
+    }
+
+    .dialog-shell {
+      padding: 24px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .dialog-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+    }
+
+    .dialog-head h3 {
+      font-size: 1.5rem;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+
+    .dialog-close {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      min-width: 38px;
+      min-height: 38px;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      font-size: 1.2rem;
+      cursor: pointer;
+    }
+
+    .dialog-intro {
+      color: var(--muted);
+      line-height: 1.75;
+    }
+
+    .dialog-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      line-height: 1.8;
+    }
+
+    .dialog-list li::marker {
+      color: var(--accent);
+    }
+
+    .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .dialog-actions button {
+      cursor: pointer;
+      font-family: inherit;
+      font-size: .95rem;
+    }
+
     @keyframes sectionGlow {
-      0% { opacity: 0.18; transform: scale(1); }
-      50% { opacity: 0.28; transform: scale(1.02); }
-      100% { opacity: 0.18; transform: scale(1); }
+      0% { opacity: 0.03; transform: scale(1); }
+      50% { opacity: 0.06; transform: scale(1.01); }
+      100% { opacity: 0.03; transform: scale(1); }
     }
 
     .panel-intro {
@@ -698,6 +821,13 @@
       color: var(--muted);
       line-height: 1.84;
       font-size: .96rem;
+    }
+
+    .card-action {
+      margin-top: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
     }
 
     .footer {
@@ -860,19 +990,19 @@ live: manual promotion only</pre>
         <article class="panel panel--heroish trust" id="trust-privacy">
           <span class="section-chip">Private by Design</span>
           <h2>Keep your workflow yours.</h2>
-          <a class="button-secondary panel-button" href="#get-started">Learn more</a>
+          <a class="button-secondary panel-button learn-more-trigger" href="#" data-dialog-topic="trust" aria-haspopup="dialog" aria-controls="learn-more-dialog">Learn more</a>
         </article>
 
         <article class="panel panel--heroish automation" id="automation-velocity">
           <span class="section-chip">Move Faster with Automation</span>
           <h2>Go from setup to action with less friction.</h2>
-          <a class="button-secondary panel-button" href="#get-started">Learn more</a>
+          <a class="button-secondary panel-button learn-more-trigger" href="#" data-dialog-topic="automation" aria-haspopup="dialog" aria-controls="learn-more-dialog">Learn more</a>
         </article>
 
         <article class="panel panel--heroish risk" id="autonomous-risk">
           <span class="section-chip">Autonomous &amp; Risk</span>
           <h2>Let the system carry the routine.</h2>
-          <a class="button-secondary panel-button" href="#get-started">Learn more</a>
+          <a class="button-secondary panel-button learn-more-trigger" href="#" data-dialog-topic="risk" aria-haspopup="dialog" aria-controls="learn-more-dialog">Learn more</a>
         </article>
       </section>
 
@@ -900,7 +1030,7 @@ live: manual promotion only</pre>
 
         <article class="panel">
           <span class="section-chip">Security</span>
-          <h2>Keep sensitive details protected at rest.</h2>
+          <h2>All sensitive details protected. No Exceptions.</h2>
           <div class="card-grid">
             <section class="info-card">
               <h3>Credentials Stay Local</h3>
@@ -944,7 +1074,7 @@ live: manual promotion only</pre>
         </article>
       </section>
 
-      <section class="panel panel--full-screen">
+      <section class="panel panel--full-screen technology">
         <span class="section-chip">Technology</span>
         <h2>Simple on the surface. Serious underneath.</h2>
         <div class="tech-grid">
@@ -959,7 +1089,7 @@ live: manual promotion only</pre>
         </div>
       </section>
 
-      <section class="panel panel--full-screen" id="get-started">
+      <section class="panel panel--full-screen get-started" id="get-started">
         <span class="section-chip">Get Started</span>
         <h2>Get into the app in minutes.</h2>
         <div class="card-grid">
@@ -969,6 +1099,9 @@ live: manual promotion only</pre>
               <li>Create your Alpaca account first for your trading workflow.</li>
               <li>Use those API keys inside NeuralArc for secure local setup.</li>
             </ul>
+            <div class="card-action">
+              <a class="button-secondary" href="https://alpaca.markets/" target="_blank" rel="noopener noreferrer">Open Alpaca</a>
+            </div>
           </section>
           <section class="info-card">
             <h3>2. Download and Run NeuralArc</h3>
@@ -976,6 +1109,9 @@ live: manual promotion only</pre>
               <li>Open the app and follow the guided first-run setup.</li>
               <li>The initial path takes only a few minutes and a few clicks.</li>
             </ul>
+            <div class="card-action">
+              <a class="button" href="#top">Download NeuralArc</a>
+            </div>
           </section>
         </div>
         <div class="feature-card" style="margin-top: 18px;">
@@ -987,7 +1123,7 @@ live: manual promotion only</pre>
         </div>
       </section>
 
-      <section class="panel panel--full-screen">
+      <section class="panel panel--full-screen ai-ready">
         <span class="section-chip">NVIDIA AI Ready</span>
         <h2>Prepared for local AI using Jetson Orin Nano Super Developer Kit.</h2>
         <div class="feature-card" style="margin-top: 18px;">
@@ -1001,10 +1137,25 @@ live: manual promotion only</pre>
     </main>
 
     <footer class="footer">
-      <span>NeuralArc</span>
-      <span>• Not financial advice • Live trading at your own risk</span>
+      <span>NeuralArc - Desktop AI Trading Application</span>
+      <span>Not financial advice • Live trading at your own risk</span>
     </footer>
   </div>
+
+  <dialog id="learn-more-dialog" class="details-dialog" aria-labelledby="learn-more-title">
+    <div class="dialog-shell">
+      <div class="dialog-head">
+        <h3 id="learn-more-title"></h3>
+        <button type="button" class="dialog-close" data-dialog-close aria-label="Close details dialog">x</button>
+      </div>
+      <p id="learn-more-intro" class="dialog-intro"></p>
+      <ul id="learn-more-list" class="dialog-list"></ul>
+      <div class="dialog-actions">
+        <button type="button" class="button-secondary" data-dialog-close>Close</button>
+        <a class="button" href="#get-started">Get Started</a>
+      </div>
+    </div>
+  </dialog>
 
   <script>
     if ("scrollRestoration" in history) {
@@ -1030,6 +1181,100 @@ live: manual promotion only</pre>
       };
       onScroll();
       window.addEventListener("scroll", onScroll, { passive: true });
+    })();
+  </script>
+  <script>
+    (function () {
+      const dialog = document.getElementById("learn-more-dialog");
+      const titleEl = document.getElementById("learn-more-title");
+      const introEl = document.getElementById("learn-more-intro");
+      const listEl = document.getElementById("learn-more-list");
+      const triggers = document.querySelectorAll(".learn-more-trigger");
+      if (!dialog || !titleEl || !introEl || !listEl || triggers.length === 0) {
+        return;
+      }
+
+      const detailsByTopic = {
+        trust: {
+          title: "Private by Design",
+          intro: "NeuralArc keeps core trading workflow decisions on your machine with local-first defaults.",
+          points: [
+            "Strategies and execution controls run without requiring a cloud dependency.",
+            "Credentials are encrypted locally and are not sent through analytics payloads.",
+            "You maintain direct visibility into settings, triggers, and trade flow."
+          ]
+        },
+        automation: {
+          title: "Move Faster with Automation",
+          intro: "Automation helps reduce repetitive setup work while keeping your approval points clear.",
+          points: [
+            "Guided setup helps you connect credentials and validate before execution.",
+            "Rule-based strategy configuration turns intent into repeatable behavior.",
+            "You can promote from simulation to live only when you are ready."
+          ]
+        },
+        risk: {
+          title: "Autonomous & Risk",
+          intro: "NeuralArc balances autonomous monitoring with explicit risk controls under your supervision.",
+          points: [
+            "Auto Analyze highlights opportunities without replacing operator judgment.",
+            "Recommendation context includes confidence and actionable ranges.",
+            "Rules keep risk boundaries and decision control in your hands."
+          ]
+        }
+      };
+
+      let lastTrigger = null;
+      const closeDialog = () => dialog.close();
+
+      const restoreTriggerFocus = () => {
+        if (!lastTrigger) {
+          return;
+        }
+
+        try {
+          lastTrigger.focus({ preventScroll: true });
+        } catch (error) {
+          lastTrigger.focus();
+        }
+      };
+
+      triggers.forEach((trigger) => {
+        trigger.addEventListener("click", (event) => {
+          event.preventDefault();
+          const topic = trigger.dataset.dialogTopic;
+          const details = detailsByTopic[topic];
+          if (!details) {
+            return;
+          }
+
+          titleEl.textContent = details.title;
+          introEl.textContent = details.intro;
+          listEl.innerHTML = "";
+          details.points.forEach((point) => {
+            const item = document.createElement("li");
+            item.textContent = point;
+            listEl.appendChild(item);
+          });
+
+          lastTrigger = trigger;
+          dialog.showModal();
+        });
+      });
+
+      dialog.querySelectorAll("[data-dialog-close]").forEach((closeBtn) => {
+        closeBtn.addEventListener("click", closeDialog);
+      });
+
+      dialog.addEventListener("click", (event) => {
+        if (event.target === dialog) {
+          closeDialog();
+        }
+      });
+
+      dialog.addEventListener("close", () => {
+        requestAnimationFrame(restoreTriggerFocus);
+      });
     })();
   </script>
   <script>

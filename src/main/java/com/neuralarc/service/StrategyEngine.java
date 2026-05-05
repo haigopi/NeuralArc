@@ -131,6 +131,12 @@ public class StrategyEngine {
             return false;
         }
 
+        // After a full exit, old staged buy orders from the previous cycle must not be recreated.
+        // Restart/completion handling later in reconcile() owns the next action for that case.
+        if (latestFilledExitOrder(orders).isPresent()) {
+            return false;
+        }
+
         boolean updatedLocalOrderState = false;
         for (StrategyOrder order : orders) {
             if (!order.isPending()) {
