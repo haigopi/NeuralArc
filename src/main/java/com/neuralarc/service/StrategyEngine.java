@@ -78,6 +78,10 @@ public class StrategyEngine {
      */
     List<RuleOutcome> reconcileTracked(Strategy strategy, Map<String, BigDecimal> priceCache) {
         List<RuleOutcome> outcomes = new ArrayList<>();
+        if (!isAutoExecutionAllowed(strategy.id())) {
+            logPoll(strategy, "POLL", "SKIPPED", "Strategy is no longer active (likely manually canceled/paused)");
+            return outcomes;
+        }
         AppSettingsService.AppSettings settings = appSettingsService.load();
         boolean sessionOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
         refreshOrderStatuses(strategy);
@@ -140,6 +144,10 @@ public class StrategyEngine {
 
         maybeSubmitBuyLimit1(strategy, latestPrice, orders, outcomes);
         maybeSubmitBuyLimit2(strategy, latestPrice, orders, outcomes);
+        if (!isAutoExecutionAllowed(strategy.id())) {
+            logPoll(strategy, "POLL", "COMPLETED", "Skipped final state save because strategy was paused during poll");
+            return outcomes;
+        }
         strategy.setLastPolledAt(Instant.now());
         strategyRepository.save(strategy);
         logPoll(strategy, "POLL", "COMPLETED", "lastPolledAt=" + strategy.lastPolledAt());
@@ -546,6 +554,9 @@ public class StrategyEngine {
             String message,
             boolean enforceTradableSession
     ) {
+        if (!isAutoExecutionAllowed(strategy.id())) {
+            return null;
+        }
         RiskProjection projection = projectedRisk(strategy, BigDecimal.valueOf(quantity), limitPrice);
         if (!projection.allowed()) {
             strategy.setLastError(projection.reason());
@@ -623,6 +634,9 @@ public class StrategyEngine {
             String message,
             StrategyEventType eventType
     ) {
+        if (!isAutoExecutionAllowed(strategy.id())) {
+            return null;
+        }
         int requestedQuantity = quantity.setScale(0, java.math.RoundingMode.DOWN).intValue();
         if (requestedQuantity <= 0) {
             return null;
@@ -691,6 +705,9 @@ public class StrategyEngine {
             String message,
             StrategyEventType eventType
     ) {
+        if (!isAutoExecutionAllowed(strategy.id())) {
+            return null;
+        }
         int requestedQuantity = quantity.setScale(0, java.math.RoundingMode.DOWN).intValue();
         if (requestedQuantity <= 0) {
             return null;
@@ -901,5 +918,10 @@ public class StrategyEngine {
             case STOP_LOSS -> "STOP_LOSS_RULE";
             case LOSS_EXIT, PROFIT_EXIT, MANUAL_EXIT, CLOSE_POSITION -> stage.name();
         };
+    }
+
+    private boolean isAutoExecutionAllowed(String strategyId) {
+        Optional<Strategy> latest = strategyRepository.findById(strategyId);
+        return latest.isPresent() && latest.get().status() == StrategyStatus.ACTIVE;
     }
 }

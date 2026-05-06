@@ -59,6 +59,51 @@ class StrategyServiceTest {
     }
 
     @Test
+    void initialOrderUsesStrategyDialogConfigurationValues() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+        StrategyConfig config = new StrategyConfig(
+                "msft",
+                new BigDecimal("412.34"),
+                7,
+                true,
+                new BigDecimal("390.00"),
+                true,
+                new BigDecimal("450.00"),
+                BigDecimal.ZERO,
+                0,
+                BigDecimal.ZERO,
+                0,
+                false,
+                false,
+                BigDecimal.ZERO,
+                60,
+                true,
+                false,
+                false,
+                ProfitHoldType.PERCENT_TRAILING,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                false
+        );
+        Strategy strategy = Strategy.fromConfig("dialog-config-strategy", "MSFT Strategy", config, StrategyMode.PAPER);
+
+        StrategyService.StrategyCreationResult result = service.createAndActivate(strategy);
+
+        assertTrue(result.success());
+        assertEquals(1, alpaca.submittedOrders.size());
+        AlpacaOrderData submitted = alpaca.submittedOrders.getFirst();
+        assertEquals("MSFT", submitted.symbol());
+        assertEquals("buy", submitted.side());
+        assertEquals("limit", submitted.type());
+        assertEquals(new BigDecimal("412.34"), submitted.limitPrice());
+        assertTrue(submitted.rawJson().contains("\"qty\":\"7\""));
+    }
+
+    @Test
     void initialBaseBuyCanBePlacedWhenMarketIsClosed() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

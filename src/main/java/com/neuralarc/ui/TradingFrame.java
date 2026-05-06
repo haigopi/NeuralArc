@@ -931,6 +931,7 @@ public class TradingFrame extends JFrame {
         statusStrategyCount.setForeground(new Color(150, 150, 160));
         statusStrategyCount.setVerticalAlignment(SwingConstants.CENTER);
         statusStrategyCount.setBorder(new EmptyBorder(0, 0, 0, 12));
+        statusStrategyCount.setToolTipText(TooltipStyler.text("Includes records shown in Current Strategies and Trade History tabs."));
         marketStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         marketStatus.setForeground(BOTTOM_STATUS_ACCENT);
         marketStatus.setVerticalAlignment(SwingConstants.CENTER);
@@ -1014,24 +1015,29 @@ public class TradingFrame extends JFrame {
         leftGbc.gridx = 0;
         statusLeft.add(statusBar, leftGbc);
         leftGbc.gridx = 1;
-        leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
-        statusLeft.add(statusStrategyCount, leftGbc);
+        statusLeft.add(createStatusSeparator(), leftGbc);
         leftGbc.gridx = 2;
         leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
-        statusLeft.add(pollingSummary, leftGbc);
+        statusLeft.add(statusStrategyCount, leftGbc);
         leftGbc.gridx = 3;
-        leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
-        statusLeft.add(marketStatus, leftGbc);
+        statusLeft.add(createStatusSeparator(), leftGbc);
         leftGbc.gridx = 4;
         leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
-        statusLeft.add(streamStatus, leftGbc);
+        statusLeft.add(marketStatus, leftGbc);
         leftGbc.gridx = 5;
         leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
-        statusLeft.add(marketValueStatus, leftGbc);
+        statusLeft.add(streamStatus, leftGbc);
         leftGbc.gridx = 6;
+        statusLeft.add(createStatusSeparator(), leftGbc);
+        leftGbc.gridx = 7;
+        leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
+        statusLeft.add(marketValueStatus, leftGbc);
+        leftGbc.gridx = 8;
+        statusLeft.add(createStatusSeparator(), leftGbc);
+        leftGbc.gridx = 9;
         leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
         statusLeft.add(cpuUsageStatus, leftGbc);
-        leftGbc.gridx = 7;
+        leftGbc.gridx = 10;
         leftGbc.insets = new java.awt.Insets(0, 0, 0, 8);
         statusLeft.add(memoryUsageStatus, leftGbc);
 
@@ -2623,7 +2629,11 @@ public class TradingFrame extends JFrame {
             return;
         }
         entry.pollInFlight = false;
-        markPollingCycleCompleted(entry);
+        if (shouldShowPollingIndicator(entry)) {
+            markPollingCycleCompleted(entry);
+        } else {
+            stopPollingCountdown(entry);
+        }
         refreshStrategyTableRow(strategyId);
     }
 
@@ -2775,6 +2785,7 @@ public class TradingFrame extends JFrame {
                         pollSnapshot != null && pollSnapshot.marketClosedSuppressed(),
                         pollSnapshot == null ? 0 : pollSnapshot.due(),
                         pollSnapshot == null ? 0 : pollSnapshot.skippedNotDue(),
+                        filledOrderRows.size(),
                         connectionRetryPending,
                         connectionOk,
                         marketStatusViewModel.label(),
@@ -2810,6 +2821,13 @@ public class TradingFrame extends JFrame {
         };
     }
 
+    private JLabel createStatusSeparator() {
+        JLabel separator = new JLabel("|");
+        separator.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        separator.setForeground(new Color(95, 95, 110));
+        separator.setBorder(new EmptyBorder(0, 2, 0, 2));
+        return separator;
+    }
 
     private String formatMarketValueText() {
         return systemMetricsPresenter.formatMarketValueText(strategies);
@@ -3111,6 +3129,7 @@ public class TradingFrame extends JFrame {
             }
             setOpaque(true);
             setHorizontalAlignment(alignmentForColumn(column));
+            setBorder(new EmptyBorder(0, 10, 0, 10));
             return this;
         }
 
@@ -3232,16 +3251,16 @@ public class TradingFrame extends JFrame {
         private final JButton deleteButton = new JButton("Delete");
 
         private ActionsRenderer() {
-            super(new GridLayout(1, 5, 6, 0));
+            super(new GridLayout(1, 5, 4, 0));
             setOpaque(true);
-            applyButtonIcon(editButton, "icons/edit.svg", 13);
+            applyButtonIcon(editButton, "icons/edit.svg", 12);
             applyButtonIcon(toggleButton, "icons/pause.svg", 13);
-            applyButtonIcon(sellButton, "icons/submit.svg", 13);
+            applyButtonIcon(sellButton, "icons/submit.svg", 12);
             applyButtonIcon(promoteButton, "icons/add-stock-strategy.svg", 13);
             applyButtonIcon(deleteButton, "icons/delete.svg", 13);
-            styleActionButton(editButton, new Color(63, 81, 181));
+            styleCompactActionButton(editButton, new Color(63, 81, 181));
             styleActionButton(toggleButton, new Color(198, 40, 40));
-            styleActionButton(sellButton, new Color(230, 81, 0));
+            styleCompactActionButton(sellButton, new Color(230, 81, 0));
             styleActionButton(promoteButton, new Color(25, 118, 210));
             styleActionButton(deleteButton, new Color(156, 39, 39));
             add(editButton);
@@ -3259,6 +3278,7 @@ public class TradingFrame extends JFrame {
                     new StrategyActionsPresenter.StrategyActionsState(
                             strategy.strategy.status() == StrategyStatus.ARCHIVED,
                             strategy.isPaused(),
+                            strategy.strategy.pauseReason() == PauseReason.USER_PAUSED,
                             strategy.isPauseResumeBusy(),
                             strategy.pauseResumeBusyText(),
                             strategy.strategy.mode() == StrategyMode.PAPER,
@@ -3269,9 +3289,12 @@ public class TradingFrame extends JFrame {
             styleActionButton(toggleButton, actionsViewModel.toggleColor());
             toggleButton.setEnabled(actionsViewModel.toggleEnabled());
             sellButton.setEnabled(actionsViewModel.sellEnabled());
-            styleActionButton(sellButton, actionsViewModel.sellColor());
+            styleCompactActionButton(sellButton, actionsViewModel.sellColor());
             promoteButton.setEnabled(actionsViewModel.promoteEnabled());
             styleActionButton(promoteButton, actionsViewModel.promoteColor());
+            sellButton.setToolTipText(actionsViewModel.sellEnabled()
+                    ? TooltipStyler.text("Sell the open position for this strategy.")
+                    : TooltipStyler.text("Sell is available only when Alpaca shows an open position for this strategy."));
             setBackground(selectionAwareRowColor(isSelected, table));
             return this;
         }
@@ -3320,9 +3343,21 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    private void styleCompactActionButton(JButton button, Color background) {
+        styleActionButton(button, background);
+        button.setFont(BASE_FONT.deriveFont(Font.BOLD, 10f));
+        button.setMargin(new java.awt.Insets(3, 4, 3, 4));
+        button.setIconTextGap(3);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(background.darker(), 1, true),
+                new EmptyBorder(1, 3, 1, 3)
+        ));
+    }
+
     private void updateActionButtonColor(JButton button, Color background) {
         button.setBackground(background);
-        button.setForeground(Color.WHITE);
+        button.setForeground(button.isEnabled() ? Color.WHITE : new Color(248, 250, 252));
+        button.putClientProperty("JButton.disabledText", new Color(248, 250, 252));
     }
 
     private void applyButtonIcon(JButton button, String resourcePath, int size) {

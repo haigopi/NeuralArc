@@ -2,19 +2,15 @@ package com.neuralarc.ui;
 
 public final class StatusBarPresenter {
     public StatusBarViewModel present(StatusBarState state) {
-        String pollingText = "Poll: -";
+        String pollingText = "Monitoring: Ready";
         Tone pollingTone = Tone.DEFAULT;
         if (state.pollCycleEvaluated()) {
             if (state.pollMarketClosedSuppressed()) {
-                pollingText = "Poll: Market Closed";
+                pollingText = "Monitoring: Paused for market close";
                 pollingTone = Tone.MUTED;
             } else {
-                pollingText = "Poll: due " + state.pollDue() + " | skipped " + state.pollSkippedNotDue();
-                if (state.pollDue() > 0) {
-                    pollingTone = Tone.OK;
-                } else if (state.pollSkippedNotDue() > 0) {
-                    pollingTone = Tone.WARN;
-                }
+                pollingText = "Monitoring: Active";
+                pollingTone = Tone.OK;
             }
         }
 
@@ -38,7 +34,10 @@ public final class StatusBarPresenter {
         }
 
         return new StatusBarViewModel(
-                "Strategies: Active " + state.runningStrategies() + " | Inactive " + state.inactiveStrategies(),
+                "Records: Strategies " + (state.runningStrategies() + state.inactiveStrategies())
+                        + " (Active " + state.runningStrategies()
+                        + ", Inactive " + state.inactiveStrategies()
+                        + ") | Trade History " + state.historyRows(),
                 pollingText,
                 pollingTone,
                 state.marketLabel(),
@@ -67,6 +66,7 @@ public final class StatusBarPresenter {
             boolean pollMarketClosedSuppressed,
             int pollDue,
             int pollSkippedNotDue,
+            long historyRows,
             boolean connectionRetryPending,
             boolean connectionOk,
             String marketLabel,
@@ -93,4 +93,3 @@ public final class StatusBarPresenter {
     ) {
     }
 }
-

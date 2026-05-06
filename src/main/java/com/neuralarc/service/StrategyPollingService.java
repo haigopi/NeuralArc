@@ -111,8 +111,8 @@ public class StrategyPollingService {
             handleMarketSessionTransition(marketOpen, settings.extendedHoursTradingEnabled(), now);
             if (!marketOpen) {
                 lastPollCycleSnapshot = new PollCycleSnapshot(true, true, 0, 0, 0, 0);
-                if (LOGGER.isLoggable(Level.INFO)) {
-                    LOGGER.info("[POLL][CYCLE] marketOpen=false autoPause=true scanned=0 eligible=0 due=0 skippedNotDue=0");
+                if (LOGGER.isLoggable(Level.FINE)) {
+                    LOGGER.fine("[POLL][CYCLE] marketOpen=false autoPause=true scanned=0 eligible=0 due=0 skippedNotDue=0");
                 }
                 return 0;
             }
@@ -155,7 +155,7 @@ public class StrategyPollingService {
                 try {
                     Map<String, BigDecimal> fetched = alpacaClient.getLatestPrices(symbols);
                     priceCache = fetched;
-                    LOGGER.info(() -> "[POLL][PRICE_CACHE] Batch-fetched prices for " + symbols.size()
+                    LOGGER.fine(() -> "[POLL][PRICE_CACHE] Batch-fetched prices for " + symbols.size()
                             + " symbol(s): " + symbols + " → " + fetched.size() + " result(s)");
                 } catch (Exception ex) {
                     LOGGER.log(Level.WARNING, "[POLL][PRICE_CACHE] Batch price fetch failed, will fall back to per-symbol calls", ex);
@@ -177,8 +177,8 @@ public class StrategyPollingService {
                 LOGGER.log(Level.WARNING, "Failed waiting for poll task completion", ex);
             }
         }
-        if (LOGGER.isLoggable(Level.INFO)) {
-            LOGGER.info("[POLL][CYCLE] marketOpen=true autoPause=" + settings.autoPausePollingWhenMarketClosed()
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.fine("[POLL][CYCLE] marketOpen=true autoPause=" + settings.autoPausePollingWhenMarketClosed()
                     + " scanned=" + totalStrategies
                     + " eligible=" + eligibleStrategies
                     + " due=" + dueStrategies

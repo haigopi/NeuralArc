@@ -12,7 +12,7 @@ class StrategyActionsPresenterTest {
     @Test
     void archivedStrategiesDisableToggleAndPromotion() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
-                new StrategyActionsPresenter.StrategyActionsState(true, false, false, "", true, false)
+                new StrategyActionsPresenter.StrategyActionsState(true, false, false, false, "", true, false)
         );
 
         assertEquals("Archived", viewModel.toggleText());
@@ -23,7 +23,7 @@ class StrategyActionsPresenterTest {
     @Test
     void busyStateShowsBusyTextAndDisablesPromotionWhenNotPaper() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
-                new StrategyActionsPresenter.StrategyActionsState(false, true, true, "Canceling...", false, true)
+                new StrategyActionsPresenter.StrategyActionsState(false, true, false, true, "Canceling...", false, true)
         );
 
         assertEquals("Canceling...", viewModel.toggleText());
@@ -34,11 +34,21 @@ class StrategyActionsPresenterTest {
     @Test
     void pausedPaperStrategiesShowResumeAndAllowPromotion() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
-                new StrategyActionsPresenter.StrategyActionsState(false, true, false, "", true, true)
+                new StrategyActionsPresenter.StrategyActionsState(false, true, false, false, "", true, true)
         );
 
         assertEquals("Resume", viewModel.toggleText());
         assertTrue(viewModel.toggleEnabled());
         assertTrue(viewModel.promoteEnabled());
+    }
+
+    @Test
+    void manuallyCanceledStrategiesShowPlaceLimitBuyAgain() {
+        StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
+                new StrategyActionsPresenter.StrategyActionsState(false, true, true, false, "", true, false)
+        );
+
+        assertEquals("Place Limit Buy Again", viewModel.toggleText());
+        assertTrue(viewModel.toggleEnabled());
     }
 }

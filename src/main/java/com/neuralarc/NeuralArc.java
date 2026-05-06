@@ -22,18 +22,20 @@ public class NeuralArc {
 
         SwingUtilities.invokeLater(() -> {
             int splashDurationMillis = AppMetadata.splashDurationMillis();
+            TradingFrame frame = new TradingFrame();
+            installApplicationIcon(frame);
+            installMacApplicationMenu(frame);
+            frame.setVisible(true);
+
             SplashScreenWindow splash = new SplashScreenWindow(splashDurationMillis);
             installApplicationIcon(splash);
+            splash.setLocationRelativeTo(frame);
             splash.setVisible(true);
             Timer splashTimer = new Timer(splashDurationMillis, event -> {
                 splash.dispose();
-                SwingUtilities.invokeLater(() -> {
-                    TradingFrame frame = new TradingFrame();
-                    installApplicationIcon(frame);
-                    installMacApplicationMenu(frame);
-                    frame.setVisible(true);
-                    frame.promptForRequiredSettings();
-                });
+                frame.toFront();
+                frame.requestFocus();
+                frame.promptForRequiredSettings();
             });
             splashTimer.setRepeats(false);
             splashTimer.start();

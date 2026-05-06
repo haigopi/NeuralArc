@@ -16,6 +16,7 @@ class StatusBarPresenterTest {
                 true,
                 0,
                 0,
+                3,
                 false,
                 true,
                 "Market: Closed",
@@ -26,7 +27,7 @@ class StatusBarPresenterTest {
                 "Memory: 1 MB"
         ));
 
-        assertEquals("Poll: Market Closed", vm.pollingText());
+        assertEquals("Monitoring: Paused for market close", vm.pollingText());
         assertEquals(StatusBarPresenter.Tone.MUTED, vm.pollingTone());
     }
 
@@ -39,6 +40,7 @@ class StatusBarPresenterTest {
                 false,
                 0,
                 0,
+                4,
                 true,
                 false,
                 "Market: Open (Regular)",
@@ -62,6 +64,7 @@ class StatusBarPresenterTest {
                 false,
                 0,
                 0,
+                5,
                 false,
                 true,
                 "Market: Open (Regular)",
@@ -73,7 +76,7 @@ class StatusBarPresenterTest {
         ));
 
         assertEquals("Broker: Connected (No active strategies)", vm.brokerText());
+        assertEquals("Records: Strategies 2 (Active 0, Inactive 2) | Trade History 5", vm.strategyCountText());
         assertEquals(StatusBarPresenter.Tone.WARN, vm.brokerTone());
     }
 }
-

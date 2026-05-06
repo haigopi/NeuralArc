@@ -3,7 +3,7 @@ package com.neuralarc.ui;
 import java.awt.Color;
 
 public final class StrategyActionsPresenter {
-    private static final Color DISABLED = new Color(120, 144, 156);
+    private static final Color DISABLED = new Color(88, 106, 118);
     private static final Color RESUME = new Color(46, 125, 50);
     private static final Color CANCEL = new Color(198, 40, 40);
     private static final Color SELL = new Color(230, 81, 0);
@@ -21,7 +21,7 @@ public final class StrategyActionsPresenter {
                 : busy
                 ? state.busyText()
                 : paused
-                ? "Resume"
+                ? state.manuallyCanceled() ? "Place Limit Buy Again" : "Resume"
                 : "Cancel";
 
         Color toggleColor = archived || busy
@@ -46,6 +46,7 @@ public final class StrategyActionsPresenter {
     public record StrategyActionsState(
             boolean archived,
             boolean paused,
+            boolean manuallyCanceled,
             boolean busy,
             String busyText,
             boolean paperMode,
