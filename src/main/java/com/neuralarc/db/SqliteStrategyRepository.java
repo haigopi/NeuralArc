@@ -171,6 +171,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     optional_loss_exit_enabled, optional_loss_exit_price,
                     target_sell_enabled, target_sell_price,
                     target_sell_qty_or_pct, target_sell_percent_based,
+                    alpaca_trailing_stop_enabled,
                     profit_hold_enabled, profit_hold_type,
                     profit_hold_percent, profit_hold_amount,
                     highest_observed_price, restart_after_exit_enabled,
@@ -180,7 +181,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     latest_order_status, latest_alpaca_order_id,
                     pause_reason, resume_state_before_pause,
                     created_at, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name, symbol=excluded.symbol,
                     mode=excluded.mode, status=excluded.status, current_state=excluded.current_state,
@@ -201,6 +202,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     target_sell_price=excluded.target_sell_price,
                     target_sell_qty_or_pct=excluded.target_sell_qty_or_pct,
                     target_sell_percent_based=excluded.target_sell_percent_based,
+                    alpaca_trailing_stop_enabled=excluded.alpaca_trailing_stop_enabled,
                     profit_hold_enabled=excluded.profit_hold_enabled,
                     profit_hold_type=excluded.profit_hold_type,
                     profit_hold_percent=excluded.profit_hold_percent,
@@ -241,6 +243,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     optional_loss_exit_enabled, optional_loss_exit_price,
                     target_sell_enabled, target_sell_price,
                     target_sell_qty_or_pct, target_sell_percent_based,
+                    alpaca_trailing_stop_enabled,
                     profit_hold_enabled, profit_hold_type,
                     profit_hold_percent, profit_hold_amount,
                     highest_observed_price, restart_after_exit_enabled,
@@ -250,7 +253,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     latest_order_status, latest_alpaca_order_id,
                     pause_reason, resume_state_before_pause,
                     created_at, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             bindStrategy(ps, s);
@@ -283,6 +286,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         ps.setString(i++, s.targetSellPrice().toPlainString());
         ps.setString(i++, s.targetSellQuantityOrPercent().toPlainString());
         ps.setInt(i++, s.targetSellPercentBased() ? 1 : 0);
+        ps.setInt(i++, s.alpacaTrailingStopEnabled() ? 1 : 0);
         ps.setInt(i++, s.profitHoldEnabled() ? 1 : 0);
         ps.setString(i++, s.profitHoldType().name());
         ps.setString(i++, s.profitHoldPercent().toPlainString());
@@ -328,6 +332,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                 decimal(rs, "target_sell_price"),
                 decimal(rs, "target_sell_qty_or_pct"),
                 rs.getInt("target_sell_percent_based") == 1,
+                rs.getInt("alpaca_trailing_stop_enabled") == 1,
                 rs.getInt("profit_hold_enabled") == 1,
                 safeProfitHoldType(rs.getString("profit_hold_type")),
                 decimal(rs, "profit_hold_percent"),
@@ -378,6 +383,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                 decimal(o, "targetSellPrice"),
                 decimal(o, "targetSellQuantityOrPercent"),
                 o.optBoolean("targetSellPercentBased", true),
+                o.optBoolean("alpacaTrailingStopEnabled", false),
                 o.optBoolean("profitHoldEnabled", false),
                 safeProfitHoldType(o.optString("profitHoldType", "PERCENT_TRAILING")),
                 decimal(o, "profitHoldPercent"),
@@ -424,6 +430,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         o.put("targetSellPrice", s.targetSellPrice().toPlainString());
         o.put("targetSellQuantityOrPercent", s.targetSellQuantityOrPercent().toPlainString());
         o.put("targetSellPercentBased", s.targetSellPercentBased());
+        o.put("alpacaTrailingStopEnabled", s.alpacaTrailingStopEnabled());
         o.put("profitHoldEnabled", s.profitHoldEnabled());
         o.put("profitHoldType", s.profitHoldType().name());
         o.put("profitHoldPercent", s.profitHoldPercent().toPlainString());

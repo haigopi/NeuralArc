@@ -53,6 +53,7 @@ public class SettingsDialog extends JDialog {
     private final JCheckBox telemetryEnabled = new JCheckBox("Enable telemetry", true);
     private final JCheckBox autoPausePollingWhenMarketClosed = new JCheckBox("Auto pause polling when market is closed", AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED);
     private final JCheckBox extendedHoursTradingEnabled = new JCheckBox("Enable extended-hours trading", AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED);
+    private final JCheckBox allowDuplicateSymbolStrategies = new JCheckBox("Allow multiple strategies for the same symbol", AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES);
     private final JCheckBox saveCredentials = new JCheckBox("Save credentials locally", false);
     private final JButton verifyConnectionButton = new JButton("Verify Connection");
     private final JButton exportStrategiesButton = new JButton("Export Strategies");
@@ -76,7 +77,8 @@ public class SettingsDialog extends JDialog {
             AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED,
             AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED,
             BrokerType.ALPACA,
-            ApplicationMode.PAPER
+            ApplicationMode.PAPER,
+            AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES
     );
     private boolean savedDuringOpen;
 
@@ -197,6 +199,13 @@ public class SettingsDialog extends JDialog {
         extendedHoursDescription.setForeground(TEXT_MUTED);
         extendedHoursDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
 
+        JLabel allowDuplicateSymbolsDescription = new JLabel("<html><div style='max-width:320px; width:320px; line-height:1.35;'>"
+                + "When enabled, multiple strategies can be added for the same stock symbol. "
+                + "By default, only one active or paused strategy per symbol is allowed."
+                + "</div></html>");
+        allowDuplicateSymbolsDescription.setForeground(TEXT_MUTED);
+        allowDuplicateSymbolsDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
+
         JPanel marketHoursContent = new JPanel();
         marketHoursContent.setLayout(new BoxLayout(marketHoursContent, BoxLayout.Y_AXIS));
         marketHoursContent.setOpaque(false);
@@ -205,6 +214,8 @@ public class SettingsDialog extends JDialog {
         autoPauseDescription.setAlignmentX(Component.LEFT_ALIGNMENT);
         extendedHoursTradingEnabled.setAlignmentX(Component.LEFT_ALIGNMENT);
         extendedHoursDescription.setAlignmentX(Component.LEFT_ALIGNMENT);
+        allowDuplicateSymbolStrategies.setAlignmentX(Component.LEFT_ALIGNMENT);
+        allowDuplicateSymbolsDescription.setAlignmentX(Component.LEFT_ALIGNMENT);
         marketHoursContent.add(autoPausePollingWhenMarketClosed);
         marketHoursContent.add(Box.createVerticalStrut(6));
         marketHoursContent.add(autoPauseDescription);
@@ -212,6 +223,10 @@ public class SettingsDialog extends JDialog {
         marketHoursContent.add(extendedHoursTradingEnabled);
         marketHoursContent.add(Box.createVerticalStrut(6));
         marketHoursContent.add(extendedHoursDescription);
+        marketHoursContent.add(Box.createVerticalStrut(12));
+        marketHoursContent.add(allowDuplicateSymbolStrategies);
+        marketHoursContent.add(Box.createVerticalStrut(6));
+        marketHoursContent.add(allowDuplicateSymbolsDescription);
 
         GridBagConstraints marketHoursContentConstraints = new GridBagConstraints();
         marketHoursContentConstraints.gridx = 1;
@@ -294,11 +309,14 @@ public class SettingsDialog extends JDialog {
         loadAll();
         updateBrokerControlState();
         pack();
+        Rectangle screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
         int minDialogWidth = 720;
         int minDialogHeight = 680;
-        if (getWidth() < minDialogWidth || getHeight() < minDialogHeight) {
-            setSize(new Dimension(Math.max(getWidth(), minDialogWidth), Math.max(getHeight(), minDialogHeight)));
-        }
+        int w = Math.max(minDialogWidth, Math.min(getPreferredSize().width, screenBounds.width - 48));
+        int h = Math.max(minDialogHeight, Math.min(getPreferredSize().height, (int) (screenBounds.height * 0.92)));
+        setSize(new Dimension(w, h));
+        setMinimumSize(new Dimension(minDialogWidth, minDialogHeight));
+        setResizable(true);
         setLocationRelativeTo(owner);
     }
 
@@ -322,6 +340,7 @@ public class SettingsDialog extends JDialog {
     public boolean telemetryEnabled() { return telemetryEnabled.isSelected(); }
     public boolean autoPausePollingWhenMarketClosed() { return autoPausePollingWhenMarketClosed.isSelected(); }
     public boolean extendedHoursTradingEnabled() { return extendedHoursTradingEnabled.isSelected(); }
+    public boolean allowDuplicateSymbolStrategies() { return allowDuplicateSymbolStrategies.isSelected(); }
     public boolean saveCredentials() { return saveCredentials.isSelected(); }
     public BrokerType brokerType() { return (BrokerType) brokerBox.getSelectedItem(); }
     public ApplicationMode applicationMode() {
@@ -332,6 +351,7 @@ public class SettingsDialog extends JDialog {
     public ApplicationMode appliedApplicationMode() { return appliedSettings.applicationMode(); }
     public boolean appliedExtendedHoursTradingEnabled() { return appliedSettings.extendedHoursTradingEnabled(); }
     public boolean appliedAutoPausePollingWhenMarketClosed() { return appliedSettings.autoPausePollingWhenMarketClosed(); }
+    public boolean appliedAllowDuplicateSymbolStrategies() { return appliedSettings.allowDuplicateSymbolStrategies(); }
     public String getUserEmail() { return emailField.getText().trim(); }
     public String getApiKey() { return apiKeyField.getText().trim(); }
     public String getApiSecret() { return new String(apiSecretField.getPassword()); }
@@ -399,7 +419,8 @@ public class SettingsDialog extends JDialog {
                     autoPausePollingWhenMarketClosed(),
                     extendedHoursTradingEnabled(),
                     brokerType() == null ? BrokerType.ALPACA : brokerType(),
-                    applicationMode()
+                    applicationMode(),
+                    allowDuplicateSymbolStrategies()
             ));
             appSettingsService.saveEndpoint(getEndpoint());
             for (ApplicationMode mode : ApplicationMode.values()) {
@@ -433,6 +454,7 @@ public class SettingsDialog extends JDialog {
         telemetryEnabled.setSelected(appliedSettings.telemetryEnabled());
         autoPausePollingWhenMarketClosed.setSelected(appliedSettings.autoPausePollingWhenMarketClosed());
         extendedHoursTradingEnabled.setSelected(appliedSettings.extendedHoursTradingEnabled());
+        allowDuplicateSymbolStrategies.setSelected(appliedSettings.allowDuplicateSymbolStrategies());
         saveCredentials.setSelected(true);
         brokerBox.setSelectedItem(appliedSettings.brokerType());
         appModeBox.setSelectedItem(appliedSettings.applicationMode());
@@ -529,6 +551,7 @@ public class SettingsDialog extends JDialog {
             telemetryEnabled.setSelected(true);
             autoPausePollingWhenMarketClosed.setSelected(AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED);
             extendedHoursTradingEnabled.setSelected(AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED);
+            allowDuplicateSymbolStrategies.setSelected(AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES);
             brokerBox.setSelectedItem(BrokerType.ALPACA);
             appModeBox.setSelectedItem(ApplicationMode.PAPER);
             displayedCredentialMode = ApplicationMode.PAPER;
@@ -538,7 +561,8 @@ public class SettingsDialog extends JDialog {
                     AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED,
                     AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED,
                     BrokerType.ALPACA,
-                    ApplicationMode.PAPER
+                    ApplicationMode.PAPER,
+                    AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES
             );
             appliedCredentialCache.clear();
             connectionStatus.setText("All local data deleted — reloading from Alpaca…");

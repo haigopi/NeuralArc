@@ -67,7 +67,10 @@ public class StrategyValidator {
                 errors.add("Target sell quantity or percent must be positive");
             }
         }
-        if (strategy.profitHoldEnabled()) {
+        if ((strategy.profitHoldEnabled() || strategy.alpacaTrailingStopEnabled()) && !strategy.targetSellEnabled()) {
+            errors.add("Sell trigger must be enabled when Profit Hold or Alpaca trailing stop is enabled");
+        }
+        if (strategy.profitHoldEnabled() || strategy.alpacaTrailingStopEnabled()) {
             if (strategy.profitHoldType().name().equals("PERCENT_TRAILING")
                     && (strategy.profitHoldPercent().compareTo(Monetary.zero()) <= 0
                     || strategy.profitHoldPercent().compareTo(new BigDecimal("100")) >= 0)) {

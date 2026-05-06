@@ -188,6 +188,7 @@ public final class AppDatabase {
         }
         applyMigration("001_initial_schema", this::migration001);
         applyMigration("002_app_settings",   this::migration002);
+        applyMigration("003_profit_controls", this::migration003);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -249,6 +250,7 @@ public final class AppDatabase {
                         target_sell_price               TEXT NOT NULL DEFAULT '0.00',
                         target_sell_qty_or_pct          TEXT NOT NULL DEFAULT '100.00',
                         target_sell_percent_based       INTEGER NOT NULL DEFAULT 1,
+                        alpaca_trailing_stop_enabled    INTEGER NOT NULL DEFAULT 0,
                         profit_hold_enabled             INTEGER NOT NULL DEFAULT 0,
                         profit_hold_type                TEXT NOT NULL DEFAULT 'PERCENT_TRAILING',
                         profit_hold_percent             TEXT NOT NULL DEFAULT '0.00',
@@ -328,6 +330,17 @@ public final class AppDatabase {
                         value       TEXT NOT NULL DEFAULT '',
                         encrypted   INTEGER NOT NULL DEFAULT 0
                     )""");
+        }
+    }
+
+    private void migration003() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("ALTER TABLE strategies ADD COLUMN alpaca_trailing_stop_enabled INTEGER NOT NULL DEFAULT 0");
+        } catch (SQLException ex) {
+            String message = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
+            if (!message.contains("duplicate column name")) {
+                throw ex;
+            }
         }
     }
 

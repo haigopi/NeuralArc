@@ -18,11 +18,13 @@ import java.util.Properties;
 public class AppSettingsService {
     public static final boolean DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED = true;
     public static final boolean DEFAULT_EXTENDED_HOURS_TRADING_ENABLED = false;
+    public static final boolean DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES = false;
 
     private static final String KEY_USER_EMAIL = "userEmail";
     private static final String KEY_TELEMETRY_ENABLED = "telemetryEnabled";
     private static final String KEY_AUTO_PAUSE = "autoPausePollingWhenMarketClosed";
     private static final String KEY_EXTENDED_HOURS = "extendedHoursTradingEnabled";
+    private static final String KEY_ALLOW_DUPLICATE_SYMBOLS = "allowDuplicateSymbolStrategies";
     private static final String KEY_BROKER = "broker";
     private static final String KEY_APPLICATION_MODE = "applicationMode";
     private static final String KEY_ENDPOINT = "endpoint";
@@ -62,7 +64,8 @@ public class AppSettingsService {
                 parseBoolean(readSetting(KEY_AUTO_PAUSE, false), DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED),
                 parseBoolean(readSetting(KEY_EXTENDED_HOURS, false), DEFAULT_EXTENDED_HOURS_TRADING_ENABLED),
                 parseBroker(readSetting(KEY_BROKER, false)),
-                parseMode(readSetting(KEY_APPLICATION_MODE, false))
+                parseMode(readSetting(KEY_APPLICATION_MODE, false)),
+                parseBoolean(readSetting(KEY_ALLOW_DUPLICATE_SYMBOLS, false), DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES)
         );
     }
 
@@ -72,6 +75,7 @@ public class AppSettingsService {
             writeSetting(KEY_TELEMETRY_ENABLED, String.valueOf(settings.telemetryEnabled()), false);
             writeSetting(KEY_AUTO_PAUSE, String.valueOf(settings.autoPausePollingWhenMarketClosed()), false);
             writeSetting(KEY_EXTENDED_HOURS, String.valueOf(settings.extendedHoursTradingEnabled()), false);
+            writeSetting(KEY_ALLOW_DUPLICATE_SYMBOLS, String.valueOf(settings.allowDuplicateSymbolStrategies()), false);
             writeSetting(KEY_BROKER, (settings.brokerType() == null ? BrokerType.ALPACA : settings.brokerType()).name(), false);
             writeSetting(KEY_APPLICATION_MODE, (settings.applicationMode() == null ? ApplicationMode.PAPER : settings.applicationMode()).name(), false);
         } catch (SQLException ex) {
@@ -271,7 +275,8 @@ public class AppSettingsService {
             boolean autoPausePollingWhenMarketClosed,
             boolean extendedHoursTradingEnabled,
             BrokerType brokerType,
-            ApplicationMode applicationMode
+            ApplicationMode applicationMode,
+            boolean allowDuplicateSymbolStrategies
     ) {
     }
 }

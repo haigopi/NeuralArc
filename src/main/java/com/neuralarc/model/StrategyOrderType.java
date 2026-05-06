@@ -1,6 +1,7 @@
 package com.neuralarc.model;
 
 public enum StrategyOrderType {
-    LIMIT
+    LIMIT,
+    TRAILING_STOP
 }
 

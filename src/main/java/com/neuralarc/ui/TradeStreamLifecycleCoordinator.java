@@ -47,8 +47,12 @@ public final class TradeStreamLifecycleCoordinator {
                     gateway.updateStreamStatus(statusPresentation.label(), statusPresentation.color());
                 },
                 ex -> {
-                    gateway.log("[STREAM] Trade event stream error: " + ex.getMessage());
+                    String message = ex == null || ex.getMessage() == null || ex.getMessage().isBlank()
+                            ? "Unknown stream error"
+                            : ex.getMessage();
+                    gateway.log("[STREAM] Trade event stream error: " + message);
                     gateway.updateStreamStatus("error", STREAM_ERR);
+                    gateway.onStreamError(message);
                 }
         );
         gateway.log("[STREAM] Connected trading WebSocket.");
@@ -102,6 +106,7 @@ public final class TradeStreamLifecycleCoordinator {
         boolean webSocketEnabled();
         String streamUrl(boolean liveMode);
         void updateStreamStatus(String status, Color color);
+        void onStreamError(String message);
         void log(String message);
 
         boolean canProcessTradeUpdates();
@@ -152,4 +157,3 @@ public final class TradeStreamLifecycleCoordinator {
         }
     }
 }
-

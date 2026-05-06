@@ -112,6 +112,40 @@ class StrategyServiceTest {
     }
 
     @Test
+    void closePositionFailsWhenStrategyDoesNotExist() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        StrategyService service = service(strategies, orders, events, new FakeAlpacaClient());
+
+        StrategyService.StrategyCreationResult result = service.closePosition("missing-strategy-id");
+
+        assertFalse(result.success());
+        assertTrue(result.error().contains("Strategy not found"));
+    }
+
+    @Test
+    void closePositionFallsBackToLatestPriceWhenPositionMarketPriceMissing() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("3"), new BigDecimal("8.00"), BigDecimal.ZERO, "{}"));
+        alpaca.latestPrice = new BigDecimal("9.25");
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategies.save(strategy);
+
+        StrategyService.StrategyCreationResult result = service.closePosition(strategy.id());
+
+        assertTrue(result.success());
+        assertEquals(1, alpaca.submittedOrders.size());
+        AlpacaOrderData submitted = alpaca.submittedOrders.getFirst();
+        assertEquals(new BigDecimal("9.25"), submitted.limitPrice());
+    }
+
+    @Test
     void pauseCancelsAcceptedOpenOrdersInAlpaca() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
@@ -561,7 +595,8 @@ class StrategyServiceTest {
                     true,
                     false,
                     BrokerType.ALPACA,
-                    applicationMode
+                    applicationMode,
+                    false
             ));
             return new StrategyService(
                     strategies,
@@ -658,6 +693,16 @@ class StrategyServiceTest {
         public AlpacaOrderData submitLimitSellOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
             counter++;
             AlpacaOrderData order = new AlpacaOrderData("ord-" + counter, clientOrderId, symbol, "sell", "limit", limitPrice, Monetary.zero(), Monetary.zero(), "new", "{\"qty\":\"" + quantity + "\"}");
+            submittedOrders.add(order);
+            openOrders.add(order);
+            return order;
+        }
+
+        @Override
+        public AlpacaOrderData submitTrailingStopSellOrder(String symbol, int quantity, BigDecimal trailPercent, BigDecimal trailPrice, String clientOrderId) {
+            counter++;
+            BigDecimal effectiveLimit = trailPrice != null && trailPrice.compareTo(BigDecimal.ZERO) > 0 ? trailPrice : Monetary.zero();
+            AlpacaOrderData order = new AlpacaOrderData("ord-" + counter, clientOrderId, symbol, "sell", "trailing_stop", effectiveLimit, Monetary.zero(), Monetary.zero(), "new", "{\"qty\":\"" + quantity + "\"}");
             submittedOrders.add(order);
             openOrders.add(order);
             return order;

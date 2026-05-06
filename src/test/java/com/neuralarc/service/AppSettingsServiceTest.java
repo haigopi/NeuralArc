@@ -28,7 +28,8 @@ class AppSettingsServiceTest {
                 false,
                 true,
                 BrokerType.ALPACA,
-                ApplicationMode.PAPER
+                ApplicationMode.PAPER,
+                false
         );
 
         service.save(expected);
@@ -39,6 +40,34 @@ class AppSettingsServiceTest {
         assertTrue(loaded.extendedHoursTradingEnabled());
         assertEquals(BrokerType.ALPACA, loaded.brokerType());
         assertEquals(ApplicationMode.PAPER, loaded.applicationMode());
+    }
+
+    @Test
+    void persistsAllowDuplicateSymbolStrategiesSetting() throws Exception {
+        AppSettingsService service = new AppSettingsService(tempDir.resolve("settings-dup.db"));
+        AppSettingsService.AppSettings withDuplicatesAllowed = new AppSettingsService.AppSettings(
+                "user@example.com",
+                true,
+                true,
+                false,
+                BrokerType.ALPACA,
+                ApplicationMode.PAPER,
+                true
+        );
+
+        service.save(withDuplicatesAllowed);
+        AppSettingsService.AppSettings loaded = service.load();
+
+        assertTrue(loaded.allowDuplicateSymbolStrategies());
+    }
+
+    @Test
+    void allowDuplicateSymbolStrategiesDefaultsToFalseWhenNotPersisted() throws Exception {
+        AppSettingsService service = new AppSettingsService(tempDir.resolve("settings-nodup.db"));
+        // load without ever saving the new field — should fall back to default (false)
+        AppSettingsService.AppSettings loaded = service.load();
+
+        assertFalse(loaded.allowDuplicateSymbolStrategies());
     }
 
     @Test

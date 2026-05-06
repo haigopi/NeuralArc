@@ -345,6 +345,19 @@ public class StrategyEngine {
         }
 
         if (!strategy.profitHoldEnabled()) {
+            if (strategy.alpacaTrailingStopEnabled()) {
+                logRule(strategy, "TARGET_SELL", "SATISFIED",
+                        "latestPrice=" + latestPrice.toPlainString()
+                                + " >= targetPrice=" + strategy.targetSellPrice().toPlainString()
+                                + ", quantity=" + strategy.targetSellQuantity(position.quantity()).toPlainString(), outcomes);
+                logRule(strategy, "ALPACA_TRAILING_STOP", "SUBMITTED",
+                        "Broker trailing stop requested after trigger", outcomes);
+                submitTrailingStopSellOrder(strategy, strategy.targetSellQuantity(position.quantity()),
+                        StrategyLifecycleState.SELL_PLACED,
+                        "Broker trailing stop sell submitted after trigger",
+                        StrategyEventType.ORDER_SUBMITTED);
+                return;
+            }
             logRule(strategy, "TARGET_SELL", "SATISFIED",
                     "latestPrice=" + latestPrice.toPlainString()
                             + " >= targetPrice=" + strategy.targetSellPrice().toPlainString()
@@ -352,6 +365,20 @@ public class StrategyEngine {
             logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Disabled", outcomes);
             submitSellOrder(strategy, StrategyStage.TARGET_SELL, strategy.targetSellQuantity(position.quantity()), latestPrice,
                     StrategyLifecycleState.SELL_PLACED, "Target sell submitted", StrategyEventType.TARGET_TRIGGERED);
+            return;
+        }
+
+        if (strategy.alpacaTrailingStopEnabled()) {
+            logRule(strategy, "TARGET_SELL", "SATISFIED",
+                    "latestPrice=" + latestPrice.toPlainString()
+                            + " >= targetPrice=" + strategy.targetSellPrice().toPlainString()
+                            + ", quantity=" + strategy.targetSellQuantity(position.quantity()).toPlainString(), outcomes);
+            logRule(strategy, "ALPACA_TRAILING_STOP", "SUBMITTED",
+                    "Broker trailing stop requested after trigger", outcomes);
+            submitTrailingStopSellOrder(strategy, strategy.targetSellQuantity(position.quantity()),
+                    StrategyLifecycleState.SELL_PLACED,
+                    "Broker trailing stop sell submitted after trigger",
+                    StrategyEventType.ORDER_SUBMITTED);
             return;
         }
 
@@ -652,6 +679,86 @@ public class StrategyEngine {
         strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
         strategy.setLatestAlpacaOrderId(submitted.orderId());
         strategy.setLastTriggeredRuleType(mapStageToRuleName(stage));
+        stateMachine.transition(strategy, lifecycleState, eventType, message, submitted.rawJson());
+        strategyRepository.save(strategy);
+        return order;
+    }
+
+    private StrategyOrder submitTrailingStopSellOrder(
+            Strategy strategy,
+            BigDecimal quantity,
+            StrategyLifecycleState lifecycleState,
+            String message,
+            StrategyEventType eventType
+    ) {
+        int requestedQuantity = quantity.setScale(0, java.math.RoundingMode.DOWN).intValue();
+        if (requestedQuantity <= 0) {
+            return null;
+        }
+        String clientOrderId = StrategyService.buildClientOrderId(strategy.id(), StrategyStage.PROFIT_EXIT);
+        BigDecimal trailPercent = strategy.profitHoldType() == ProfitHoldType.PERCENT_TRAILING
+                ? strategy.profitHoldPercent()
+                : BigDecimal.ZERO;
+        BigDecimal trailPrice = strategy.profitHoldType() == ProfitHoldType.FIXED_AMOUNT_TRAILING
+                ? strategy.profitHoldAmount()
+                : BigDecimal.ZERO;
+        AlpacaOrderData submitted = alpacaClient.submitTrailingStopSellOrder(
+                strategy.symbol(),
+                requestedQuantity,
+                trailPercent,
+                trailPrice,
+                clientOrderId
+        );
+        Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
+        StrategyOrder order = new StrategyOrder(
+                UUID.randomUUID().toString(),
+                strategy.id(),
+                StrategyStage.PROFIT_EXIT,
+                submitted.orderId(),
+                clientOrderId,
+                strategy.symbol(),
+                StrategyOrderSide.SELL,
+                StrategyOrderType.TRAILING_STOP,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.valueOf(requestedQuantity),
+                submitted.filledQuantity(),
+                submitted.filledAveragePrice(),
+                StrategyService.mapOrderStatus(submitted.status()),
+                submittedAt,
+                Instant.now(),
+                null,
+                submitted.rawJson()
+        );
+        if (order.status() == StrategyOrderStatus.REJECTED || order.status() == StrategyOrderStatus.FAILED) {
+            orderRepository.save(order);
+            String failureMessage = failureMessage(submitted.rawJson(), StrategyStage.PROFIT_EXIT);
+            if (isQueueableSessionRejection(submitted.rawJson())) {
+                strategy.clearLastError();
+                strategy.setLatestOrderStatus("QUEUED_FOR_OPEN");
+                strategy.setLatestAlpacaOrderId("");
+                strategy.setLastTriggeredRuleType("ALPACA_TRAILING_STOP");
+                stateMachine.transition(strategy, StrategyLifecycleState.QUEUED_FOR_OPEN,
+                        StrategyEventType.ORDER_STATUS_UPDATED,
+                        "Order queued for next market open after broker rejection",
+                        submitted.rawJson());
+                strategyRepository.save(strategy);
+                return order;
+            }
+            strategy.setLastError(failureMessage);
+            strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
+            strategy.setLatestAlpacaOrderId("");
+            stateMachine.transition(strategy, StrategyLifecycleState.FAILED,
+                    StrategyEventType.STRATEGY_FAILED,
+                    failureMessage,
+                    submitted.rawJson());
+            strategyRepository.save(strategy);
+            return order;
+        }
+        orderRepository.save(order);
+        strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
+        strategy.setLatestAlpacaOrderId(submitted.orderId());
+        strategy.setLastTriggeredRuleType("ALPACA_TRAILING_STOP");
         stateMachine.transition(strategy, lifecycleState, eventType, message, submitted.rawJson());
         strategyRepository.save(strategy);
         return order;

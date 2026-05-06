@@ -9,6 +9,8 @@
 ## Non-negotiable code organization rules
 - Keep any single Java class at or under `1000` lines.
 - If a class approaches that limit, modularize before adding more logic.
+- While refactoring or adding new code, remove nearby dead code, stale branches, unused helpers, and obsolete overloads when it is safe to do so.
+- Do not leave known dead code behind as part of a feature change unless there is a documented reason to defer its removal.
 - Prefer extracting:
   - UI subpanels, renderers, dialogs, and action handlers from large Swing classes
   - snapshot/state carriers from UI orchestration

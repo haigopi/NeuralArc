@@ -30,6 +30,7 @@ public class Strategy {
     private BigDecimal targetSellPrice;
     private BigDecimal targetSellQuantityOrPercent;
     private boolean targetSellPercentBased;
+    private boolean alpacaTrailingStopEnabled;
     private boolean profitHoldEnabled;
     private ProfitHoldType profitHoldType;
     private BigDecimal profitHoldPercent;
@@ -73,6 +74,7 @@ public class Strategy {
             BigDecimal targetSellPrice,
             BigDecimal targetSellQuantityOrPercent,
             boolean targetSellPercentBased,
+            boolean alpacaTrailingStopEnabled,
             boolean profitHoldEnabled,
             ProfitHoldType profitHoldType,
             BigDecimal profitHoldPercent,
@@ -108,6 +110,7 @@ public class Strategy {
         this.targetSellPrice = money(targetSellPrice);
         this.targetSellQuantityOrPercent = money(targetSellQuantityOrPercent);
         this.targetSellPercentBased = targetSellPercentBased;
+        this.alpacaTrailingStopEnabled = alpacaTrailingStopEnabled;
         this.profitHoldEnabled = profitHoldEnabled;
         this.profitHoldType = profitHoldType == null ? ProfitHoldType.PERCENT_TRAILING : profitHoldType;
         this.profitHoldPercent = money(profitHoldPercent);
@@ -121,6 +124,79 @@ public class Strategy {
         this.updatedAt = updatedAt == null ? this.createdAt : updatedAt;
         this.pauseReason = PauseReason.NONE;
         this.resumeStateBeforePause = this.currentState;
+    }
+
+    public Strategy(
+            String id,
+            String name,
+            String symbol,
+            StrategyMode mode,
+            StrategyStatus status,
+            StrategyLifecycleState currentState,
+            BigDecimal baseBuyLimitPrice,
+            int baseBuyQuantity,
+            BigDecimal buyLimit1Price,
+            int buyLimit1Quantity,
+            BigDecimal buyLimit2Price,
+            int buyLimit2Quantity,
+            boolean automatedStopLossEnabled,
+            StopLossType stopLossType,
+            BigDecimal stopLossPrice,
+            BigDecimal stopLossPercent,
+            boolean optionalLossExitEnabled,
+            BigDecimal optionalLossExitPrice,
+            boolean targetSellEnabled,
+            BigDecimal targetSellPrice,
+            BigDecimal targetSellQuantityOrPercent,
+            boolean targetSellPercentBased,
+            boolean profitHoldEnabled,
+            ProfitHoldType profitHoldType,
+            BigDecimal profitHoldPercent,
+            BigDecimal profitHoldAmount,
+            BigDecimal highestObservedPriceAfterTarget,
+            boolean restartAfterExitEnabled,
+            int maxTotalQuantity,
+            BigDecimal maxCapitalAllowed,
+            int pollingIntervalSeconds,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(
+                id,
+                name,
+                symbol,
+                mode,
+                status,
+                currentState,
+                baseBuyLimitPrice,
+                baseBuyQuantity,
+                buyLimit1Price,
+                buyLimit1Quantity,
+                buyLimit2Price,
+                buyLimit2Quantity,
+                automatedStopLossEnabled,
+                stopLossType,
+                stopLossPrice,
+                stopLossPercent,
+                optionalLossExitEnabled,
+                optionalLossExitPrice,
+                targetSellEnabled,
+                targetSellPrice,
+                targetSellQuantityOrPercent,
+                targetSellPercentBased,
+                false,
+                profitHoldEnabled,
+                profitHoldType,
+                profitHoldPercent,
+                profitHoldAmount,
+                highestObservedPriceAfterTarget,
+                restartAfterExitEnabled,
+                maxTotalQuantity,
+                maxCapitalAllowed,
+                pollingIntervalSeconds,
+                createdAt,
+                updatedAt
+        );
     }
 
     public static Strategy fromConfig(String id, String name, StrategyConfig config, StrategyMode mode) {
@@ -150,10 +226,11 @@ public class Strategy {
                 Monetary.zero(),
                 config.optionalLossExitEnabled(),
                 config.optionalLossExitPrice(),
-                true,
+                config.sellTriggerEnabled(),
                 config.sellTriggerPrice(),
                 BigDecimal.valueOf(100),
                 true,
+                config.alpacaTrailingStopEnabled(),
                 config.profitHoldEnabled(),
                 config.profitHoldType(),
                 config.profitHoldPercent(),
@@ -261,6 +338,7 @@ public class Strategy {
     public BigDecimal targetSellPrice() { return targetSellPrice; }
     public BigDecimal targetSellQuantityOrPercent() { return targetSellQuantityOrPercent; }
     public boolean targetSellPercentBased() { return targetSellPercentBased; }
+    public boolean alpacaTrailingStopEnabled() { return alpacaTrailingStopEnabled; }
     public boolean profitHoldEnabled() { return profitHoldEnabled; }
     public ProfitHoldType profitHoldType() { return profitHoldType; }
     public BigDecimal profitHoldPercent() { return profitHoldPercent; }
@@ -303,6 +381,7 @@ public class Strategy {
     public void setTargetSellPrice(BigDecimal value) { this.targetSellPrice = money(value); touch(); }
     public void setTargetSellQuantityOrPercent(BigDecimal value) { this.targetSellQuantityOrPercent = money(value); touch(); }
     public void setTargetSellPercentBased(boolean targetSellPercentBased) { this.targetSellPercentBased = targetSellPercentBased; touch(); }
+    public void setAlpacaTrailingStopEnabled(boolean enabled) { this.alpacaTrailingStopEnabled = enabled; touch(); }
     public void setProfitHoldEnabled(boolean enabled) { this.profitHoldEnabled = enabled; touch(); }
     public void setProfitHoldType(ProfitHoldType profitHoldType) { this.profitHoldType = profitHoldType == null ? ProfitHoldType.PERCENT_TRAILING : profitHoldType; touch(); }
     public void setProfitHoldPercent(BigDecimal value) { this.profitHoldPercent = money(value); touch(); }

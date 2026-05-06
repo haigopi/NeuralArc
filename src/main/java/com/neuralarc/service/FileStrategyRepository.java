@@ -170,6 +170,7 @@ public class FileStrategyRepository implements StrategyRepository {
                     decimal(o, "targetSellPrice", "0.00"),
                     decimal(o, "targetSellQuantityOrPercent", "100.00"),
                     o.optBoolean("targetSellPercentBased", true),
+                    o.optBoolean("alpacaTrailingStopEnabled", false),
                     o.optBoolean("profitHoldEnabled", false),
                     ProfitHoldType.valueOf(o.optString("profitHoldType", "PERCENT_TRAILING")),
                     decimal(o, "profitHoldPercent", o.optString("profitHoldPercentOrAmount", "0.00")),
@@ -231,6 +232,7 @@ public class FileStrategyRepository implements StrategyRepository {
             o.put("targetSellPrice", s.targetSellPrice().toPlainString());
             o.put("targetSellQuantityOrPercent", s.targetSellQuantityOrPercent().toPlainString());
             o.put("targetSellPercentBased", s.targetSellPercentBased());
+            o.put("alpacaTrailingStopEnabled", s.alpacaTrailingStopEnabled());
             o.put("profitHoldEnabled", s.profitHoldEnabled());
             o.put("profitHoldType", s.profitHoldType().name());
             o.put("profitHoldPercent", s.profitHoldPercent().toPlainString());

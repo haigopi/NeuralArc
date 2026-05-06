@@ -83,6 +83,7 @@ class TradeStreamLifecycleCoordinatorTest {
         @Override public boolean webSocketEnabled() { return webSocketEnabled; }
         @Override public String streamUrl(boolean liveMode) { return "wss://example"; }
         @Override public void updateStreamStatus(String status, Color color) { this.lastStatus = status; this.lastColor = color; }
+        @Override public void onStreamError(String message) { }
         @Override public void log(String message) { }
         @Override public boolean canProcessTradeUpdates() { return true; }
         @Override public void onTradeUpdate(AlpacaTradeUpdateEvent event) { tradeUpdateForwarded = true; }
@@ -109,5 +110,4 @@ class TradeStreamLifecycleCoordinatorTest {
         @Override public void stop() { stopped = true; }
     }
 }
-
 

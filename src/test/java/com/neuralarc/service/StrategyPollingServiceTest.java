@@ -8,6 +8,7 @@ import com.neuralarc.util.Monetary;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -111,6 +112,40 @@ class StrategyPollingServiceTest {
         f.service.pollStrategy(strategy.id());
 
         assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.TARGET_SELL).isPresent());
+    }
+
+    @Test
+    void targetSellPlacesBrokerTrailingStopWhenEnabled() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setAlpacaTrailingStopEnabled(true);
+        strategy.setProfitHoldType(ProfitHoldType.FIXED_AMOUNT_TRAILING);
+        strategy.setProfitHoldAmount(new BigDecimal("0.75"));
+        f.strategies.save(strategy);
+        f.alpaca.latestPrice = new BigDecimal("10.00");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.00"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+
+        StrategyOrder exit = f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).orElseThrow();
+        assertEquals(StrategyOrderType.TRAILING_STOP, exit.orderType());
+        assertEquals("ALPACA_TRAILING_STOP", f.strategies.findById(strategy.id()).orElseThrow().lastTriggeredRuleType());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.TARGET_SELL).isEmpty());
+    }
+
+    @Test
+    void targetSellDisabledBlocksProfitExitEvaluation() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(true);
+        strategy.setTargetSellEnabled(false);
+        f.strategies.save(strategy);
+        f.alpaca.latestPrice = new BigDecimal("11.00");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("11.00"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.TARGET_SELL).isEmpty());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isEmpty());
     }
 
     @Test
@@ -322,6 +357,63 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void manualExitDoesNotRestartCycleWhenRepeatAfterExitDisabled() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setRestartAfterExitEnabled(false);
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.MANUAL_EXIT, 10, new BigDecimal("9.80")));
+        f.alpaca.position = Optional.empty();
+
+        f.service.pollStrategy(strategy.id());
+
+        List<StrategyOrder> baseOrders = f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == StrategyStage.BASE_BUY)
+                .toList();
+        assertEquals(1, baseOrders.size());
+        assertEquals(StrategyStatus.COMPLETED, f.strategies.findById(strategy.id()).orElseThrow().status());
+    }
+
+    @Test
+    void pollingIntervalSkipsWhenStrategyIsNotYetDue() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setPollingIntervalSeconds(30);
+        strategy.setLastPolledAt(Instant.now());
+        f.strategies.save(strategy);
+
+        int due = f.service.pollDueStrategies();
+        StrategyPollingService.PollCycleSnapshot snapshot = f.service.lastPollCycleSnapshot();
+
+        assertEquals(0, due);
+        assertEquals(1, snapshot.eligible());
+        assertEquals(0, snapshot.due());
+        assertEquals(1, snapshot.skippedNotDue());
+    }
+
+    @Test
+    void streamHealthyBackoffDefersPollingUntilExtendedInterval() throws Exception {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setPollingIntervalSeconds(2);
+        strategy.setLastPolledAt(Instant.now().minusSeconds(3));
+        f.strategies.save(strategy);
+
+        Field streamField = StrategyPollingService.class.getDeclaredField("lastStreamingEventAt");
+        streamField.setAccessible(true);
+        streamField.set(f.service, Instant.now());
+
+        int due = f.service.pollDueStrategies();
+        StrategyPollingService.PollCycleSnapshot snapshot = f.service.lastPollCycleSnapshot();
+
+        assertEquals(0, due);
+        assertEquals(1, snapshot.eligible());
+        assertEquals(0, snapshot.due());
+        assertEquals(1, snapshot.skippedNotDue());
+    }
+
+    @Test
     void manualExitRestartsCycleWhenRepeatAfterExitEnabled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
@@ -441,7 +533,8 @@ class StrategyPollingServiceTest {
                         true,
                         false,
                         BrokerType.ALPACA,
-                        ApplicationMode.PAPER
+                        ApplicationMode.PAPER,
+                        false
                 ));
                 service = new StrategyPollingService(strategies, orders, events, alpaca, settingsService, marketHoursService);
             } catch (Exception ex) {
@@ -517,6 +610,18 @@ class StrategyPollingServiceTest {
         @Override
         public AlpacaOrderData submitLimitSellOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
             return submit(symbol, "sell", quantity, limitPrice, clientOrderId);
+        }
+
+        @Override
+        public AlpacaOrderData submitTrailingStopSellOrder(String symbol, int quantity, BigDecimal trailPercent, BigDecimal trailPrice, String clientOrderId) {
+            orderCounter++;
+            String orderId = "ord-" + orderCounter;
+            BigDecimal effectiveLimit = trailPrice != null && trailPrice.compareTo(BigDecimal.ZERO) > 0
+                    ? trailPrice
+                    : Monetary.zero();
+            AlpacaOrderData data = new AlpacaOrderData(orderId, clientOrderId, symbol, "sell", "trailing_stop", effectiveLimit, Monetary.zero(), Monetary.zero(), "new", "{}");
+            orderById.put(orderId, data);
+            return data;
         }
 
         private AlpacaOrderData submit(String symbol, String side, int quantity, BigDecimal limitPrice, String clientOrderId) {

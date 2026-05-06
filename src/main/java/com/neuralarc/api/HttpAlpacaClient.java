@@ -58,6 +58,36 @@ public class HttpAlpacaClient implements AlpacaClient {
     }
 
     @Override
+    public AlpacaOrderData submitTrailingStopSellOrder(
+            String symbol,
+            int quantity,
+            BigDecimal trailPercent,
+            BigDecimal trailPrice,
+            String clientOrderId
+    ) {
+        JSONObject payload = new JSONObject()
+                .put("symbol", symbol == null ? "" : symbol.toUpperCase())
+                .put("qty", quantity)
+                .put("side", "sell")
+                .put("type", "trailing_stop")
+                .put("time_in_force", "day")
+                .put("client_order_id", clientOrderId == null ? "" : clientOrderId);
+        BigDecimal normalizedTrailPercent = Monetary.round(trailPercent);
+        BigDecimal normalizedTrailPrice = Monetary.round(trailPrice);
+        if (normalizedTrailPercent.compareTo(BigDecimal.ZERO) > 0) {
+            payload.put("trail_percent", normalizedTrailPercent.toPlainString());
+        } else {
+            payload.put("trail_price", normalizedTrailPrice.toPlainString());
+        }
+        String endpoint = tradingBaseUrl + "/v2/orders";
+        HttpRequest request = baseRequest(endpoint)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .build();
+        return executeOrderSubmission(request, payload, endpoint, symbol, clientOrderId, "sell", "trailing_stop", BigDecimal.ZERO);
+    }
+
+    @Override
     public Optional<AlpacaOrderData> getOrder(String orderId) {
         if (orderId == null || orderId.isBlank()) {
             return Optional.empty();
@@ -246,6 +276,20 @@ public class HttpAlpacaClient implements AlpacaClient {
                 .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
                 .build();
 
+        return executeOrderSubmission(request, payload, endpoint, symbol, clientOrderId, side, "limit", Monetary.round(limitPrice));
+    }
+
+    private AlpacaOrderData executeOrderSubmission(
+            HttpRequest request,
+            JSONObject payload,
+            String endpoint,
+            String symbol,
+            String clientOrderId,
+            String side,
+            String orderType,
+            BigDecimal limitPrice
+    ) {
+
         try {
             logRequest("POST", endpoint, payload.toString());
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
@@ -260,7 +304,7 @@ public class HttpAlpacaClient implements AlpacaClient {
                         clientOrderId,
                         symbol,
                         side,
-                        "limit",
+                        orderType,
                         Monetary.round(limitPrice),
                         Monetary.zero(),
                         Monetary.zero(),
@@ -271,7 +315,7 @@ public class HttpAlpacaClient implements AlpacaClient {
             }
             return toOrderData(parseObject(body));
         } catch (Exception ex) {
-            LOGGER.log(Level.WARNING, "Failed to submit limit order", ex);
+            LOGGER.log(Level.WARNING, "Failed to submit order", ex);
             return AlpacaOrderData.transportFailure(ex.getMessage());
         }
     }
