@@ -21,6 +21,7 @@ dependencies {
     implementation 'net.jacobpeterson.alpaca:alpaca-java:10.0.1'
     implementation 'com.formdev:flatlaf:3.6'
     implementation 'com.formdev:flatlaf-extras:3.6'
+    implementation 'org.xerial:sqlite-jdbc:3.47.2.0'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

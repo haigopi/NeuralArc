@@ -3,6 +3,7 @@ package com.neuralarc.service;
 import com.neuralarc.api.AlpacaClient;
 import com.neuralarc.api.AlpacaPositionData;
 import com.neuralarc.model.*;
+import com.neuralarc.util.BrokerOrderStatusUtil;
 import org.json.JSONObject;
 
 import java.math.BigDecimal;
@@ -451,7 +452,7 @@ public class StrategyService {
                 submitted.rawJson()
         );
         orderRepository.save(order);
-        strategy.setLatestOrderStatus(order.status().name());
+        strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
         strategy.setLatestAlpacaOrderId(order.alpacaOrderId());
         strategy.setLastTriggeredRuleType("CLOSE_POSITION");
         strategyRepository.save(strategy);
@@ -472,7 +473,8 @@ public class StrategyService {
             case "canceled", "expired" -> StrategyOrderStatus.CANCELED;
             case "rejected", "suspended" -> StrategyOrderStatus.REJECTED;
             case "pending_cancel", "pending_replace", "calculated" -> StrategyOrderStatus.PENDING;
-            case "failed" -> StrategyOrderStatus.FAILED;
+            case "failed_transport" -> StrategyOrderStatus.FAILED;
+            case "failed" -> StrategyOrderStatus.REJECTED;
             default -> StrategyOrderStatus.PENDING;
         };
     }
@@ -559,7 +561,7 @@ public class StrategyService {
                 Instant.now()
         );
         strategy.setLastEvent("Synced from Alpaca remote state");
-        strategy.setLatestOrderStatus(latestOpenOrder == null ? "" : latestOpenOrder.status());
+        strategy.setLatestOrderStatus(latestOpenOrder == null ? "" : BrokerOrderStatusUtil.normalize(latestOpenOrder.status()));
         strategy.setLatestAlpacaOrderId(latestOpenOrder == null ? "" : latestOpenOrder.orderId());
         return strategy;
     }

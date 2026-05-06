@@ -251,7 +251,8 @@ public class StrategyPollingService {
         if (strategy == null) {
             return false;
         }
-        return strategy.status() == StrategyStatus.ACTIVE || strategy.status() == StrategyStatus.FAILED;
+        // FAILED/COMPLETED/STOPPED/ARCHIVED belong to history and should not run in poll cycles.
+        return strategy.status() == StrategyStatus.ACTIVE;
     }
 
     private boolean isStreamHealthy(Instant now) {

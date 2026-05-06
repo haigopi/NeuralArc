@@ -4,6 +4,7 @@ import com.neuralarc.api.AlpacaClient;
 import com.neuralarc.api.AlpacaOrderData;
 import com.neuralarc.api.AlpacaPositionData;
 import com.neuralarc.model.*;
+import com.neuralarc.util.BrokerOrderStatusUtil;
 import com.neuralarc.util.Monetary;
 
 import java.math.BigDecimal;
@@ -428,7 +429,7 @@ public class StrategyEngine {
             order.setFilledAt(Instant.now());
         }
         orderRepository.save(order);
-        strategy.setLatestOrderStatus(status.name());
+        strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(data.status()));
         strategy.setLatestAlpacaOrderId(order.alpacaOrderId() == null ? "" : order.alpacaOrderId());
         transitionForOrderUpdate(strategy, order, status);
         strategyRepository.save(strategy);
@@ -525,7 +526,7 @@ public class StrategyEngine {
                 return order;
             }
             strategy.setLastError(failureMessage);
-            strategy.setLatestOrderStatus(order.status().name());
+            strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
             strategy.setLatestAlpacaOrderId("");
             stateMachine.transition(strategy, StrategyLifecycleState.FAILED,
                     StrategyEventType.STRATEGY_FAILED,
@@ -535,7 +536,7 @@ public class StrategyEngine {
             return order;
         }
         orderRepository.save(order);
-        strategy.setLatestOrderStatus(order.status().name());
+        strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
         strategy.setLatestAlpacaOrderId(submitted.orderId());
         strategy.setLastTriggeredRuleType(mapStageToRuleName(stage));
         stateMachine.transition(strategy, lifecycleState, StrategyEventType.ORDER_SUBMITTED, message, submitted.rawJson());
@@ -595,7 +596,7 @@ public class StrategyEngine {
                 return order;
             }
             strategy.setLastError(failureMessage);
-            strategy.setLatestOrderStatus(order.status().name());
+            strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
             strategy.setLatestAlpacaOrderId("");
             stateMachine.transition(strategy, StrategyLifecycleState.FAILED,
                     StrategyEventType.STRATEGY_FAILED,
@@ -605,7 +606,7 @@ public class StrategyEngine {
             return order;
         }
         orderRepository.save(order);
-        strategy.setLatestOrderStatus(order.status().name());
+        strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
         strategy.setLatestAlpacaOrderId(submitted.orderId());
         strategy.setLastTriggeredRuleType(mapStageToRuleName(stage));
         stateMachine.transition(strategy, lifecycleState, eventType, message, submitted.rawJson());

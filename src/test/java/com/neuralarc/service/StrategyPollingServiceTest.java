@@ -207,7 +207,7 @@ class StrategyPollingServiceTest {
     }
 
     @Test
-    void failedWithoutPositionAutoRetriesBySubmittingBaseBuy() {
+    void pollCycleSkipsFailedHistoryStrategies() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
         strategy.setStatus(StrategyStatus.FAILED);
@@ -219,8 +219,8 @@ class StrategyPollingServiceTest {
         f.service.pollDueStrategies();
 
         Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
-        assertEquals(StrategyStatus.ACTIVE, updated.status());
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).isPresent());
+        assertEquals(StrategyStatus.FAILED, updated.status());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).isEmpty());
     }
 
     @Test

@@ -1,0 +1,62 @@
+package com.neuralarc.ui;
+
+import java.awt.Color;
+
+public final class StrategyActionsPresenter {
+    private static final Color DISABLED = new Color(120, 144, 156);
+    private static final Color RESUME = new Color(46, 125, 50);
+    private static final Color CANCEL = new Color(198, 40, 40);
+    private static final Color PROMOTE_ENABLED = new Color(25, 118, 210);
+
+    public StrategyActionsViewModel present(StrategyActionsState state) {
+        boolean archived = state.archived();
+        boolean busy = state.busy();
+        boolean paused = state.paused();
+        boolean canPromote = state.paperMode() && !archived;
+
+        String toggleText = archived
+                ? "Archived"
+                : busy
+                ? state.busyText()
+                : paused
+                ? "Resume"
+                : "Cancel";
+
+        Color toggleColor = archived || busy
+                ? DISABLED
+                : paused
+                ? RESUME
+                : CANCEL;
+        Color promoteColor = canPromote ? PROMOTE_ENABLED : DISABLED;
+
+        return new StrategyActionsViewModel(
+                toggleText,
+                toggleColor,
+                !archived,
+                canPromote,
+                promoteColor
+        );
+    }
+
+    public record StrategyActionsState(
+            boolean archived,
+            boolean paused,
+            boolean busy,
+            String busyText,
+            boolean paperMode
+    ) {
+        public StrategyActionsState {
+            busyText = busyText == null || busyText.isBlank() ? "Working..." : busyText;
+        }
+    }
+
+    public record StrategyActionsViewModel(
+            String toggleText,
+            Color toggleColor,
+            boolean toggleEnabled,
+            boolean promoteEnabled,
+            Color promoteColor
+    ) {
+    }
+}
+

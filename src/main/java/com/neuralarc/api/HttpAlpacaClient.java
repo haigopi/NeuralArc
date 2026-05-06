@@ -254,6 +254,7 @@ public class HttpAlpacaClient implements AlpacaClient {
             logResponse("POST", endpoint, response.statusCode(), body);
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 JSONObject error = parseObject(body);
+                String brokerStatus = error.optString("status", "rejected");
                 return new AlpacaOrderData(
                         "",
                         clientOrderId,
@@ -263,7 +264,7 @@ public class HttpAlpacaClient implements AlpacaClient {
                         Monetary.round(limitPrice),
                         Monetary.zero(),
                         Monetary.zero(),
-                        "failed",
+                        brokerStatus,
                         error.toString(),
                         null
                 );
@@ -271,7 +272,7 @@ public class HttpAlpacaClient implements AlpacaClient {
             return toOrderData(parseObject(body));
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Failed to submit limit order", ex);
-            return AlpacaOrderData.failed(ex.getMessage());
+            return AlpacaOrderData.transportFailure(ex.getMessage());
         }
     }
 

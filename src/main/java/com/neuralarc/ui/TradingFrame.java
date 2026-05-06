@@ -3,15 +3,14 @@ package com.neuralarc.ui;
 import com.neuralarc.analytics.*;
 import com.neuralarc.api.HttpAlpacaClient;
 import com.neuralarc.api.AlpacaTradeUpdateEvent;
-import com.neuralarc.api.AlpacaTradingWebSocketClient;
 import com.neuralarc.api.TradingApi;
-import com.neuralarc.api.TradingApiFactory;
 import com.neuralarc.model.*;
 import com.neuralarc.api.HttpAlpacaMarketDataApi;
+import com.neuralarc.db.AppDatabase;
+import com.neuralarc.db.SqliteStrategyExecutionEventRepository;
+import com.neuralarc.db.SqliteStrategyOrderRepository;
+import com.neuralarc.db.SqliteStrategyRepository;
 import com.neuralarc.service.AutoAnalyzeResultStore;
-import com.neuralarc.service.FileStrategyExecutionEventRepository;
-import com.neuralarc.service.FileStrategyOrderRepository;
-import com.neuralarc.service.FileStrategyRepository;
 import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.MarketHoursService;
 import com.neuralarc.service.OnboardingStateStore;
@@ -19,9 +18,9 @@ import com.neuralarc.service.PersistentAggregatePnlStore;
 import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.service.StrategyPollingService;
 import com.neuralarc.service.StrategyService;
-import com.neuralarc.service.StrategyValidator;
 import com.neuralarc.service.UserIdentityService;
 import com.neuralarc.util.AppMetadata;
+import com.neuralarc.util.BrokerOrderStatusUtil;
 import com.neuralarc.util.FontLoader;
 import com.neuralarc.util.Monetary;
 import com.neuralarc.util.SvgIconLoader;
@@ -76,7 +75,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -155,143 +153,28 @@ public class TradingFrame extends JFrame {
     private final AppSettingsService appSettingsService = new AppSettingsService();
     private final MarketHoursService marketHoursService = new MarketHoursService();
     private final Path appLogFile = AppMetadata.appDataDirectory().resolve("app.log");
-    private final Path strategiesFilePath = AppMetadata.appDataDirectory().resolve("strategies-v2.json");
-    private static final Path LEGAL_DISCLOSURE_FILE = AppMetadata.appDataDirectory().resolve("legal-disclosure.properties");
-    private static final String LEGAL_DISCLOSURE_TEXT = String.join(System.lineSeparator(),
-         "LEGAL DISCLOSURE AND USER RESPONSIBILITY AGREEMENT\n"
-             + "\n"
-             + "Last Updated: [Insert Date]\n"
-             + "\n"
-             + "This Legal Disclosure and User Responsibility Agreement (\"Agreement\") governs your use of the NeuralArc software application (\"NeuralArc\", \"Application\", or \"Software\"). By installing, accessing, or using NeuralArc, you acknowledge that you have read, understood, and agree to be bound by the terms set forth below.\n"
-             + "\n"
-             + "1. SERVICE FEE\n"
-             + "NeuralArc may apply a service fee equal to twenty percent (20%) of net profit realized from each completed sell transaction executed through the Application.\n"
-             + "\n"
-             + "- No service fee shall be applied to transactions resulting in a loss.\n"
-             + "- Profit calculations are based on data available to the Application and may not include taxes, brokerage fees, or third-party costs.\n"
-             + "- NeuralArc reserves the right to modify its fee structure with reasonable notice.\n"
-             + "\n"
-             + "2. NO INVESTMENT ADVICE\n"
-             + "NeuralArc is a software tool for trade execution and strategy automation only.\n"
-             + "\n"
-             + "- NeuralArc does not provide financial, investment, legal, or tax advice.\n"
-             + "- All trading decisions are made solely by you.\n"
-             + "- You are fully responsible for evaluating risks and outcomes of your strategies.\n"
-             + "\n"
-             + "3. ASSUMPTION OF RISK AND LOSS LIABILITY\n"
-             + "You acknowledge and agree that:\n"
-             + "\n"
-             + "- Trading securities involves substantial risk, including total loss of capital.\n"
-             + "- NeuralArc is not responsible for any losses, including but not limited to:\n"
-             + "  - Market volatility\n"
-             + "  - Slippage\n"
-             + "  - Partial or missed order fills\n"
-             + "  - Delayed execution\n"
-             + "  - Connectivity failures\n"
-             + "  - System errors or downtime\n"
-             + "- NeuralArc does not guarantee profitability or performance.\n"
-             + "\n"
-             + "4. NO FIDUCIARY RELATIONSHIP\n"
-             + "Use of NeuralArc does not create any fiduciary, advisory, or agency relationship between you and NeuralArc or its operators.\n"
-             + "\n"
-             + "- NeuralArc does not act in your best interest in a fiduciary capacity.\n"
-             + "- You retain full control and responsibility for all actions taken.\n"
-             + "\n"
-             + "5. ALPACA ACCOUNT INTEGRATION\n"
-             + "NeuralArc integrates with third-party brokerage services including Alpaca Markets.\n"
-             + "\n"
-             + "- Your brokerage account remains under your sole ownership and control.\n"
-             + "- NeuralArc does not hold or custody funds or securities.\n"
-             + "- API credentials are stored locally and used only to execute your instructions.\n"
-             + "- You are responsible for securing your API keys and permissions.\n"
-             + "\n"
-             + "6. THIRD-PARTY SERVICES DISCLAIMER\n"
-             + "NeuralArc depends on third-party services, including brokerage APIs and market data providers.\n"
-             + "\n"
-             + "- NeuralArc is not responsible for failures, inaccuracies, or interruptions from third-party services.\n"
-             + "- Changes to third-party APIs may affect functionality.\n"
-             + "\n"
-             + "7. DATA STORAGE AND PRIVACY\n"
-             + "- All strategy and application data is stored locally on your device by default.\n"
-             + "- NeuralArc does not upload or store your strategies in the cloud unless explicitly enabled in future features.\n"
-             + "- Optional telemetry, if enabled, is limited to system performance and operational metrics.\n"
-             + "\n"
-             + "8. DATA SECURITY DISCLAIMER\n"
-             + "- NeuralArc does not guarantee protection against unauthorized access to your device.\n"
-             + "- NeuralArc is not responsible for:\n"
-             + "  - Data loss\n"
-             + "  - Device compromise\n"
-             + "  - Malware or external attacks\n"
-             + "- You are responsible for maintaining device security and safe usage practices.\n"
-             + "\n"
-             + "9. BACKUP AND DATA INTEGRITY\n"
-             + "- You are solely responsible for backing up your data.\n"
-             + "- NeuralArc recommends regular export of strategies to avoid data loss.\n"
-             + "- NeuralArc is not responsible for recovery of lost or corrupted data.\n"
-             + "\n"
-             + "10. AVAILABILITY AND SYSTEM RELIABILITY\n"
-             + "- NeuralArc is provided \"as-is\" and \"as-available\".\n"
-             + "- The Application may experience interruptions, delays, or errors.\n"
-             + "- Continuous or error-free operation is not guaranteed.\n"
-             + "\n"
-             + "11. LIMITATION OF LIABILITY\n"
-             + "To the fullest extent permitted by law:\n"
-             + "\n"
-             + "- NeuralArc and its developers shall not be liable for any damages, including:\n"
-             + "  - Direct or indirect financial loss\n"
-             + "  - Loss of profits\n"
-             + "  - Loss of data\n"
-             + "  - Loss of opportunity\n"
-             + "- This applies regardless of cause, including negligence.\n"
-             + "\n"
-             + "12. INDEMNIFICATION\n"
-             + "You agree to indemnify and hold harmless NeuralArc, its developers, and affiliates from any claims, damages, or liabilities arising from:\n"
-             + "\n"
-             + "- Your use of the Application\n"
-             + "- Your trading activities\n"
-             + "- Violation of this Agreement\n"
-             + "\n"
-             + "13. TAX RESPONSIBILITY DISCLAIMER\n"
-             + "- You are solely responsible for reporting and paying any taxes related to your trading activities.\n"
-             + "- NeuralArc does not provide tax reporting or guidance.\n"
-             + "\n"
-             + "14. OPEN SOURCE AND SOFTWARE LICENSE (IF APPLICABLE)\n"
-             + "- Portions of NeuralArc may include open-source components governed by their respective licenses.\n"
-             + "- You agree to comply with all applicable third-party license terms.\n"
-             + "- NeuralArc itself may be distributed under a separate license, if provided.\n"
-             + "\n"
-             + "15. MODIFICATIONS AND UPDATES\n"
-             + "- NeuralArc may update or modify this Agreement at any time.\n"
-             + "- Continued use of the Application constitutes acceptance of updated terms.\n"
-             + "\n"
-             + "16. TERMINATION\n"
-             + "- NeuralArc reserves the right to suspend or terminate access for misuse, violations, or security risks.\n"
-             + "- You may discontinue use at any time.\n"
-             + "\n"
-             + "17. GOVERNING LAW\n"
-             + "This Agreement shall be governed by applicable laws of the jurisdiction in which the Application operator resides, without regard to conflict of law principles.\n"
-             + "\n"
-             + "18. USER RESPONSIBILITY\n"
-             + "You acknowledge that:\n"
-             + "\n"
-             + "- You are solely responsible for all trades executed through NeuralArc.\n"
-             + "- You understand the risks associated with automated trading.\n"
-             + "- You accept full responsibility for outcomes, including financial losses.\n"
-             + "\n"
-             + "19. ACKNOWLEDGMENT AND ACCEPTANCE\n"
-             + "By selecting \"Accept\", installing, or using NeuralArc, you:\n"
-             + "\n"
-             + "- Confirm that you have read and understood this Agreement\n"
-             + "- Accept all terms and conditions\n"
-             + "- Agree to use the Application at your own risk");
+    private final LegalDisclosureController legalDisclosureController = new LegalDisclosureController();
     private boolean legalDisclosureAccepted;
     private final StringBuilder pendingLogWrites = new StringBuilder();
 
     private final UserIdentityService identityService = new UserIdentityService();
+    private final HistoryTablePresenter historyTablePresenter = new HistoryTablePresenter();
+    private final HistoryRowStyler historyRowStyler = new HistoryRowStyler();
+    private final MarketStatusPresenter marketStatusPresenter = new MarketStatusPresenter();
+    private final PollingCellPresenter pollingCellPresenter = new PollingCellPresenter();
+    private final StatusBarPresenter statusBarPresenter = new StatusBarPresenter();
+    private final StrategyActionsPresenter strategyActionsPresenter = new StrategyActionsPresenter();
+    private final StrategyTablePresenter strategyTablePresenter = new StrategyTablePresenter();
+    private final SystemMetricsPresenter systemMetricsPresenter = new SystemMetricsPresenter();
     private final List<ManagedStrategy> strategies = new ArrayList<>();
-    private final List<FilledOrderRow> filledOrderRows = new ArrayList<>();
-    private final StrategyTableModel strategyTableModel = new StrategyTableModel();
-    private final FilledOrdersTableModel filledOrdersTableModel = new FilledOrdersTableModel();
+    private final List<HistoryTablePresenter.HistoryRow> filledOrderRows = new ArrayList<>();
+    private final StrategyGridTableModel strategyTableModel = new StrategyGridTableModel(
+            strategies,
+            this::displayStatusLabel,
+            this::gridBrokerModeLabel,
+            strategyTablePresenter
+    );
+    private final HistoryGridTableModel filledOrdersTableModel = new HistoryGridTableModel(filledOrderRows);
     private final JTable strategyTable = new JTable(strategyTableModel) {
         @Override
         public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
@@ -311,9 +194,9 @@ public class TradingFrame extends JFrame {
     private TradingApi tradingApi;
     private AnalyticsPublisher analyticsPublisher;
     private final SettingsDialog settingsDialog;
-    private final FileStrategyRepository strategyRepository;
-    private final FileStrategyOrderRepository strategyOrderRepository;
-    private final FileStrategyExecutionEventRepository strategyEventRepository;
+    private final SqliteStrategyRepository strategyRepository;
+    private final SqliteStrategyOrderRepository strategyOrderRepository;
+    private final SqliteStrategyExecutionEventRepository strategyEventRepository;
     private final PersistentAggregatePnlStore aggregatePnlStore;
     private boolean connectionOk;
     private boolean connectionRetryPending;
@@ -329,7 +212,6 @@ public class TradingFrame extends JFrame {
     private boolean promptedDefaultStrategyDialog;
     private StrategyService strategyService;
     private StrategyPollingService strategyPollingService;
-    private AlpacaTradingWebSocketClient tradingWebSocketClient;
     private long lastBrokerBackedUiRefreshAtMillis;
     private String runtimeApiKey = "";
     private String runtimeApiSecret = "";
@@ -339,6 +221,10 @@ public class TradingFrame extends JFrame {
     private volatile long lastClosedMarketPollingCycleAtMillis;
     private final AutoAnalyzeResultStore autoAnalyzeResultStore = new AutoAnalyzeResultStore();
     private final OnboardingStateStore onboardingStateStore = new OnboardingStateStore();
+    private final TradingRuntimeSupport tradingRuntimeSupport;
+    private final StrategyActionsController strategyActionsController;
+    private final TradeStreamLifecycleCoordinator tradeStreamLifecycleCoordinator;
+    private final ConnectionLifecycleCoordinator connectionLifecycleCoordinator;
 
     public TradingFrame() {
         liveModeBlinkTimer = new Timer(500, ignored -> toggleLiveHeaderBlink());
@@ -365,19 +251,329 @@ public class TradingFrame extends JFrame {
         setLayout(new BorderLayout());
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
         settingsDialog = new SettingsDialog(this);
-        strategyRepository = new FileStrategyRepository(
-                strategiesFilePath
+        AppDatabase appDatabase = AppDatabase.getInstance();
+        strategyRepository = new SqliteStrategyRepository(appDatabase);
+        strategyOrderRepository = new SqliteStrategyOrderRepository(appDatabase);
+        strategyEventRepository = new SqliteStrategyExecutionEventRepository(appDatabase);
+        tradingRuntimeSupport = new TradingRuntimeSupport(
+                strategyRepository,
+                strategyOrderRepository,
+                strategyEventRepository,
+                appSettingsService,
+                marketHoursService
         );
-        strategyOrderRepository = new FileStrategyOrderRepository(
-                AppMetadata.appDataDirectory().resolve("strategy-orders.json")
-        );
-        strategyEventRepository = new FileStrategyExecutionEventRepository(
-                AppMetadata.appDataDirectory().resolve("strategy-events.json")
-        );
+        strategyActionsController = new StrategyActionsController(new StrategyActionsController.Gateway() {
+            @Override
+            public int toModelRow(int viewRow) {
+                return strategyTable.convertRowIndexToModel(viewRow);
+            }
+
+            @Override
+            public int strategiesSize() {
+                return strategies.size();
+            }
+
+            @Override
+            public StrategyActionsController.ActionEntry entryAt(int modelRow) {
+                ManagedStrategy entry = strategies.get(modelRow);
+                return new StrategyActionsController.ActionEntry() {
+                    @Override public Strategy strategy() { return entry.strategy; }
+                    @Override public boolean isPaused() { return entry.isPaused(); }
+                    @Override public boolean isPauseResumeBusy() { return entry.isPauseResumeBusy(); }
+                    @Override public void setPauseResumeBusy(boolean value) { entry.setPauseResumeBusy(value); }
+                    @Override public void setPauseResumeBusyText(String value) { entry.setPauseResumeBusyText(value); }
+                    @Override public void syncFrom(Strategy strategy) { entry.syncFrom(strategy); }
+                };
+            }
+
+            @Override public StrategyService strategyService() { return strategyService; }
+            @Override public Optional<Strategy> findStrategyById(String strategyId) { return strategyRepository.findById(strategyId); }
+            @Override public void refreshStrategyTableRow(int modelRow) { TradingFrame.this.refreshStrategyTableRow(modelRow); }
+            @Override public void refreshStrategyTableData() { TradingFrame.this.refreshStrategyTableData(); }
+            @Override public void refreshPanels() { TradingFrame.this.refreshPanels(); }
+            @Override public void updateStatusBar() { TradingFrame.this.updateStatusBar(); }
+            @Override public void restoreSelectedRow() { TradingFrame.this.restoreSelectedRow(); }
+            @Override public void updateSelectedStrategy() { TradingFrame.this.updateSelectedStrategy(); }
+            @Override public void syncStrategiesFromRepository() { TradingFrame.this.syncStrategiesFromRepository(); }
+            @Override public void clearStrategySelection() { strategyTable.clearSelection(); }
+
+            @Override
+            public void startPollingCountdown(String strategyId) {
+                ManagedStrategy entry = TradingFrame.this.findStrategyById(strategyId);
+                if (entry != null) {
+                    TradingFrame.this.startPollingCountdown(entry);
+                }
+            }
+
+            @Override
+            public void stopPollingCountdown(String strategyId) {
+                ManagedStrategy entry = TradingFrame.this.findStrategyById(strategyId);
+                if (entry != null) {
+                    TradingFrame.this.stopPollingCountdown(entry);
+                }
+            }
+
+            @Override
+            public void resetPollingCountdown(String strategyId) {
+                ManagedStrategy entry = TradingFrame.this.findStrategyById(strategyId);
+                if (entry != null) {
+                    TradingFrame.this.resetPollingCountdown(entry);
+                }
+            }
+
+            @Override public Position loadPositionForStrategy(Strategy strategy) { return TradingFrame.this.loadPositionForStrategy(strategy); }
+            @Override public BigDecimal realizedPnlForStrategy(String strategyId) { return TradingFrame.this.realizedPnlForStrategy(strategyId); }
+            @Override public String closePaperAccountState(Strategy strategy) { return TradingFrame.this.closePaperAccountState(strategy); }
+            @Override public void updateHeaderModeStatus(BrokerType brokerType) { TradingFrame.this.updateHeaderModeStatus(brokerType); }
+            @Override public BrokerType currentBrokerType() { return currentBrokerType; }
+            @Override public boolean hasBrokerPositionAccess() { return currentBrokerType == BrokerType.ALPACA || tradingApi != null; }
+            @Override public void setSelectedStrategyId(String strategyId) { selectedStrategyId = strategyId; }
+            @Override public String selectedStrategyId() { return selectedStrategyId; }
+            @Override public void removeStrategyAt(int modelRow) { strategies.remove(modelRow); }
+            @Override public void addArchivedRealized(StrategyMode mode, BigDecimal amount) { aggregatePnlStore.addArchivedRealized(mode, amount); }
+            @Override public void log(String message) { TradingFrame.this.log(message); }
+
+            @Override
+            public void publishAnalytics(AnalyticsEvent event) {
+                if (analyticsPublisher != null && event != null) {
+                    analyticsPublisher.publish(event);
+                }
+            }
+
+            @Override
+            public int confirm(String message, String title, int optionType, int messageType) {
+                return JOptionPane.showConfirmDialog(TradingFrame.this, message, title, optionType, messageType);
+            }
+
+            @Override
+            public void showMessage(String message, String title, int messageType) {
+                JOptionPane.showMessageDialog(TradingFrame.this, message, title, messageType);
+            }
+
+            @Override
+            public StrategyActionsController.PromotionDialogResult showLivePromotionDialog(
+                    StrategyService.LivePromotionPreview preview,
+                    String realizedPnl,
+                    String unrealizedPnl
+            ) {
+                LivePromotionDialog dialog = new LivePromotionDialog(TradingFrame.this, preview, realizedPnl, unrealizedPnl);
+                boolean proceed = dialog.showDialog();
+                return new StrategyActionsController.PromotionDialogResult(proceed, dialog.shouldClosePaperPositions());
+            }
+
+            @Override
+            public void runBackgroundTask(
+                    StrategyActionsController.ThrowingRunnable background,
+                    Runnable onSuccess,
+                    java.util.function.Consumer<Exception> onFailure,
+                    Runnable onFinally
+            ) {
+                SwingWorker<Void, Void> worker = new SwingWorker<>() {
+                    @Override
+                    protected Void doInBackground() throws Exception {
+                        background.run();
+                        return null;
+                    }
+
+                    @Override
+                    protected void done() {
+                        try {
+                            get();
+                            onSuccess.run();
+                        } catch (Exception ex) {
+                            onFailure.accept(ex);
+                        } finally {
+                            onFinally.run();
+                        }
+                    }
+                };
+                worker.execute();
+            }
+        });
+        tradeStreamLifecycleCoordinator = new TradeStreamLifecycleCoordinator(new TradeStreamLifecycleCoordinator.Gateway() {
+            @Override
+            public boolean webSocketEnabled() {
+                return AppMetadata.alpacaTradingEventsWebSocketEnabled();
+            }
+
+            @Override
+            public String streamUrl(boolean liveMode) {
+                return AppMetadata.alpacaTradingEventsWebSocketUrl(liveMode);
+            }
+
+            @Override
+            public void updateStreamStatus(String status, Color color) {
+                TradingFrame.this.updateStreamStatus(status, color);
+            }
+
+            @Override
+            public void log(String message) {
+                TradingFrame.this.log(message);
+            }
+
+            @Override
+            public boolean canProcessTradeUpdates() {
+                return strategyPollingService != null;
+            }
+
+            @Override
+            public void onTradeUpdate(AlpacaTradeUpdateEvent event) {
+                if (strategyPollingService != null) {
+                    strategyPollingService.onTradeUpdate(event);
+                }
+            }
+
+            @Override
+            public void refreshDisplayedPositionFromStream(String symbol) {
+                TradingFrame.this.refreshDisplayedPositionFromStream(symbol);
+            }
+
+            @Override
+            public void invokeLater(Runnable runnable) {
+                SwingUtilities.invokeLater(runnable);
+            }
+
+            @Override
+            public void syncStrategiesFromRepository() {
+                TradingFrame.this.syncStrategiesFromRepository();
+            }
+
+            @Override
+            public void refreshStrategyTableContent() {
+                TradingFrame.this.refreshStrategyTableContent();
+            }
+
+            @Override
+            public void refreshPanels() {
+                TradingFrame.this.refreshPanels();
+            }
+
+            @Override
+            public void updateStatusBar() {
+                TradingFrame.this.updateStatusBar();
+            }
+        });
+        connectionLifecycleCoordinator = new ConnectionLifecycleCoordinator(new ConnectionLifecycleCoordinator.Gateway() {
+            @Override
+            public TradingRuntimeSupport.ConnectionAttemptResult attemptConnection(
+                    BrokerType brokerType,
+                    ApplicationMode mode,
+                    String apiKey,
+                    String apiSecret
+            ) {
+                return tradingRuntimeSupport.attemptConnection(brokerType, mode, apiKey, apiSecret);
+            }
+
+            @Override
+            public void log(String message) {
+                TradingFrame.this.log(message);
+            }
+
+            @Override
+            public void updateHeaderModeStatus(BrokerType brokerType) {
+                TradingFrame.this.updateHeaderModeStatus(brokerType);
+            }
+
+            @Override
+            public void setHeaderStatusText(String text) {
+                headerStatus.setText(text);
+            }
+
+            @Override
+            public void markConnectionStatus(boolean connected, String message) {
+                settingsDialog.markConnectionStatus(connected, message);
+            }
+
+            @Override
+            public void applySuccessfulRuntimeConnection(
+                    BrokerType brokerType,
+                    TradingApi candidateApi,
+                    String apiKey,
+                    String apiSecret,
+                    ApplicationMode mode
+            ) {
+                tradingApi = candidateApi;
+                currentBrokerType = brokerType;
+                connectionOk = true;
+                refreshStrategyRuntimeServices(apiKey, apiSecret, mode);
+                startTradingEventStreamIfConfigured(apiKey, apiSecret);
+                setStatus("Connected - broker " + brokerType.name() + " ready.", STATUS_OK);
+                updateHeaderModeStatus(brokerType);
+                updateStatusBar();
+                initPersistenceAndRestore();
+            }
+
+            @Override
+            public void applyFailedRuntimeConnection(BrokerType brokerType) {
+                stopTradingEventStream();
+                connectionOk = false;
+                connectionRetryPending = true;
+                setStatus("FAILED Retrying...", STATUS_ERR);
+                scheduleConnectionRetry();
+                updateHeaderModeStatus(brokerType);
+                updateStatusBar();
+            }
+
+            @Override
+            public void stopConnectionRetryTimer() {
+                connectionRetryTimer.stop();
+            }
+
+            @Override
+            public boolean isConnectionRetryTimerRunning() {
+                return connectionRetryTimer.isRunning();
+            }
+
+            @Override
+            public void restartConnectionRetryTimer() {
+                connectionRetryTimer.restart();
+            }
+
+            @Override
+            public void setConnectionRetryPending(boolean pending) {
+                connectionRetryPending = pending;
+            }
+
+            @Override
+            public boolean isConnectionRetryPending() {
+                return connectionRetryPending;
+            }
+
+            @Override
+            public BrokerType appliedBrokerType() {
+                return settingsDialog.appliedBrokerType();
+            }
+
+            @Override
+            public ApplicationMode appliedApplicationMode() {
+                return settingsDialog.appliedApplicationMode();
+            }
+
+            @Override
+            public String savedApiKey(ApplicationMode mode) {
+                return settingsDialog.savedApiKey(mode);
+            }
+
+            @Override
+            public String savedApiSecret(ApplicationMode mode) {
+                return settingsDialog.savedApiSecret(mode);
+            }
+
+
+            @Override
+            public Color statusErrorColor() {
+                return STATUS_ERR;
+            }
+
+            @Override
+            public void setStatus(String message, Color tone) {
+                TradingFrame.this.setStatus(message, tone);
+            }
+        });
         aggregatePnlStore = new PersistentAggregatePnlStore(
                 AppMetadata.appDataDirectory().resolve("aggregate-pnl.json")
         );
-        legalDisclosureAccepted = loadLegalDisclosureAcceptance();
+        legalDisclosureAccepted = legalDisclosureController.loadAccepted();
         refreshStrategyRuntimeServices(
                 settingsDialog.savedApiKey(settingsDialog.appliedApplicationMode()),
                 settingsDialog.savedApiSecret(settingsDialog.appliedApplicationMode()),
@@ -586,12 +782,12 @@ public class TradingFrame extends JFrame {
         });
 
         // Make table sortable — click column headers to sort
-        TableRowSorter<StrategyTableModel> sorter = new TableRowSorter<>(strategyTableModel);
+        TableRowSorter<StrategyGridTableModel> sorter = new TableRowSorter<>(strategyTableModel);
         sorter.setSortable(7, false); // Polling countdown bar column — not sortable
         sorter.setSortable(9, false); // Actions button column — not sortable
         sorter.setRowFilter(new RowFilter<>() {
             @Override
-            public boolean include(Entry<? extends StrategyTableModel, ? extends Integer> entry) {
+            public boolean include(Entry<? extends StrategyGridTableModel, ? extends Integer> entry) {
                 int modelRow = entry.getIdentifier();
                 if (modelRow < 0 || modelRow >= strategies.size()) {
                     return false;
@@ -630,7 +826,7 @@ public class TradingFrame extends JFrame {
         filledOrdersTable.setIntercellSpacing(new Dimension(0, 0));
         filledOrdersTable.setDefaultRenderer(Object.class, new HistoryRowRenderer());
         filledOrdersTable.setDefaultRenderer(Number.class, new HistoryRowRenderer());
-        TableRowSorter<FilledOrdersTableModel> filledSorter = new TableRowSorter<>(filledOrdersTableModel);
+        TableRowSorter<HistoryGridTableModel> filledSorter = new TableRowSorter<>(filledOrdersTableModel);
         filledOrdersTable.setRowSorter(filledSorter);
 
         JScrollPane filledOrdersGrid = new JScrollPane(filledOrdersTable);
@@ -1172,63 +1368,24 @@ public class TradingFrame extends JFrame {
     }
 
     private boolean autoInitializeConnection() {
-        ApplicationMode mode = settingsDialog.appliedApplicationMode();
-        String apiKey = settingsDialog.savedApiKey(mode);
-        String apiSecret = settingsDialog.savedApiSecret(mode);
-        if (apiKey.isBlank() || apiSecret.isBlank()) {
-            return false;
-        }
-        SettingsDialog.ConnectionResult result = runConnectionTest(
-                settingsDialog.appliedBrokerType(),
-                mode,
-                apiKey,
-                apiSecret,
-                false,
-                true
-        );
-        return result.connected();
+        return connectionLifecycleCoordinator.autoInitializeConnection();
     }
 
     private void refreshStrategyRuntimeServices(String apiKey, String apiSecret, ApplicationMode mode) {
-        runtimeApiKey = apiKey == null ? "" : apiKey.trim();
+        runtimeApiKey = apiKey == null ? "" : apiKey;
         runtimeApiSecret = apiSecret == null ? "" : apiSecret;
-        HttpAlpacaClient runtimeClient = new HttpAlpacaClient(
-                runtimeApiKey,
-                runtimeApiSecret,
-                AppMetadata.alpacaTradingBaseUrl(mode),
-                AppMetadata.alpacaDataUrl(),
-                settingsDialog.appliedExtendedHoursTradingEnabled()
-        );
-        if (mode == ApplicationMode.LIVE) {
-            liveModeClient = runtimeClient;
-        } else {
-            paperModeClient = runtimeClient;
-        }
         refreshCachedAlpacaClients();
+        HttpAlpacaClient runtimeClient = alpacaClientForMode(mode);
+        if (runtimeClient == null) {
+            return;
+        }
         if (strategyPollingService != null) {
             strategyPollingService.shutdown();
         }
-        HttpAlpacaClient alpacaClient = runtimeClient;
-        strategyService = new StrategyService(
-                strategyRepository,
-                strategyOrderRepository,
-                strategyEventRepository,
-                alpacaClient,
-                new StrategyValidator(),
-                AppMetadata.liveTradingEnabled(),
-                mode == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER,
-                appSettingsService,
-                marketHoursService
-        );
-        strategyPollingService = new StrategyPollingService(
-                strategyRepository,
-                strategyOrderRepository,
-                strategyEventRepository,
-                alpacaClient,
-                appSettingsService,
-                marketHoursService
-        );
-        strategyPollingService.setPollListener(new StrategyPollingService.PollListener() {
+        TradingRuntimeSupport.RuntimeServices runtimeServices = tradingRuntimeSupport.createRuntimeServices(
+                runtimeClient,
+                mode,
+                new StrategyPollingService.PollListener() {
             @Override
             public void onPollStarted(String strategyId) {
                 SwingUtilities.invokeLater(() -> onStrategyPollStarted(strategyId));
@@ -1243,37 +1400,20 @@ public class TradingFrame extends JFrame {
             public void onPollFailed(String strategyId) {
                 SwingUtilities.invokeLater(() -> onStrategyPollFailed(strategyId));
             }
-        });
+        }
+        );
+        strategyService = runtimeServices.strategyService();
+        strategyPollingService = runtimeServices.strategyPollingService();
     }
 
     private void refreshCachedAlpacaClients() {
-        paperModeClient = createModeClient(ApplicationMode.PAPER);
-        liveModeClient = createModeClient(ApplicationMode.LIVE);
-    }
-
-    private HttpAlpacaClient createModeClient(ApplicationMode mode) {
-        if (mode == ApplicationMode.LIVE && !AppMetadata.liveTradingEnabled()) {
-            return null;
-        }
-        String apiKey = settingsDialog.savedApiKey(mode);
-        String apiSecret = settingsDialog.savedApiSecret(mode);
-        if ((apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank())
-                && mode == settingsDialog.appliedApplicationMode()
-                && !runtimeApiKey.isBlank()
-                && !runtimeApiSecret.isBlank()) {
-            apiKey = runtimeApiKey;
-            apiSecret = runtimeApiSecret;
-        }
-        if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
-            return null;
-        }
-        return new HttpAlpacaClient(
-                apiKey,
-                apiSecret,
-                AppMetadata.alpacaTradingBaseUrl(mode),
-                AppMetadata.alpacaDataUrl(),
-                settingsDialog.appliedExtendedHoursTradingEnabled()
+        TradingRuntimeSupport.RuntimeClients runtimeClients = tradingRuntimeSupport.createClients(
+                settingsDialog,
+                runtimeApiKey,
+                runtimeApiSecret
         );
+        paperModeClient = runtimeClients.paperModeClient();
+        liveModeClient = runtimeClients.liveModeClient();
     }
 
     private HttpAlpacaClient alpacaClientForMode(ApplicationMode mode) {
@@ -1281,78 +1421,22 @@ public class TradingFrame extends JFrame {
     }
 
     private SettingsDialog.ConnectionResult runConnectionTest(BrokerType brokerType, ApplicationMode mode, String apiKey, String apiSecret, boolean manualTrigger, boolean applyRuntimeChanges) {
-        if (brokerType == null) {
-            log("Connection test: FAILED (broker not set in Settings)");
-            updateHeaderModeStatus(null);
-            headerStatus.setText("Status: broker not configured");
-            return new SettingsDialog.ConnectionResult(false, "Broker not configured");
-        }
-        if (mode == ApplicationMode.LIVE && !AppMetadata.liveTradingEnabled()) {
-            String message = "LIVE mode is disabled. Set trading.live.enabled=true in app.properties.";
-            settingsDialog.markConnectionStatus(false, message);
-            setStatus(message, STATUS_ERR);
-            return new SettingsDialog.ConnectionResult(false, message);
-        }
-
-        TradingApi candidateApi = TradingApiFactory.create(brokerType, mode);
-        candidateApi.authenticate(apiKey, apiSecret);
-        boolean connected = candidateApi.testConnection();
-        log((manualTrigger ? "Connection test: " : "Auto connection test: ") + (connected ? "SUCCESS" : "FAILED"));
-        if (connected) {
-            connectionRetryPending = false;
-            connectionRetryTimer.stop();
-            settingsDialog.markConnectionStatus(true, "Connected to " + brokerType.name() + " (" + mode.name() + ")");
-            if (applyRuntimeChanges) {
-                tradingApi = candidateApi;
-                currentBrokerType = brokerType;
-                connectionOk = true;
-                refreshStrategyRuntimeServices(apiKey, apiSecret, mode);
-                startTradingEventStreamIfConfigured(apiKey, apiSecret);
-                setStatus("Connected — broker " + brokerType.name() + " ready.", STATUS_OK);
-                updateHeaderModeStatus(brokerType);
-                updateStatusBar();
-                initPersistenceAndRestore();
-            }
-            if (!applyRuntimeChanges) {
-                return new SettingsDialog.ConnectionResult(true, "Connected to " + brokerType.name() + " (" + mode.name() + ")");
-            }
-            settingsDialog.markConnectionStatus(true, "Connected to " + brokerType.name());
-            return new SettingsDialog.ConnectionResult(true, "Connected to " + brokerType.name());
-        } else {
-            if (applyRuntimeChanges) {
-                stopTradingEventStream();
-                connectionOk = false;
-                connectionRetryPending = true;
-                setStatus("FAILED Retrying...", STATUS_ERR);
-                scheduleConnectionRetry();
-                updateHeaderModeStatus(brokerType);
-                updateStatusBar();
-            }
-            settingsDialog.markConnectionStatus(false, "Connection failed");
-            return new SettingsDialog.ConnectionResult(false, "Connection failed");
-        }
+        return connectionLifecycleCoordinator.runConnectionTest(
+                brokerType,
+                mode,
+                apiKey,
+                apiSecret,
+                manualTrigger,
+                applyRuntimeChanges
+        );
     }
 
     private void scheduleConnectionRetry() {
-        if (connectionRetryTimer.isRunning()) {
-            return;
-        }
-        connectionRetryTimer.restart();
+        connectionLifecycleCoordinator.scheduleConnectionRetry();
     }
 
     private void retryBrokerConnectionIfConfigured() {
-        if (!connectionRetryPending) {
-            return;
-        }
-        BrokerType brokerType = settingsDialog.appliedBrokerType();
-        ApplicationMode mode = settingsDialog.appliedApplicationMode();
-        String apiKey = settingsDialog.savedApiKey(mode);
-        String apiSecret = settingsDialog.savedApiSecret(mode);
-        if (brokerType == null || apiKey.isBlank() || apiSecret.isBlank()) {
-            connectionRetryPending = false;
-            return;
-        }
-        runConnectionTest(brokerType, mode, apiKey, apiSecret, false, true);
+        connectionLifecycleCoordinator.retryBrokerConnectionIfConfigured();
     }
 
     private void initPersistenceAndRestore() {
@@ -1368,7 +1452,7 @@ public class TradingFrame extends JFrame {
             try {
                 int dueStrategies = strategyPollingService.pollDueStrategies();
                 List<Strategy> stored = strategyRepository.findAll();
-                boolean refreshBrokerSnapshots = dueStrategies > 0 && shouldRunBatchGridPriceRefresh();
+                boolean refreshBrokerSnapshots = shouldRunBatchGridPriceRefresh() && hasStrategiesNeedingBrokerSnapshots(stored);
                 Map<String, Position> positionSnapshots = refreshBrokerSnapshots
                         ? loadPositionSnapshotsForStrategies(stored)
                         : Map.of();
@@ -1376,7 +1460,7 @@ public class TradingFrame extends JFrame {
                     try {
                         syncStrategies(stored);
                         applyPositionSnapshots(positionSnapshots);
-                        if (dueStrategies > 0 && shouldRunBrokerBackedUiRefresh()) {
+                        if ((dueStrategies > 0 || !positionSnapshots.isEmpty()) && shouldRunBrokerBackedUiRefresh()) {
                             refreshStrategyTableContent();
                             refreshPanels();
                         }
@@ -1437,6 +1521,7 @@ public class TradingFrame extends JFrame {
         }
         List<Strategy> strategiesForMode = stored.stream()
                 .filter(strategy -> strategy.mode() == mode)
+                .filter(this::includeInBrokerSnapshotRefresh)
                 .filter(strategy -> strategy.symbol() != null && !strategy.symbol().isBlank())
                 .toList();
         if (strategiesForMode.isEmpty()) {
@@ -1706,195 +1791,15 @@ public class TradingFrame extends JFrame {
     }
 
     private void togglePauseResume(int viewRow) {
-        int row = strategyTable.convertRowIndexToModel(viewRow);
-        if (row < 0 || row >= strategies.size()) {
-            return;
-        }
-
-        ManagedStrategy entry = strategies.get(row);
-        if (entry.strategy.status() == StrategyStatus.ARCHIVED) {
-            return;
-        }
-        if (entry.isPauseResumeBusy()) {
-            return;
-        }
-        boolean wasPaused = entry.isPaused();
-        String strategyId = entry.strategy.id();
-        String symbol = entry.strategy.symbol();
-        entry.setPauseResumeBusy(true);
-        entry.setPauseResumeBusyText(wasPaused ? "Resuming..." : "Canceling...");
-        refreshStrategyTableRow(row);
-
-        SwingWorker<Void, Void> worker = new SwingWorker<>() {
-            @Override
-            protected Void doInBackground() {
-                if (wasPaused) {
-                    strategyService.resume(strategyId);
-                } else {
-                    strategyService.pause(strategyId);
-                }
-                return null;
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    get();
-                    if (wasPaused) {
-                        log("Strategy resumed for symbol " + symbol);
-                    } else {
-                        stopPollingCountdown(entry);
-                        log("Strategy canceled for symbol " + symbol);
-                        if (analyticsPublisher != null) {
-                            analyticsPublisher.publish(new AnalyticsEvent("STRATEGY_PAUSED").put("symbol", symbol));
-                        }
-                    }
-
-                    strategyRepository.findById(strategyId).ifPresent(updatedStrategy -> {
-                        entry.syncFrom(updatedStrategy);
-                        if (wasPaused) {
-                            startPollingCountdown(entry);
-                        } else {
-                            resetPollingCountdown(entry);
-                        }
-                    });
-                } catch (Exception ex) {
-                    log("Cancel/Resume failed for symbol " + symbol + ": " + ex.getMessage());
-                } finally {
-                    entry.setPauseResumeBusy(false);
-                    entry.setPauseResumeBusyText("");
-                    refreshStrategyTableRow(row);
-                    updateStatusBar();
-                    refreshPanels();
-                }
-            }
-        };
-        worker.execute();
+        strategyActionsController.togglePauseResume(viewRow);
     }
 
     private void previewLivePromotion(int viewRow) {
-        int row = strategyTable.convertRowIndexToModel(viewRow);
-        if (row < 0 || row >= strategies.size()) {
-            return;
-        }
-
-        ManagedStrategy entry = strategies.get(row);
-        if (entry.strategy.mode() != StrategyMode.PAPER || entry.strategy.status() == StrategyStatus.ARCHIVED) {
-            return;
-        }
-
-        StrategyService.LivePromotionPreview preview = strategyService.previewLivePromotion(entry.strategy.id());
-        Position paperPosition = loadPositionForStrategy(entry.strategy);
-        String realizedPnl = Monetary.round(realizedPnlForStrategy(entry.strategy.id())).toPlainString();
-        String unrealizedPnl = Monetary.round(paperPosition.unrealizedPnl()).toPlainString();
-        LivePromotionDialog dialog = new LivePromotionDialog(this, preview, realizedPnl, unrealizedPnl);
-        if (!dialog.showDialog()) {
-            return;
-        }
-
-        StrategyService.LivePromotionResult result = strategyService.promotePaperStrategyToLive(entry.strategy.id());
-        if (!result.success()) {
-            JOptionPane.showMessageDialog(
-                    this,
-                    result.error(),
-                    "Live Promotion Failed",
-                    JOptionPane.ERROR_MESSAGE
-            );
-            return;
-        }
-
-        String cleanupSummary = "";
-        if (dialog.shouldClosePaperPositions()) {
-            cleanupSummary = closePaperAccountState(entry.strategy);
-        }
-
-        syncStrategiesFromRepository();
-        refreshStrategyTableData();
-        selectedStrategyId = result.liveStrategyId();
-        restoreSelectedRow();
-        updateSelectedStrategy();
-        refreshPanels();
-        updateStatusBar();
-        log("[" + entry.strategy.symbol() + "] Promoted paper strategy to LIVE and archived the paper copy.");
-        JOptionPane.showMessageDialog(
-                this,
-                "LIVE strategy created successfully.\nPaper strategy archived locally.\nLive Order ID: " + result.alpacaOrderId(),
-                "Promotion Complete",
-                JOptionPane.INFORMATION_MESSAGE
-        );
-        if (!cleanupSummary.isBlank()) {
-            log("[" + entry.strategy.symbol() + "] " + cleanupSummary);
-            JOptionPane.showMessageDialog(
-                    this,
-                    cleanupSummary,
-                    "Paper Cleanup",
-                    cleanupSummary.contains("skipped") ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE
-            );
-        }
+        strategyActionsController.previewLivePromotion(viewRow);
     }
 
     private void deleteStrategy(int viewRow) {
-        int row = strategyTable.convertRowIndexToModel(viewRow);
-        if (row < 0 || row >= strategies.size()) {
-            return;
-        }
-
-        ManagedStrategy entry = strategies.get(row);
-        String statusLabel = entry.strategy.status().name();
-        String modeLabel = entry.strategy.mode() == StrategyMode.PAPER ? "Paper Trading" : "Live Trading";
-        String positionNote;
-        if (currentBrokerType == BrokerType.ALPACA || tradingApi != null) {
-            int shares = loadPositionForStrategy(entry.strategy).getTotalShares();
-            positionNote = shares > 0
-                    ? "• Open position: " + shares + " share(s) held — these will NOT be automatically sold."
-                    : "• No open position.";
-        } else {
-            positionNote = "• Position data not available (broker not connected).";
-        }
-        String message = "<html><body style='width:340px'>"
-                + "<b>Permanently delete the \"" + entry.strategy.symbol() + "\" strategy?</b><br><br>"
-                + "• Status: " + statusLabel + "<br>"
-                + "• Mode: " + modeLabel + "<br>"
-                + positionNote + "<br><br>"
-                + "This will immediately stop polling and permanently remove the strategy from saved data.<br>"
-                + "This action <b>cannot be undone</b>."
-                + "</body></html>";
-        int choice = JOptionPane.showConfirmDialog(
-                this,
-                message,
-                "Delete Strategy — " + entry.strategy.symbol(),
-                JOptionPane.YES_NO_OPTION,
-                JOptionPane.WARNING_MESSAGE
-        );
-        if (choice != JOptionPane.YES_OPTION) {
-            return;
-        }
-
-        BigDecimal realizedAtDeletion = realizedPnlForStrategy(entry.strategy.id());
-        aggregatePnlStore.addArchivedRealized(entry.strategy.mode(), realizedAtDeletion);
-        strategyService.delete(entry.strategy.id());
-        strategies.remove(row);
-        log("Deleted strategy for symbol " + entry.strategy.symbol());
-        if (analyticsPublisher != null) {
-            analyticsPublisher.publish(new AnalyticsEvent("STRATEGY_DELETED").put("symbol", entry.strategy.symbol()));
-        }
-
-        if (strategies.isEmpty()) {
-            selectedStrategyId = null;
-        } else {
-            int nextModelRow = Math.min(row, strategies.size() - 1);
-            selectedStrategyId = strategies.get(nextModelRow).strategy.id();
-        }
-
-        updateHeaderModeStatus(currentBrokerType);
-        refreshStrategyTableData();
-        if (selectedStrategyId != null) {
-            restoreSelectedRow();
-        } else {
-            strategyTable.clearSelection();
-        }
-        updateStatusBar();
-        refreshPanels();
+        strategyActionsController.deleteStrategy(viewRow);
     }
 
     private String closePaperAccountState(Strategy strategy) {
@@ -1997,8 +1902,7 @@ public class TradingFrame extends JFrame {
     private boolean isWaitingForFill(Strategy strategy) {
         String latestOrderStatus = strategy.latestOrderStatus();
         if (latestOrderStatus != null) {
-            String normalized = latestOrderStatus.trim().toUpperCase();
-            if ("SUBMITTED".equals(normalized) || "PENDING".equals(normalized) || "PARTIALLY_FILLED".equals(normalized)) {
+            if (BrokerOrderStatusUtil.isWaitingForFill(latestOrderStatus)) {
                 return true;
             }
         }
@@ -2030,63 +1934,16 @@ public class TradingFrame extends JFrame {
     }
 
     private String formatLifecycleStateForDisplay(StrategyLifecycleState state) {
-        if (state == null) {
-            return "";
-        }
-        return switch (state) {
-            case CREATED -> "Created";
-            case VALIDATED -> "Validated";
-            case BASE_BUY_PLACED -> "Limit Base Buy Placed";
-            case BASE_BUY_PARTIALLY_FILLED -> "Limit Base Buy Partially Filled";
-            case BASE_BUY_FILLED -> "Base Buy Filled";
-            case BUY_LIMIT_1_PLACED -> "Limit Buy 1 Placed";
-            case BUY_LIMIT_1_PARTIALLY_FILLED -> "Limit Buy 1 Partially Filled";
-            case BUY_LIMIT_1_FILLED -> "Buy Limit 1 Filled";
-            case BUY_LIMIT_2_PLACED -> "Limit Buy 2 Placed";
-            case BUY_LIMIT_2_PARTIALLY_FILLED -> "Limit Buy 2 Partially Filled";
-            case BUY_LIMIT_2_FILLED -> "Buy Limit 2 Filled";
-            case STOP_LOSS_ACTIVE -> "Stop Loss Active";
-            case PROFIT_HOLD_ACTIVE -> "Profit Hold Active";
-            case SELL_PLACED -> "Limit Sell Placed";
-            case SELL_PARTIALLY_FILLED -> "Limit Sell Partially Filled";
-            case QUEUED_FOR_OPEN -> "Queued For Open";
-            case COMPLETED -> "Completed";
-            case PAUSED -> "Canceled";
-            case FAILED -> "Failed";
-            case STOPPED -> "Stopped";
-        };
+        return strategyTablePresenter.formatLifecycleStateForDisplay(state);
     }
 
     private String displayStatusLabel(Strategy strategy) {
-        if (strategy == null) {
-            return "";
-        }
-        if ("QUEUED_FOR_OPEN".equalsIgnoreCase(strategy.latestOrderStatus())) {
-            return "Queued For Open";
-        }
-        if (strategy.status() == StrategyStatus.ARCHIVED) {
-            return "Archived";
-        }
-        if (strategy.status() == StrategyStatus.ACTIVE
-                && strategy.pauseReason() == PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE
-                && shouldSuppressBrokerBackedRefreshForClosedMarket()) {
-            return formatLifecycleStateForDisplay(strategy.currentState()) + " (Market Closed)";
-        }
-        if (strategy.status() == StrategyStatus.PAUSED
-                && strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED
-                && shouldSuppressBrokerBackedRefreshForClosedMarket()) {
-            return "Auto Paused (Market Closed)";
-        }
-        if (strategy.status() == StrategyStatus.PAUSED && strategy.pauseReason() == PauseReason.USER_PAUSED) {
-            return "Canceled";
-        }
-        if (strategy.status() == StrategyStatus.PAUSED && strategy.pauseReason() == PauseReason.SYSTEM_ERROR) {
-            return "Canceled (System Error)";
-        }
-        if (strategy.status() == StrategyStatus.FAILED && isQueueableSessionError(strategy.lastError())) {
-            return "Queued For Open";
-        }
-        return formatLifecycleStateForDisplay(strategy.currentState());
+        return strategyTablePresenter.displayStatusLabel(
+                strategy,
+                shouldSuppressBrokerBackedRefreshForClosedMarket(),
+                strategy != null && isWaitingForFill(strategy),
+                strategy != null && strategy.status() == StrategyStatus.FAILED && isQueueableSessionError(strategy.lastError())
+        );
     }
 
     private boolean isQueueableSessionError(String message) {
@@ -2415,247 +2272,53 @@ public class TradingFrame extends JFrame {
         if (entry == null || entry.strategy == null) {
             return false;
         }
-        return entry.strategy.status() != StrategyStatus.FAILED
-                && entry.strategy.status() != StrategyStatus.COMPLETED
-                && entry.strategy.status() != StrategyStatus.STOPPED
-                && entry.strategy.status() != StrategyStatus.ARCHIVED;
+        if (entry.strategy.status() == StrategyStatus.ARCHIVED || entry.strategy.status() == StrategyStatus.STOPPED) {
+            return false;
+        }
+        // Keep showing rows that still have live exposure on the broker side.
+        return entry.strategy.status() == StrategyStatus.ACTIVE
+                || isWaitingForFill(entry.strategy)
+                || entry.cachedPosition().getTotalShares() > 0;
+    }
+
+    private boolean includeInBrokerSnapshotRefresh(Strategy strategy) {
+        if (strategy == null) {
+            return false;
+        }
+        return strategy.status() != StrategyStatus.STOPPED
+                && strategy.status() != StrategyStatus.ARCHIVED;
+    }
+
+    private boolean hasStrategiesNeedingBrokerSnapshots(List<Strategy> stored) {
+        if (stored == null || stored.isEmpty()) {
+            return false;
+        }
+        for (Strategy strategy : stored) {
+            if (includeInBrokerSnapshotRefresh(strategy)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void refreshFilledOrdersTableData() {
-        filledOrderRows.clear();
+        List<HistoryTablePresenter.HistorySource> sources = new ArrayList<>();
         for (ManagedStrategy entry : strategies) {
             List<StrategyOrder> orders = strategyOrderRepository.findByStrategyId(entry.strategy.id());
-            filledOrderRows.addAll(buildHistoryRows(entry, orders));
-
-            if (entry.strategy.status() == StrategyStatus.FAILED || entry.strategy.status() == StrategyStatus.COMPLETED) {
-                boolean hasFilledOrder = orders.stream().anyMatch(order -> order.status() == StrategyOrderStatus.FILLED);
-                if (!hasFilledOrder) {
-                    filledOrderRows.add(new FilledOrderRow(
-                            entry.strategy.symbol(),
-                            entry.strategy.symbol(),
-                            gridBrokerModeLabel(entry.strategy),
-                            displayStatusLabel(entry.strategy),
-                            entry.strategy.currentState() == null ? "-" : formatLifecycleStateForDisplay(entry.strategy.currentState()),
-                            "-",
-                            entry.strategy.status().name(),
-                            "-",
-                            "-",
-                            "-",
-                            entry.strategy.lastPolledAt() == null ? "-" : formatTimestampForDisplay(entry.strategy.lastPolledAt()),
-                            entry.strategy.lastPolledAt(),
-                            2,
-                            fallbackHistoryRowStyle(entry.strategy.status())
-                    ));
-                }
-            }
-        }
-        filledOrderRows.sort(Comparator
-                .comparing(FilledOrderRow::groupKey, String.CASE_INSENSITIVE_ORDER)
-                .thenComparing(FilledOrderRow::sortPriority)
-                .thenComparing(FilledOrderRow::sortTime, Comparator.nullsLast(Comparator.reverseOrder())));
-        // Inject per-symbol subtotal rows after each group that has numeric realized P&L.
-        List<FilledOrderRow> withSubtotals = new ArrayList<>();
-        String currentGroupKey = null;
-        BigDecimal groupPnl = BigDecimal.ZERO;
-        boolean groupHasNumericPnl = false;
-        List<FilledOrderRow> currentGroupRows = new ArrayList<>();
-        for (FilledOrderRow r : filledOrderRows) {
-            if (!r.groupKey().equalsIgnoreCase(currentGroupKey)) {
-                if (currentGroupKey != null) {
-                    withSubtotals.addAll(currentGroupRows);
-                    if (groupHasNumericPnl) {
-                        withSubtotals.add(buildSubtotalRow(currentGroupKey, groupPnl));
-                    }
-                }
-                currentGroupKey = r.groupKey();
-                groupPnl = BigDecimal.ZERO;
-                groupHasNumericPnl = false;
-                currentGroupRows = new ArrayList<>();
-            }
-            currentGroupRows.add(r);
-            if (r.style() != HistoryRowStyle.SUBTOTAL
-                    && r.realizedPnl() != null
-                    && !"-".equals(r.realizedPnl())
-                    && !r.realizedPnl().isBlank()) {
-                try {
-                    groupPnl = groupPnl.add(new BigDecimal(r.realizedPnl()));
-                    groupHasNumericPnl = true;
-                } catch (NumberFormatException ignored) {}
-            }
-        }
-        if (currentGroupKey != null) {
-            withSubtotals.addAll(currentGroupRows);
-            if (groupHasNumericPnl) {
-                withSubtotals.add(buildSubtotalRow(currentGroupKey, groupPnl));
-            }
-        }
-        filledOrderRows.clear();
-        filledOrderRows.addAll(withSubtotals);
-        filledOrdersTableModel.fireTableDataChanged();
-    }
-
-    private List<FilledOrderRow> buildHistoryRows(ManagedStrategy entry, List<StrategyOrder> orders) {
-        List<StrategyOrder> filledOrders = orders.stream()
-                .filter(order -> order.status() == StrategyOrderStatus.FILLED)
-                .sorted(Comparator
-                        .comparing((StrategyOrder order) -> historyTimestamp(order), Comparator.nullsLast(Comparator.naturalOrder()))
-                        .thenComparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())))
-                .toList();
-        List<FilledOrderRow> rows = new ArrayList<>();
-        BigDecimal positionQty = BigDecimal.ZERO;
-        BigDecimal averageCost = BigDecimal.ZERO;
-        for (StrategyOrder order : filledOrders) {
-            BigDecimal quantity = order.filledQuantity() == null ? BigDecimal.ZERO : order.filledQuantity();
-            BigDecimal fillPrice = resolvedFillPrice(order);
-            String realizedPnlDisplay = "-";
-            if (order.side() == StrategyOrderSide.BUY) {
-                BigDecimal runningCost = averageCost.multiply(positionQty).add(fillPrice.multiply(quantity));
-                positionQty = positionQty.add(quantity);
-                if (positionQty.compareTo(BigDecimal.ZERO) > 0) {
-                    averageCost = runningCost.divide(positionQty, 8, java.math.RoundingMode.HALF_UP);
-                }
-            } else {
-                BigDecimal sellQty = quantity.min(positionQty.max(BigDecimal.ZERO));
-                if (sellQty.compareTo(BigDecimal.ZERO) > 0) {
-                    BigDecimal realizedPnl = Monetary.round(fillPrice.subtract(averageCost).multiply(sellQty));
-                    realizedPnlDisplay = realizedPnl.toPlainString();
-                    positionQty = positionQty.subtract(sellQty);
-                    if (positionQty.compareTo(BigDecimal.ZERO) == 0) {
-                        averageCost = BigDecimal.ZERO;
-                    }
-                }
-            }
-            Instant rowTime = historyTimestamp(order);
-            rows.add(new FilledOrderRow(
-                    entry.strategy.symbol(),
+            sources.add(new HistoryTablePresenter.HistorySource(
                     entry.strategy.symbol(),
                     gridBrokerModeLabel(entry.strategy),
                     displayStatusLabel(entry.strategy),
-                    formatStageForHistory(order.stage()),
-                    order.side().name(),
-                    order.status().name(),
-                    quantity.compareTo(BigDecimal.ZERO) > 0 ? quantity.toPlainString() : "-",
-                    fillPrice.compareTo(BigDecimal.ZERO) > 0 ? fillPrice.toPlainString() : "-",
-                    realizedPnlDisplay,
-                    rowTime == null ? "-" : formatTimestampForDisplay(rowTime),
-                    rowTime,
-                    order.side() == StrategyOrderSide.SELL ? 0 : 1,
-                    historyRowStyleFor(order.side(), realizedPnlDisplay)
+                    entry.strategy.currentState() == null ? "-" : formatLifecycleStateForDisplay(entry.strategy.currentState()),
+                    entry.strategy.latestOrderStatus(),
+                    entry.strategy.lastPolledAt(),
+                    entry.strategy.status(),
+                    orders
             ));
         }
-        return rows;
-    }
-
-    private HistoryRowStyle historyRowStyleFor(StrategyOrderSide side, String realizedPnlDisplay) {
-        if (side == StrategyOrderSide.BUY) {
-            return HistoryRowStyle.BUY;
-        }
-        if (realizedPnlDisplay == null || realizedPnlDisplay.isBlank() || "-".equals(realizedPnlDisplay)) {
-            return HistoryRowStyle.SELL_NEUTRAL;
-        }
-        try {
-            BigDecimal realized = new BigDecimal(realizedPnlDisplay);
-            if (realized.compareTo(BigDecimal.ZERO) > 0) {
-                return HistoryRowStyle.SELL_GAIN;
-            }
-            if (realized.compareTo(BigDecimal.ZERO) < 0) {
-                return HistoryRowStyle.SELL_LOSS;
-            }
-            return HistoryRowStyle.SELL_NEUTRAL;
-        } catch (NumberFormatException ignored) {
-            return HistoryRowStyle.SELL_NEUTRAL;
-        }
-    }
-
-    private HistoryRowStyle fallbackHistoryRowStyle(StrategyStatus status) {
-        if (status == StrategyStatus.FAILED) {
-            return HistoryRowStyle.FAILED;
-        }
-        return HistoryRowStyle.COMPLETED;
-    }
-
-    private FilledOrderRow buildSubtotalRow(String groupKey, BigDecimal total) {
-        return new FilledOrderRow(
-                groupKey,
-                groupKey,
-                "",
-                "",
-                "Subtotal",
-                "",
-                "",
-                "",
-                "",
-                Monetary.round(total).toPlainString(),
-                "",
-                null,
-                3,
-                HistoryRowStyle.SUBTOTAL
-        );
-    }
-
-    private Color historyRowBackground(FilledOrderRow row) {
-        return switch (row.style()) {
-            case BUY -> HISTORY_BUY_BG;
-            case SELL_GAIN -> HISTORY_SELL_GAIN_BG;
-            case SELL_LOSS -> HISTORY_SELL_LOSS_BG;
-            case SELL_NEUTRAL -> HISTORY_SELL_FLAT_BG;
-            case FAILED -> HISTORY_FAILED_BG;
-            case COMPLETED -> HISTORY_COMPLETED_BG;
-            case SUBTOTAL -> HISTORY_SUBTOTAL_BG;
-        };
-    }
-
-    private Color historyRowForeground(FilledOrderRow row) {
-        return switch (row.style()) {
-            case BUY -> HISTORY_BUY_FG;
-            case SELL_GAIN -> HISTORY_SELL_GAIN_FG;
-            case SELL_LOSS -> HISTORY_SELL_LOSS_FG;
-            case SELL_NEUTRAL -> HISTORY_SELL_FLAT_FG;
-            case FAILED -> HISTORY_FAILED_FG;
-            case COMPLETED -> HISTORY_COMPLETED_FG;
-            case SUBTOTAL -> HISTORY_SUBTOTAL_FG;
-        };
-    }
-
-    private Instant historyTimestamp(StrategyOrder order) {
-        if (order == null) {
-            return null;
-        }
-        if (order.filledAt() != null) {
-            return order.filledAt();
-        }
-        if (order.updatedAt() != null) {
-            return order.updatedAt();
-        }
-        return order.submittedAt();
-    }
-
-    private BigDecimal resolvedFillPrice(StrategyOrder order) {
-        if (order == null) {
-            return BigDecimal.ZERO;
-        }
-        if (order.filledAveragePrice() != null && order.filledAveragePrice().compareTo(BigDecimal.ZERO) > 0) {
-            return order.filledAveragePrice();
-        }
-        return order.limitPrice() == null ? BigDecimal.ZERO : order.limitPrice();
-    }
-
-    private String formatStageForHistory(StrategyStage stage) {
-        if (stage == null) {
-            return "-";
-        }
-        String[] parts = stage.name().toLowerCase(Locale.ROOT).split("_");
-        StringBuilder builder = new StringBuilder();
-        for (String part : parts) {
-            if (part.isBlank()) {
-                continue;
-            }
-            if (!builder.isEmpty()) {
-                builder.append(' ');
-            }
-            builder.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
-        }
-        return builder.toString();
+        filledOrderRows.clear();
+        filledOrderRows.addAll(historyTablePresenter.buildRows(sources, this::formatTimestampForDisplay));
+        filledOrdersTableModel.fireTableDataChanged();
     }
 
     private ManagedStrategy findStrategy(String symbol) {
@@ -2793,41 +2456,38 @@ public class TradingFrame extends JFrame {
     }
 
     private int pollingProgressPercent(ManagedStrategy entry) {
-        if (!shouldShowPollingIndicator(entry) || entry.pollIntervalMillis <= 0L) {
-            return 0;
-        }
-        if (entry.nextPollDueAtMillis <= 0L) {
-            entry.countdownActive = true;
-            entry.nextPollDueAtMillis = System.currentTimeMillis() + entry.pollIntervalMillis;
-        }
-        long remainingMillis = Math.max(0L, entry.nextPollDueAtMillis - System.currentTimeMillis());
-        long elapsedMillis = Math.max(0L, entry.pollIntervalMillis - remainingMillis);
-        int progress = (int) Math.min(100L, Math.round((elapsedMillis * 100.0d) / entry.pollIntervalMillis));
-        if (remainingMillis > 0L && progress == 100) {
-            return 99;
-        }
-        if (elapsedMillis > 0L && progress == 0) {
-            return 1;
-        }
-        return progress;
+        ensurePollingCountdownScheduled(entry);
+        return pollingCellPresenter.pollingProgressPercent(
+                shouldShowPollingIndicator(entry),
+                entry == null ? 0L : entry.pollIntervalMillis,
+                entry == null ? 0L : entry.nextPollDueAtMillis,
+                System.currentTimeMillis()
+        );
     }
 
     private long pollingSecondsRemaining(ManagedStrategy entry) {
-        if (!shouldShowPollingIndicator(entry) || entry.pollIntervalMillis <= 0L) {
-            return 0L;
-        }
-        if (entry.nextPollDueAtMillis <= 0L) {
-            entry.countdownActive = true;
-            entry.nextPollDueAtMillis = System.currentTimeMillis() + entry.pollIntervalMillis;
-        }
-        long remainingMillis = Math.max(0L, entry.nextPollDueAtMillis - System.currentTimeMillis());
-        return (long) Math.ceil(remainingMillis / 1000.0d);
+        ensurePollingCountdownScheduled(entry);
+        return pollingCellPresenter.pollingSecondsRemaining(
+                shouldShowPollingIndicator(entry),
+                entry == null ? 0L : entry.pollIntervalMillis,
+                entry == null ? 0L : entry.nextPollDueAtMillis,
+                System.currentTimeMillis()
+        );
     }
 
     private boolean shouldShowPollingIndicator(ManagedStrategy entry) {
         return entry != null
-                && (entry.strategy.status() == StrategyStatus.ACTIVE
-                || isWaitingForFill(entry.strategy));
+                && pollingCellPresenter.shouldShowPollingIndicator(entry.strategy.status(), isWaitingForFill(entry.strategy));
+    }
+
+    private void ensurePollingCountdownScheduled(ManagedStrategy entry) {
+        if (entry == null || !shouldShowPollingIndicator(entry) || entry.pollIntervalMillis <= 0L) {
+            return;
+        }
+        if (entry.nextPollDueAtMillis <= 0L) {
+            entry.countdownActive = true;
+            entry.nextPollDueAtMillis = System.currentTimeMillis() + entry.pollIntervalMillis;
+        }
     }
 
     private ManagedStrategy findStrategyById(String strategyId) {
@@ -2895,91 +2555,75 @@ public class TradingFrame extends JFrame {
         long running = strategies.stream().filter(s -> s.strategy.status() == StrategyStatus.ACTIVE).count();
         long inactive = Math.max(0L, strategies.size() - running);
         AppSettingsService.AppSettings settings = appSettingsService.load();
-        boolean marketOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
+        boolean regularMarketOpen = marketHoursService.isRegularMarketHours();
+        boolean tradingSessionOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
+        MarketStatusPresenter.MarketStatusViewModel marketStatusViewModel = marketStatusPresenter.present(
+                settings,
+                regularMarketOpen,
+                tradingSessionOpen,
+                Instant.now(),
+                marketHoursService.nextMarketOpen(settings.extendedHoursTradingEnabled())
+        );
         String cpuText = formatCpuUsageText();
         String memoryText = formatMemoryUsageText();
         String marketValueText = formatMarketValueText();
         StrategyPollingService.PollCycleSnapshot pollSnapshot = strategyPollingService == null
                 ? null
                 : strategyPollingService.lastPollCycleSnapshot();
-        String pollingSummaryText = "Poll: -";
-        Color pollingSummaryColor = BOTTOM_STATUS_ACCENT;
-        if (pollSnapshot != null && pollSnapshot.cycleEvaluated()) {
-            if (pollSnapshot.marketClosedSuppressed()) {
-                pollingSummaryText = "Poll: Market Closed";
-                pollingSummaryColor = new Color(120, 120, 120); // Muted gray
-            } else {
-                pollingSummaryText = "Poll: due " + pollSnapshot.due() + " | skipped " + pollSnapshot.skippedNotDue();
-                // Color code: green for due > 0, amber for skipped > 0
-                if (pollSnapshot.due() > 0) {
-                    pollingSummaryColor = STATUS_OK; // Green
-                } else if (pollSnapshot.skippedNotDue() > 0) {
-                    pollingSummaryColor = STATUS_WARN; // Amber
-                } else {
-                    pollingSummaryColor = BOTTOM_STATUS_ACCENT; // Default
-                }
-            }
-        }
-        final String pollingSummaryText_final = pollingSummaryText;
-        final Color pollingSummaryColorFinal = pollingSummaryColor;
+        StatusBarPresenter.StatusBarViewModel statusBarViewModel = statusBarPresenter.present(
+                new StatusBarPresenter.StatusBarState(
+                        running,
+                        inactive,
+                        pollSnapshot != null && pollSnapshot.cycleEvaluated(),
+                        pollSnapshot != null && pollSnapshot.marketClosedSuppressed(),
+                        pollSnapshot == null ? 0 : pollSnapshot.due(),
+                        pollSnapshot == null ? 0 : pollSnapshot.skippedNotDue(),
+                        connectionRetryPending,
+                        connectionOk,
+                        marketStatusViewModel.label(),
+                        marketStatusViewModel.tooltip(),
+                        marketStatusViewModel.openForUi(),
+                        marketValueText,
+                        cpuText,
+                        memoryText
+                )
+        );
         SwingUtilities.invokeLater(() -> {
-            statusStrategyCount.setText("Strategies: Active " + running + " | Inactive " + inactive);
-            pollingSummary.setText(pollingSummaryText_final);
-            pollingSummary.setForeground(pollingSummaryColorFinal);
-            marketStatus.setText("Market: " + (marketOpen ? "Open" : "Closed"));
-            marketStatus.setForeground(marketOpen ? STATUS_OK : STATUS_WARN);
-            marketValueStatus.setText(marketValueText);
-            cpuUsageStatus.setText(cpuText);
-            memoryUsageStatus.setText(memoryText);
-            if (connectionRetryPending) {
-                statusBar.setText("<html>Broker: <b>FAILED</b> Retrying...</html>");
-                statusBar.setForeground(STATUS_ERR);
-            } else if (!connectionOk) {
-                statusBar.setText("Broker: Not connected");
-                statusBar.setForeground(STATUS_ERR);
-            } else if (running > 0) {
-                statusBar.setText("Broker: Connected");
-                statusBar.setForeground(STATUS_OK);
-            } else if (inactive > 0) {
-                statusBar.setText("Broker: Connected (No active strategies)");
-                statusBar.setForeground(STATUS_WARN);
-            } else {
-                statusBar.setText("Broker: Connected (No strategies)");
-                statusBar.setForeground(STATUS_WARN);
-            }
+            statusStrategyCount.setText(statusBarViewModel.strategyCountText());
+            pollingSummary.setText(statusBarViewModel.pollingText());
+            pollingSummary.setForeground(statusToneColor(statusBarViewModel.pollingTone()));
+            marketStatus.setText(statusBarViewModel.marketText());
+            marketStatus.setForeground(statusToneColor(statusBarViewModel.marketTone()));
+            marketStatus.setToolTipText(TooltipStyler.text(statusBarViewModel.marketTooltip()));
+            marketValueStatus.setText(statusBarViewModel.marketValueText());
+            cpuUsageStatus.setText(statusBarViewModel.cpuText());
+            memoryUsageStatus.setText(statusBarViewModel.memoryText());
+            statusBar.setText(statusBarViewModel.brokerText());
+            statusBar.setForeground(statusToneColor(statusBarViewModel.brokerTone()));
         });
     }
 
+    private Color statusToneColor(StatusBarPresenter.Tone tone) {
+        return switch (tone) {
+            case OK -> STATUS_OK;
+            case WARN -> STATUS_WARN;
+            case ERR -> STATUS_ERR;
+            case MUTED -> new Color(120, 120, 120);
+            case DEFAULT -> BOTTOM_STATUS_ACCENT;
+        };
+    }
+
+
     private String formatMarketValueText() {
-        BigDecimal total = BigDecimal.ZERO;
-        for (ManagedStrategy strategy : strategies) {
-            total = total.add(strategy.cachedPosition().marketValue());
-        }
-        return "Market Value: " + Monetary.round(total).toPlainString();
+        return systemMetricsPresenter.formatMarketValueText(strategies);
     }
 
     private String formatCpuUsageText() {
-        try {
-            com.sun.management.OperatingSystemMXBean osBean =
-                    ManagementFactory.getPlatformMXBean(com.sun.management.OperatingSystemMXBean.class);
-            if (osBean == null) {
-                return "CPU: -";
-            }
-            double processCpuLoad = osBean.getProcessCpuLoad();
-            if (processCpuLoad < 0.0) {
-                return "CPU: -";
-            }
-            return String.format(Locale.US, "CPU: %.1f%%", processCpuLoad * 100.0d);
-        } catch (Exception ex) {
-            return "CPU: -";
-        }
+        return systemMetricsPresenter.formatCpuUsageText();
     }
 
     private String formatMemoryUsageText() {
-        Runtime runtime = Runtime.getRuntime();
-        long usedBytes = runtime.totalMemory() - runtime.freeMemory();
-        long usedMb = usedBytes / (1024L * 1024L);
-        return "Memory: " + usedMb + " MB";
+        return systemMetricsPresenter.formatMemoryUsageText();
     }
 
     private void ensureAnalyticsPublisher() {
@@ -3214,104 +2858,6 @@ public class TradingFrame extends JFrame {
         };
     }
 
-    private final class StrategyTableModel extends AbstractTableModel {
-        private static final String[] COLUMNS = {
-                "Symbol", "Status", "Shares", "Avg Cost", "Stock Price", "Market Value", "Unrealized P&L", "Polling", "Broker + Mode", "Actions"
-        };
-
-        @Override public int getRowCount()    { return strategies.size(); }
-        @Override public int getColumnCount() { return COLUMNS.length; }
-        @Override public String getColumnName(int col) { return COLUMNS[col]; }
-
-        @Override
-        public Object getValueAt(int rowIndex, int columnIndex) {
-            ManagedStrategy entry = strategies.get(rowIndex);
-            if (columnIndex >= 2 && columnIndex <= 6) {
-                Position p = entry.cachedPosition();
-                return switch (columnIndex) {
-                    case 2 -> p.getTotalShares();
-                    case 3 -> p.getTotalShares() > 0 ? p.getAverageCost().toPlainString() : "-";
-                    case 4 -> p.getLastPrice().compareTo(BigDecimal.ZERO) > 0 ? p.getLastPrice().toPlainString() : "-";
-                    case 5 -> p.getTotalShares() > 0 ? p.marketValue().toPlainString() : "-";
-                    case 6 -> p.getTotalShares() > 0 ? p.unrealizedPnl().toPlainString() : "-";
-                    default -> "";
-                };
-            }
-            return switch (columnIndex) {
-                case 0 -> entry.strategy.symbol();
-                case 1 -> displayStatusLabel(entry.strategy);
-                case 2 -> "-";
-                case 3 -> "-";
-                case 4 -> "-";
-                case 5 -> "-";
-                case 6 -> "-";
-                case 7 -> entry.strategy.pollingIntervalSeconds();
-                case 8 -> gridBrokerModeLabel(entry.strategy);
-                case 9 -> displayStatusLabel(entry.strategy);
-                default -> "";
-            };
-        }
-
-        @Override
-        public boolean isCellEditable(int rowIndex, int columnIndex) {
-            return false; // Actions are handled via table MouseListener; no cell editor needed.
-        }
-    }
-
-    private record FilledOrderRow(
-            String symbol,
-            String groupKey,
-            String brokerMode,
-            String strategyStatus,
-            String stage,
-            String side,
-            String orderStatus,
-            String quantity,
-            String fillPrice,
-            String realizedPnl,
-            String whenDisplay,
-            Instant sortTime,
-            int sortPriority,
-            HistoryRowStyle style
-    ) {}
-
-    private enum HistoryRowStyle {
-        BUY,
-        SELL_GAIN,
-        SELL_LOSS,
-        SELL_NEUTRAL,
-        FAILED,
-        COMPLETED,
-        SUBTOTAL
-    }
-
-    private final class FilledOrdersTableModel extends AbstractTableModel {
-        private static final String[] COLUMNS = {
-                "Symbol", "Broker + Mode", "Strategy Status", "Stage", "Side", "Order Status", "Qty", "Fill Price", "Realized P&L", "When"
-        };
-
-        @Override public int getRowCount() { return filledOrderRows.size(); }
-        @Override public int getColumnCount() { return COLUMNS.length; }
-        @Override public String getColumnName(int col) { return COLUMNS[col]; }
-
-        @Override
-        public Object getValueAt(int rowIndex, int columnIndex) {
-            FilledOrderRow row = filledOrderRows.get(rowIndex);
-            return switch (columnIndex) {
-                case 0 -> row.symbol();
-                case 1 -> row.brokerMode();
-                case 2 -> row.strategyStatus();
-                case 3 -> row.stage();
-                case 4 -> row.side();
-                case 5 -> row.orderStatus();
-                case 6 -> row.quantity();
-                case 7 -> row.fillPrice();
-                case 8 -> row.realizedPnl();
-                case 9 -> row.whenDisplay();
-                default -> "";
-            };
-        }
-    }
 
     private final class HistoryRowRenderer extends DefaultTableCellRenderer {
         @Override
@@ -3323,179 +2869,47 @@ public class TradingFrame extends JFrame {
             if (modelRow < 0 || modelRow >= filledOrderRows.size()) {
                 return this;
             }
-            FilledOrderRow rowData = filledOrderRows.get(modelRow);
-            boolean isSubtotal = rowData.style() == HistoryRowStyle.SUBTOTAL;
-            boolean isFirstInGroup = isFirstRowOfGroup(table, row);
-            if (isSelected) {
-                setBackground(TABLE_SELECTION_BG);
-                setForeground(TABLE_SELECTION_FG);
-            } else {
-                setBackground(historyRowBackground(rowData));
-                setForeground(historyRowForeground(rowData));
+            HistoryTablePresenter.HistoryRow rowData = filledOrderRows.get(modelRow);
+            HistoryRowStyler.CellStyle cellStyle = historyRowStyler.style(
+                    table,
+                    row,
+                    column,
+                    isSelected,
+                    rowData,
+                    filledOrderRows,
+                    new HistoryRowStyler.Palette(
+                            TABLE_SELECTION_BG,
+                            TABLE_SELECTION_FG,
+                            HISTORY_GROUP_BORDER,
+                            HISTORY_BUY_BG,
+                            HISTORY_BUY_FG,
+                            HISTORY_SELL_GAIN_BG,
+                            HISTORY_SELL_GAIN_FG,
+                            HISTORY_SELL_LOSS_BG,
+                            HISTORY_SELL_LOSS_FG,
+                            HISTORY_SELL_FLAT_BG,
+                            HISTORY_SELL_FLAT_FG,
+                            HISTORY_FAILED_BG,
+                            HISTORY_FAILED_FG,
+                            HISTORY_COMPLETED_BG,
+                            HISTORY_COMPLETED_FG,
+                            HISTORY_SUBTOTAL_BG,
+                            HISTORY_SUBTOTAL_FG
+                    )
+            );
+            setBackground(cellStyle.background());
+            setForeground(cellStyle.foreground());
+            setHorizontalAlignment(cellStyle.horizontalAlignment());
+            setBorder(cellStyle.border());
+            int fontStyle = (cellStyle.bold() ? Font.BOLD : Font.PLAIN) | (cellStyle.italic() ? Font.ITALIC : Font.PLAIN);
+            setFont(getFont().deriveFont(fontStyle));
+            if (cellStyle.blankText()) {
+                setText("");
             }
-            // Symbol column: bold on first row of each group; blank on subsequent rows.
-            if (column == 0) {
-                if (isSubtotal) {
-                    setText("");
-                } else if (isFirstInGroup) {
-                    setFont(getFont().deriveFont(Font.BOLD));
-                } else {
-                    setText("");
-                }
-            }
-            // Stage column: bold-italic label for subtotal rows.
-            if (isSubtotal && column == 3) {
-                setFont(getFont().deriveFont(Font.BOLD | Font.ITALIC));
-            }
-            setHorizontalAlignment(historyAlignmentForColumn(column));
-            setBorder(historyCellBorder(table, row, rowData));
             return this;
         }
-
-        /** Returns {@code true} when {@code viewRow} is the first row of its symbol group. */
-        private boolean isFirstRowOfGroup(JTable table, int viewRow) {
-            if (viewRow == 0) {
-                return true;
-            }
-            int prevModel = table.convertRowIndexToModel(viewRow - 1);
-            int curModel  = table.convertRowIndexToModel(viewRow);
-            if (prevModel < 0 || prevModel >= filledOrderRows.size()) {
-                return true;
-            }
-            if (curModel < 0 || curModel >= filledOrderRows.size()) {
-                return true;
-            }
-            return !filledOrderRows.get(prevModel).groupKey()
-                    .equalsIgnoreCase(filledOrderRows.get(curModel).groupKey());
-        }
-
-        private int historyAlignmentForColumn(int column) {
-            return switch (column) {
-                case 6, 7, 8 -> RIGHT;
-                default -> LEFT;
-            };
-        }
-
-        private javax.swing.border.Border historyCellBorder(JTable table, int viewRow, FilledOrderRow rowData) {
-            int top = 1;
-            if (viewRow == 0) {
-                top = 3;
-            } else {
-                int previousModelRow = table.convertRowIndexToModel(viewRow - 1);
-                if (previousModelRow >= 0 && previousModelRow < filledOrderRows.size()) {
-                    FilledOrderRow previous = filledOrderRows.get(previousModelRow);
-                    if (!previous.groupKey().equalsIgnoreCase(rowData.groupKey())) {
-                        top = 3;
-                    }
-                }
-            }
-            return BorderFactory.createCompoundBorder(
-                    BorderFactory.createMatteBorder(top, 0, 0, 0, HISTORY_GROUP_BORDER),
-                    new EmptyBorder(6, 8, 6, 8)
-            );
-        }
     }
 
-    private static final class ManagedStrategy {
-        private Strategy strategy;
-        private Position cachedPosition;
-        private volatile long lastDisplayedPositionFetchAtMillis;
-        private volatile long pollIntervalMillis;
-        private volatile long nextPollDueAtMillis;
-        private volatile boolean countdownActive;
-        private volatile boolean pollInFlight;
-        private volatile boolean pauseResumeBusy;
-        private volatile String pauseResumeBusyText = "";
-
-        private ManagedStrategy(Strategy strategy) {
-            this.strategy = strategy;
-            this.cachedPosition = new Position(strategy.symbol());
-        }
-
-        private void syncFrom(Strategy strategy) {
-            this.strategy = strategy;
-        }
-
-        private boolean isPaused() {
-            return strategy.status() == StrategyStatus.PAUSED;
-        }
-
-        private String pauseLabel() {
-            if (strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED) {
-                return "Market Closed";
-            }
-            if (strategy.pauseReason() == PauseReason.SYSTEM_ERROR) {
-                return "System Error";
-            }
-            return "Canceled";
-        }
-
-        private String pauseTooltip() {
-            if (strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED) {
-                return "Polling auto-paused because the market is closed";
-            }
-            if (strategy.pauseReason() == PauseReason.SYSTEM_ERROR) {
-                    return "Polling canceled because of a system error";
-            }
-            return "Orders canceled by the user";
-        }
-
-        private boolean isPauseResumeBusy() {
-            return pauseResumeBusy;
-        }
-
-        private void setPauseResumeBusy(boolean pauseResumeBusy) {
-            this.pauseResumeBusy = pauseResumeBusy;
-        }
-
-        private String pauseResumeBusyText() {
-            return pauseResumeBusyText;
-        }
-
-        private void setPauseResumeBusyText(String pauseResumeBusyText) {
-            this.pauseResumeBusyText = pauseResumeBusyText == null ? "" : pauseResumeBusyText;
-        }
-
-        private StrategyConfig toConfig() {
-            return new StrategyConfig(
-                    strategy.symbol(),
-                    strategy.baseBuyLimitPrice(),
-                    strategy.baseBuyQuantity(),
-                    strategy.automatedStopLossEnabled(),
-                    strategy.stopLossPrice(),
-                    strategy.targetSellPrice(),
-                    strategy.buyLimit1Price(),
-                    strategy.buyLimit1Quantity(),
-                    strategy.buyLimit2Price(),
-                    strategy.buyLimit2Quantity(),
-                    strategy.lossBuyLevelsEnabled(),
-                    strategy.optionalLossExitEnabled(),
-                    strategy.optionalLossExitPrice(),
-                    strategy.pollingIntervalSeconds(),
-                    strategy.mode() == StrategyMode.PAPER,
-                    strategy.profitHoldEnabled(),
-                    strategy.profitHoldType(),
-                    strategy.profitHoldPercent(),
-                    strategy.profitHoldAmount(),
-                    strategy.restartAfterExitEnabled()
-            );
-        }
-
-        private Position cachedPosition() {
-            return cachedPosition.copy();
-        }
-
-        private void setCachedPosition(Position position) {
-            this.cachedPosition = position == null ? new Position(strategy.symbol()) : position.copy();
-            this.lastDisplayedPositionFetchAtMillis = System.currentTimeMillis();
-        }
-
-        private boolean shouldRefreshDisplayedPosition() {
-            long refreshIntervalMillis = Math.max(1L, strategy.pollingIntervalSeconds()) * 1000L;
-            return lastDisplayedPositionFetchAtMillis == 0L
-                    || System.currentTimeMillis() - lastDisplayedPositionFetchAtMillis >= refreshIntervalMillis;
-        }
-    }
 
     private final class StatusRowRenderer extends DefaultTableCellRenderer {
         @Override
@@ -3597,68 +3011,46 @@ public class TradingFrame extends JFrame {
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
             int modelRow = table.convertRowIndexToModel(row);
             ManagedStrategy strategy = strategies.get(modelRow);
-            boolean pollInFlight = strategy.pollInFlight;
-            int progress = pollInFlight ? animatedPollingProgressPercent() : pollingProgressPercent(strategy);
-            long secondsRemaining = pollingSecondsRemaining(strategy);
-            long totalSeconds = Math.max(1L, strategy.strategy.pollingIntervalSeconds());
-            boolean showPollingProgress = shouldShowPollingIndicator(strategy);
+            PollingCellPresenter.PollingCellViewModel viewModel = pollingCellPresenter.present(
+                    new PollingCellPresenter.PollingCellState(
+                            strategy.strategy.status(),
+                            isWaitingForFill(strategy.strategy),
+                            strategy.isPaused(),
+                            strategy.pauseLabel(),
+                            strategy.pauseTooltip(),
+                            strategy.pollInFlight,
+                            isAutoPausedForClosedMarket(strategy) && shouldSuppressBrokerBackedRefreshForClosedMarket(),
+                            strategy.pollIntervalMillis,
+                            strategy.nextPollDueAtMillis,
+                            strategy.strategy.pollingIntervalSeconds(),
+                            isSelected
+                    ),
+                    new PollingCellPresenter.PollingCellPalette(
+                            table.getBackground(),
+                            table.getForeground(),
+                            TABLE_SELECTION_BG,
+                            TABLE_SELECTION_FG,
+                            TABLE_SELECTION_BAR_BG,
+                            new Color(76, 96, 120, 70),
+                            new Color(124, 246, 196),
+                            STATUS_TEXT_PAUSED,
+                            new Color(60, 30, 140),
+                            new Color(66, 133, 244)
+                    ),
+                    System.currentTimeMillis()
+            );
 
-            // Match the row background so no separate cell box is visible
-            Color rowBg = selectionAwareRowColor(isSelected, table);
-            setBackground(rowBg);
-
-            progressBar.setValue(progress);
-            // Track: transparent on selected row, very subtle on normal rows
-            progressBar.setBackground(isSelected
-                    ? new Color(TABLE_SELECTION_BAR_BG.getRed(), TABLE_SELECTION_BAR_BG.getGreen(),
-                                TABLE_SELECTION_BAR_BG.getBlue(), 60)
-                    : new Color(76, 96, 120, 70));
-            progressBar.setForeground(pollInFlight
-                    ? new Color(124, 246, 196)
-                    : !showPollingProgress && strategy.isPaused()
-                    ? STATUS_TEXT_PAUSED
-                    : isSelected ? new Color(60, 30, 140) : new Color(66, 133, 244));
-            countdownLabel.setForeground(isSelected ? TABLE_SELECTION_FG : table.getForeground());
-            boolean closedMarketPaused = isAutoPausedForClosedMarket(strategy) && shouldSuppressBrokerBackedRefreshForClosedMarket();
-            countdownLabel.setText(pollInFlight
-                    ? "Polling..."
-                    : closedMarketPaused
-                    ? "Market Closed"
-                    : strategy.strategy.status() == StrategyStatus.FAILED
-                    ? "Failed"
-                    : strategy.strategy.status() == StrategyStatus.COMPLETED
-                    ? "Completed"
-                    : strategy.strategy.status() == StrategyStatus.STOPPED
-                    ? "Stopped"
-                    : strategy.strategy.status() == StrategyStatus.ARCHIVED
-                    ? "Archived"
-                    : showPollingProgress
-                    ? secondsRemaining + "s / " + totalSeconds + "s"
-                    : strategy.isPaused()
-                    ? strategy.pauseLabel()
-                    : "Idle");
-            String tooltipText = TooltipStyler.text(pollInFlight
-                    ? "Polling broker data now. Countdown resumes after the current request/response cycle completes."
-                    : closedMarketPaused
-                    ? "Polling is paused because the market is closed. Alpaca refresh calls are suppressed until the next trading session opens."
-                    : showPollingProgress
-                    ? secondsRemaining + " seconds remaining out of " + totalSeconds + " seconds"
-                    : strategy.isPaused()
-                    ? strategy.pauseTooltip()
-                    : "Polling is idle for this strategy");
-            if (closedMarketPaused) {
-                progressBar.setValue(0);
-                progressBar.setForeground(STATUS_TEXT_PAUSED);
-            }
+            setBackground(viewModel.rowBackground());
+            progressBar.setValue(viewModel.progress());
+            progressBar.setBackground(viewModel.trackBackground());
+            progressBar.setForeground(viewModel.progressForeground());
+            countdownLabel.setForeground(viewModel.labelForeground());
+            countdownLabel.setText(viewModel.labelText());
+            String tooltipText = TooltipStyler.text(viewModel.tooltip());
             setToolTipText(tooltipText);
             progressBar.setToolTipText(tooltipText);
             countdownLabel.setToolTipText(tooltipText);
             return this;
-        }
-
-        private int animatedPollingProgressPercent() {
-            long phase = (System.currentTimeMillis() / 120L) % 100L;
-            return (int) Math.max(8L, Math.min(92L, phase));
         }
     }
 
@@ -3689,17 +3081,20 @@ public class TradingFrame extends JFrame {
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
             int modelRow = table.convertRowIndexToModel(row);
             ManagedStrategy strategy = strategies.get(modelRow);
-            boolean paused = strategy.isPaused();
-            boolean busy = strategy.isPauseResumeBusy();
-            boolean archived = strategy.strategy.status() == StrategyStatus.ARCHIVED;
-            boolean canPromote = strategy.strategy.mode() == StrategyMode.PAPER && !archived;
-            toggleButton.setText(archived ? "Archived" : busy ? strategy.pauseResumeBusyText() : paused ? "Resume" : "Cancel");
-            styleActionButton(toggleButton, archived ? new Color(120, 144, 156)
-                    : busy ? new Color(120, 144, 156)
-                    : paused ? new Color(46, 125, 50) : new Color(198, 40, 40));
-            toggleButton.setEnabled(!archived);
-            promoteButton.setEnabled(canPromote);
-            styleActionButton(promoteButton, canPromote ? new Color(25, 118, 210) : new Color(120, 144, 156));
+            StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = strategyActionsPresenter.present(
+                    new StrategyActionsPresenter.StrategyActionsState(
+                            strategy.strategy.status() == StrategyStatus.ARCHIVED,
+                            strategy.isPaused(),
+                            strategy.isPauseResumeBusy(),
+                            strategy.pauseResumeBusyText(),
+                            strategy.strategy.mode() == StrategyMode.PAPER
+                    )
+            );
+            toggleButton.setText(actionsViewModel.toggleText());
+            styleActionButton(toggleButton, actionsViewModel.toggleColor());
+            toggleButton.setEnabled(actionsViewModel.toggleEnabled());
+            promoteButton.setEnabled(actionsViewModel.promoteEnabled());
+            styleActionButton(promoteButton, actionsViewModel.promoteColor());
             setBackground(selectionAwareRowColor(isSelected, table));
             return this;
         }
@@ -3760,89 +3155,35 @@ public class TradingFrame extends JFrame {
     }
 
     private void startTradingEventStreamIfConfigured(String apiKey, String apiSecret) {
-        stopTradingEventStream();
-        if (!AppMetadata.alpacaTradingEventsWebSocketEnabled()) {
-            updateStreamStatus("disabled", new Color(150, 150, 160));
-            return;
-        }
-        String streamUrl = AppMetadata.alpacaTradingEventsWebSocketUrl(
+        tradeStreamLifecycleCoordinator.start(
+                apiKey,
+                apiSecret,
                 settingsDialog.appliedApplicationMode() == ApplicationMode.LIVE
         );
-        tradingWebSocketClient = new AlpacaTradingWebSocketClient(
-                streamUrl,
-                apiKey,
-                apiSecret
-        );
-        if (!tradingWebSocketClient.isConfigured()) {
-            updateStreamStatus("not configured", STATUS_WARN);
-            return;
-        }
-        updateStreamStatus("connecting", new Color(180, 100, 0));
-        tradingWebSocketClient.start(this::handleTradingStreamEvent,
-                status -> {
-                    log("[STREAM] " + status);
-                    String normalized = status == null ? "" : status.toLowerCase();
-                    if (normalized.contains("authorized")) {
-                        updateStreamStatus("authorized", STATUS_OK);
-                    } else if (normalized.contains("listening")) {
-                        updateStreamStatus("listening", STATUS_OK);
-                    } else if (normalized.contains("connected")) {
-                        updateStreamStatus("connected", new Color(180, 100, 0));
-                    } else {
-                        updateStreamStatus(status, new Color(150, 150, 160));
-                    }
-                },
-                ex -> {
-                    log("[STREAM] Trade event stream error: " + ex.getMessage());
-                    updateStreamStatus("error", STATUS_ERR);
-                });
-        log("[STREAM] Connected trading WebSocket.");
     }
 
     private void stopTradingEventStream() {
-        if (tradingWebSocketClient == null) {
-            return;
-        }
-        tradingWebSocketClient.stop();
-        tradingWebSocketClient = null;
-        updateStreamStatus("idle", new Color(150, 150, 160));
+        tradeStreamLifecycleCoordinator.stop();
     }
 
-    private void handleTradingStreamEvent(AlpacaTradeUpdateEvent event) {
-        if (event == null || strategyPollingService == null) {
-            return;
-        }
-        updateStreamStatus("trade update", new Color(46, 125, 50));
-        log("[STREAM] Trade update received: event=" + event.eventType()
-                + " orderId=" + event.orderData().orderId()
-                + " clientOrderId=" + event.orderData().clientOrderId());
-        strategyPollingService.onTradeUpdate(event);
-        refreshDisplayedPositionFromStream(event.orderData().symbol());
-        SwingUtilities.invokeLater(() -> {
-            syncStrategiesFromRepository();
-            refreshStrategyTableContent();
-            refreshPanels();
-            updateStatusBar();
-        });
-    }
 
     private void refreshDisplayedPositionFromStream(String symbol) {
         if (tradingApi == null || symbol == null || symbol.isBlank()) {
             return;
         }
+        // Force the next triggerPollingCycle tick (runs every 1 s) to do a full batch
+        // getPositions() sweep rather than making a per-symbol API call here on every
+        // WebSocket trade event.  The UI still refreshes immediately from cached data.
+        lastBatchGridPriceRefreshAtMillis = 0;
         ManagedStrategy entry = findStrategy(symbol);
         if (entry == null) {
             return;
         }
-        uiPollingExecutor.submit(() -> {
-            Position latest = loadPositionForStrategy(entry.strategy);
-            SwingUtilities.invokeLater(() -> {
-                entry.setCachedPosition(latest);
-                refreshStrategyTableContent();
-                if (selectedStrategyId != null && selectedStrategyId.equals(entry.strategy.id())) {
-                    refreshPanels();
-                }
-            });
+        SwingUtilities.invokeLater(() -> {
+            refreshStrategyTableContent();
+            if (selectedStrategyId != null && selectedStrategyId.equals(entry.strategy.id())) {
+                refreshPanels();
+            }
         });
     }
 
@@ -3869,125 +3210,10 @@ public class TradingFrame extends JFrame {
     }
 
     private boolean showLegalDisclosureDialog(boolean requireAcceptance) {
-        JDialog dialog = new JDialog(this, "Legal Disclosure", true);
-        dialog.setLayout(new BorderLayout(10, 10));
-        dialog.getRootPane().setBorder(new EmptyBorder(10, 10, 10, 10));
-
-        JTextArea disclosureArea = new JTextArea(LEGAL_DISCLOSURE_TEXT);
-        disclosureArea.setEditable(false);
-        disclosureArea.setLineWrap(true);
-        disclosureArea.setWrapStyleWord(true);
-        disclosureArea.setCaretPosition(0);
-        disclosureArea.setFont(FontLoader.ui(Font.PLAIN, 12f));
-        JScrollPane disclosureScroll = new JScrollPane(disclosureArea);
-        disclosureScroll.setPreferredSize(new Dimension(760, 440));
-
-        JCheckBox acceptCheck = new JCheckBox("I have read and accept this legal disclosure.", legalDisclosureAccepted);
-        boolean requiresScrollGate = requireAcceptance && !legalDisclosureAccepted;
-        acceptCheck.setEnabled(!requiresScrollGate);
-        JLabel scrollHint = new JLabel("Scroll to end to enable acceptance.");
-        scrollHint.setFont(FontLoader.ui(Font.PLAIN, 11f));
-        scrollHint.setForeground(new Color(180, 160, 110));
-        scrollHint.setVisible(requiresScrollGate);
-
-        JButton acceptButton = new JButton(requireAcceptance ? "Accept and Continue" : "Save Acceptance");
-        DialogButtonStyles.apply(acceptButton, "icons/verify.svg");
-        JButton closeButton = new JButton(requireAcceptance ? "Decline" : "Close");
-        DialogButtonStyles.apply(closeButton, "icons/close.svg");
-
-        final boolean[] accepted = new boolean[]{legalDisclosureAccepted};
-        acceptButton.setEnabled(acceptCheck.isSelected());
-        acceptCheck.addActionListener(e -> acceptButton.setEnabled(acceptCheck.isSelected()));
-
-        if (requiresScrollGate) {
-            JScrollBar verticalBar = disclosureScroll.getVerticalScrollBar();
-            verticalBar.addAdjustmentListener(e -> {
-                boolean atBottom = isScrolledToBottom(verticalBar);
-                acceptCheck.setEnabled(atBottom);
-                scrollHint.setVisible(!atBottom);
-                if (!atBottom) {
-                    acceptCheck.setSelected(false);
-                    acceptButton.setEnabled(false);
-                }
-            });
-            SwingUtilities.invokeLater(() -> {
-                boolean atBottom = isScrolledToBottom(verticalBar);
-                acceptCheck.setEnabled(atBottom);
-                scrollHint.setVisible(!atBottom);
-            });
-        }
-
-        acceptButton.addActionListener(e -> {
-            legalDisclosureAccepted = acceptCheck.isSelected();
-            saveLegalDisclosureAcceptance(legalDisclosureAccepted);
+        return legalDisclosureController.showDisclosure(this, legalDisclosureAccepted, requireAcceptance, accepted -> {
+            legalDisclosureAccepted = accepted;
             updateLegalDisclosureUiState();
-            accepted[0] = legalDisclosureAccepted;
-            dialog.dispose();
         });
-        closeButton.addActionListener(e -> {
-            accepted[0] = legalDisclosureAccepted;
-            dialog.dispose();
-        });
-
-        JPanel footer = new JPanel(new BorderLayout());
-        footer.setBorder(new EmptyBorder(12, 4, 8, 4));
-        JPanel footerLeft = new JPanel();
-        footerLeft.setLayout(new BoxLayout(footerLeft, BoxLayout.Y_AXIS));
-        footerLeft.setOpaque(false);
-        acceptCheck.setAlignmentX(Component.LEFT_ALIGNMENT);
-        scrollHint.setAlignmentX(Component.LEFT_ALIGNMENT);
-        footerLeft.add(acceptCheck);
-        footerLeft.add(Box.createVerticalStrut(4));
-        footerLeft.add(scrollHint);
-        footer.add(footerLeft, BorderLayout.WEST);
-        JPanel footerActions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        footerActions.setBorder(new EmptyBorder(6, 0, 6, 0));
-        footerActions.add(acceptButton);
-        footerActions.add(closeButton);
-        footer.add(footerActions, BorderLayout.EAST);
-
-        dialog.add(disclosureScroll, BorderLayout.CENTER);
-        dialog.add(footer, BorderLayout.SOUTH);
-        dialog.setMinimumSize(new Dimension(790, 590));
-        dialog.pack();
-        dialog.setLocationRelativeTo(this);
-        dialog.setVisible(true);
-
-        return accepted[0];
-    }
-
-    private boolean isScrolledToBottom(JScrollBar bar) {
-        int extent = bar.getModel().getExtent();
-        int max = bar.getMaximum();
-        int value = bar.getValue();
-        return value + extent >= max;
-    }
-
-    private boolean loadLegalDisclosureAcceptance() {
-        if (!Files.exists(LEGAL_DISCLOSURE_FILE)) {
-            return false;
-        }
-        Properties properties = new Properties();
-        try (var input = Files.newInputStream(LEGAL_DISCLOSURE_FILE)) {
-            properties.load(input);
-            return Boolean.parseBoolean(properties.getProperty("accepted", "false"));
-        } catch (Exception ignored) {
-            return false;
-        }
-    }
-
-    private void saveLegalDisclosureAcceptance(boolean accepted) {
-        Properties properties = new Properties();
-        properties.setProperty("accepted", String.valueOf(accepted));
-        properties.setProperty("acceptedAt", accepted ? Instant.now().toString() : "");
-        try {
-            Files.createDirectories(LEGAL_DISCLOSURE_FILE.getParent());
-            try (var output = Files.newOutputStream(LEGAL_DISCLOSURE_FILE)) {
-                properties.store(output, "NeuralArc legal disclosure acceptance");
-            }
-        } catch (Exception ignored) {
-            // Keep app running even if acceptance state cannot be persisted.
-        }
     }
 
     private void updateLegalDisclosureUiState() {

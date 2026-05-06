@@ -48,6 +48,10 @@ public record AlpacaOrderData(
     }
 
     public static AlpacaOrderData failed(String message) {
-        return new AlpacaOrderData("", "", "", "", "", Monetary.zero(), Monetary.zero(), Monetary.zero(), "failed", "{\"message\":\"" + Objects.requireNonNullElse(message, "") + "\"}", null);
+        return transportFailure(message);
+    }
+
+    public static AlpacaOrderData transportFailure(String message) {
+        return new AlpacaOrderData("", "", "", "", "", Monetary.zero(), Monetary.zero(), Monetary.zero(), "failed_transport", "{\"message\":\"" + Objects.requireNonNullElse(message, "") + "\"}", null);
     }
 }

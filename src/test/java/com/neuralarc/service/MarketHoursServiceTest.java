@@ -25,6 +25,13 @@ class MarketHoursServiceTest {
     }
 
     @Test
+    void eveningSessionCanBeExtendedOpenWhileRegularMarketIsClosed() {
+        Instant instant = ZonedDateTime.of(2026, 4, 29, 19, 0, 0, 0, ZoneId.of("America/New_York")).toInstant();
+        assertTrue(service.isTradingSessionOpen(instant, true));
+        assertFalse(service.isRegularMarketHours(instant));
+    }
+
+    @Test
     void weekendIsClosed() {
         Instant instant = ZonedDateTime.of(2026, 5, 2, 11, 0, 0, 0, ZoneId.of("America/New_York")).toInstant();
         assertFalse(service.isTradingSessionOpen(instant, true));

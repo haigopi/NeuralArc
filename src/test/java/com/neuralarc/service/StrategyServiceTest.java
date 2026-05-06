@@ -15,6 +15,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class StrategyServiceTest {
     @Test
+    void mapOrderStatusTreatsBrokerFailedAsRejected() {
+        assertEquals(StrategyOrderStatus.REJECTED, StrategyService.mapOrderStatus("failed"));
+    }
+
+    @Test
+    void mapOrderStatusTreatsTransportFailureAsFailed() {
+        assertEquals(StrategyOrderStatus.FAILED, StrategyService.mapOrderStatus("failed_transport"));
+    }
+
+    @Test
     void strategyValidationFailsForEmptySymbol() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
