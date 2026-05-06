@@ -428,13 +428,13 @@ public class StrategyService {
         if (quantity <= 0) {
             return StrategyCreationResult.failed("No open quantity to close");
         }
-        String clientOrderId = buildClientOrderId(strategy.id(), StrategyStage.CLOSE_POSITION);
+        String clientOrderId = buildClientOrderId(strategy.id(), StrategyStage.MANUAL_EXIT);
         com.neuralarc.api.AlpacaOrderData submitted = alpacaClient.submitLimitSellOrder(strategy.symbol(), quantity, latestPrice, clientOrderId);
         Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
         StrategyOrder order = new StrategyOrder(
                 java.util.UUID.randomUUID().toString(),
                 strategy.id(),
-                StrategyStage.CLOSE_POSITION,
+                StrategyStage.MANUAL_EXIT,
                 submitted.orderId(),
                 clientOrderId,
                 strategy.symbol(),
@@ -454,9 +454,9 @@ public class StrategyService {
         orderRepository.save(order);
         strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
         strategy.setLatestAlpacaOrderId(order.alpacaOrderId());
-        strategy.setLastTriggeredRuleType("CLOSE_POSITION");
+        strategy.setLastTriggeredRuleType("MANUAL_EXIT");
         strategyRepository.save(strategy);
-        stateMachine.transition(strategy, StrategyLifecycleState.SELL_PLACED, StrategyEventType.ORDER_SUBMITTED, "Close position order submitted", submitted.rawJson());
+        stateMachine.transition(strategy, StrategyLifecycleState.SELL_PLACED, StrategyEventType.ORDER_SUBMITTED, "Manual sell order submitted", submitted.rawJson());
         return StrategyCreationResult.success(strategy.id(), order.id(), order.alpacaOrderId(), order.clientOrderId());
     }
 
@@ -573,7 +573,9 @@ public class StrategyService {
     }
 
     private boolean isProfitableExitStage(StrategyStage stage) {
-        return stage == StrategyStage.TARGET_SELL || stage == StrategyStage.PROFIT_EXIT;
+        return stage == StrategyStage.TARGET_SELL
+                || stage == StrategyStage.PROFIT_EXIT
+                || stage == StrategyStage.MANUAL_EXIT;
     }
 
     private Strategy cloneStrategyForLivePromotion(Strategy paperStrategy) {

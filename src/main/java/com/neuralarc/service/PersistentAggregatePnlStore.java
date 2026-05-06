@@ -39,6 +39,20 @@ public class PersistentAggregatePnlStore {
         save();
     }
 
+    /**
+     * Resets both realized P&L values to zero and deletes the backing file.
+     * Call this when the user wipes all local data.
+     */
+    public synchronized void reset() {
+        paperArchivedRealized = BigDecimal.ZERO.setScale(2);
+        liveArchivedRealized = BigDecimal.ZERO.setScale(2);
+        try {
+            Files.deleteIfExists(filePath);
+        } catch (IOException ignored) {
+            // Non-fatal — in-memory values are already zeroed.
+        }
+    }
+
     private void load() {
         if (Files.exists(filePath)) {
             try {

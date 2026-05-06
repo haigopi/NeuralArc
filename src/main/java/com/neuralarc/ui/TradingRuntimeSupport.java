@@ -76,16 +76,9 @@ public final class TradingRuntimeSupport {
         if (runtimeClient == null) {
             return new RuntimeServices(null, null);
         }
-        StrategyService strategyService = new StrategyService(
-                strategyRepository,
-                strategyOrderRepository,
-                strategyEventRepository,
+        StrategyService strategyService = createStrategyService(
                 runtimeClient,
-                new StrategyValidator(),
-                AppMetadata.liveTradingEnabled(),
-                mode == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER,
-                appSettingsService,
-                marketHoursService
+                mode == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER
         );
         StrategyPollingService pollingService = new StrategyPollingService(
                 strategyRepository,
@@ -97,6 +90,23 @@ public final class TradingRuntimeSupport {
         );
         pollingService.setPollListener(pollListener);
         return new RuntimeServices(strategyService, pollingService);
+    }
+
+    public StrategyService createStrategyService(HttpAlpacaClient runtimeClient, StrategyMode strategyMode) {
+        if (runtimeClient == null) {
+            return null;
+        }
+        return new StrategyService(
+                strategyRepository,
+                strategyOrderRepository,
+                strategyEventRepository,
+                runtimeClient,
+                new StrategyValidator(),
+                AppMetadata.liveTradingEnabled(),
+                strategyMode == null ? StrategyMode.PAPER : strategyMode,
+                appSettingsService,
+                marketHoursService
+        );
     }
 
     public ConnectionAttemptResult attemptConnection(BrokerType brokerType, ApplicationMode mode, String apiKey, String apiSecret) {

@@ -9,8 +9,10 @@ import com.neuralarc.util.Monetary;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -50,22 +52,61 @@ public class StrategyEngine {
         this.marketHoursService = marketHoursService;
     }
 
+    /**
+     * Immutable record describing the evaluation result of a single strategy rule during
+     * a poll cycle. Used to surface rule analysis summaries to the UI log.
+     */
+    public record RuleOutcome(String ruleName, String outcome, String details) {
+        @Override
+        public String toString() {
+            return ruleName + "=" + outcome + " (" + details + ")";
+        }
+    }
+
+    /**
+     * Legacy reconcile entry-point (void). Streaming and resume paths use this.
+     * Delegates to the tracked overload with an empty price cache; outcomes are discarded.
+     */
     public void reconcile(Strategy strategy) {
+        reconcileTracked(strategy, Map.of());
+    }
+
+    /**
+     * Reconcile with a pre-fetched price cache supplied by the polling service.
+     * Returns the list of rule outcomes so the caller can surface them to the UI log.
+     * Package-private: only intended for use by {@link StrategyPollingService}.
+     */
+    List<RuleOutcome> reconcileTracked(Strategy strategy, Map<String, BigDecimal> priceCache) {
+        List<RuleOutcome> outcomes = new ArrayList<>();
         AppSettingsService.AppSettings settings = appSettingsService.load();
         boolean sessionOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
         refreshOrderStatuses(strategy);
         Optional<AlpacaPositionData> position = alpacaClient.getPosition(strategy.symbol());
-        // Extract marketPrice from position response (avoids redundant /trades/latest API call)
-        BigDecimal latestPrice = position.isPresent() && position.get().marketPrice() != null
-                ? position.get().marketPrice()
-                : alpacaClient.getLatestPrice(strategy.symbol());
+
+        // Use pre-fetched price when available; fall back to position market price or individual call.
+        String symbolKey = strategy.symbol() != null ? strategy.symbol().toUpperCase() : "";
+        BigDecimal cachedPrice = priceCache.get(symbolKey);
+        BigDecimal latestPrice;
+        if (position.isPresent() && position.get().marketPrice() != null
+                && position.get().marketPrice().compareTo(BigDecimal.ZERO) > 0) {
+            latestPrice = position.get().marketPrice();
+        } else if (cachedPrice != null && cachedPrice.compareTo(BigDecimal.ZERO) > 0) {
+            latestPrice = cachedPrice;
+        } else {
+            latestPrice = alpacaClient.getLatestPrice(strategy.symbol());
+        }
+
         List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
         List<AlpacaOrderData> remoteOpenOrders = alpacaClient.getOpenOrders(strategy.symbol());
         logPoll(strategy, "POLL", "STARTED",
                 "state=" + strategy.currentState().name()
                         + ", latestPrice=" + latestPrice.toPlainString()
                         + ", hasPosition=" + (position.isPresent() && position.get().exists())
-                        + ", openOrders=" + remoteOpenOrders.size());
+                        + ", openOrders=" + remoteOpenOrders.size()
+                        + ", priceSource=" + (cachedPrice != null && cachedPrice.compareTo(BigDecimal.ZERO) > 0
+                                && !(position.isPresent() && position.get().marketPrice() != null
+                                        && position.get().marketPrice().compareTo(BigDecimal.ZERO) > 0)
+                                ? "batchCache" : "direct"));
 
         if (ensureRemoteOrderPresence(strategy, orders, remoteOpenOrders, position)) {
             orders = orderRepository.findByStrategyId(strategy.id());
@@ -88,20 +129,21 @@ public class StrategyEngine {
                         "{\"symbol\":\"" + strategy.symbol() + "\"}");
                 strategyRepository.save(strategy);
             }
-            evaluateManagedStopLoss(strategy, position.get(), latestPrice, orders);
-            evaluateTargetSellAndProfitHold(strategy, position.get(), latestPrice, orders);
+            evaluateManagedStopLoss(strategy, position.get(), latestPrice, orders, outcomes);
+            evaluateTargetSellAndProfitHold(strategy, position.get(), latestPrice, orders, outcomes);
         } else {
-            logRule(strategy, "STOP_LOSS", "SKIPPED", "No open position");
-            logRule(strategy, "TARGET_SELL", "SKIPPED", "No open position");
-            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "No open position");
+            logRule(strategy, "STOP_LOSS", "SKIPPED", "No open position", outcomes);
+            logRule(strategy, "TARGET_SELL", "SKIPPED", "No open position", outcomes);
+            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "No open position", outcomes);
             maybeRestartStrategy(strategy, orders);
         }
 
-        maybeSubmitBuyLimit1(strategy, latestPrice, orders);
-        maybeSubmitBuyLimit2(strategy, latestPrice, orders);
+        maybeSubmitBuyLimit1(strategy, latestPrice, orders, outcomes);
+        maybeSubmitBuyLimit2(strategy, latestPrice, orders, outcomes);
         strategy.setLastPolledAt(Instant.now());
         strategyRepository.save(strategy);
         logPoll(strategy, "POLL", "COMPLETED", "lastPolledAt=" + strategy.lastPolledAt());
+        return outcomes;
     }
 
     public StrategyOrder submitBaseBuy(Strategy strategy) {
@@ -188,108 +230,108 @@ public class StrategyEngine {
         return updatedLocalOrderState;
     }
 
-    private void maybeSubmitBuyLimit1(Strategy strategy, BigDecimal latestPrice, List<StrategyOrder> orders) {
+    private void maybeSubmitBuyLimit1(Strategy strategy, BigDecimal latestPrice, List<StrategyOrder> orders, List<RuleOutcome> outcomes) {
         if (!strategy.lossBuyLevelsEnabled()) {
-            logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Loss buy levels disabled");
+            logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Loss buy levels disabled", outcomes);
             return;
         }
         if (strategy.buyLimit1Quantity() <= 0 || strategy.buyLimit1Price().compareTo(BigDecimal.ZERO) <= 0) {
-            logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Not configured");
+            logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Not configured", outcomes);
             return;
         }
         if (latestPrice.compareTo(strategy.buyLimit1Price()) > 0) {
             logRule(strategy, "BUY_LIMIT_1", "NOT_SATISFIED",
                     "latestPrice=" + latestPrice.toPlainString()
-                            + " > triggerPrice=" + strategy.buyLimit1Price().toPlainString());
+                            + " > triggerPrice=" + strategy.buyLimit1Price().toPlainString(), outcomes);
             return;
         }
         if (!isStageFilled(orders, StrategyStage.BASE_BUY)) {
-            logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Base buy not fully filled");
+            logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Base buy not fully filled", outcomes);
             return;
         }
         if (hasPendingOrFilledStage(orders, StrategyStage.BUY_LIMIT_1)) {
-            logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Existing pending or filled order already present");
+            logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Existing pending or filled order already present", outcomes);
             return;
         }
         logRule(strategy, "BUY_LIMIT_1", "SATISFIED",
                 "latestPrice=" + latestPrice.toPlainString()
                         + " <= triggerPrice=" + strategy.buyLimit1Price().toPlainString()
-                        + ", quantity=" + strategy.buyLimit1Quantity());
+                        + ", quantity=" + strategy.buyLimit1Quantity(), outcomes);
         submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_1, strategy.buyLimit1Quantity(), strategy.buyLimit1Price(),
                 StrategyLifecycleState.BUY_LIMIT_1_PLACED, "Buy Limit 1 submitted", true);
     }
 
-    private void maybeSubmitBuyLimit2(Strategy strategy, BigDecimal latestPrice, List<StrategyOrder> orders) {
+    private void maybeSubmitBuyLimit2(Strategy strategy, BigDecimal latestPrice, List<StrategyOrder> orders, List<RuleOutcome> outcomes) {
         if (!strategy.lossBuyLevelsEnabled()) {
-            logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Loss buy levels disabled");
+            logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Loss buy levels disabled", outcomes);
             return;
         }
         if (strategy.buyLimit2Quantity() <= 0 || strategy.buyLimit2Price().compareTo(BigDecimal.ZERO) <= 0) {
-            logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Not configured");
+            logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Not configured", outcomes);
             return;
         }
         if (latestPrice.compareTo(strategy.buyLimit2Price()) > 0) {
             logRule(strategy, "BUY_LIMIT_2", "NOT_SATISFIED",
                     "latestPrice=" + latestPrice.toPlainString()
-                            + " > triggerPrice=" + strategy.buyLimit2Price().toPlainString());
+                            + " > triggerPrice=" + strategy.buyLimit2Price().toPlainString(), outcomes);
             return;
         }
         if (!isStageFilled(orders, StrategyStage.BUY_LIMIT_1)) {
-            logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Buy Limit 1 not fully filled");
+            logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Buy Limit 1 not fully filled", outcomes);
             return;
         }
         if (hasPendingOrFilledStage(orders, StrategyStage.BUY_LIMIT_2)) {
-            logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Existing pending or filled order already present");
+            logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Existing pending or filled order already present", outcomes);
             return;
         }
         logRule(strategy, "BUY_LIMIT_2", "SATISFIED",
                 "latestPrice=" + latestPrice.toPlainString()
                         + " <= triggerPrice=" + strategy.buyLimit2Price().toPlainString()
-                        + ", quantity=" + strategy.buyLimit2Quantity());
+                        + ", quantity=" + strategy.buyLimit2Quantity(), outcomes);
         submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_2, strategy.buyLimit2Quantity(), strategy.buyLimit2Price(),
                 StrategyLifecycleState.BUY_LIMIT_2_PLACED, "Buy Limit 2 submitted", true);
     }
 
-    private void evaluateManagedStopLoss(Strategy strategy, AlpacaPositionData position, BigDecimal latestPrice, List<StrategyOrder> orders) {
+    private void evaluateManagedStopLoss(Strategy strategy, AlpacaPositionData position, BigDecimal latestPrice, List<StrategyOrder> orders, List<RuleOutcome> outcomes) {
         if (!strategy.automatedStopLossEnabled()) {
-            logRule(strategy, "STOP_LOSS", "SKIPPED", "Disabled");
+            logRule(strategy, "STOP_LOSS", "SKIPPED", "Disabled", outcomes);
             return;
         }
         if (hasPendingOrFilledStage(orders, StrategyStage.STOP_LOSS)) {
-            logRule(strategy, "STOP_LOSS", "SKIPPED", "Existing pending or filled stop loss order already present");
+            logRule(strategy, "STOP_LOSS", "SKIPPED", "Existing pending or filled stop loss order already present", outcomes);
             return;
         }
         BigDecimal stopThreshold = strategy.stopLossType() == StopLossType.PERCENT_BELOW_AVERAGE_COST
                 ? Monetary.round(position.avgEntryPrice().multiply(BigDecimal.ONE.subtract(strategy.stopLossPercent().divide(new BigDecimal("100")))))
                 : strategy.stopLossPrice();
         if (stopThreshold.compareTo(BigDecimal.ZERO) <= 0) {
-            logRule(strategy, "STOP_LOSS", "SKIPPED", "Computed threshold is not positive");
+            logRule(strategy, "STOP_LOSS", "SKIPPED", "Computed threshold is not positive", outcomes);
             return;
         }
         if (latestPrice.compareTo(stopThreshold) > 0) {
             logRule(strategy, "STOP_LOSS", "NOT_SATISFIED",
                     "latestPrice=" + latestPrice.toPlainString()
-                            + " > threshold=" + stopThreshold.toPlainString());
+                            + " > threshold=" + stopThreshold.toPlainString(), outcomes);
             return;
         }
         logRule(strategy, "STOP_LOSS", "SATISFIED",
                 "latestPrice=" + latestPrice.toPlainString()
                         + " <= threshold=" + stopThreshold.toPlainString()
-                        + ", quantity=" + position.quantity().toPlainString());
+                        + ", quantity=" + position.quantity().toPlainString(), outcomes);
         submitSellOrder(strategy, StrategyStage.STOP_LOSS, position.quantity(), latestPrice,
                 StrategyLifecycleState.SELL_PLACED, "Stop loss sell submitted", StrategyEventType.STOP_LOSS_TRIGGERED);
     }
 
 
-    private void evaluateTargetSellAndProfitHold(Strategy strategy, AlpacaPositionData position, BigDecimal latestPrice, List<StrategyOrder> orders) {
+    private void evaluateTargetSellAndProfitHold(Strategy strategy, AlpacaPositionData position, BigDecimal latestPrice, List<StrategyOrder> orders, List<RuleOutcome> outcomes) {
         if (!strategy.targetSellEnabled() || strategy.targetSellPrice().compareTo(BigDecimal.ZERO) <= 0) {
-            logRule(strategy, "TARGET_SELL", "SKIPPED", "Disabled or invalid target sell price");
-            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Target sell is not active");
+            logRule(strategy, "TARGET_SELL", "SKIPPED", "Disabled or invalid target sell price", outcomes);
+            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Target sell is not active", outcomes);
             return;
         }
         if (hasPendingOrFilledExitOrder(orders, StrategyStage.TARGET_SELL) || hasPendingOrFilledExitOrder(orders, StrategyStage.PROFIT_EXIT)) {
-            logRule(strategy, "TARGET_SELL", "SKIPPED", "Existing pending or filled exit order already present");
-            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Existing pending or filled exit order already present");
+            logRule(strategy, "TARGET_SELL", "SKIPPED", "Existing pending or filled exit order already present", outcomes);
+            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Existing pending or filled exit order already present", outcomes);
             return;
         }
         boolean profitHoldActive = strategy.currentState() == StrategyLifecycleState.PROFIT_HOLD_ACTIVE
@@ -297,8 +339,8 @@ public class StrategyEngine {
         if (!profitHoldActive && latestPrice.compareTo(strategy.targetSellPrice()) < 0) {
             logRule(strategy, "TARGET_SELL", "NOT_SATISFIED",
                     "latestPrice=" + latestPrice.toPlainString()
-                            + " < targetPrice=" + strategy.targetSellPrice().toPlainString());
-            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Target sell has not triggered yet");
+                            + " < targetPrice=" + strategy.targetSellPrice().toPlainString(), outcomes);
+            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Target sell has not triggered yet", outcomes);
             return;
         }
 
@@ -306,8 +348,8 @@ public class StrategyEngine {
             logRule(strategy, "TARGET_SELL", "SATISFIED",
                     "latestPrice=" + latestPrice.toPlainString()
                             + " >= targetPrice=" + strategy.targetSellPrice().toPlainString()
-                            + ", quantity=" + strategy.targetSellQuantity(position.quantity()).toPlainString());
-            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Disabled");
+                            + ", quantity=" + strategy.targetSellQuantity(position.quantity()).toPlainString(), outcomes);
+            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Disabled", outcomes);
             submitSellOrder(strategy, StrategyStage.TARGET_SELL, strategy.targetSellQuantity(position.quantity()), latestPrice,
                     StrategyLifecycleState.SELL_PLACED, "Target sell submitted", StrategyEventType.TARGET_TRIGGERED);
             return;
@@ -327,21 +369,21 @@ public class StrategyEngine {
         if (latestPrice.compareTo(threshold) > 0) {
             logRule(strategy, "TARGET_SELL", "SATISFIED",
                     "latestPrice=" + latestPrice.toPlainString()
-                            + " >= targetPrice=" + strategy.targetSellPrice().toPlainString());
+                            + " >= targetPrice=" + strategy.targetSellPrice().toPlainString(), outcomes);
             logRule(strategy, "PROFIT_HOLD", "NOT_SATISFIED",
                     "latestPrice=" + latestPrice.toPlainString()
                             + " > trailingThreshold=" + threshold.toPlainString()
-                            + ", highest=" + strategy.highestObservedPriceAfterTarget().toPlainString());
+                            + ", highest=" + strategy.highestObservedPriceAfterTarget().toPlainString(), outcomes);
             strategyRepository.save(strategy);
             return;
         }
         logRule(strategy, "TARGET_SELL", "SATISFIED",
                 "latestPrice=" + latestPrice.toPlainString()
-                        + " >= targetPrice=" + strategy.targetSellPrice().toPlainString());
+                        + " >= targetPrice=" + strategy.targetSellPrice().toPlainString(), outcomes);
         logRule(strategy, "PROFIT_HOLD", "SATISFIED",
                 "latestPrice=" + latestPrice.toPlainString()
                         + " <= trailingThreshold=" + threshold.toPlainString()
-                        + ", highest=" + strategy.highestObservedPriceAfterTarget().toPlainString());
+                        + ", highest=" + strategy.highestObservedPriceAfterTarget().toPlainString(), outcomes);
         submitSellOrder(strategy, StrategyStage.PROFIT_EXIT, strategy.targetSellQuantity(position.quantity()), latestPrice,
                 StrategyLifecycleState.SELL_PLACED, "Profit hold exit submitted", StrategyEventType.ORDER_SUBMITTED);
     }
@@ -354,7 +396,8 @@ public class StrategyEngine {
         }
 
         StrategyOrder filledExitOrder = latestFilledExitOrder.get();
-        // Manual/defensive exits (e.g., CLOSE_POSITION, STOP_LOSS) always complete the cycle.
+        // Defensive exits (e.g., CLOSE_POSITION, STOP_LOSS) always complete the cycle.
+        // Manual exits may restart if the strategy is configured to repeat after exit.
         if (!strategy.restartAfterExitEnabled() || !isProfitableExitStage(filledExitOrder.stage())) {
             stateMachine.transition(strategy, StrategyLifecycleState.COMPLETED,
                     StrategyEventType.STRATEGY_COMPLETED,
@@ -453,7 +496,7 @@ public class StrategyEngine {
                     : status == StrategyOrderStatus.PARTIALLY_FILLED
                     ? StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED
                     : StrategyLifecycleState.BUY_LIMIT_2_PLACED;
-            case TARGET_SELL, PROFIT_EXIT, STOP_LOSS, LOSS_EXIT, CLOSE_POSITION -> status == StrategyOrderStatus.PARTIALLY_FILLED
+            case TARGET_SELL, PROFIT_EXIT, STOP_LOSS, LOSS_EXIT, MANUAL_EXIT, CLOSE_POSITION -> status == StrategyOrderStatus.PARTIALLY_FILLED
                     ? StrategyLifecycleState.SELL_PARTIALLY_FILLED
                     : status == StrategyOrderStatus.FILLED
                     ? StrategyLifecycleState.COMPLETED
@@ -660,11 +703,14 @@ public class StrategyEngine {
                 || stage == StrategyStage.PROFIT_EXIT
                 || stage == StrategyStage.STOP_LOSS
                 || stage == StrategyStage.LOSS_EXIT
+                || stage == StrategyStage.MANUAL_EXIT
                 || stage == StrategyStage.CLOSE_POSITION;
     }
 
     private boolean isProfitableExitStage(StrategyStage stage) {
-        return stage == StrategyStage.TARGET_SELL || stage == StrategyStage.PROFIT_EXIT;
+        return stage == StrategyStage.TARGET_SELL
+                || stage == StrategyStage.PROFIT_EXIT
+                || stage == StrategyStage.MANUAL_EXIT;
     }
 
     private boolean isStageFilled(List<StrategyOrder> orders, StrategyStage stage) {
@@ -732,8 +778,11 @@ public class StrategyEngine {
         }
     }
 
-    private void logRule(Strategy strategy, String ruleName, String status, String details) {
+    private void logRule(Strategy strategy, String ruleName, String status, String details, List<RuleOutcome> outcomes) {
         LOGGER.info(() -> "[POLL][" + strategy.symbol() + "][" + ruleName + "][" + status + "] " + details);
+        if (outcomes != null) {
+            outcomes.add(new RuleOutcome(ruleName, status, details));
+        }
     }
 
     private String mapStageToRuleName(StrategyStage stage) {
@@ -743,7 +792,7 @@ public class StrategyEngine {
             case BUY_LIMIT_2 -> "LOSS_INVESTMENT_BUY_RULE";
             case TARGET_SELL -> "SELL_RULE";
             case STOP_LOSS -> "STOP_LOSS_RULE";
-            case LOSS_EXIT, PROFIT_EXIT, CLOSE_POSITION -> stage.name();
+            case LOSS_EXIT, PROFIT_EXIT, MANUAL_EXIT, CLOSE_POSITION -> stage.name();
         };
     }
 }

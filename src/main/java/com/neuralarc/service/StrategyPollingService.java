@@ -9,10 +9,13 @@ import com.neuralarc.model.StrategyExecutionEvent;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyStatus;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -32,6 +35,7 @@ public class StrategyPollingService {
     private final StrategyService strategyService;
     private final AppSettingsService appSettingsService;
     private final MarketHoursService marketHoursService;
+    private final AlpacaClient alpacaClient;
     private final ExecutorService pollExecutor;
     private volatile Instant lastStreamingEventAt;
     private volatile Boolean lastTradingSessionOpen;
@@ -66,6 +70,7 @@ public class StrategyPollingService {
         this.eventRepository = eventRepository;
         this.appSettingsService = appSettingsService;
         this.marketHoursService = marketHoursService;
+        this.alpacaClient = alpacaClient;
         StrategyEventBus eventBus = new StrategyEventBus();
         StrategyStateMachine stateMachine = new StrategyStateMachine(eventRepository, eventBus);
         this.strategyEngine = new StrategyEngine(
@@ -115,21 +120,55 @@ public class StrategyPollingService {
             lastTradingSessionOpen = null;
         }
 
-        int dueStrategies = 0;
-        List<Future<?>> futures = new ArrayList<>();
+        // Collect eligible strategies and separate out which are due this cycle.
+        List<Strategy> eligible = new ArrayList<>();
+        List<Strategy> due = new ArrayList<>();
         for (Strategy strategy : strategyRepository.findAll()) {
             totalStrategies++;
             if (!isPollEligible(strategy)) {
                 continue;
             }
             eligibleStrategies++;
+            eligible.add(strategy);
             if (shouldPoll(strategy, now)) {
-                String strategyId = strategy.id();
-                dueStrategies++;
-                futures.add(pollExecutor.submit(() -> pollStrategy(strategyId)));
+                due.add(strategy);
             } else {
                 skippedNotDue++;
             }
+        }
+
+        // Batch-fetch latest prices for ALL eligible strategy symbols in one API call
+        // whenever at least one strategy is due to poll.  This replaces per-strategy
+        // getLatestPrice() calls inside reconcile() and reduces total broker API usage.
+        Map<String, BigDecimal> priceCache = Map.of();
+        if (!due.isEmpty()) {
+            List<String> symbols = new ArrayList<>();
+            for (Strategy s : eligible) {
+                if (s.symbol() != null && !s.symbol().isBlank()) {
+                    String upper = s.symbol().toUpperCase(Locale.ROOT);
+                    if (!symbols.contains(upper)) {
+                        symbols.add(upper);
+                    }
+                }
+            }
+            if (!symbols.isEmpty()) {
+                try {
+                    Map<String, BigDecimal> fetched = alpacaClient.getLatestPrices(symbols);
+                    priceCache = fetched;
+                    LOGGER.info(() -> "[POLL][PRICE_CACHE] Batch-fetched prices for " + symbols.size()
+                            + " symbol(s): " + symbols + " → " + fetched.size() + " result(s)");
+                } catch (Exception ex) {
+                    LOGGER.log(Level.WARNING, "[POLL][PRICE_CACHE] Batch price fetch failed, will fall back to per-symbol calls", ex);
+                }
+            }
+        }
+
+        int dueStrategies = due.size();
+        List<Future<?>> futures = new ArrayList<>();
+        final Map<String, BigDecimal> finalPriceCache = priceCache;
+        for (Strategy strategy : due) {
+            String strategyId = strategy.id();
+            futures.add(pollExecutor.submit(() -> pollStrategy(strategyId, finalPriceCache)));
         }
         for (Future<?> future : futures) {
             try {
@@ -164,7 +203,13 @@ public class StrategyPollingService {
         pollDueStrategies();
     }
 
+    /** Legacy single-strategy poll (no price cache). Used in tests and manual triggers. */
     public void pollStrategy(String strategyId) {
+        pollStrategy(strategyId, Map.of());
+    }
+
+    /** Poll a single strategy using the pre-fetched price cache from the current cycle. */
+    void pollStrategy(String strategyId, Map<String, BigDecimal> priceCache) {
         Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
         if (maybeStrategy.isEmpty()) {
             return;
@@ -186,10 +231,13 @@ public class StrategyPollingService {
 
         try {
             pollListener.onPollStarted(strategy.id());
-            strategyEngine.reconcile(strategy);
+            List<StrategyEngine.RuleOutcome> outcomes = strategyEngine.reconcileTracked(strategy, priceCache);
             eventRepository.save(event(strategy.id(), StrategyEventType.POLL_SUCCESS,
                     "Poll completed", "{\"strategyId\":\"" + strategy.id() + "\"}"));
             pollListener.onPollCompleted(strategy.id());
+            if (!outcomes.isEmpty()) {
+                pollListener.onRulesAnalyzed(strategy.id(), strategy.symbol(), outcomes);
+            }
         } catch (Exception ex) {
             strategy.setStatus(StrategyStatus.PAUSED);
             strategy.setCurrentState(StrategyLifecycleState.PAUSED);
@@ -307,6 +355,16 @@ public class StrategyPollingService {
         default void onPollStarted(String strategyId) {}
         default void onPollCompleted(String strategyId) {}
         default void onPollFailed(String strategyId) {}
+
+        /**
+         * Called after each successful poll cycle with the list of rules that were evaluated.
+         * Implementors may use this to surface rule analysis summaries to a UI log.
+         *
+         * @param strategyId the strategy that was polled
+         * @param symbol     the ticker symbol (for display)
+         * @param outcomes   ordered list of rule evaluation results from this cycle
+         */
+        default void onRulesAnalyzed(String strategyId, String symbol, List<StrategyEngine.RuleOutcome> outcomes) {}
     }
 
     public record PollCycleSnapshot(

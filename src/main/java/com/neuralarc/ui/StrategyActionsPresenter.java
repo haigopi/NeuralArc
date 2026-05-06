@@ -6,6 +6,7 @@ public final class StrategyActionsPresenter {
     private static final Color DISABLED = new Color(120, 144, 156);
     private static final Color RESUME = new Color(46, 125, 50);
     private static final Color CANCEL = new Color(198, 40, 40);
+    private static final Color SELL = new Color(230, 81, 0);
     private static final Color PROMOTE_ENABLED = new Color(25, 118, 210);
 
     public StrategyActionsViewModel present(StrategyActionsState state) {
@@ -13,6 +14,7 @@ public final class StrategyActionsPresenter {
         boolean busy = state.busy();
         boolean paused = state.paused();
         boolean canPromote = state.paperMode() && !archived;
+        boolean canSell = state.hasPosition() && !archived && !busy;
 
         String toggleText = archived
                 ? "Archived"
@@ -27,12 +29,15 @@ public final class StrategyActionsPresenter {
                 : paused
                 ? RESUME
                 : CANCEL;
+        Color sellColor = canSell ? SELL : DISABLED;
         Color promoteColor = canPromote ? PROMOTE_ENABLED : DISABLED;
 
         return new StrategyActionsViewModel(
                 toggleText,
                 toggleColor,
                 !archived,
+                canSell,
+                sellColor,
                 canPromote,
                 promoteColor
         );
@@ -43,7 +48,8 @@ public final class StrategyActionsPresenter {
             boolean paused,
             boolean busy,
             String busyText,
-            boolean paperMode
+            boolean paperMode,
+            boolean hasPosition
     ) {
         public StrategyActionsState {
             busyText = busyText == null || busyText.isBlank() ? "Working..." : busyText;
@@ -54,9 +60,10 @@ public final class StrategyActionsPresenter {
             String toggleText,
             Color toggleColor,
             boolean toggleEnabled,
+            boolean sellEnabled,
+            Color sellColor,
             boolean promoteEnabled,
             Color promoteColor
     ) {
     }
 }
-

@@ -64,6 +64,15 @@ public final class SqliteStrategyExecutionEventRepository implements StrategyExe
     // Internal helpers
     // -----------------------------------------------------------------------
 
+    /**
+     * Clears all in-memory event indexes. Call this after an external truncation
+     * (e.g. {@link AppDatabase#resetAllData()}).
+     */
+    public synchronized void invalidateCache() {
+        events.clear();
+        eventsByStrategyId.clear();
+    }
+
     private void seedCache() {
         events.clear();
         try (PreparedStatement ps = db.get().prepareStatement(

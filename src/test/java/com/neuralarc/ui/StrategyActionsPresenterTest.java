@@ -12,7 +12,7 @@ class StrategyActionsPresenterTest {
     @Test
     void archivedStrategiesDisableToggleAndPromotion() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
-                new StrategyActionsPresenter.StrategyActionsState(true, false, false, "", true)
+                new StrategyActionsPresenter.StrategyActionsState(true, false, false, "", true, false)
         );
 
         assertEquals("Archived", viewModel.toggleText());
@@ -23,7 +23,7 @@ class StrategyActionsPresenterTest {
     @Test
     void busyStateShowsBusyTextAndDisablesPromotionWhenNotPaper() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
-                new StrategyActionsPresenter.StrategyActionsState(false, true, true, "Canceling...", false)
+                new StrategyActionsPresenter.StrategyActionsState(false, true, true, "Canceling...", false, true)
         );
 
         assertEquals("Canceling...", viewModel.toggleText());
@@ -34,7 +34,7 @@ class StrategyActionsPresenterTest {
     @Test
     void pausedPaperStrategiesShowResumeAndAllowPromotion() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
-                new StrategyActionsPresenter.StrategyActionsState(false, true, false, "", true)
+                new StrategyActionsPresenter.StrategyActionsState(false, true, false, "", true, true)
         );
 
         assertEquals("Resume", viewModel.toggleText());
@@ -42,4 +42,3 @@ class StrategyActionsPresenterTest {
         assertTrue(viewModel.promoteEnabled());
     }
 }
-

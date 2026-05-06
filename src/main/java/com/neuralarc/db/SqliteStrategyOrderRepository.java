@@ -101,6 +101,18 @@ public final class SqliteStrategyOrderRepository implements StrategyOrderReposit
     // Internal helpers
     // -----------------------------------------------------------------------
 
+    /**
+     * Clears all in-memory indexes. Call this after an external truncation
+     * (e.g. {@link AppDatabase#resetAllData()}).
+     */
+    public synchronized void invalidateCache() {
+        orders.clear();
+        orderById.clear();
+        ordersByStrategyId.clear();
+        latestByAlpacaOrderId.clear();
+        latestByClientOrderId.clear();
+    }
+
     private void seedCache() {
         orders.clear();
         try (PreparedStatement ps = db.get().prepareStatement(

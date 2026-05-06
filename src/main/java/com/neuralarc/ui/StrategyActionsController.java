@@ -128,6 +128,61 @@ public final class StrategyActionsController {
         }
     }
 
+    public void sellPosition(int viewRow) {
+        int row = gateway.toModelRow(viewRow);
+        if (row < 0 || row >= gateway.strategiesSize()) {
+            return;
+        }
+
+        ActionEntry entry = gateway.entryAt(row);
+        Strategy strategy = entry.strategy();
+        if (strategy.status() == StrategyStatus.ARCHIVED || !gateway.hasOpenPosition(strategy)) {
+            return;
+        }
+
+        String restartMessage = strategy.restartAfterExitEnabled()
+                ? "After the position fully closes, the strategy can re-initiate its cycle automatically."
+                : "After the position fully closes, the strategy will remain completed unless you restart it manually.";
+        String message = "<html><body style='width:340px'>"
+                + "<b>Sell the current " + strategy.symbol() + " position now?</b><br><br>"
+                + "This submits a manual limit sell on Alpaca using the latest broker price.<br><br>"
+                + restartMessage
+                + "</body></html>";
+        int choice = gateway.confirm(
+                message,
+                "Sell Position — " + strategy.symbol(),
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (choice != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        gateway.runBackgroundTask(
+                () -> {
+                    StrategyService.StrategyCreationResult result = gateway.sellPosition(strategy);
+                    if (!result.success()) {
+                        throw new IllegalStateException(result.error());
+                    }
+                },
+                () -> {
+                    gateway.findStrategyById(strategy.id()).ifPresent(entry::syncFrom);
+                    gateway.log("Manual sell order submitted for symbol " + strategy.symbol());
+                },
+                ex -> gateway.showMessage(
+                        "Failed to submit sell order for " + strategy.symbol() + ": " + ex.getMessage(),
+                        "Sell Failed",
+                        JOptionPane.ERROR_MESSAGE
+                ),
+                () -> {
+                    gateway.refreshStrategyTableRow(row);
+                    gateway.updateSelectedStrategy();
+                    gateway.refreshPanels();
+                    gateway.updateStatusBar();
+                }
+        );
+    }
+
     public void deleteStrategy(int viewRow) {
         int row = gateway.toModelRow(viewRow);
         if (row < 0 || row >= gateway.strategiesSize()) {
@@ -225,6 +280,8 @@ public final class StrategyActionsController {
         void resetPollingCountdown(String strategyId);
 
         Position loadPositionForStrategy(Strategy strategy);
+        boolean hasOpenPosition(Strategy strategy);
+        StrategyService.StrategyCreationResult sellPosition(Strategy strategy);
         BigDecimal realizedPnlForStrategy(String strategyId);
         String closePaperAccountState(Strategy strategy);
 
@@ -259,4 +316,3 @@ public final class StrategyActionsController {
     public record PromotionDialogResult(boolean proceed, boolean closePaperPositions) {
     }
 }
-

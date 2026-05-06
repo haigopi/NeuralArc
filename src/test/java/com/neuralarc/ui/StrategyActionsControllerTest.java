@@ -50,6 +50,16 @@ class StrategyActionsControllerTest {
         assertEquals(0, gateway.confirmCalls);
     }
 
+    @Test
+    void sellPositionReturnsEarlyWhenNoOpenPositionExists() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.sellPosition(0);
+
+        assertEquals(0, gateway.confirmCalls);
+    }
+
     private static Strategy baseStrategy(StrategyMode mode, StrategyStatus status) {
         Strategy strategy = new Strategy(
                 UUID.randomUUID().toString(),
@@ -124,6 +134,8 @@ class StrategyActionsControllerTest {
         @Override public void stopPollingCountdown(String strategyId) { }
         @Override public void resetPollingCountdown(String strategyId) { }
         @Override public Position loadPositionForStrategy(Strategy strategy) { return new Position(strategy.symbol()); }
+        @Override public boolean hasOpenPosition(Strategy strategy) { return false; }
+        @Override public StrategyService.StrategyCreationResult sellPosition(Strategy strategy) { return StrategyService.StrategyCreationResult.failed("not-used"); }
         @Override public BigDecimal realizedPnlForStrategy(String strategyId) { return BigDecimal.ZERO; }
         @Override public String closePaperAccountState(Strategy strategy) { return ""; }
         @Override public void updateHeaderModeStatus(BrokerType brokerType) { }
@@ -147,4 +159,3 @@ class StrategyActionsControllerTest {
         }
     }
 }
-

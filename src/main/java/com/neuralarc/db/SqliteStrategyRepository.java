@@ -50,6 +50,15 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         // intentionally empty — writes are committed immediately on save()
     }
 
+    /**
+     * Clears the in-memory cache so that the next read reloads from the DB.
+     * Call this after an external truncation (e.g. {@link AppDatabase#resetAllData()}).
+     */
+    public synchronized void invalidateCache() {
+        cache.clear();
+        cacheValid = false;
+    }
+
     @Override
     public synchronized void save(Strategy strategy) {
         upsert(strategy);

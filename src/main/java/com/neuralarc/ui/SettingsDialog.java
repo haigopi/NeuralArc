@@ -2,9 +2,7 @@ package com.neuralarc.ui;
 
 import com.neuralarc.model.BrokerType;
 import com.neuralarc.model.ApplicationMode;
-import com.neuralarc.security.CredentialManager;
 import com.neuralarc.service.AppSettingsService;
-import com.neuralarc.service.UserIdentityService;
 import com.neuralarc.util.AppMetadata;
 import com.neuralarc.util.FontLoader;
 
@@ -19,16 +17,11 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.Map;
-import java.util.Properties;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
 public class SettingsDialog extends JDialog {
     private static final Path APP_DATA_DIR = AppMetadata.appDataDirectory();
-    private static final Path SETTINGS_FILE = APP_DATA_DIR.resolve("settings.properties");
-    private static final Path CREDENTIALS_FILE_PAPER = APP_DATA_DIR.resolve("credentials-paper.properties");
-    private static final Path CREDENTIALS_FILE_LIVE = APP_DATA_DIR.resolve("credentials-live.properties");
-    private static final Path LEGACY_CREDENTIALS_FILE = APP_DATA_DIR.resolve("credentials.properties");
     private static final int OUTER_PADDING = 16;
     private static final int SECTION_GAP = 12;
     private static final int FIELD_GAP = 10;
@@ -67,11 +60,11 @@ public class SettingsDialog extends JDialog {
     private final JLabel connectionStatus = new JLabel("Connection not verified");
     private final JComboBox<BrokerType> brokerBox = new JComboBox<>(BrokerType.values());
     private final JComboBox<ApplicationMode> appModeBox = new JComboBox<>(ApplicationMode.values());
-    private final CredentialManager credentialManager = new CredentialManager();
-    private final UserIdentityService identityService = new UserIdentityService();
+    private final AppSettingsService appSettingsService;
     private transient Function<ConnectionRequest, ConnectionResult> connectionVerifier;
     private transient Function<Path, StrategyTransferResult> strategyExportHandler;
     private transient Function<Path, StrategyTransferResult> strategyImportHandler;
+    private transient Runnable deleteAllDataHandler;
     private final Map<ApplicationMode, String[]> credentialCache = new EnumMap<>(ApplicationMode.class);
     private final Map<ApplicationMode, String[]> appliedCredentialCache = new EnumMap<>(ApplicationMode.class);
     private ApplicationMode displayedCredentialMode = ApplicationMode.PAPER;
@@ -88,7 +81,12 @@ public class SettingsDialog extends JDialog {
     private boolean savedDuringOpen;
 
     public SettingsDialog(JFrame owner) {
+        this(owner, new AppSettingsService());
+    }
+
+    SettingsDialog(JFrame owner, AppSettingsService appSettingsService) {
         super(owner, "Settings", true);
+        this.appSettingsService = appSettingsService;
         setLayout(new BorderLayout(SECTION_GAP, SECTION_GAP));
 
         JPanel content = new JPanel();
@@ -280,11 +278,7 @@ public class SettingsDialog extends JDialog {
         helpFaq.addActionListener(e -> new HelpDialog(owner).setVisible(true));
         JButton encryptSave = new JButton("Encrypt, Save and Close");
         DialogButtonStyles.apply(encryptSave, "icons/save.svg");
-        encryptSave.addActionListener(e -> {
-            if (saveAll()) {
-                closeDialog();
-            }
-        });
+        encryptSave.addActionListener(e -> executeSaveAndClose(this::saveAll, this::closeDialog));
         JButton close = new JButton("Close");
         DialogButtonStyles.apply(close, "icons/close.svg");
         close.addActionListener(e -> closeDialog());
@@ -320,6 +314,10 @@ public class SettingsDialog extends JDialog {
         this.strategyImportHandler = strategyImportHandler;
     }
 
+    public void setDeleteAllDataHandler(Runnable deleteAllDataHandler) {
+        this.deleteAllDataHandler = deleteAllDataHandler;
+    }
+
     public String getEndpoint() { return endpointField.getText().trim(); }
     public boolean telemetryEnabled() { return telemetryEnabled.isSelected(); }
     public boolean autoPausePollingWhenMarketClosed() { return autoPausePollingWhenMarketClosed.isSelected(); }
@@ -346,8 +344,11 @@ public class SettingsDialog extends JDialog {
         String[] creds = appliedCredentialCache.get(mode == null ? ApplicationMode.PAPER : mode);
         return creds == null ? "" : creds[1];
     }
-    public boolean wasSavedDuringOpen() { return savedDuringOpen; }
-    public void prepareForOpen() { savedDuringOpen = false; }
+    public boolean wasSavedDuringOpen() { return savedDuringOpen; }public void prepareForOpen() {
+        savedDuringOpen = false;
+        loadAll();
+        updateBrokerControlState();
+    }
     public void selectBrokerAndMode(BrokerType brokerType, ApplicationMode mode) {
         suppressModeSwitchHandling = true;
         if (brokerType != null) {
@@ -392,20 +393,15 @@ public class SettingsDialog extends JDialog {
         }
 
         try {
-            Files.createDirectories(SETTINGS_FILE.getParent());
-            Properties settings = new Properties();
-            settings.setProperty("userEmail", email);
-            settings.setProperty("endpoint", getEndpoint());
-            settings.setProperty("telemetryEnabled", String.valueOf(telemetryEnabled()));
-            settings.setProperty("autoPausePollingWhenMarketClosed", String.valueOf(autoPausePollingWhenMarketClosed()));
-            settings.setProperty("extendedHoursTradingEnabled", String.valueOf(extendedHoursTradingEnabled()));
-            settings.setProperty("saveCredentials", "true");
-            settings.setProperty("broker", brokerType() == null ? BrokerType.ALPACA.name() : brokerType().name());
-            settings.setProperty("applicationMode", applicationMode().name());
-            try (var out = Files.newOutputStream(SETTINGS_FILE)) {
-                settings.store(out, "NeuralArc settings");
-            }
-
+            appSettingsService.save(new AppSettingsService.AppSettings(
+                    email,
+                    telemetryEnabled(),
+                    autoPausePollingWhenMarketClosed(),
+                    extendedHoursTradingEnabled(),
+                    brokerType() == null ? BrokerType.ALPACA : brokerType(),
+                    applicationMode()
+            ));
+            appSettingsService.saveEndpoint(getEndpoint());
             for (ApplicationMode mode : ApplicationMode.values()) {
                 String[] creds = credentialCache.get(mode);
                 if (creds == null) {
@@ -416,21 +412,14 @@ public class SettingsDialog extends JDialog {
                 if (key.isBlank() || secret.isBlank()) {
                     continue;
                 }
-                credentialManager.save(key, secret.toCharArray(), credentialFileForMode(mode), buildPassphrase(email));
+                appSettingsService.saveCredentials(mode, key, secret);
             }
-            appliedSettings = new AppSettingsService.AppSettings(
-                    email,
-                    telemetryEnabled(),
-                    autoPausePollingWhenMarketClosed(),
-                    extendedHoursTradingEnabled(),
-                    brokerType() == null ? BrokerType.ALPACA : brokerType(),
-                    applicationMode()
-            );
+            appliedSettings = appSettingsService.load();
             syncAppliedCredentialCache();
             savedDuringOpen = true;
             JOptionPane.showMessageDialog(this, "Settings saved successfully.", "Saved", JOptionPane.INFORMATION_MESSAGE);
             return true;
-        } catch (IOException ex) {
+        } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Failed to save settings.", "Error", JOptionPane.ERROR_MESSAGE);
             return false;
         }
@@ -438,68 +427,20 @@ public class SettingsDialog extends JDialog {
 
     private void loadAll() {
         suppressModeSwitchHandling = true;
-        if (Files.exists(SETTINGS_FILE)) {
-            Properties settings = new Properties();
-            try (var in = Files.newInputStream(SETTINGS_FILE)) {
-                settings.load(in);
-                emailField.setText(settings.getProperty("userEmail", ""));
-                endpointField.setText(settings.getProperty("endpoint", endpointField.getText()));
-                telemetryEnabled.setSelected(Boolean.parseBoolean(settings.getProperty("telemetryEnabled", "true")));
-                autoPausePollingWhenMarketClosed.setSelected(Boolean.parseBoolean(settings.getProperty(
-                        "autoPausePollingWhenMarketClosed",
-                        String.valueOf(AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED)
-                )));
-                extendedHoursTradingEnabled.setSelected(Boolean.parseBoolean(settings.getProperty(
-                        "extendedHoursTradingEnabled",
-                        String.valueOf(AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED)
-                )));
-                saveCredentials.setSelected(true);
-                String broker = settings.getProperty("broker", BrokerType.ALPACA.name());
-                try {
-                    brokerBox.setSelectedItem(BrokerType.valueOf(broker));
-                } catch (IllegalArgumentException ignored) {
-                    brokerBox.setSelectedItem(BrokerType.ALPACA);
-                }
-                String mode = settings.getProperty("applicationMode", ApplicationMode.PAPER.name());
-                appModeBox.setSelectedItem(ApplicationMode.valueOf(mode));
-                appliedSettings = new AppSettingsService.AppSettings(
-                        settings.getProperty("userEmail", "").trim(),
-                        Boolean.parseBoolean(settings.getProperty("telemetryEnabled", "true")),
-                        Boolean.parseBoolean(settings.getProperty(
-                                "autoPausePollingWhenMarketClosed",
-                                String.valueOf(AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED)
-                        )),
-                        Boolean.parseBoolean(settings.getProperty(
-                                "extendedHoursTradingEnabled",
-                                String.valueOf(AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED)
-                        )),
-                        parseBroker(settings.getProperty("broker", BrokerType.ALPACA.name())),
-                        parseMode(settings.getProperty("applicationMode", ApplicationMode.PAPER.name()))
-                );
-            } catch (Exception ignored) {
-                appModeBox.setSelectedItem(ApplicationMode.PAPER);
-                appliedSettings = new AppSettingsService.AppSettings(
-                        "",
-                        true,
-                        AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED,
-                        AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED,
-                        BrokerType.ALPACA,
-                        ApplicationMode.PAPER
-                );
-            }
-        }
+        appliedSettings = appSettingsService.load();
+        emailField.setText(appliedSettings.userEmail());
+        endpointField.setText(appSettingsService.loadEndpoint());
+        telemetryEnabled.setSelected(appliedSettings.telemetryEnabled());
+        autoPausePollingWhenMarketClosed.setSelected(appliedSettings.autoPausePollingWhenMarketClosed());
+        extendedHoursTradingEnabled.setSelected(appliedSettings.extendedHoursTradingEnabled());
+        saveCredentials.setSelected(true);
+        brokerBox.setSelectedItem(appliedSettings.brokerType());
+        appModeBox.setSelectedItem(appliedSettings.applicationMode());
 
         String email = getUserEmail();
         if (!email.isBlank()) {
             for (ApplicationMode mode : ApplicationMode.values()) {
-                credentialCache.put(mode, loadCredentialsForMode(mode, email));
-            }
-            // Legacy migration fallback for first run after upgrade.
-            String[] paperCreds = credentialCache.get(ApplicationMode.PAPER);
-            boolean hasPaperCreds = paperCreds != null && !paperCreds[0].isBlank() && !paperCreds[1].isBlank();
-            if (!hasPaperCreds && Files.exists(LEGACY_CREDENTIALS_FILE)) {
-                credentialManager.load(LEGACY_CREDENTIALS_FILE, buildPassphrase(email))
-                        .ifPresent(creds -> credentialCache.put(ApplicationMode.PAPER, creds));
+                credentialCache.put(mode, appSettingsService.loadCredentials(mode));
             }
         }
         displayedCredentialMode = applicationMode();
@@ -526,16 +467,11 @@ public class SettingsDialog extends JDialog {
         String[] creds = credentialCache.get(mode);
         if (creds == null) {
             String email = getUserEmail();
-            creds = email.isBlank() ? new String[]{"", ""} : loadCredentialsForMode(mode, email);
+            creds = email.isBlank() ? new String[]{"", ""} : appSettingsService.loadCredentials(mode);
             credentialCache.put(mode, creds);
         }
         apiKeyField.setText(creds[0]);
         apiSecretField.setText(creds[1]);
-    }
-
-    private String[] loadCredentialsForMode(ApplicationMode mode, String email) {
-        return credentialManager.load(credentialFileForMode(mode), buildPassphrase(email))
-                .orElse(new String[]{"", ""});
     }
 
     private String apiKeyForMode(ApplicationMode mode, String email) {
@@ -543,24 +479,11 @@ public class SettingsDialog extends JDialog {
         if (creds != null && creds[0] != null && !creds[0].isBlank()) {
             return creds[0].trim();
         }
-        if (email.isBlank()) {
-            return "";
-        }
-        return credentialManager.load(credentialFileForMode(mode), buildPassphrase(email))
-                .map(v -> v[0].trim())
-                .orElse("");
-    }
-
-    private Path credentialFileForMode(ApplicationMode mode) {
-        return mode == ApplicationMode.LIVE ? CREDENTIALS_FILE_LIVE : CREDENTIALS_FILE_PAPER;
-    }
-
-    private String buildPassphrase(String email) {
-        return identityService.generateUserId(email).substring(0, 16);
+        String[] loaded = appSettingsService.loadCredentials(mode);
+        return loaded[0] == null ? "" : loaded[0].trim();
     }
 
     private void closeDialog() {
-        loadAll();
         setVisible(false);
     }
 
@@ -573,6 +496,7 @@ public class SettingsDialog extends JDialog {
                 + "• All saved trading strategies<br>"
                 + "• Analytics queue and app logs<br><br>"
                 + "Any active strategies will stop immediately. Open positions will <b>not</b> be automatically closed.<br><br>"
+                + "After deletion, open positions and orders from Alpaca will be reloaded automatically.<br><br>"
                 + "This action <b>cannot be undone</b>."
                 + "</body></html>";
         int choice = JOptionPane.showConfirmDialog(
@@ -587,7 +511,16 @@ public class SettingsDialog extends JDialog {
         }
 
         try {
-            deleteRecursively(APP_DATA_DIR);
+            // 1. Truncate DB tables and reload from Alpaca via the TradingFrame handler.
+            if (deleteAllDataHandler != null) {
+                deleteAllDataHandler.run();
+            }
+
+            // 2. Delete credential and settings files (but NOT neuralarc.db — its
+            //    connection stays open; resetAllData() already cleared the tables).
+            deleteNonDatabaseFiles(APP_DATA_DIR);
+
+            // 3. Reset dialog UI state.
             credentialCache.clear();
             emailField.setText("");
             apiKeyField.setText("");
@@ -608,24 +541,35 @@ public class SettingsDialog extends JDialog {
                     ApplicationMode.PAPER
             );
             appliedCredentialCache.clear();
-            connectionStatus.setText("All local data deleted");
+            connectionStatus.setText("All local data deleted — reloading from Alpaca…");
             connectionStatus.setForeground(TEXT_MUTED);
             updateBrokerControlState();
-            JOptionPane.showMessageDialog(this, "All local app data deleted.", "Deleted", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this,
+                    "All local data deleted. Open positions and orders will be reloaded from Alpaca.",
+                    "Deleted", JOptionPane.INFORMATION_MESSAGE);
         } catch (IOException ex) {
             JOptionPane.showMessageDialog(this, "Failed to delete all local data.", "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
-    private void deleteRecursively(Path root) throws IOException {
+    /**
+     * Deletes all files under {@code root} except the SQLite database file
+     * ({@code neuralarc.db}), which must remain accessible via the open JDBC
+     * connection for the remainder of the session.
+     */
+    private void deleteNonDatabaseFiles(Path root) throws IOException {
         if (!Files.exists(root)) {
             return;
         }
         try (Stream<Path> stream = Files.walk(root)) {
             stream.sorted(Comparator.reverseOrder())
+                    .filter(p -> !p.getFileName().toString().equals("neuralarc.db")
+                              && !p.getFileName().toString().startsWith("neuralarc.db-"))
                     .forEach(path -> {
                         try {
-                            Files.deleteIfExists(path);
+                            if (!Files.isDirectory(path) || isEmptyDirectory(path)) {
+                                Files.deleteIfExists(path);
+                            }
                         } catch (IOException ex) {
                             throw new IllegalStateException("Failed to delete " + path, ex);
                         }
@@ -635,6 +579,14 @@ public class SettingsDialog extends JDialog {
                 throw ioException;
             }
             throw ex;
+        }
+    }
+
+    private static boolean isEmptyDirectory(Path dir) {
+        try (Stream<Path> s = Files.list(dir)) {
+            return s.findFirst().isEmpty();
+        } catch (IOException ignored) {
+            return false;
         }
     }
 
@@ -706,6 +658,14 @@ public class SettingsDialog extends JDialog {
         }
     }
 
+    static boolean executeSaveAndClose(java.util.function.BooleanSupplier saveAction, Runnable closeAction) {
+        if (!saveAction.getAsBoolean()) {
+            return false;
+        }
+        closeAction.run();
+        return true;
+    }
+
     public record ConnectionRequest(BrokerType brokerType, String apiKey, String apiSecret) {}
 
     public record ConnectionResult(boolean connected, String message) {}
@@ -765,25 +725,10 @@ public class SettingsDialog extends JDialog {
             return;
         }
         for (ApplicationMode mode : ApplicationMode.values()) {
-            appliedCredentialCache.put(mode, loadCredentialsForMode(mode, email));
+            appliedCredentialCache.put(mode, appSettingsService.loadCredentials(mode));
         }
     }
 
-    private BrokerType parseBroker(String broker) {
-        try {
-            return BrokerType.valueOf(broker);
-        } catch (Exception ignored) {
-            return BrokerType.ALPACA;
-        }
-    }
-
-    private ApplicationMode parseMode(String mode) {
-        try {
-            return ApplicationMode.valueOf(mode);
-        } catch (Exception ignored) {
-            return ApplicationMode.PAPER;
-        }
-    }
 
     private Border createSectionBorder(String title) {
         TitledBorder border = new TitledBorder(title);

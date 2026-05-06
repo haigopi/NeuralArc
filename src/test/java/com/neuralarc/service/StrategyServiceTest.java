@@ -92,7 +92,7 @@ class StrategyServiceTest {
     }
 
     @Test
-    void closePositionPlacesCloseOrder() {
+    void closePositionPlacesManualExitOrder() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
         InMemoryEventRepository events = new InMemoryEventRepository();
@@ -108,7 +108,7 @@ class StrategyServiceTest {
         StrategyService.StrategyCreationResult result = service.closePosition(strategy.id());
 
         assertTrue(result.success());
-        assertTrue(orders.findLatestByStrategyStage(strategy.id(), StrategyStage.CLOSE_POSITION).isPresent());
+        assertTrue(orders.findLatestByStrategyStage(strategy.id(), StrategyStage.MANUAL_EXIT).isPresent());
     }
 
     @Test

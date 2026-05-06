@@ -322,6 +322,25 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void manualExitRestartsCycleWhenRepeatAfterExitEnabled() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setRestartAfterExitEnabled(true);
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.MANUAL_EXIT, 10, new BigDecimal("9.80")));
+        f.alpaca.position = Optional.empty();
+
+        f.service.pollStrategy(strategy.id());
+
+        List<StrategyOrder> baseOrders = f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == StrategyStage.BASE_BUY)
+                .toList();
+        assertEquals(2, baseOrders.size());
+        assertEquals(StrategyStatus.ACTIVE, f.strategies.findById(strategy.id()).orElseThrow().status());
+    }
+
+    @Test
     void profitableSellDoesNotRestartWhenPositionStillOpen() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
@@ -451,7 +470,11 @@ class StrategyPollingServiceTest {
             return new StrategyOrder(
                     UUID.randomUUID().toString(), strategyId, stage,
                     "ord-" + stage.name(), "client-" + stage.name(), "AAPL",
-                    stage == StrategyStage.TARGET_SELL || stage == StrategyStage.PROFIT_EXIT || stage == StrategyStage.STOP_LOSS || stage == StrategyStage.CLOSE_POSITION
+                    stage == StrategyStage.TARGET_SELL
+                            || stage == StrategyStage.PROFIT_EXIT
+                            || stage == StrategyStage.STOP_LOSS
+                            || stage == StrategyStage.MANUAL_EXIT
+                            || stage == StrategyStage.CLOSE_POSITION
                             ? StrategyOrderSide.SELL
                             : StrategyOrderSide.BUY,
                     StrategyOrderType.LIMIT,

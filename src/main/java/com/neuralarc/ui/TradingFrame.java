@@ -142,6 +142,7 @@ public class TradingFrame extends JFrame {
     private static final Color HEADER_STATUS_LIVE_ACTIVE_DIM = Color.WHITE;
     private final JTextPane eventLog = new JTextPane();
     private final JButton addStrategyButton = new JButton("Add New Stock Strategy");
+    private final JButton portfolioActionsButton = new JButton("Portfolio Actions");
     private final JButton settingsButton = new JButton("Settings");
     private final JButton legalDisclosureButton = new JButton("Legal Disclosure");
     private final Timer liveModeBlinkTimer;
@@ -218,6 +219,8 @@ public class TradingFrame extends JFrame {
     private volatile HttpAlpacaClient paperModeClient;
     private volatile HttpAlpacaClient liveModeClient;
     private volatile long lastBatchGridPriceRefreshAtMillis;
+    private volatile boolean batchGridPriceRefreshRequestedFromStream;
+    private volatile long lastLoggedSnapshotIntervalMillis = -1L;
     private volatile long lastClosedMarketPollingCycleAtMillis;
     private final AutoAnalyzeResultStore autoAnalyzeResultStore = new AutoAnalyzeResultStore();
     private final OnboardingStateStore onboardingStateStore = new OnboardingStateStore();
@@ -322,6 +325,8 @@ public class TradingFrame extends JFrame {
             }
 
             @Override public Position loadPositionForStrategy(Strategy strategy) { return TradingFrame.this.loadPositionForStrategy(strategy); }
+            @Override public boolean hasOpenPosition(Strategy strategy) { return TradingFrame.this.loadPositionForStrategy(strategy).getTotalShares() > 0; }
+            @Override public StrategyService.StrategyCreationResult sellPosition(Strategy strategy) { return strategyService.closePosition(strategy.id()); }
             @Override public BigDecimal realizedPnlForStrategy(String strategyId) { return TradingFrame.this.realizedPnlForStrategy(strategyId); }
             @Override public String closePaperAccountState(Strategy strategy) { return TradingFrame.this.closePaperAccountState(strategy); }
             @Override public void updateHeaderModeStatus(BrokerType brokerType) { TradingFrame.this.updateHeaderModeStatus(brokerType); }
@@ -631,6 +636,8 @@ public class TradingFrame extends JFrame {
         rightControlsGbc.gridx = 0;
         rightControls.add(addStrategyButton, rightControlsGbc);
         rightControlsGbc.gridx = 1;
+        rightControls.add(portfolioActionsButton, rightControlsGbc);
+        rightControlsGbc.gridx = 2;
         rightControls.add(settingsButton, rightControlsGbc);
 
         JButton killSwitchButton = new JButton("KILL SWITCH");
@@ -691,7 +698,7 @@ public class TradingFrame extends JFrame {
             }
         });
         killSwitchButton.addActionListener(e -> killAllStrategies());
-        rightControlsGbc.gridx = 2;
+        rightControlsGbc.gridx = 3;
         rightControlsGbc.insets = new java.awt.Insets(0, 0, 0, 0);
         rightControls.add(killSwitchButton, rightControlsGbc);
         headerPanel.add(leftControls, BorderLayout.WEST);
@@ -716,8 +723,8 @@ public class TradingFrame extends JFrame {
         strategyTable.getColumnModel().getColumn(9).setCellRenderer(new ActionsRenderer());
         strategyTable.getColumnModel().getColumn(7).setPreferredWidth(240);
         strategyTable.getColumnModel().getColumn(7).setMinWidth(220);
-        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(380);
-        strategyTable.getColumnModel().getColumn(9).setMinWidth(360);
+        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(500);
+        strategyTable.getColumnModel().getColumn(9).setMinWidth(480);
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
         // Using mousePressed (not mouseClicked) gives instant response — mouseClicked only fires
@@ -734,7 +741,7 @@ public class TradingFrame extends JFrame {
                     strategyTable.setRowSelectionInterval(viewRow, viewRow);
                 }
 
-                // Dispatch the action buttons (column 9 only) via four equal zones.
+                // Dispatch the action buttons (column 9 only) via five equal zones.
                 // Use invokeLater so the action runs AFTER ALL mousePressed handlers
                 // (ours + BasicTableUI) have finished — this is critical because:
                 //   • BasicTableUI fires its own mousePressed AFTER ours (LIFO order).
@@ -744,7 +751,7 @@ public class TradingFrame extends JFrame {
                 if (viewRow < 0 || viewRow >= strategies.size() || viewCol != 9) return;
                 java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, viewCol, false);
                 int xInCell  = e.getX() - cellRect.x;
-                int section  = Math.max(1, cellRect.width / 4);
+                int section  = Math.max(1, cellRect.width / 5);
                 final int capturedRow     = viewRow;
                 final int capturedX       = xInCell;
                 final int capturedSection = section;
@@ -754,6 +761,8 @@ public class TradingFrame extends JFrame {
                     } else if (capturedX < capturedSection * 2) {
                         togglePauseResume(capturedRow);
                     } else if (capturedX < capturedSection * 3) {
+                        sellStrategy(capturedRow);
+                    } else if (capturedX < capturedSection * 4) {
                         previewLivePromotion(capturedRow);
                     } else {
                         deleteStrategy(capturedRow);
@@ -1049,7 +1058,7 @@ public class TradingFrame extends JFrame {
                 request.apiKey(),
                 request.apiSecret(),
                 true,
-                false
+                true
         ));
         strategyTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
@@ -1078,8 +1087,10 @@ public class TradingFrame extends JFrame {
         applyFontRecursively(this);
 
         styleHeaderButton(addStrategyButton);
+        styleHeaderButton(portfolioActionsButton);
         styleHeaderButton(settingsButton);
         applyButtonIcon(addStrategyButton, "icons/add-stock-strategy.svg", 16);
+        applyButtonIcon(portfolioActionsButton, "icons/actions.svg", 16);
         applyButtonIcon(settingsButton, "icons/settings.svg", 16);
     }
 
@@ -1326,7 +1337,154 @@ public class TradingFrame extends JFrame {
 
     private void wireEvents() {
         addStrategyButton.addActionListener(e -> addStrategy());
+        portfolioActionsButton.addActionListener(e -> showPortfolioActionsMenu());
         settingsButton.addActionListener(e -> openSettingsDialog());
+    }
+
+    private void togglePauseResume(int viewRow) {
+        strategyActionsController.togglePauseResume(viewRow);
+    }
+
+    private void sellStrategy(int viewRow) {
+        strategyActionsController.sellPosition(viewRow);
+    }
+
+    private void previewLivePromotion(int viewRow) {
+        strategyActionsController.previewLivePromotion(viewRow);
+    }
+
+    private void deleteStrategy(int viewRow) {
+        strategyActionsController.deleteStrategy(viewRow);
+    }
+
+    private boolean hasOpenPosition(Strategy strategy) {
+        return loadPositionForStrategy(strategy).getTotalShares() > 0;
+    }
+
+    private StrategyService.StrategyCreationResult sellPosition(Strategy strategy) {
+        StrategyService modeAwareService = strategyServiceForMode(strategy.mode());
+        if (modeAwareService == null) {
+            return StrategyService.StrategyCreationResult.failed(
+                    "Broker client is not configured for " + strategy.mode().name() + " mode."
+            );
+        }
+        return modeAwareService.closePosition(strategy.id());
+    }
+
+    private StrategyService strategyServiceForMode(StrategyMode mode) {
+        ApplicationMode applicationMode = mode == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER;
+        HttpAlpacaClient client = alpacaClientForMode(applicationMode);
+        return tradingRuntimeSupport.createStrategyService(client, mode);
+    }
+
+    private void showPortfolioActionsMenu() {
+        JPopupMenu menu = new JPopupMenu();
+        menu.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(70, 76, 90), 1, true),
+                new EmptyBorder(4, 4, 4, 4)
+        ));
+        menu.add(createStatusMenuItem("Sell Profitable Positions", "icons/submit.svg",
+                () -> handlePortfolioSellAction(PortfolioSellScope.PROFITABLE)));
+        menu.add(createStatusMenuItem("Sell All Open Positions", "icons/close.svg",
+                () -> handlePortfolioSellAction(PortfolioSellScope.ALL_OPEN)));
+        menu.add(createStatusMenuItem("Sell Losing Positions", "icons/delete.svg",
+                () -> handlePortfolioSellAction(PortfolioSellScope.LOSS_ONLY)));
+        menu.show(portfolioActionsButton, 0, portfolioActionsButton.getHeight());
+    }
+
+    private void handlePortfolioSellAction(PortfolioSellScope scope) {
+        List<ManagedStrategy> targets = strategies.stream()
+                .filter(scope::matches)
+                .toList();
+        if (targets.isEmpty()) {
+            JOptionPane.showMessageDialog(this, scope.emptyMessage(), scope.dialogTitle(), JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                buildPortfolioSellConfirmation(scope, targets),
+                scope.dialogTitle(),
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (choice != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        new SwingWorker<PortfolioSellBatchResult, Void>() {
+            @Override
+            protected PortfolioSellBatchResult doInBackground() {
+                List<String> successes = new ArrayList<>();
+                List<String> failures = new ArrayList<>();
+                for (ManagedStrategy entry : targets) {
+                    StrategyService.StrategyCreationResult result = sellPosition(entry.strategy);
+                    if (result.success()) {
+                        successes.add(entry.strategy.symbol());
+                    } else {
+                        failures.add(entry.strategy.symbol() + ": " + result.error());
+                    }
+                }
+                return new PortfolioSellBatchResult(successes, failures);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    PortfolioSellBatchResult result = get();
+                    syncStrategiesFromRepository();
+                    refreshStrategyTableData();
+                    updateSelectedStrategy();
+                    refreshPanels();
+                    updateStatusBar();
+                    log(scope.logPrefix() + " submitted for " + result.successes().size() + " strategy(ies).");
+                    if (!result.failures().isEmpty()) {
+                        log(scope.logPrefix() + " failures: " + String.join(" | ", result.failures()));
+                    }
+                    JOptionPane.showMessageDialog(
+                            TradingFrame.this,
+                            buildPortfolioSellResultMessage(scope, result),
+                            scope.dialogTitle(),
+                            result.failures().isEmpty() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE
+                    );
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(
+                            TradingFrame.this,
+                            "Failed to submit the requested sell orders: " + ex.getMessage(),
+                            scope.dialogTitle(),
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                }
+            }
+        }.execute();
+    }
+
+    private String buildPortfolioSellConfirmation(PortfolioSellScope scope, List<ManagedStrategy> targets) {
+        String symbols = targets.stream()
+                .limit(6)
+                .map(entry -> entry.strategy.symbol())
+                .collect(Collectors.joining(", "));
+        String ellipsis = targets.size() > 6 ? ", ..." : "";
+        return "<html><body style='width:360px'>"
+                + "<b>" + scope.confirmHeading(targets.size()) + "</b><br><br>"
+                + "Symbols: " + symbols + ellipsis + "<br><br>"
+                + "Each strategy will submit a manual limit sell using its latest broker price."
+                + "<br>Strategies configured to repeat after exit can re-initiate after the position fully closes."
+                + "</body></html>";
+    }
+
+    private String buildPortfolioSellResultMessage(PortfolioSellScope scope, PortfolioSellBatchResult result) {
+        StringBuilder sb = new StringBuilder("<html><body style='width:360px'>");
+        sb.append("<b>").append(scope.menuLabel()).append("</b><br><br>");
+        sb.append("Submitted: ").append(result.successes().size());
+        if (!result.successes().isEmpty()) {
+            sb.append("<br>").append(String.join(", ", result.successes()));
+        }
+        if (!result.failures().isEmpty()) {
+            sb.append("<br><br><b>Failed:</b><br>").append(String.join("<br>", result.failures()));
+        }
+        sb.append("</body></html>");
+        return sb.toString();
     }
 
     public void promptForRequiredSettings() {
@@ -1452,7 +1610,7 @@ public class TradingFrame extends JFrame {
             try {
                 int dueStrategies = strategyPollingService.pollDueStrategies();
                 List<Strategy> stored = strategyRepository.findAll();
-                boolean refreshBrokerSnapshots = shouldRunBatchGridPriceRefresh() && hasStrategiesNeedingBrokerSnapshots(stored);
+                boolean refreshBrokerSnapshots = shouldRunBatchGridPriceRefresh(stored) && hasStrategiesNeedingBrokerSnapshots(stored);
                 Map<String, Position> positionSnapshots = refreshBrokerSnapshots
                         ? loadPositionSnapshotsForStrategies(stored)
                         : Map.of();
@@ -1491,13 +1649,29 @@ public class TradingFrame extends JFrame {
         return false;
     }
 
-    private boolean shouldRunBatchGridPriceRefresh() {
+    private boolean shouldRunBatchGridPriceRefresh(List<Strategy> stored) {
         long now = System.currentTimeMillis();
-        if (now - lastBatchGridPriceRefreshAtMillis >= 5_000L) {
+        long refreshIntervalMillis = BrokerSnapshotRefreshPolicy.resolveIntervalMillis(stored);
+        logSnapshotIntervalIfChanged(refreshIntervalMillis);
+        if (batchGridPriceRefreshRequestedFromStream) {
+            batchGridPriceRefreshRequestedFromStream = false;
+            lastBatchGridPriceRefreshAtMillis = now;
+            return true;
+        }
+        if (now - lastBatchGridPriceRefreshAtMillis >= refreshIntervalMillis) {
             lastBatchGridPriceRefreshAtMillis = now;
             return true;
         }
         return false;
+    }
+
+    private void logSnapshotIntervalIfChanged(long refreshIntervalMillis) {
+        if (refreshIntervalMillis <= 0L || refreshIntervalMillis == lastLoggedSnapshotIntervalMillis) {
+            return;
+        }
+        lastLoggedSnapshotIntervalMillis = refreshIntervalMillis;
+        log("[POLL][SNAPSHOT] interval=" + (refreshIntervalMillis / 1000L)
+                + "s policy=min-with-floor(2s) eligibility=ACTIVE-only");
     }
 
     private Map<String, Position> loadPositionSnapshotsForStrategies(List<Strategy> stored) {
@@ -1640,8 +1814,10 @@ public class TradingFrame extends JFrame {
             return;
         }
         refreshStrategyTableData();
-        if (!strategies.isEmpty()) {
+        if (!strategies.isEmpty() && strategyTable.getRowCount() > 0) {
             strategyTable.setRowSelectionInterval(0, 0);
+        } else {
+            strategyTable.clearSelection();
         }
         updateSelectedStrategy();
         updateHeaderModeStatus(currentBrokerType);
@@ -1788,18 +1964,6 @@ public class TradingFrame extends JFrame {
         updateHeaderModeStatus(currentBrokerType);
         refreshStrategyTableData();
         refreshPanels();
-    }
-
-    private void togglePauseResume(int viewRow) {
-        strategyActionsController.togglePauseResume(viewRow);
-    }
-
-    private void previewLivePromotion(int viewRow) {
-        strategyActionsController.previewLivePromotion(viewRow);
-    }
-
-    private void deleteStrategy(int viewRow) {
-        strategyActionsController.deleteStrategy(viewRow);
     }
 
     private String closePaperAccountState(Strategy strategy) {
@@ -2282,11 +2446,7 @@ public class TradingFrame extends JFrame {
     }
 
     private boolean includeInBrokerSnapshotRefresh(Strategy strategy) {
-        if (strategy == null) {
-            return false;
-        }
-        return strategy.status() != StrategyStatus.STOPPED
-                && strategy.status() != StrategyStatus.ARCHIVED;
+        return BrokerSnapshotRefreshPolicy.eligibleForBrokerSnapshot(strategy);
     }
 
     private boolean hasStrategiesNeedingBrokerSnapshots(List<Strategy> stored) {
@@ -2745,9 +2905,6 @@ public class TradingFrame extends JFrame {
         if (strategy == null) {
             return new Position("");
         }
-        if (currentBrokerType != BrokerType.ALPACA) {
-            return tradingApi == null ? new Position(strategy.symbol()) : tradingApi.getPosition(strategy.symbol());
-        }
         HttpAlpacaClient client = alpacaClientForStrategyMode(strategy.mode());
         if (client == null) {
             return new Position(strategy.symbol());
@@ -3057,22 +3214,26 @@ public class TradingFrame extends JFrame {
     private final class ActionsRenderer extends JPanel implements TableCellRenderer {
         private final JButton editButton = new JButton("Edit");
         private final JButton toggleButton = new JButton();
+        private final JButton sellButton = new JButton("Sell");
         private final JButton promoteButton = new JButton("Promote to Live");
         private final JButton deleteButton = new JButton("Delete");
 
         private ActionsRenderer() {
-            super(new GridLayout(1, 4, 6, 0));
+            super(new GridLayout(1, 5, 6, 0));
             setOpaque(true);
             applyButtonIcon(editButton, "icons/edit.svg", 13);
             applyButtonIcon(toggleButton, "icons/pause.svg", 13);
+            applyButtonIcon(sellButton, "icons/submit.svg", 13);
             applyButtonIcon(promoteButton, "icons/add-stock-strategy.svg", 13);
             applyButtonIcon(deleteButton, "icons/delete.svg", 13);
             styleActionButton(editButton, new Color(63, 81, 181));
             styleActionButton(toggleButton, new Color(198, 40, 40));
+            styleActionButton(sellButton, new Color(230, 81, 0));
             styleActionButton(promoteButton, new Color(25, 118, 210));
             styleActionButton(deleteButton, new Color(156, 39, 39));
             add(editButton);
             add(toggleButton);
+            add(sellButton);
             add(promoteButton);
             add(deleteButton);
         }
@@ -3087,12 +3248,15 @@ public class TradingFrame extends JFrame {
                             strategy.isPaused(),
                             strategy.isPauseResumeBusy(),
                             strategy.pauseResumeBusyText(),
-                            strategy.strategy.mode() == StrategyMode.PAPER
+                            strategy.strategy.mode() == StrategyMode.PAPER,
+                            strategy.cachedPosition().getTotalShares() > 0
                     )
             );
             toggleButton.setText(actionsViewModel.toggleText());
             styleActionButton(toggleButton, actionsViewModel.toggleColor());
             toggleButton.setEnabled(actionsViewModel.toggleEnabled());
+            sellButton.setEnabled(actionsViewModel.sellEnabled());
+            styleActionButton(sellButton, actionsViewModel.sellColor());
             promoteButton.setEnabled(actionsViewModel.promoteEnabled());
             styleActionButton(promoteButton, actionsViewModel.promoteColor());
             setBackground(selectionAwareRowColor(isSelected, table));
@@ -3171,10 +3335,8 @@ public class TradingFrame extends JFrame {
         if (tradingApi == null || symbol == null || symbol.isBlank()) {
             return;
         }
-        // Force the next triggerPollingCycle tick (runs every 1 s) to do a full batch
-        // getPositions() sweep rather than making a per-symbol API call here on every
-        // WebSocket trade event.  The UI still refreshes immediately from cached data.
-        lastBatchGridPriceRefreshAtMillis = 0;
+        // Request one immediate batch refresh on the next polling tick.
+        batchGridPriceRefreshRequestedFromStream = true;
         ManagedStrategy entry = findStrategy(symbol);
         if (entry == null) {
             return;
@@ -3220,5 +3382,85 @@ public class TradingFrame extends JFrame {
         legalDisclosureButton.setForeground(legalDisclosureAccepted
                 ? new Color(220, 255, 220)
                 : new Color(255, 235, 190));
+    }
+
+    private record PortfolioSellBatchResult(List<String> successes, List<String> failures) {
+    }
+
+    private enum PortfolioSellScope {
+        PROFITABLE("Sell Profitable Positions") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                Position position = entry.cachedPosition();
+                return position.getTotalShares() > 0 && position.unrealizedPnl().compareTo(BigDecimal.ZERO) > 0;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Sell " + count + " profitable position(s)?";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no profitable open positions to sell.";
+            }
+        },
+        ALL_OPEN("Sell All Open Positions") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return entry.cachedPosition().getTotalShares() > 0;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Sell all " + count + " open position(s)?";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no open positions to sell.";
+            }
+        },
+        LOSS_ONLY("Sell Losing Positions") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                Position position = entry.cachedPosition();
+                return position.getTotalShares() > 0 && position.unrealizedPnl().compareTo(BigDecimal.ZERO) < 0;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Sell " + count + " losing position(s)?";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no losing open positions to sell.";
+            }
+        };
+
+        private final String menuLabel;
+
+        PortfolioSellScope(String menuLabel) {
+            this.menuLabel = menuLabel;
+        }
+
+        abstract boolean matches(ManagedStrategy entry);
+
+        abstract String confirmHeading(int count);
+
+        abstract String emptyMessage();
+
+        String menuLabel() {
+            return menuLabel;
+        }
+
+        String dialogTitle() {
+            return menuLabel;
+        }
+
+        String logPrefix() {
+            return "[" + menuLabel + "]";
+        }
     }
 }

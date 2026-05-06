@@ -56,6 +56,11 @@ public final class AppDatabase {
         }
     }
 
+    /** Creates an isolated database instance for tests or scoped services. */
+    public static AppDatabase open(Path dbPath) {
+        return new AppDatabase(dbPath);
+    }
+
     /** Package-visible constructor used directly by repository tests. */
     AppDatabase(Path dbPath) {
         try {
@@ -121,6 +126,31 @@ public final class AppDatabase {
         root.put("aggregate_pnl", exportTable("aggregate_pnl"));
         // app_settings deliberately excluded — it contains encrypted credentials.
         return root;
+    }
+
+    /**
+     * Truncates all user data tables (strategies, strategy_orders, strategy_events,
+     * aggregate_pnl, app_settings) in a single transaction.
+     *
+     * <p>The SQLite connection and schema remain open and intact after this call.
+     * In-memory repository caches must be invalidated by the caller.
+     */
+    public void resetAllData() throws SQLException {
+        connection.setAutoCommit(false);
+        try (Statement st = connection.createStatement()) {
+            st.execute("DELETE FROM strategy_events");
+            st.execute("DELETE FROM strategy_orders");
+            st.execute("DELETE FROM strategies");
+            st.execute("DELETE FROM aggregate_pnl");
+            st.execute("DELETE FROM app_settings");
+            connection.commit();
+            LOG.info("resetAllData: all user data tables truncated");
+        } catch (SQLException ex) {
+            connection.rollback();
+            throw ex;
+        } finally {
+            connection.setAutoCommit(true);
+        }
     }
 
     /**

@@ -1,7 +1,9 @@
 package com.neuralarc.api;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public interface AlpacaClient {
@@ -22,4 +24,24 @@ public interface AlpacaClient {
     List<AlpacaPositionData> getPositions();
 
     BigDecimal getLatestPrice(String symbol);
+
+    /**
+     * Batch-fetch the latest trade price for multiple symbols in a single API call.
+     * The default implementation falls back to calling {@link #getLatestPrice} for each
+     * symbol individually; concrete broker clients should override this with a real
+     * batch endpoint for efficiency.
+     */
+    default Map<String, BigDecimal> getLatestPrices(List<String> symbols) {
+        if (symbols == null || symbols.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, BigDecimal> result = new LinkedHashMap<>();
+        for (String symbol : symbols) {
+            if (symbol != null && !symbol.isBlank()) {
+                String upper = symbol.trim().toUpperCase();
+                result.put(upper, getLatestPrice(upper));
+            }
+        }
+        return result;
+    }
 }
