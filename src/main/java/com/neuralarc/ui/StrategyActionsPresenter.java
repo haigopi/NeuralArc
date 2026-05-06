@@ -21,7 +21,7 @@ public final class StrategyActionsPresenter {
                 : busy
                 ? state.busyText()
                 : paused
-                ? state.manuallyCanceled() ? "Place Limit Buy Again" : "Resume"
+                ? (!state.hasPosition() || state.manuallyCanceled()) ? "Place Limit Buy Again" : "Resume"
                 : "Cancel";
 
         Color toggleColor = archived || busy

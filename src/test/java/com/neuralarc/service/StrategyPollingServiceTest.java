@@ -15,6 +15,8 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -239,6 +241,49 @@ class StrategyPollingServiceTest {
         assertTrue(strategyOrders.stream()
                 .filter(order -> "ord-missing".equals(order.alpacaOrderId()))
                 .allMatch(order -> order.status() == StrategyOrderStatus.CANCELED));
+    }
+
+    @Test
+    void manualPauseDuringInFlightPollDoesNotRecreateBaseBuy() throws Exception {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        StrategyOrder pendingBase = new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY,
+                "ord-missing", "client-missing", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT,
+                new BigDecimal("8.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO,
+                StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        );
+        f.orders.save(pendingBase);
+        f.alpaca.position = Optional.empty();
+        f.alpaca.orderById.clear();
+        f.alpaca.blockNextOpenOrdersCall();
+
+        Thread pollingThread = new Thread(() -> f.service.pollStrategy(strategy.id()), "test-poll-in-flight");
+        pollingThread.start();
+        assertTrue(f.alpaca.awaitOpenOrdersBlock(), "Poll must reach deterministic open-orders gate");
+
+        Strategy paused = f.strategies.findById(strategy.id()).orElseThrow();
+        paused.setStatus(StrategyStatus.PAUSED);
+        paused.setCurrentState(StrategyLifecycleState.PAUSED);
+        paused.setPauseReason(PauseReason.USER_PAUSED);
+        f.strategies.save(paused);
+
+        f.alpaca.releaseBlockedOpenOrders();
+        pollingThread.join(3000L);
+
+        Strategy after = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.PAUSED, after.status());
+        assertEquals(PauseReason.USER_PAUSED, after.pauseReason());
+
+        List<StrategyOrder> ordersAfter = f.orders.findByStrategyId(strategy.id());
+        long pendingBaseOrders = ordersAfter.stream()
+                .filter(order -> order.stage() == StrategyStage.BASE_BUY)
+                .filter(order -> order.status() == StrategyOrderStatus.SUBMITTED || order.status() == StrategyOrderStatus.PENDING)
+                .count();
+        assertEquals(0L, pendingBaseOrders, "No base-buy re-submit after manual pause during in-flight poll");
     }
 
     @Test
@@ -601,6 +646,8 @@ class StrategyPollingServiceTest {
         int positionCalls;
         int priceCalls;
         int openOrderCalls;
+        private volatile CountDownLatch openOrdersEnteredLatch;
+        private volatile CountDownLatch openOrdersReleaseLatch;
 
         @Override
         public AlpacaOrderData submitLimitBuyOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
@@ -640,12 +687,14 @@ class StrategyPollingServiceTest {
         @Override
         public List<AlpacaOrderData> getOpenOrders(String symbol) {
             openOrderCalls++;
+            awaitOpenOrdersGateIfConfigured();
             return orderById.values().stream().filter(o -> o.symbol().equalsIgnoreCase(symbol)).toList();
         }
 
         @Override
         public List<AlpacaOrderData> getOpenOrders() {
             openOrderCalls++;
+            awaitOpenOrdersGateIfConfigured();
             return new ArrayList<>(orderById.values());
         }
 
@@ -669,6 +718,40 @@ class StrategyPollingServiceTest {
         public BigDecimal getLatestPrice(String symbol) {
             priceCalls++;
             return latestPrice;
+        }
+
+        void blockNextOpenOrdersCall() {
+            openOrdersEnteredLatch = new CountDownLatch(1);
+            openOrdersReleaseLatch = new CountDownLatch(1);
+        }
+
+        boolean awaitOpenOrdersBlock() throws InterruptedException {
+            CountDownLatch entered = openOrdersEnteredLatch;
+            return entered != null && entered.await(2, TimeUnit.SECONDS);
+        }
+
+        void releaseBlockedOpenOrders() {
+            CountDownLatch release = openOrdersReleaseLatch;
+            if (release != null) {
+                release.countDown();
+            }
+        }
+
+        private void awaitOpenOrdersGateIfConfigured() {
+            CountDownLatch entered = openOrdersEnteredLatch;
+            CountDownLatch release = openOrdersReleaseLatch;
+            if (entered == null || release == null) {
+                return;
+            }
+            entered.countDown();
+            try {
+                release.await(2, TimeUnit.SECONDS);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            } finally {
+                openOrdersEnteredLatch = null;
+                openOrdersReleaseLatch = null;
+            }
         }
     }
 

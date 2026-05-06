@@ -51,4 +51,13 @@ class StrategyActionsPresenterTest {
         assertEquals("Place Limit Buy Again", viewModel.toggleText());
         assertTrue(viewModel.toggleEnabled());
     }
+
+    @Test
+    void pausedWithoutPositionShowsPlaceLimitBuyAgainEvenWhenNotManualPause() {
+        StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
+                new StrategyActionsPresenter.StrategyActionsState(false, true, false, false, "", true, false)
+        );
+
+        assertEquals("Place Limit Buy Again", viewModel.toggleText());
+    }
 }
