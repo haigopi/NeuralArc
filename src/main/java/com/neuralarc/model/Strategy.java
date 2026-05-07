@@ -130,7 +130,7 @@ public class Strategy {
         this.pauseReason = PauseReason.NONE;
         this.resumeStateBeforePause = this.currentState;
         this.profitControlMode = ProfitControlMode.NONE;
-        this.automaticStopSellThresholdType = ThresholdType.PERCENTAGE;
+        this.automaticStopSellThresholdType = ThresholdType.FIXED_AMOUNT;
         this.automaticStopSellThreshold = BigDecimal.ZERO;
         this.automaticStopSellTrailingType = TrailingType.PERCENTAGE;
         this.automaticStopSellTrailingValue = BigDecimal.ZERO;
@@ -425,7 +425,7 @@ public class Strategy {
     public BigDecimal automaticStopSellTrailingValue() { return automaticStopSellTrailingValue; }
 
     public void setProfitControlMode(ProfitControlMode mode) { this.profitControlMode = mode == null ? ProfitControlMode.NONE : mode; touch(); }
-    public void setAutomaticStopSellThresholdType(ThresholdType type) { this.automaticStopSellThresholdType = type == null ? ThresholdType.PERCENTAGE : type; touch(); }
+    public void setAutomaticStopSellThresholdType(ThresholdType type) { this.automaticStopSellThresholdType = type == null ? ThresholdType.FIXED_AMOUNT : type; touch(); }
     public void setAutomaticStopSellThreshold(BigDecimal value) { this.automaticStopSellThreshold = money(value); touch(); }
     public void setAutomaticStopSellTrailingType(TrailingType type) { this.automaticStopSellTrailingType = type == null ? TrailingType.PERCENTAGE : type; touch(); }
     public void setAutomaticStopSellTrailingValue(BigDecimal value) { this.automaticStopSellTrailingValue = money(value); touch(); }

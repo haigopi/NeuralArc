@@ -1,5 +1,7 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.model.StrategyStatus;
+
 import java.awt.Color;
 
 public final class StrategyActionsPresenter {
@@ -10,21 +12,39 @@ public final class StrategyActionsPresenter {
     private static final Color PROMOTE_ENABLED = new Color(25, 118, 210);
 
     public StrategyActionsViewModel present(StrategyActionsState state) {
-        boolean archived = state.archived();
+        StrategyStatus status = state.status();
         boolean busy = state.busy();
-        boolean paused = state.paused();
-        boolean canPromote = state.paperMode() && !archived;
-        boolean canSell = state.hasPosition() && !archived && !busy;
+        boolean paused = status == StrategyStatus.PAUSED;
+        boolean marketOpenForUi = state.marketOpenForUi();
+        boolean actionableToggle = status == StrategyStatus.ACTIVE || status == StrategyStatus.PAUSED;
+        boolean canToggle = actionableToggle
+                && !busy
+                && (status == StrategyStatus.ACTIVE || marketOpenForUi);
+        boolean canPromote = state.paperMode()
+                && (status == StrategyStatus.ACTIVE || status == StrategyStatus.PAUSED)
+                && marketOpenForUi
+                && !busy;
+        boolean canSell = state.hasPosition()
+                && status != StrategyStatus.ARCHIVED
+                && status != StrategyStatus.CREATED
+                && marketOpenForUi
+                && !busy;
 
-        String toggleText = archived
-                ? "Archived"
-                : busy
+        String toggleText = busy
                 ? state.busyText()
+                : status == StrategyStatus.ARCHIVED
+                ? "Archived"
+                : status == StrategyStatus.COMPLETED
+                ? "Completed"
+                : status == StrategyStatus.FAILED
+                ? "Failed"
+                : status == StrategyStatus.STOPPED
+                ? "Stopped"
                 : paused
                 ? (!state.hasPosition() || state.manuallyCanceled()) ? "Place Limit Buy Again" : "Resume"
                 : "Cancel";
 
-        Color toggleColor = archived || busy
+        Color toggleColor = busy || !actionableToggle
                 ? DISABLED
                 : paused
                 ? RESUME
@@ -35,7 +55,7 @@ public final class StrategyActionsPresenter {
         return new StrategyActionsViewModel(
                 toggleText,
                 toggleColor,
-                !archived,
+                canToggle,
                 canSell,
                 sellColor,
                 canPromote,
@@ -44,13 +64,13 @@ public final class StrategyActionsPresenter {
     }
 
     public record StrategyActionsState(
-            boolean archived,
-            boolean paused,
+            StrategyStatus status,
             boolean manuallyCanceled,
             boolean busy,
             String busyText,
             boolean paperMode,
-            boolean hasPosition
+            boolean hasPosition,
+            boolean marketOpenForUi
     ) {
         public StrategyActionsState {
             busyText = busyText == null || busyText.isBlank() ? "Working..." : busyText;

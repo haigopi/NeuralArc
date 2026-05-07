@@ -319,7 +319,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         ps.setString(i++, s.pauseReason().name());
         ps.setString(i++, s.resumeStateBeforePause().name());
         ps.setString(i++, s.profitControlMode() == null ? ProfitControlMode.NONE.name() : s.profitControlMode().name());
-        ps.setString(i++, s.automaticStopSellThresholdType() == null ? ThresholdType.PERCENTAGE.name() : s.automaticStopSellThresholdType().name());
+        ps.setString(i++, s.automaticStopSellThresholdType() == null ? ThresholdType.FIXED_AMOUNT.name() : s.automaticStopSellThresholdType().name());
         ps.setString(i++, s.automaticStopSellThreshold() == null ? "0.00" : s.automaticStopSellThreshold().toPlainString());
         ps.setString(i++, s.automaticStopSellTrailingType() == null ? TrailingType.PERCENTAGE.name() : s.automaticStopSellTrailingType().name());
         ps.setString(i++, s.automaticStopSellTrailingValue() == null ? "0.00" : s.automaticStopSellTrailingValue().toPlainString());
@@ -430,7 +430,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         s.setPauseReason(safePauseReason(o.optString("pauseReason", "NONE")));
         s.setResumeStateBeforePause(safeLifecycle(o.optString("resumeStateBeforePause", s.currentState().name())));
         s.setProfitControlMode(safeProfitControlMode(o.optString("profitControlMode", "NONE")));
-        s.setAutomaticStopSellThresholdType(safeThresholdType(o.optString("automaticStopSellThresholdType", "PERCENTAGE")));
+        s.setAutomaticStopSellThresholdType(safeThresholdType(o.optString("automaticStopSellThresholdType", "FIXED_AMOUNT")));
         s.setAutomaticStopSellThreshold(decimal(o, "automaticStopSellThreshold"));
         s.setAutomaticStopSellTrailingType(safeTrailingType(o.optString("automaticStopSellTrailingType", "PERCENTAGE")));
         s.setAutomaticStopSellTrailingValue(decimal(o, "automaticStopSellTrailingValue"));
@@ -479,7 +479,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         o.put("pauseReason", s.pauseReason().name());
         o.put("resumeStateBeforePause", s.resumeStateBeforePause().name());
         o.put("profitControlMode", s.profitControlMode() == null ? ProfitControlMode.NONE.name() : s.profitControlMode().name());
-        o.put("automaticStopSellThresholdType", s.automaticStopSellThresholdType() == null ? ThresholdType.PERCENTAGE.name() : s.automaticStopSellThresholdType().name());
+        o.put("automaticStopSellThresholdType", s.automaticStopSellThresholdType() == null ? ThresholdType.FIXED_AMOUNT.name() : s.automaticStopSellThresholdType().name());
         o.put("automaticStopSellThreshold", s.automaticStopSellThreshold() == null ? "0.00" : s.automaticStopSellThreshold().toPlainString());
         o.put("automaticStopSellTrailingType", s.automaticStopSellTrailingType() == null ? TrailingType.PERCENTAGE.name() : s.automaticStopSellTrailingType().name());
         o.put("automaticStopSellTrailingValue", s.automaticStopSellTrailingValue() == null ? "0.00" : s.automaticStopSellTrailingValue().toPlainString());
@@ -519,8 +519,8 @@ public final class SqliteStrategyRepository implements StrategyRepository {
     }
 
     private ThresholdType safeThresholdType(String v) {
-        try { return ThresholdType.valueOf(v == null || v.isBlank() ? "PERCENTAGE" : v); }
-        catch (IllegalArgumentException ex) { return ThresholdType.PERCENTAGE; }
+        try { return ThresholdType.valueOf(v == null || v.isBlank() ? "FIXED_AMOUNT" : v); }
+        catch (IllegalArgumentException ex) { return ThresholdType.FIXED_AMOUNT; }
     }
 
     private TrailingType safeTrailingType(String v) {

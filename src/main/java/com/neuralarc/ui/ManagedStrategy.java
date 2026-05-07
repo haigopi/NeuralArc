@@ -103,7 +103,7 @@ final class ManagedStrategy {
                 strategy.profitHoldAmount(),
                 strategy.restartAfterExitEnabled(),
                 strategy.profitControlMode() != null ? strategy.profitControlMode() : com.neuralarc.model.ProfitControlMode.NONE,
-                strategy.automaticStopSellThresholdType() != null ? strategy.automaticStopSellThresholdType() : com.neuralarc.model.ThresholdType.PERCENTAGE,
+                strategy.automaticStopSellThresholdType() != null ? strategy.automaticStopSellThresholdType() : com.neuralarc.model.ThresholdType.FIXED_AMOUNT,
                 strategy.automaticStopSellThreshold(),
                 strategy.automaticStopSellTrailingType() != null ? strategy.automaticStopSellTrailingType() : com.neuralarc.model.TrailingType.PERCENTAGE,
                 strategy.automaticStopSellTrailingValue()

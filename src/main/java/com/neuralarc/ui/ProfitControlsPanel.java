@@ -35,8 +35,13 @@ public class ProfitControlsPanel extends JPanel {
             : Color.WHITE;
     private static final Color INPUT_BORDER = new Color(190, 190, 200);
 
+    private final JRadioButton noAutomationMode = new JRadioButton("Manual only", true);
+    private final JRadioButton sellTriggerMode = new JRadioButton("Sell Trigger", false);
+    private final JRadioButton automaticStopSellMode = new JRadioButton("Automatic Stop Sell", false);
+    private final JRadioButton profitHoldMode = new JRadioButton("Profit Hold", false);
+    private final ButtonGroup modeGroup = new ButtonGroup();
+
     // Sell Trigger fields
-    private final JCheckBox sellTriggerEnabled = new JCheckBox("Enable Sell Trigger", false);
     private final JTextField sellTriggerPriceField = new JTextField(25);
 
     // Shared profit activation fields for Automatic Stop Sell and Profit Hold.
@@ -44,22 +49,15 @@ public class ProfitControlsPanel extends JPanel {
     private final JTextField thresholdValueField = new JTextField(25);
 
     // Automatic Stop Sell fields
-    private final JCheckBox automaticStopSellEnabled = new JCheckBox("Enable Automatic Stop Sell", false);
     private final JComboBox<TrailingType> trailingTypeBox = new JComboBox<>(TrailingType.values());
     private final JTextField trailingValueField = new JTextField(25);
 
     // Profit Hold fields
-    private final JCheckBox profitHoldEnabled = new JCheckBox("Enable Profit Hold", false);
     private final JComboBox<ProfitHoldType> profitHoldTypeBox = new JComboBox<>(ProfitHoldType.values());
     private final JTextField profitHoldPercentField = new JTextField(25);
     private final JTextField profitHoldAmountField = new JTextField(25);
 
-    // Status label
     private final JLabel statusLabel = new JLabel("Manual sell is always available");
-    private final JLabel helpLabel = new JLabel("<html>Sell Trigger: Local application-side trigger. Places order when price reaches trigger.<br>"
-            + "Profit Activation: Arming threshold for Automatic Stop Sell and Profit Hold.<br>"
-            + "Automatic Stop Sell: Broker-side protection. Places Alpaca trailing stop after profit activation.<br>"
-            + "Profit Hold: Application-side trailing logic after profit activation.</html>");
 
     public ProfitControlsPanel() {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
@@ -69,6 +67,7 @@ public class ProfitControlsPanel extends JPanel {
         initializeUI();
         styleInputs();
         wireListeners();
+        thresholdTypeBox.setSelectedItem(ThresholdType.FIXED_AMOUNT);
     }
 
     private void initializeUI() {
@@ -77,57 +76,111 @@ public class ProfitControlsPanel extends JPanel {
         content.setBorder(new EmptyBorder(0, HORIZONTAL_CONTENT_PADDING, 0, HORIZONTAL_CONTENT_PADDING));
         content.setOpaque(false);
 
-        // Sell Trigger section
-        JPanel sellTriggerPanel = createSubPanel("Sell Trigger");
-        addRow(sellTriggerPanel, "Enable:", sellTriggerEnabled);
-        addRow(sellTriggerPanel, "Trigger Price:", sellTriggerPriceField);
+        JPanel modePanel = createSubPanel(
+                "Automated Profit Strategy",
+                "Choose one automated profit-control strategy. Manual sell actions remain available in every mode."
+        );
+        JPanel modeFields = createModeFieldsPanel();
+        addModeOption(modeFields, noAutomationMode, "No automated profit sell strategy is evaluated. You can still sell manually.");
+        addModeOption(modeFields, sellTriggerMode, "Waits locally until price reaches the trigger, then submits a sell order.");
+        addModeOption(modeFields, automaticStopSellMode, "After profit activation, submits broker-side Alpaca trailing stop protection.");
+        addModeOption(modeFields, profitHoldMode, "After profit activation, trails locally and sells on a pullback.");
+        modePanel.add(modeFields, BorderLayout.CENTER);
+        content.add(modePanel);
+        content.add(Box.createVerticalStrut(FIELD_GAP));
+
+        JPanel sellTriggerPanel = createSubPanel(
+                "Sell Trigger",
+                "Local application-side trigger. No Alpaca sell order is created until polling sees the current price at or above this value."
+        );
+        addRow((JPanel) sellTriggerPanel.getClientProperty("fields"), "Trigger Price:", sellTriggerPriceField);
         content.add(sellTriggerPanel);
         content.add(Box.createVerticalStrut(FIELD_GAP));
 
-        JPanel activationPanel = createSubPanel("Profit Activation");
-        addRow(activationPanel, "Threshold Type:", thresholdTypeBox);
-        addRow(activationPanel, "Threshold Value:", thresholdValueField);
+        JPanel activationPanel = createSubPanel(
+                "Profit Activation",
+                "Arming threshold for Automatic Stop Sell and Profit Hold. Percentage and fixed amount are calculated from the current average entry price."
+        );
+        addRow((JPanel) activationPanel.getClientProperty("fields"), "Threshold Type:", thresholdTypeBox);
+        addRow((JPanel) activationPanel.getClientProperty("fields"), "Threshold Value:", thresholdValueField);
         content.add(activationPanel);
         content.add(Box.createVerticalStrut(FIELD_GAP));
 
-        JPanel autoStopPanel = createSubPanel("Automatic Stop Sell");
-        addRow(autoStopPanel, "Enable:", automaticStopSellEnabled);
-        addRow(autoStopPanel, "Broker Trailing Type:", trailingTypeBox);
-        addRow(autoStopPanel, "Broker Trailing Value:", trailingValueField);
+        JPanel autoStopPanel = createSubPanel(
+                "Automatic Stop Sell",
+                "Broker-side protection. Once profit activation is crossed, the app places one Alpaca trailing stop sell order and prevents duplicates."
+        );
+        addRow((JPanel) autoStopPanel.getClientProperty("fields"), "Broker Trailing Type:", trailingTypeBox);
+        addRow((JPanel) autoStopPanel.getClientProperty("fields"), "Broker Trailing Value:", trailingValueField);
         content.add(autoStopPanel);
         content.add(Box.createVerticalStrut(FIELD_GAP));
 
-        // Profit Hold section
-        JPanel profitHoldPanel = createSubPanel("Profit Hold");
-        addRow(profitHoldPanel, "Enable:", profitHoldEnabled);
-        addRow(profitHoldPanel, "Trailing Type:", profitHoldTypeBox);
-        addRow(profitHoldPanel, "Trailing Percent:", profitHoldPercentField);
-        addRow(profitHoldPanel, "Trailing Amount:", profitHoldAmountField);
+        JPanel profitHoldPanel = createSubPanel(
+                "Profit Hold",
+                "Application-side trailing strategy. After profit activation, the app tracks the highest observed price and sells after the configured pullback."
+        );
+        addRow((JPanel) profitHoldPanel.getClientProperty("fields"), "Trailing Type:", profitHoldTypeBox);
+        addRow((JPanel) profitHoldPanel.getClientProperty("fields"), "Trailing Percent:", profitHoldPercentField);
+        addRow((JPanel) profitHoldPanel.getClientProperty("fields"), "Trailing Amount:", profitHoldAmountField);
         content.add(profitHoldPanel);
         content.add(Box.createVerticalStrut(FIELD_GAP));
 
-        helpLabel.setForeground(TEXT_MUTED);
-        helpLabel.setFont(FontLoader.ui(Font.PLAIN, 10f));
-        helpLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        content.add(helpLabel);
-        content.add(Box.createVerticalStrut(FIELD_GAP));
-
-        // Status label
         statusLabel.setForeground(TEXT_MUTED);
         statusLabel.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        statusLabel.putClientProperty("neuralarc.mutedDescription", Boolean.TRUE);
         statusLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(statusLabel);
 
         add(content);
     }
 
-    private JPanel createSubPanel(String title) {
-        JPanel panel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+    private JPanel createSubPanel(String title, String description) {
+        JPanel panel = new JPanel(new BorderLayout(0, FIELD_GAP));
         panel.setBorder(createSubSectionBorder(title));
         panel.setOpaque(false);
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        JLabel descriptionLabel = description(description);
+        JPanel fields = createFieldsPanel();
+        panel.add(fields, BorderLayout.CENTER);
+        panel.add(descriptionLabel, BorderLayout.SOUTH);
+        panel.putClientProperty("fields", fields);
         return panel;
+    }
+
+    private JPanel createFieldsPanel() {
+        JPanel panel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        panel.setOpaque(false);
+        return panel;
+    }
+
+    private JPanel createModeFieldsPanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setOpaque(false);
+        return panel;
+    }
+
+    private void addModeOption(JPanel panel, JRadioButton radioButton, String description) {
+        JPanel option = new JPanel();
+        option.setLayout(new BoxLayout(option, BoxLayout.Y_AXIS));
+        option.setOpaque(false);
+        option.setAlignmentX(Component.LEFT_ALIGNMENT);
+        radioButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel descriptionLabel = description(description);
+        descriptionLabel.setBorder(new EmptyBorder(0, 22, FIELD_GAP, 0));
+        descriptionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        option.add(radioButton);
+        option.add(descriptionLabel);
+        panel.add(option);
+    }
+
+    private JLabel description(String text) {
+        JLabel label = new JLabel("<html>" + text + "</html>");
+        label.putClientProperty("neuralarc.mutedDescription", Boolean.TRUE);
+        label.setForeground(TEXT_MUTED);
+        label.setFont(FontLoader.ui(Font.PLAIN, 11f));
+        return label;
     }
 
     private void addRow(JPanel panel, String label, JComponent component) {
@@ -157,40 +210,30 @@ public class ProfitControlsPanel extends JPanel {
             box.setForeground(TEXT_PRIMARY);
         }
 
-        sellTriggerEnabled.setOpaque(false);
-        automaticStopSellEnabled.setOpaque(false);
-        profitHoldEnabled.setOpaque(false);
+        JRadioButton[] radioButtons = { noAutomationMode, sellTriggerMode, automaticStopSellMode, profitHoldMode };
+        for (JRadioButton radioButton : radioButtons) {
+            radioButton.setOpaque(false);
+            radioButton.setForeground(TEXT_PRIMARY);
+        }
     }
 
     private void wireListeners() {
-        sellTriggerEnabled.addActionListener(e -> updateFieldStates());
-        automaticStopSellEnabled.addActionListener(e -> updateFieldStates());
-        profitHoldEnabled.addActionListener(e -> updateFieldStates());
+        modeGroup.add(noAutomationMode);
+        modeGroup.add(sellTriggerMode);
+        modeGroup.add(automaticStopSellMode);
+        modeGroup.add(profitHoldMode);
+        noAutomationMode.addActionListener(e -> updateFieldStates());
+        sellTriggerMode.addActionListener(e -> updateFieldStates());
+        automaticStopSellMode.addActionListener(e -> updateFieldStates());
+        profitHoldMode.addActionListener(e -> updateFieldStates());
         profitHoldTypeBox.addActionListener(e -> updateFieldStates());
     }
 
     private void updateFieldStates() {
-        boolean sellTriggerOn = sellTriggerEnabled.isSelected();
-        boolean autoStopOn = automaticStopSellEnabled.isSelected();
-        boolean profitHoldOn = profitHoldEnabled.isSelected();
+        boolean sellTriggerOn = sellTriggerMode.isSelected();
+        boolean autoStopOn = automaticStopSellMode.isSelected();
+        boolean profitHoldOn = profitHoldMode.isSelected();
 
-        // Mutual exclusivity: only one can be active
-        if (sellTriggerOn) {
-            automaticStopSellEnabled.setSelected(false);
-            profitHoldEnabled.setSelected(false);
-            autoStopOn = false;
-            profitHoldOn = false;
-        } else if (autoStopOn) {
-            sellTriggerEnabled.setSelected(false);
-            profitHoldEnabled.setSelected(false);
-            profitHoldOn = false;
-        } else if (profitHoldOn) {
-            sellTriggerEnabled.setSelected(false);
-            automaticStopSellEnabled.setSelected(false);
-            autoStopOn = false;
-        }
-
-        // Enable/disable fields based on active strategy
         sellTriggerPriceField.setEnabled(sellTriggerOn);
         boolean usesProfitActivation = autoStopOn || profitHoldOn;
         thresholdTypeBox.setEnabled(usesProfitActivation);
@@ -208,11 +251,11 @@ public class ProfitControlsPanel extends JPanel {
     }
 
     private void updateStatusLabel() {
-        if (sellTriggerEnabled.isSelected()) {
+        if (sellTriggerMode.isSelected()) {
             statusLabel.setText("Sell Trigger strategy is active");
-        } else if (automaticStopSellEnabled.isSelected()) {
+        } else if (automaticStopSellMode.isSelected()) {
             statusLabel.setText("Automatic Stop Sell strategy is active");
-        } else if (profitHoldEnabled.isSelected()) {
+        } else if (profitHoldMode.isSelected()) {
             statusLabel.setText("Profit Hold strategy is active (execution: application-side)");
         } else {
             statusLabel.setText("Manual sell is always available");
@@ -222,18 +265,23 @@ public class ProfitControlsPanel extends JPanel {
     public void applyConfig(StrategyConfig config) {
         ProfitControlMode mode = config.profitControlMode();
         boolean legacyMode = mode == null || mode == ProfitControlMode.NONE;
-        sellTriggerEnabled.setSelected(mode == ProfitControlMode.SELL_TRIGGER
-                || (legacyMode && config.sellTriggerEnabled() && !config.profitHoldEnabled() && !config.alpacaTrailingStopEnabled()));
+        ProfitControlMode selectedMode = ProfitControlMode.NONE;
+        if (mode == ProfitControlMode.SELL_TRIGGER
+                || (legacyMode && config.sellTriggerEnabled() && !config.profitHoldEnabled() && !config.alpacaTrailingStopEnabled())) {
+            selectedMode = ProfitControlMode.SELL_TRIGGER;
+        } else if (mode == ProfitControlMode.AUTOMATIC_STOP_SELL) {
+            selectedMode = ProfitControlMode.AUTOMATIC_STOP_SELL;
+        } else if (mode == ProfitControlMode.PROFIT_HOLD || (legacyMode && config.profitHoldEnabled())) {
+            selectedMode = ProfitControlMode.PROFIT_HOLD;
+        }
+        selectMode(selectedMode);
         sellTriggerPriceField.setText(config.sellTriggerPrice().toPlainString());
 
-        automaticStopSellEnabled.setSelected(mode == ProfitControlMode.AUTOMATIC_STOP_SELL);
         thresholdTypeBox.setSelectedItem(config.automaticStopSellThresholdType());
         thresholdValueField.setText(config.automaticStopSellThreshold().toPlainString());
         trailingTypeBox.setSelectedItem(config.automaticStopSellTrailingType());
         trailingValueField.setText(config.automaticStopSellTrailingValue().toPlainString());
 
-        profitHoldEnabled.setSelected(mode == ProfitControlMode.PROFIT_HOLD
-                || (legacyMode && config.profitHoldEnabled()));
         profitHoldTypeBox.setSelectedItem(config.profitHoldType());
         profitHoldPercentField.setText(config.profitHoldPercent().compareTo(BigDecimal.ZERO) > 0
                 ? config.profitHoldPercent().toPlainString()
@@ -245,15 +293,17 @@ public class ProfitControlsPanel extends JPanel {
         updateFieldStates();
     }
 
-    public StrategyConfig extractConfig(StrategyConfig baseConfig) {
-        // This is a temporary placeholder. Eventually, we'll construct the full config here.
-        // For now, return the base config with updated profit control fields.
-        // The parent dialog will still be responsible for the full config construction.
-        return baseConfig;
+    private void selectMode(ProfitControlMode mode) {
+        switch (mode == null ? ProfitControlMode.NONE : mode) {
+            case SELL_TRIGGER -> sellTriggerMode.setSelected(true);
+            case AUTOMATIC_STOP_SELL -> automaticStopSellMode.setSelected(true);
+            case PROFIT_HOLD -> profitHoldMode.setSelected(true);
+            default -> noAutomationMode.setSelected(true);
+        }
     }
 
     public boolean getSellTriggerEnabled() {
-        return sellTriggerEnabled.isSelected();
+        return sellTriggerMode.isSelected();
     }
 
     public BigDecimal getSellTriggerPrice() {
@@ -265,7 +315,7 @@ public class ProfitControlsPanel extends JPanel {
     }
 
     public boolean getAutomaticStopSellEnabled() {
-        return automaticStopSellEnabled.isSelected();
+        return automaticStopSellMode.isSelected();
     }
 
     public ThresholdType getThresholdType() {
@@ -293,7 +343,7 @@ public class ProfitControlsPanel extends JPanel {
     }
 
     public boolean getProfitHoldEnabled() {
-        return profitHoldEnabled.isSelected();
+        return profitHoldMode.isSelected();
     }
 
     public ProfitHoldType getProfitHoldType() {
@@ -317,11 +367,11 @@ public class ProfitControlsPanel extends JPanel {
     }
 
     public ProfitControlMode getSelectedMode() {
-        if (sellTriggerEnabled.isSelected()) {
+        if (sellTriggerMode.isSelected()) {
             return ProfitControlMode.SELL_TRIGGER;
-        } else if (automaticStopSellEnabled.isSelected()) {
+        } else if (automaticStopSellMode.isSelected()) {
             return ProfitControlMode.AUTOMATIC_STOP_SELL;
-        } else if (profitHoldEnabled.isSelected()) {
+        } else if (profitHoldMode.isSelected()) {
             return ProfitControlMode.PROFIT_HOLD;
         }
         return ProfitControlMode.NONE;

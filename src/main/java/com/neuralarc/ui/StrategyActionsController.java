@@ -28,11 +28,14 @@ public final class StrategyActionsController {
         }
 
         ActionEntry entry = gateway.entryAt(row);
-        if (entry.strategy().status() == StrategyStatus.ARCHIVED || entry.isPauseResumeBusy()) {
+        if (!isToggleAllowed(entry.strategy().status()) || entry.isPauseResumeBusy()) {
             return;
         }
 
         boolean wasPaused = entry.isPaused();
+        if (wasPaused && !gateway.marketOpenForUi()) {
+            return;
+        }
         boolean manualCancelResume = wasPaused
                 && entry.strategy().pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED;
         String strategyId = entry.strategy().id();
@@ -89,7 +92,9 @@ public final class StrategyActionsController {
         }
 
         ActionEntry entry = gateway.entryAt(row);
-        if (entry.strategy().mode() != StrategyMode.PAPER || entry.strategy().status() == StrategyStatus.ARCHIVED) {
+        if (entry.strategy().mode() != StrategyMode.PAPER
+                || !isPromotionAllowed(entry.strategy().status())
+                || !gateway.marketOpenForUi()) {
             return;
         }
 
@@ -144,7 +149,7 @@ public final class StrategyActionsController {
 
         ActionEntry entry = gateway.entryAt(row);
         Strategy strategy = entry.strategy();
-        if (strategy.status() == StrategyStatus.ARCHIVED || !gateway.hasOpenPosition(strategy)) {
+        if (!isSellAllowed(strategy.status()) || !gateway.hasOpenPosition(strategy) || !gateway.marketOpenForUi()) {
             return;
         }
 
@@ -296,6 +301,7 @@ public final class StrategyActionsController {
         void updateHeaderModeStatus(BrokerType brokerType);
         BrokerType currentBrokerType();
         boolean hasBrokerPositionAccess();
+        boolean marketOpenForUi();
 
         void setSelectedStrategyId(String strategyId);
         String selectedStrategyId();
@@ -322,5 +328,17 @@ public final class StrategyActionsController {
     }
 
     public record PromotionDialogResult(boolean proceed, boolean closePaperPositions) {
+    }
+
+    private static boolean isToggleAllowed(StrategyStatus status) {
+        return status == StrategyStatus.ACTIVE || status == StrategyStatus.PAUSED;
+    }
+
+    private static boolean isPromotionAllowed(StrategyStatus status) {
+        return status == StrategyStatus.ACTIVE || status == StrategyStatus.PAUSED;
+    }
+
+    private static boolean isSellAllowed(StrategyStatus status) {
+        return status != StrategyStatus.ARCHIVED && status != StrategyStatus.CREATED;
     }
 }

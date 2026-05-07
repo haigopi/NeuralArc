@@ -347,7 +347,7 @@ public final class AppDatabase {
 
     private void migration004() throws SQLException {
         addColumnIfMissing("strategies", "profit_control_mode", "TEXT NOT NULL DEFAULT 'NONE'");
-        addColumnIfMissing("strategies", "automatic_stop_sell_threshold_type", "TEXT NOT NULL DEFAULT 'PERCENTAGE'");
+        addColumnIfMissing("strategies", "automatic_stop_sell_threshold_type", "TEXT NOT NULL DEFAULT 'FIXED_AMOUNT'");
         addColumnIfMissing("strategies", "automatic_stop_sell_threshold", "TEXT NOT NULL DEFAULT '0.00'");
         addColumnIfMissing("strategies", "automatic_stop_sell_trailing_type", "TEXT NOT NULL DEFAULT 'PERCENTAGE'");
         addColumnIfMissing("strategies", "automatic_stop_sell_trailing_value", "TEXT NOT NULL DEFAULT '0.00'");

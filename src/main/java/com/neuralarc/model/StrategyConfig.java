@@ -43,8 +43,13 @@ public record StrategyConfig(
         profitHoldType = profitHoldType == null ? ProfitHoldType.PERCENT_TRAILING : profitHoldType;
         profitHoldPercent = Monetary.round(profitHoldPercent);
         profitHoldAmount = Monetary.round(profitHoldAmount);
-        profitControlMode = profitControlMode == null ? ProfitControlMode.NONE : profitControlMode;
-        automaticStopSellThresholdType = automaticStopSellThresholdType == null ? ThresholdType.PERCENTAGE : automaticStopSellThresholdType;
+        profitControlMode = normalizeProfitControlMode(
+                profitControlMode,
+                sellTriggerEnabled,
+                alpacaTrailingStopEnabled,
+                profitHoldEnabled
+        );
+        automaticStopSellThresholdType = automaticStopSellThresholdType == null ? ThresholdType.FIXED_AMOUNT : automaticStopSellThresholdType;
         automaticStopSellThreshold = Monetary.round(automaticStopSellThreshold);
         automaticStopSellTrailingType = automaticStopSellTrailingType == null ? TrailingType.PERCENTAGE : automaticStopSellTrailingType;
         automaticStopSellTrailingValue = Monetary.round(automaticStopSellTrailingValue);
@@ -94,7 +99,7 @@ public record StrategyConfig(
                 profitHoldAmount,
                 false,
                 ProfitControlMode.NONE,
-                ThresholdType.PERCENTAGE,
+                ThresholdType.FIXED_AMOUNT,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
                 BigDecimal.ZERO
@@ -144,7 +149,7 @@ public record StrategyConfig(
                 profitHoldAmount,
                 false,
                 ProfitControlMode.NONE,
-                ThresholdType.PERCENTAGE,
+                ThresholdType.FIXED_AMOUNT,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
                 BigDecimal.ZERO
@@ -198,7 +203,7 @@ public record StrategyConfig(
                 profitHoldAmount,
                 repeatCycleAfterProfitExitEnabled,
                 ProfitControlMode.NONE,
-                ThresholdType.PERCENTAGE,
+                ThresholdType.FIXED_AMOUNT,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
                 BigDecimal.ZERO
@@ -250,7 +255,7 @@ public record StrategyConfig(
                 profitHoldAmount,
                 repeatCycleAfterProfitExitEnabled,
                 ProfitControlMode.NONE,
-                ThresholdType.PERCENTAGE,
+                ThresholdType.FIXED_AMOUNT,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
                 BigDecimal.ZERO
@@ -295,7 +300,7 @@ public record StrategyConfig(
                 BigDecimal.ZERO,
                 false,
                 ProfitControlMode.NONE,
-                ThresholdType.PERCENTAGE,
+                ThresholdType.FIXED_AMOUNT,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
                 BigDecimal.ZERO
@@ -306,5 +311,26 @@ public record StrategyConfig(
         return profitHoldEnabled
                 && profitHoldType == ProfitHoldType.PERCENT_TRAILING
                 && profitHoldPercent.compareTo(new BigDecimal("10.00")) == 0;
+    }
+
+    private static ProfitControlMode normalizeProfitControlMode(
+            ProfitControlMode mode,
+            boolean sellTriggerEnabled,
+            boolean alpacaTrailingStopEnabled,
+            boolean profitHoldEnabled
+    ) {
+        if (mode != null && mode != ProfitControlMode.NONE) {
+            return mode;
+        }
+        if (profitHoldEnabled) {
+            return ProfitControlMode.PROFIT_HOLD;
+        }
+        if (alpacaTrailingStopEnabled) {
+            return ProfitControlMode.AUTOMATIC_STOP_SELL;
+        }
+        if (sellTriggerEnabled) {
+            return ProfitControlMode.SELL_TRIGGER;
+        }
+        return ProfitControlMode.NONE;
     }
 }

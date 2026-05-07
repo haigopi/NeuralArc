@@ -344,6 +344,7 @@ public class TradingFrame extends JFrame {
             @Override public void updateHeaderModeStatus(BrokerType brokerType) { TradingFrame.this.updateHeaderModeStatus(brokerType); }
             @Override public BrokerType currentBrokerType() { return currentBrokerType; }
             @Override public boolean hasBrokerPositionAccess() { return currentBrokerType == BrokerType.ALPACA || tradingApi != null; }
+            @Override public boolean marketOpenForUi() { return TradingFrame.this.isMarketOpenForUi(); }
             @Override public void setSelectedStrategyId(String strategyId) { selectedStrategyId = strategyId; }
             @Override public String selectedStrategyId() { return selectedStrategyId; }
             @Override public void removeStrategyAt(int modelRow) { strategies.remove(modelRow); }
@@ -2762,6 +2763,19 @@ public class TradingFrame extends JFrame {
         return strategy.mode() == StrategyMode.LIVE ? "Alpaca Live" : "Alpaca Paper";
     }
 
+    private boolean isMarketOpenForUi() {
+        AppSettingsService.AppSettings settings = appSettingsService.load();
+        boolean regularMarketOpen = marketHoursService.isRegularMarketHours();
+        boolean tradingSessionOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
+        return marketStatusPresenter.present(
+                settings,
+                regularMarketOpen,
+                tradingSessionOpen,
+                Instant.now(),
+                marketHoursService.nextMarketOpen(settings.extendedHoursTradingEnabled())
+        ).openForUi();
+    }
+
     private Color gridBrokerModeColor(Strategy strategy) {
         return strategy != null && strategy.mode() == StrategyMode.LIVE
                 ? MODE_TEXT_ALPACA_LIVE
@@ -3330,14 +3344,14 @@ public class TradingFrame extends JFrame {
             ManagedStrategy strategy = strategies.get(modelRow);
             StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = strategyActionsPresenter.present(
                     new StrategyActionsPresenter.StrategyActionsState(
-                            strategy.strategy.status() == StrategyStatus.ARCHIVED,
-                            strategy.isPaused(),
+                            strategy.strategy.status(),
                             strategy.strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED
                                     || strategy.strategy.pauseReason() == PauseReason.USER_PAUSED,
                             strategy.isPauseResumeBusy(),
                             strategy.pauseResumeBusyText(),
                             strategy.strategy.mode() == StrategyMode.PAPER,
-                            strategy.cachedPosition().getTotalShares() > 0
+                            strategy.cachedPosition().getTotalShares() > 0,
+                            isMarketOpenForUi()
                     )
             );
             toggleButton.setText(actionsViewModel.toggleText());

@@ -1,5 +1,7 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.model.StrategyStatus;
+
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -12,7 +14,7 @@ class StrategyActionsPresenterTest {
     @Test
     void archivedStrategiesDisableToggleAndPromotion() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
-                new StrategyActionsPresenter.StrategyActionsState(true, false, false, false, "", true, false)
+                new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.ARCHIVED, false, false, "", true, false, true)
         );
 
         assertEquals("Archived", viewModel.toggleText());
@@ -23,18 +25,18 @@ class StrategyActionsPresenterTest {
     @Test
     void busyStateShowsBusyTextAndDisablesPromotionWhenNotPaper() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
-                new StrategyActionsPresenter.StrategyActionsState(false, true, false, true, "Canceling...", false, true)
+                new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.PAUSED, false, true, "Canceling...", false, true, true)
         );
 
         assertEquals("Canceling...", viewModel.toggleText());
-        assertTrue(viewModel.toggleEnabled());
+        assertFalse(viewModel.toggleEnabled());
         assertFalse(viewModel.promoteEnabled());
     }
 
     @Test
     void pausedPaperStrategiesShowResumeAndAllowPromotion() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
-                new StrategyActionsPresenter.StrategyActionsState(false, true, false, false, "", true, true)
+                new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.PAUSED, false, false, "", true, true, true)
         );
 
         assertEquals("Resume", viewModel.toggleText());
@@ -45,7 +47,7 @@ class StrategyActionsPresenterTest {
     @Test
     void manuallyCanceledStrategiesShowPlaceLimitBuyAgain() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
-                new StrategyActionsPresenter.StrategyActionsState(false, true, true, false, "", true, true)
+                new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.PAUSED, true, false, "", true, true, true)
         );
 
         assertEquals("Place Limit Buy Again", viewModel.toggleText());
@@ -55,9 +57,41 @@ class StrategyActionsPresenterTest {
     @Test
     void pausedWithoutPositionShowsPlaceLimitBuyAgainEvenWhenNotManualPause() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
-                new StrategyActionsPresenter.StrategyActionsState(false, true, false, false, "", true, false)
+                new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.PAUSED, false, false, "", true, false, true)
         );
 
         assertEquals("Place Limit Buy Again", viewModel.toggleText());
+    }
+
+    @Test
+    void completedStatusDisablesToggleAndPromotion() {
+        StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
+                new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.COMPLETED, false, false, "", true, true, true)
+        );
+
+        assertEquals("Completed", viewModel.toggleText());
+        assertFalse(viewModel.toggleEnabled());
+        assertFalse(viewModel.promoteEnabled());
+    }
+
+    @Test
+    void pausedStrategyDisablesResumeWhenMarketClosed() {
+        StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
+                new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.PAUSED, false, false, "", true, true, false)
+        );
+
+        assertEquals("Resume", viewModel.toggleText());
+        assertFalse(viewModel.toggleEnabled());
+    }
+
+    @Test
+    void marketClosedDisablesSellAndPromote() {
+        StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
+                new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.ACTIVE, false, false, "", true, true, false)
+        );
+
+        assertTrue(viewModel.toggleEnabled());
+        assertFalse(viewModel.sellEnabled());
+        assertFalse(viewModel.promoteEnabled());
     }
 }

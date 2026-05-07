@@ -1,7 +1,9 @@
 package com.neuralarc.service;
 
+import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
+import com.neuralarc.model.TrailingType;
 import com.neuralarc.util.Monetary;
 
 import java.math.BigDecimal;
@@ -67,10 +69,35 @@ public class StrategyValidator {
                 errors.add("Target sell quantity or percent must be positive");
             }
         }
-        if ((strategy.profitHoldEnabled() || strategy.alpacaTrailingStopEnabled()) && !strategy.targetSellEnabled()) {
-            errors.add("Sell trigger must be enabled when Profit Hold or Alpaca trailing stop is enabled");
+        ProfitControlMode profitControlMode = strategy.profitControlMode();
+        if (profitControlMode == ProfitControlMode.SELL_TRIGGER) {
+            if (!strategy.targetSellEnabled()) {
+                errors.add("Sell trigger mode requires Sell Trigger to be enabled");
+            }
+            if (strategy.targetSellPrice().compareTo(Monetary.zero()) <= 0) {
+                errors.add("Sell trigger price must be positive");
+            }
         }
-        if (strategy.profitHoldEnabled() || strategy.alpacaTrailingStopEnabled()) {
+        if (profitControlMode == ProfitControlMode.AUTOMATIC_STOP_SELL
+                || profitControlMode == ProfitControlMode.PROFIT_HOLD) {
+            if (strategy.automaticStopSellThreshold().compareTo(Monetary.zero()) <= 0) {
+                errors.add("Profit activation threshold must be positive");
+            }
+        }
+        if (profitControlMode == ProfitControlMode.AUTOMATIC_STOP_SELL) {
+            if (strategy.automaticStopSellTrailingValue().compareTo(Monetary.zero()) <= 0) {
+                errors.add("Automatic Stop Sell trailing value must be positive");
+            }
+            if (strategy.automaticStopSellTrailingType() == TrailingType.PERCENTAGE
+                    && strategy.automaticStopSellTrailingValue().compareTo(new BigDecimal("100")) >= 0) {
+                errors.add("Automatic Stop Sell trailing percent must be between 0 and 100");
+            }
+        }
+        if (profitControlMode == ProfitControlMode.PROFIT_HOLD && !strategy.profitHoldEnabled()) {
+            errors.add("Profit Hold mode requires Profit Hold to be enabled");
+        }
+        if (strategy.profitHoldEnabled()
+                || (profitControlMode == ProfitControlMode.NONE && strategy.alpacaTrailingStopEnabled())) {
             if (strategy.profitHoldType().name().equals("PERCENT_TRAILING")
                     && (strategy.profitHoldPercent().compareTo(Monetary.zero()) <= 0
                     || strategy.profitHoldPercent().compareTo(new BigDecimal("100")) >= 0)) {

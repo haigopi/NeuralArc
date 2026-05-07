@@ -72,6 +72,7 @@
 - Prefer small renderer classes and helper panels over large inline UI blocks.
 - Keep table renderers pure. They must not perform broker calls, persistence calls, or expensive recomputation.
 - Dialogs should own layout and validation only. Service calls should be delegated to service classes or background workers.
+- Put explanatory descriptions inside the same bordered section or subsection as the controls they describe, below the relevant controls. Use the muted subsection-heading style for descriptions so they read as secondary guidance.
 
 ## Strategy engine standards
 - The active engine path is `StrategyPollingService -> StrategyEngine -> StrategyService`.

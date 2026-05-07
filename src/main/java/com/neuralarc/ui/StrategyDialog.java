@@ -244,6 +244,10 @@ public class StrategyDialog extends JDialog {
         addRow(strategyPanel, "Base buy price:", basePriceField);
         addRow(strategyPanel, "Base buy quantity:", baseQtyField);
         prepareSection(strategyPanel);
+        JPanel strategySection = describedSection(
+                strategyPanel,
+                "Defines the symbol, broker mode, and first buy order the strategy will place when its entry rule is active."
+        );
 
         // Risk Controls — outer wrapper with three sub-sections
         JPanel riskPanel = new JPanel();
@@ -261,6 +265,10 @@ public class StrategyDialog extends JDialog {
         prepareSubSection(stopLossSubPanel);
         addRow(stopLossSubPanel, "Set Stop Loss:", stopLossEnabled);
         addRow(stopLossSubPanel, "Stop loss price:", stopLossField);
+        JPanel stopLossSection = describedSection(
+                stopLossSubPanel,
+                "Defensive exit rule. When enabled, polling watches for downside movement and can submit a stop-loss sell."
+        );
 
         JPanel lossBuySubPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
         lossBuySubPanel.setBorder(createSubSectionBorder("Loss Buy Levels"));
@@ -270,31 +278,43 @@ public class StrategyDialog extends JDialog {
         addRow(lossBuySubPanel, "Loss buy level 1 qty:", loss1QtyField);
         addRow(lossBuySubPanel, "Loss Buy Level 2 Price:", loss2PriceField);
         addRow(lossBuySubPanel, "Loss buy level 2 qty:", loss2QtyField);
+        JPanel lossBuySection = describedSection(
+                lossBuySubPanel,
+                "Optional staged buys below the base price. These can lower average cost, but they also increase position size and capital at risk."
+        );
 
-        riskContent.add(stopLossSubPanel);
+        riskContent.add(stopLossSection);
         riskContent.add(Box.createVerticalStrut(SECTION_GAP));
-        riskContent.add(lossBuySubPanel);
+        riskContent.add(lossBuySection);
         riskPanel.add(riskContent);
 
         JPanel executionPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
         executionPanel.setBorder(createSectionBorder("Execution"));
         addRow(executionPanel, "Polling interval seconds:", pollingField);
         prepareSection(executionPanel);
+        JPanel executionSection = describedSection(
+                executionPanel,
+                "Controls how often this strategy evaluates market price, risk rules, and the selected profit-control strategy."
+        );
 
         JPanel cycleBehaviorPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
         cycleBehaviorPanel.setBorder(createSectionBorder("Cycle Behavior"));
         addRow(cycleBehaviorPanel, "Repeat cycle after profitable exit (optional):", repeatCycleAfterProfitExitEnabled);
         prepareSection(cycleBehaviorPanel);
+        JPanel cycleBehaviorSection = describedSection(
+                cycleBehaviorPanel,
+                "When enabled, a completed profitable exit can start a new buy cycle. Defensive exits and manual closes do not restart automatically."
+        );
 
-        content.add(strategyPanel);
+        content.add(strategySection);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(profitControlsPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(riskPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
-        content.add(executionPanel);
+        content.add(executionSection);
         content.add(Box.createVerticalStrut(SECTION_GAP));
-        content.add(cycleBehaviorPanel);
+        content.add(cycleBehaviorSection);
 
         return createContentScrollPane(content);
     }
@@ -643,6 +663,31 @@ public class StrategyDialog extends JDialog {
         panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
     }
 
+    private JPanel describedSection(JComponent controls, String description) {
+        JPanel wrapper = new JPanel();
+        wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
+        wrapper.setOpaque(false);
+        wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        wrapper.setBorder(controls.getBorder());
+        controls.setBorder(null);
+        controls.setAlignmentX(Component.LEFT_ALIGNMENT);
+        wrapper.add(controls);
+        wrapper.add(Box.createVerticalStrut(4));
+        JLabel descriptionLabel = mutedDescription(description);
+        descriptionLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        wrapper.add(descriptionLabel);
+        return wrapper;
+    }
+
+    private JLabel mutedDescription(String text) {
+        JLabel label = new JLabel("<html>" + text + "</html>");
+        label.putClientProperty("neuralarc.mutedDescription", Boolean.TRUE);
+        label.setForeground(TEXT_MUTED);
+        label.setFont(FontLoader.ui(java.awt.Font.PLAIN, 11f));
+        return label;
+    }
+
     private void lockPreferredHeight(JComponent component) {
         Dimension preferred = component.getPreferredSize();
         component.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -756,7 +801,12 @@ public class StrategyDialog extends JDialog {
             panel.setBackground(DIALOG_BG);
         }
         if (component instanceof JLabel label) {
-            label.setForeground(TEXT_PRIMARY);
+            if (Boolean.TRUE.equals(label.getClientProperty("neuralarc.mutedDescription"))) {
+                label.setForeground(TEXT_MUTED);
+                label.setFont(FontLoader.ui(java.awt.Font.PLAIN, 11f));
+            } else {
+                label.setForeground(TEXT_PRIMARY);
+            }
         }
         if (component instanceof JCheckBox checkBox) {
             checkBox.setBackground(DIALOG_BG);
@@ -834,7 +884,7 @@ public class StrategyDialog extends JDialog {
                 new BigDecimal(DEFAULTS.profitHoldAmount()),
                 DEFAULTS.repeatCycleAfterProfitExitEnabled(),
                 ProfitControlMode.NONE,
-                ThresholdType.PERCENTAGE,
+                ThresholdType.FIXED_AMOUNT,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
                 BigDecimal.ZERO

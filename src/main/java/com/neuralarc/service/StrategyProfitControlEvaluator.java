@@ -134,7 +134,10 @@ final class StrategyProfitControlEvaluator {
 
         if ((!explicitProfitHoldMode && !strategy.targetSellEnabled()) || activationThreshold.compareTo(BigDecimal.ZERO) <= 0) {
             logRule(strategy, "TARGET_SELL", "SKIPPED", "Disabled or invalid target sell price", outcomes);
-            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Target sell is not active", outcomes);
+            logRule(strategy, "PROFIT_HOLD", "SKIPPED",
+                    explicitProfitHoldMode
+                            ? "Profit activation threshold is not configured"
+                            : "Target sell is not active", outcomes);
             return;
         }
         if (hasPendingOrFilledExitOrder(orders, StrategyStage.TARGET_SELL)

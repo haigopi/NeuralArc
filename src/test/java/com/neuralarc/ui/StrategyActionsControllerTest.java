@@ -31,8 +31,52 @@ class StrategyActionsControllerTest {
     }
 
     @Test
+    void togglePauseResumeReturnsEarlyForCompletedStrategy() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.COMPLETED));
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.togglePauseResume(0);
+
+        assertEquals(0, gateway.backgroundTasksRun);
+        assertEquals(0, gateway.refreshRowCalls);
+    }
+
+    @Test
+    void togglePauseResumeReturnsEarlyForPausedStrategyWhenMarketClosed() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.PAUSED));
+        gateway.marketOpen = false;
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.togglePauseResume(0);
+
+        assertEquals(0, gateway.backgroundTasksRun);
+        assertEquals(0, gateway.refreshRowCalls);
+    }
+
+    @Test
     void previewLivePromotionReturnsEarlyForLiveStrategy() {
         FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.LIVE, StrategyStatus.ACTIVE));
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.previewLivePromotion(0);
+
+        assertEquals(0, gateway.previewDialogCalls);
+    }
+
+    @Test
+    void previewLivePromotionReturnsEarlyForCompletedPaperStrategy() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.COMPLETED));
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.previewLivePromotion(0);
+
+        assertEquals(0, gateway.previewDialogCalls);
+    }
+
+    @Test
+    void previewLivePromotionReturnsEarlyWhenMarketClosed() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        gateway.marketOpen = false;
         StrategyActionsController controller = new StrategyActionsController(gateway);
 
         controller.previewLivePromotion(0);
@@ -53,6 +97,18 @@ class StrategyActionsControllerTest {
     @Test
     void sellPositionReturnsEarlyWhenNoOpenPositionExists() {
         FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.sellPosition(0);
+
+        assertEquals(0, gateway.confirmCalls);
+    }
+
+    @Test
+    void sellPositionReturnsEarlyWhenMarketClosed() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        gateway.marketOpen = false;
+        gateway.openPosition = true;
         StrategyActionsController controller = new StrategyActionsController(gateway);
 
         controller.sellPosition(0);
@@ -105,6 +161,8 @@ class StrategyActionsControllerTest {
         int refreshRowCalls;
         int previewDialogCalls;
         int confirmCalls;
+        boolean marketOpen = true;
+        boolean openPosition;
 
         private FakeGateway(Strategy strategy) {
             this.entry = new StrategyActionsController.ActionEntry() {
@@ -134,13 +192,14 @@ class StrategyActionsControllerTest {
         @Override public void stopPollingCountdown(String strategyId) { }
         @Override public void resetPollingCountdown(String strategyId) { }
         @Override public Position loadPositionForStrategy(Strategy strategy) { return new Position(strategy.symbol()); }
-        @Override public boolean hasOpenPosition(Strategy strategy) { return false; }
+        @Override public boolean hasOpenPosition(Strategy strategy) { return openPosition; }
         @Override public StrategyService.StrategyCreationResult sellPosition(Strategy strategy) { return StrategyService.StrategyCreationResult.failed("not-used"); }
         @Override public BigDecimal realizedPnlForStrategy(String strategyId) { return BigDecimal.ZERO; }
         @Override public String closePaperAccountState(Strategy strategy) { return ""; }
         @Override public void updateHeaderModeStatus(BrokerType brokerType) { }
         @Override public BrokerType currentBrokerType() { return BrokerType.ALPACA; }
         @Override public boolean hasBrokerPositionAccess() { return true; }
+        @Override public boolean marketOpenForUi() { return marketOpen; }
         @Override public void setSelectedStrategyId(String strategyId) { }
         @Override public String selectedStrategyId() { return null; }
         @Override public void removeStrategyAt(int modelRow) { }

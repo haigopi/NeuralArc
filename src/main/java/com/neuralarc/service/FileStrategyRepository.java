@@ -214,7 +214,7 @@ public class FileStrategyRepository implements StrategyRepository {
                 }
             }
             strategy.setProfitControlMode(profitControlMode);
-            strategy.setAutomaticStopSellThresholdType(parseThresholdType(o.optString("automaticStopSellThresholdType", "PERCENTAGE")));
+            strategy.setAutomaticStopSellThresholdType(parseThresholdType(o.optString("automaticStopSellThresholdType", "FIXED_AMOUNT")));
             strategy.setAutomaticStopSellThreshold(decimal(o, "automaticStopSellThreshold", "0.00"));
             strategy.setAutomaticStopSellTrailingType(parseTrailingType(o.optString("automaticStopSellTrailingType", "PERCENTAGE")));
             strategy.setAutomaticStopSellTrailingValue(decimal(o, "automaticStopSellTrailingValue", "0.00"));
@@ -270,7 +270,7 @@ public class FileStrategyRepository implements StrategyRepository {
             o.put("pauseReason", s.pauseReason().name());
             o.put("resumeStateBeforePause", s.resumeStateBeforePause().name());
             o.put("profitControlMode", s.profitControlMode() == null ? "NONE" : s.profitControlMode().name());
-            o.put("automaticStopSellThresholdType", s.automaticStopSellThresholdType() == null ? "PERCENTAGE" : s.automaticStopSellThresholdType().name());
+            o.put("automaticStopSellThresholdType", s.automaticStopSellThresholdType() == null ? "FIXED_AMOUNT" : s.automaticStopSellThresholdType().name());
             o.put("automaticStopSellThreshold", s.automaticStopSellThreshold().toPlainString());
             o.put("automaticStopSellTrailingType", s.automaticStopSellTrailingType() == null ? "PERCENTAGE" : s.automaticStopSellTrailingType().name());
             o.put("automaticStopSellTrailingValue", s.automaticStopSellTrailingValue().toPlainString());
@@ -326,9 +326,9 @@ public class FileStrategyRepository implements StrategyRepository {
 
     private ThresholdType parseThresholdType(String value) {
         try {
-            return ThresholdType.valueOf(value == null || value.isBlank() ? "PERCENTAGE" : value);
+            return ThresholdType.valueOf(value == null || value.isBlank() ? "FIXED_AMOUNT" : value);
         } catch (IllegalArgumentException ex) {
-            return ThresholdType.PERCENTAGE;
+            return ThresholdType.FIXED_AMOUNT;
         }
     }
 
