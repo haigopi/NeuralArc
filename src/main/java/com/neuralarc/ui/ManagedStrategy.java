@@ -37,6 +37,9 @@ final class ManagedStrategy {
     }
 
     String pauseLabel() {
+        if (strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED) {
+            return "Cancelled by User";
+        }
         if (strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED) {
             return "Market Closed";
         }
@@ -47,6 +50,9 @@ final class ManagedStrategy {
     }
 
     String pauseTooltip() {
+        if (strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED) {
+            return "Cancelled by user. Click Place Limit Buy Again to restart";
+        }
         if (strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED) {
             return "Polling auto-paused because the market is closed";
         }
@@ -95,7 +101,12 @@ final class ManagedStrategy {
                 strategy.profitHoldType(),
                 strategy.profitHoldPercent(),
                 strategy.profitHoldAmount(),
-                strategy.restartAfterExitEnabled()
+                strategy.restartAfterExitEnabled(),
+                strategy.profitControlMode() != null ? strategy.profitControlMode() : com.neuralarc.model.ProfitControlMode.NONE,
+                strategy.automaticStopSellThresholdType() != null ? strategy.automaticStopSellThresholdType() : com.neuralarc.model.ThresholdType.PERCENTAGE,
+                strategy.automaticStopSellThreshold(),
+                strategy.automaticStopSellTrailingType() != null ? strategy.automaticStopSellTrailingType() : com.neuralarc.model.TrailingType.PERCENTAGE,
+                strategy.automaticStopSellTrailingValue()
         );
     }
 
@@ -114,4 +125,3 @@ final class ManagedStrategy {
                 || System.currentTimeMillis() - lastDisplayedPositionFetchAtMillis >= refreshIntervalMillis;
     }
 }
-

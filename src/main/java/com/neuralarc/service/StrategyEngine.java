@@ -26,6 +26,7 @@ public class StrategyEngine {
     private final AlpacaClient alpacaClient;
     private final AppSettingsService appSettingsService;
     private final MarketHoursService marketHoursService;
+    private final StrategyProfitControlEvaluator profitControlEvaluator;
 
     public StrategyEngine(
             StrategyRepository strategyRepository,
@@ -50,6 +51,13 @@ public class StrategyEngine {
         this.alpacaClient = alpacaClient;
         this.appSettingsService = appSettingsService;
         this.marketHoursService = marketHoursService;
+        this.profitControlEvaluator = new StrategyProfitControlEvaluator(
+                strategyRepository,
+                stateMachine,
+                alpacaClient,
+                this::submitSellOrder,
+                this::submitTrailingStopSellOrder
+        );
     }
 
     /**
@@ -134,11 +142,10 @@ public class StrategyEngine {
                 strategyRepository.save(strategy);
             }
             evaluateManagedStopLoss(strategy, position.get(), latestPrice, orders, outcomes);
-            evaluateTargetSellAndProfitHold(strategy, position.get(), latestPrice, orders, outcomes);
+            profitControlEvaluator.evaluate(strategy, position.get(), latestPrice, orders, outcomes);
         } else {
             logRule(strategy, "STOP_LOSS", "SKIPPED", "No open position", outcomes);
-            logRule(strategy, "TARGET_SELL", "SKIPPED", "No open position", outcomes);
-            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "No open position", outcomes);
+            logRule(strategy, "PROFIT_CONTROLS", "SKIPPED", "No open position", outcomes);
             maybeRestartStrategy(strategy, orders);
         }
 
@@ -164,6 +171,10 @@ public class StrategyEngine {
     }
 
     public void resumeStrategy(Strategy strategy) {
+        if (!isAutoExecutionAllowed(strategy.id())) {
+            logPoll(strategy, "RESUME", "SKIPPED", "Polling not resumed because strategy is not ACTIVE");
+            return;
+        }
         List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
         List<AlpacaOrderData> remoteOpenOrders = alpacaClient.getOpenOrders(strategy.symbol());
         Optional<AlpacaPositionData> position = alpacaClient.getPosition(strategy.symbol());
@@ -195,6 +206,13 @@ public class StrategyEngine {
             List<AlpacaOrderData> remoteOpenOrders,
             Optional<AlpacaPositionData> position
     ) {
+        if (!isAutoExecutionAllowed(strategy.id())) {
+            if (isManuallyCanceled(strategy.id())) {
+                logPoll(strategy, "ORDER_RECON", "SKIPPED",
+                        "Skipping auto placement because strategy is manually cancelled");
+            }
+            return false;
+        }
         if (!remoteOpenOrders.isEmpty() || (position.isPresent() && position.get().exists())) {
             return false;
         }
@@ -331,99 +349,14 @@ public class StrategyEngine {
     }
 
 
-    private void evaluateTargetSellAndProfitHold(Strategy strategy, AlpacaPositionData position, BigDecimal latestPrice, List<StrategyOrder> orders, List<RuleOutcome> outcomes) {
-        if (!strategy.targetSellEnabled() || strategy.targetSellPrice().compareTo(BigDecimal.ZERO) <= 0) {
-            logRule(strategy, "TARGET_SELL", "SKIPPED", "Disabled or invalid target sell price", outcomes);
-            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Target sell is not active", outcomes);
-            return;
-        }
-        if (hasPendingOrFilledExitOrder(orders, StrategyStage.TARGET_SELL) || hasPendingOrFilledExitOrder(orders, StrategyStage.PROFIT_EXIT)) {
-            logRule(strategy, "TARGET_SELL", "SKIPPED", "Existing pending or filled exit order already present", outcomes);
-            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Existing pending or filled exit order already present", outcomes);
-            return;
-        }
-        boolean profitHoldActive = strategy.currentState() == StrategyLifecycleState.PROFIT_HOLD_ACTIVE
-                || strategy.highestObservedPriceAfterTarget().compareTo(BigDecimal.ZERO) > 0;
-        if (!profitHoldActive && latestPrice.compareTo(strategy.targetSellPrice()) < 0) {
-            logRule(strategy, "TARGET_SELL", "NOT_SATISFIED",
-                    "latestPrice=" + latestPrice.toPlainString()
-                            + " < targetPrice=" + strategy.targetSellPrice().toPlainString(), outcomes);
-            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Target sell has not triggered yet", outcomes);
-            return;
-        }
-
-        if (!strategy.profitHoldEnabled()) {
-            if (strategy.alpacaTrailingStopEnabled()) {
-                logRule(strategy, "TARGET_SELL", "SATISFIED",
-                        "latestPrice=" + latestPrice.toPlainString()
-                                + " >= targetPrice=" + strategy.targetSellPrice().toPlainString()
-                                + ", quantity=" + strategy.targetSellQuantity(position.quantity()).toPlainString(), outcomes);
-                logRule(strategy, "ALPACA_TRAILING_STOP", "SUBMITTED",
-                        "Broker trailing stop requested after trigger", outcomes);
-                submitTrailingStopSellOrder(strategy, strategy.targetSellQuantity(position.quantity()),
-                        StrategyLifecycleState.SELL_PLACED,
-                        "Broker trailing stop sell submitted after trigger",
-                        StrategyEventType.ORDER_SUBMITTED);
-                return;
-            }
-            logRule(strategy, "TARGET_SELL", "SATISFIED",
-                    "latestPrice=" + latestPrice.toPlainString()
-                            + " >= targetPrice=" + strategy.targetSellPrice().toPlainString()
-                            + ", quantity=" + strategy.targetSellQuantity(position.quantity()).toPlainString(), outcomes);
-            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Disabled", outcomes);
-            submitSellOrder(strategy, StrategyStage.TARGET_SELL, strategy.targetSellQuantity(position.quantity()), latestPrice,
-                    StrategyLifecycleState.SELL_PLACED, "Target sell submitted", StrategyEventType.TARGET_TRIGGERED);
-            return;
-        }
-
-        if (strategy.alpacaTrailingStopEnabled()) {
-            logRule(strategy, "TARGET_SELL", "SATISFIED",
-                    "latestPrice=" + latestPrice.toPlainString()
-                            + " >= targetPrice=" + strategy.targetSellPrice().toPlainString()
-                            + ", quantity=" + strategy.targetSellQuantity(position.quantity()).toPlainString(), outcomes);
-            logRule(strategy, "ALPACA_TRAILING_STOP", "SUBMITTED",
-                    "Broker trailing stop requested after trigger", outcomes);
-            submitTrailingStopSellOrder(strategy, strategy.targetSellQuantity(position.quantity()),
-                    StrategyLifecycleState.SELL_PLACED,
-                    "Broker trailing stop sell submitted after trigger",
-                    StrategyEventType.ORDER_SUBMITTED);
-            return;
-        }
-
-        if (!profitHoldActive) {
-            strategy.setCurrentState(StrategyLifecycleState.PROFIT_HOLD_ACTIVE);
-            strategy.updateHighestObservedPriceAfterTarget(latestPrice);
-            stateMachine.transition(strategy, StrategyLifecycleState.PROFIT_HOLD_ACTIVE,
-                    StrategyEventType.PROFIT_HOLD_ARMED,
-                    "Profit hold armed",
-                    "{\"highest\":\"" + strategy.highestObservedPriceAfterTarget().toPlainString() + "\"}");
-        } else {
-            strategy.updateHighestObservedPriceAfterTarget(latestPrice);
-        }
-        BigDecimal threshold = trailingThreshold(strategy);
-        if (latestPrice.compareTo(threshold) > 0) {
-            logRule(strategy, "TARGET_SELL", "SATISFIED",
-                    "latestPrice=" + latestPrice.toPlainString()
-                            + " >= targetPrice=" + strategy.targetSellPrice().toPlainString(), outcomes);
-            logRule(strategy, "PROFIT_HOLD", "NOT_SATISFIED",
-                    "latestPrice=" + latestPrice.toPlainString()
-                            + " > trailingThreshold=" + threshold.toPlainString()
-                            + ", highest=" + strategy.highestObservedPriceAfterTarget().toPlainString(), outcomes);
-            strategyRepository.save(strategy);
-            return;
-        }
-        logRule(strategy, "TARGET_SELL", "SATISFIED",
-                "latestPrice=" + latestPrice.toPlainString()
-                        + " >= targetPrice=" + strategy.targetSellPrice().toPlainString(), outcomes);
-        logRule(strategy, "PROFIT_HOLD", "SATISFIED",
-                "latestPrice=" + latestPrice.toPlainString()
-                        + " <= trailingThreshold=" + threshold.toPlainString()
-                        + ", highest=" + strategy.highestObservedPriceAfterTarget().toPlainString(), outcomes);
-        submitSellOrder(strategy, StrategyStage.PROFIT_EXIT, strategy.targetSellQuantity(position.quantity()), latestPrice,
-                StrategyLifecycleState.SELL_PLACED, "Profit hold exit submitted", StrategyEventType.ORDER_SUBMITTED);
-    }
-
     private void maybeRestartStrategy(Strategy strategy, List<StrategyOrder> orders) {
+        if (!isAutoExecutionAllowed(strategy.id())) {
+            if (isManuallyCanceled(strategy.id())) {
+                logPoll(strategy, "RESTART", "SKIPPED",
+                        "Manual cancel detected; waiting for user to click Place Limit Buy Again");
+            }
+            return;
+        }
         // Called only when no open position exists, so restart is inherently full-exit only.
         Optional<StrategyOrder> latestFilledExitOrder = latestFilledExitOrder(orders);
         if (latestFilledExitOrder.isEmpty()) {
@@ -507,10 +440,20 @@ public class StrategyEngine {
             order.setFilledAt(Instant.now());
         }
         orderRepository.save(order);
-        strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(data.status()));
-        strategy.setLatestAlpacaOrderId(order.alpacaOrderId() == null ? "" : order.alpacaOrderId());
-        transitionForOrderUpdate(strategy, order, status);
-        strategyRepository.save(strategy);
+        Optional<Strategy> latest = strategyRepository.findById(strategy.id());
+        Strategy target = latest.orElse(strategy);
+        target.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(data.status()));
+        target.setLatestAlpacaOrderId(order.alpacaOrderId() == null ? "" : order.alpacaOrderId());
+        if (target.status() != StrategyStatus.ACTIVE) {
+            strategyRepository.save(target);
+            if (target.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED) {
+                logPoll(target, "ORDER_RECON", "SKIPPED",
+                        "Skipping lifecycle transition because strategy is manually cancelled");
+            }
+            return status;
+        }
+        transitionForOrderUpdate(target, order, status);
+        strategyRepository.save(target);
         return status;
     }
 
@@ -713,12 +656,21 @@ public class StrategyEngine {
             return null;
         }
         String clientOrderId = StrategyService.buildClientOrderId(strategy.id(), StrategyStage.PROFIT_EXIT);
-        BigDecimal trailPercent = strategy.profitHoldType() == ProfitHoldType.PERCENT_TRAILING
-                ? strategy.profitHoldPercent()
-                : BigDecimal.ZERO;
-        BigDecimal trailPrice = strategy.profitHoldType() == ProfitHoldType.FIXED_AMOUNT_TRAILING
-                ? strategy.profitHoldAmount()
-                : BigDecimal.ZERO;
+        boolean automaticStopSell = strategy.profitControlMode() == ProfitControlMode.AUTOMATIC_STOP_SELL;
+        BigDecimal trailPercent = automaticStopSell
+                ? (strategy.automaticStopSellTrailingType() == TrailingType.PERCENTAGE
+                        ? strategy.automaticStopSellTrailingValue()
+                        : BigDecimal.ZERO)
+                : (strategy.profitHoldType() == ProfitHoldType.PERCENT_TRAILING
+                        ? strategy.profitHoldPercent()
+                        : BigDecimal.ZERO);
+        BigDecimal trailPrice = automaticStopSell
+                ? (strategy.automaticStopSellTrailingType() == TrailingType.FIXED_AMOUNT
+                        ? strategy.automaticStopSellTrailingValue()
+                        : BigDecimal.ZERO)
+                : (strategy.profitHoldType() == ProfitHoldType.FIXED_AMOUNT_TRAILING
+                        ? strategy.profitHoldAmount()
+                        : BigDecimal.ZERO);
         AlpacaOrderData submitted = alpacaClient.submitTrailingStopSellOrder(
                 strategy.symbol(),
                 requestedQuantity,
@@ -923,5 +875,12 @@ public class StrategyEngine {
     private boolean isAutoExecutionAllowed(String strategyId) {
         Optional<Strategy> latest = strategyRepository.findById(strategyId);
         return latest.isPresent() && latest.get().status() == StrategyStatus.ACTIVE;
+    }
+
+    private boolean isManuallyCanceled(String strategyId) {
+        Optional<Strategy> latest = strategyRepository.findById(strategyId);
+        return latest.isPresent()
+                && latest.get().status() == StrategyStatus.PAUSED
+                && latest.get().pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED;
     }
 }

@@ -232,11 +232,19 @@ public class HelpDialog extends JDialog {
             "Disabling stop loss removes an important risk control. Only do that when you have another exit plan."
         },
         {
-            "Risk Controls - Sell target",
-            "Sell target is the profit-taking rule.\n\n" +
-            "- Sell Trigger Price: The price where the strategy should attempt to sell the current position.\n" +
-            "- Repeat cycle after profitable exit: Starts the strategy again after a successful profit exit when enabled.\n\n" +
-            "Repeat cycle does not restart after defensive exits such as stop loss."
+            "Profit Controls - Sell Trigger",
+            "Sell Trigger is a local application-side profit rule.\n\n" +
+            "- Enable Sell Trigger: Monitors price during polling and places a sell only after the trigger price is reached.\n" +
+            "- Sell Trigger Price: The price where the app should submit the configured sell order.\n\n" +
+            "Enabling Sell Trigger does not place an Alpaca sell order immediately. Manual selling remains available."
+        },
+        {
+            "Profit Controls - Automatic Stop Sell",
+            "Automatic Stop Sell places broker-side protection only after profit activation is reached.\n\n" +
+            "- Profit Activation Type: Percentage gain or fixed dollar gain from the current average entry price.\n" +
+            "- Profit Activation Value: The gain required before the app submits Alpaca trailing stop protection.\n" +
+            "- Broker Trailing Type and Value: The Alpaca trailing stop distance after activation.\n\n" +
+            "The app checks for existing local and Alpaca sell orders before submitting a new trailing stop."
         },
         {
             "Risk Controls - Loss Buy Levels",
@@ -250,10 +258,19 @@ public class HelpDialog extends JDialog {
             "Profit Hold Option",
             "Profit Hold can delay the final sell so the strategy can try to capture more upside.\n\n" +
             "- Enable Profit Hold: Turns trailing profit behavior on.\n" +
+            "- Profit Activation Type and Value: The threshold where Profit Hold starts trailing.\n" +
             "- Profit hold type: Choose percent trailing or fixed amount trailing.\n" +
             "- Percent trailing: Exits after price pulls back by the configured percent from the observed high.\n" +
             "- Fixed amount trailing: Exits after price pulls back by the configured dollar amount.\n\n" +
-            "Profit Hold starts after the sell target condition is reached."
+            "Profit Hold is application-side. It does not require Sell Trigger to be enabled, and manual selling remains available."
+        },
+        {
+            "Profit Controls - Strategy Selection",
+            "Only one automated Profit Control strategy can be active at a time.\n\n" +
+            "- Sell Trigger sells when the configured trigger price is reached.\n" +
+            "- Automatic Stop Sell places Alpaca trailing protection after profit activation.\n" +
+            "- Profit Hold trails locally after profit activation.\n\n" +
+            "Manual selling is always available regardless of the selected automated strategy."
         },
         {
             "Auto Analyze - Inputs",

@@ -50,6 +50,11 @@ public class Strategy {
     private String lastTriggeredRuleType;
     private PauseReason pauseReason;
     private StrategyLifecycleState resumeStateBeforePause;
+    private ProfitControlMode profitControlMode;
+    private ThresholdType automaticStopSellThresholdType;
+    private BigDecimal automaticStopSellThreshold;
+    private TrailingType automaticStopSellTrailingType;
+    private BigDecimal automaticStopSellTrailingValue;
 
     public Strategy(
             String id,
@@ -124,6 +129,11 @@ public class Strategy {
         this.updatedAt = updatedAt == null ? this.createdAt : updatedAt;
         this.pauseReason = PauseReason.NONE;
         this.resumeStateBeforePause = this.currentState;
+        this.profitControlMode = ProfitControlMode.NONE;
+        this.automaticStopSellThresholdType = ThresholdType.PERCENTAGE;
+        this.automaticStopSellThreshold = BigDecimal.ZERO;
+        this.automaticStopSellTrailingType = TrailingType.PERCENTAGE;
+        this.automaticStopSellTrailingValue = BigDecimal.ZERO;
     }
 
     public Strategy(
@@ -244,6 +254,11 @@ public class Strategy {
                 Instant.now()
         );
         strategy.setLossBuyLevelsEnabled(config.lossBuyLevelsEnabled());
+        strategy.setProfitControlMode(config.profitControlMode());
+        strategy.setAutomaticStopSellThresholdType(config.automaticStopSellThresholdType());
+        strategy.setAutomaticStopSellThreshold(config.automaticStopSellThreshold());
+        strategy.setAutomaticStopSellTrailingType(config.automaticStopSellTrailingType());
+        strategy.setAutomaticStopSellTrailingValue(config.automaticStopSellTrailingValue());
         return strategy;
     }
 
@@ -403,4 +418,15 @@ public class Strategy {
         this.resumeStateBeforePause = value == null ? StrategyLifecycleState.CREATED : value;
         touch();
     }
+    public ProfitControlMode profitControlMode() { return profitControlMode; }
+    public ThresholdType automaticStopSellThresholdType() { return automaticStopSellThresholdType; }
+    public BigDecimal automaticStopSellThreshold() { return automaticStopSellThreshold; }
+    public TrailingType automaticStopSellTrailingType() { return automaticStopSellTrailingType; }
+    public BigDecimal automaticStopSellTrailingValue() { return automaticStopSellTrailingValue; }
+
+    public void setProfitControlMode(ProfitControlMode mode) { this.profitControlMode = mode == null ? ProfitControlMode.NONE : mode; touch(); }
+    public void setAutomaticStopSellThresholdType(ThresholdType type) { this.automaticStopSellThresholdType = type == null ? ThresholdType.PERCENTAGE : type; touch(); }
+    public void setAutomaticStopSellThreshold(BigDecimal value) { this.automaticStopSellThreshold = money(value); touch(); }
+    public void setAutomaticStopSellTrailingType(TrailingType type) { this.automaticStopSellTrailingType = type == null ? TrailingType.PERCENTAGE : type; touch(); }
+    public void setAutomaticStopSellTrailingValue(BigDecimal value) { this.automaticStopSellTrailingValue = money(value); touch(); }
 }

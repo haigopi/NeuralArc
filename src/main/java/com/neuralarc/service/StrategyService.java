@@ -17,8 +17,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.logging.Logger;
 
 public class StrategyService {
+    private static final Logger LOGGER = Logger.getLogger(StrategyService.class.getName());
+
     private final StrategyRepository strategyRepository;
     private final StrategyOrderRepository orderRepository;
     private final StrategyExecutionEventRepository eventRepository;
@@ -163,23 +166,47 @@ public class StrategyService {
             rememberResumeStateBeforePause(strategy);
             strategy.setStatus(StrategyStatus.PAUSED);
             strategy.setCurrentState(StrategyLifecycleState.PAUSED);
-            strategy.setPauseReason(PauseReason.USER_PAUSED);
+            strategy.setPauseReason(PauseReason.MANUAL_LIMIT_BUY_CANCELED);
             strategyRepository.save(strategy);
-            stateMachine.transition(strategy, StrategyLifecycleState.PAUSED, StrategyEventType.STRATEGY_PAUSED, "Strategy paused", "{}");
+            stateMachine.transition(
+                    strategy,
+                    StrategyLifecycleState.PAUSED,
+                    StrategyEventType.STRATEGY_PAUSED,
+                    "Manual cancel detected; waiting for user to click Place Limit Buy Again",
+                    "{}"
+            );
+            LOGGER.info(() -> "[STRATEGY][" + strategy.symbol() + "] Manual cancel applied. "
+                    + "Polling not resumed because user cancellation requires manual restart");
         });
     }
 
     public void resume(String strategyId) {
         strategyRepository.findById(strategyId).ifPresent(strategy -> {
+            boolean manualCancelResume = strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED;
             strategy.setStatus(StrategyStatus.ACTIVE);
             restoreResumeStateAfterPause(strategy);
             boolean marketClosed = shouldSuppressPollingForMarketClose();
             strategy.setPauseReason(marketClosed ? PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE : PauseReason.NONE);
             strategy.clearLastError();
             strategyRepository.save(strategy);
-            stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.STRATEGY_RESUMED, "Strategy resumed", "{}");
+            stateMachine.transition(
+                    strategy,
+                    strategy.currentState(),
+                    StrategyEventType.STRATEGY_RESUMED,
+                    manualCancelResume
+                            ? "Manual cancel cleared by user action (Place Limit Buy Again)"
+                            : "Strategy resumed",
+                    "{}"
+            );
             if (!marketClosed) {
+                if (manualCancelResume) {
+                    LOGGER.info(() -> "[STRATEGY][" + strategy.symbol() + "] User requested Place Limit Buy Again. "
+                            + "Clearing manual-cancel state and resuming strategy execution");
+                }
                 strategyEngine.resumeStrategy(strategy);
+            } else if (manualCancelResume) {
+                LOGGER.info(() -> "[STRATEGY][" + strategy.symbol() + "] User requested Place Limit Buy Again, "
+                        + "but polling not resumed because market-closed suppression is active");
             }
         });
     }
@@ -205,6 +232,10 @@ public class StrategyService {
     public void autoResumeFromMarketClose(String strategyId, String reasonMessage) {
         strategyRepository.findById(strategyId).ifPresent(strategy -> {
             if (strategy.status() != StrategyStatus.PAUSED || strategy.pauseReason() != PauseReason.AUTO_MARKET_CLOSED) {
+                if (strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED) {
+                    LOGGER.fine(() -> "[STRATEGY][" + strategy.symbol() + "] Auto-resume skipped: "
+                            + "manual cancel requires Place Limit Buy Again");
+                }
                 return;
             }
             strategy.setStatus(StrategyStatus.ACTIVE);
@@ -615,6 +646,12 @@ public class StrategyService {
                 Instant.now()
         );
         liveStrategy.setLossBuyLevelsEnabled(paperStrategy.lossBuyLevelsEnabled());
+        liveStrategy.setAlpacaTrailingStopEnabled(paperStrategy.alpacaTrailingStopEnabled());
+        liveStrategy.setProfitControlMode(paperStrategy.profitControlMode());
+        liveStrategy.setAutomaticStopSellThresholdType(paperStrategy.automaticStopSellThresholdType());
+        liveStrategy.setAutomaticStopSellThreshold(paperStrategy.automaticStopSellThreshold());
+        liveStrategy.setAutomaticStopSellTrailingType(paperStrategy.automaticStopSellTrailingType());
+        liveStrategy.setAutomaticStopSellTrailingValue(paperStrategy.automaticStopSellTrailingValue());
         liveStrategy.setPauseReason(PauseReason.NONE);
         liveStrategy.setResumeStateBeforePause(StrategyLifecycleState.CREATED);
         return liveStrategy;

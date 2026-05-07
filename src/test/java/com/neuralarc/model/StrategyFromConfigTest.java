@@ -33,7 +33,12 @@ class StrategyFromConfigTest {
                 ProfitHoldType.PERCENT_TRAILING,
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,
-                false
+                false,
+                ProfitControlMode.NONE,
+                ThresholdType.PERCENTAGE,
+                BigDecimal.ZERO,
+                TrailingType.PERCENTAGE,
+                BigDecimal.ZERO
         );
 
         Strategy strategy = Strategy.fromConfig("strategy-1", "TSLA Strategy", config, StrategyMode.PAPER);
@@ -70,7 +75,12 @@ class StrategyFromConfigTest {
                 ProfitHoldType.FIXED_AMOUNT_TRAILING,
                 BigDecimal.ZERO,
                 new BigDecimal("1.25"),
-                true
+                true,
+                ProfitControlMode.NONE,
+                ThresholdType.PERCENTAGE,
+                BigDecimal.ZERO,
+                TrailingType.PERCENTAGE,
+                BigDecimal.ZERO
         );
 
         Strategy strategy = Strategy.fromConfig("strategy-2", "AAPL Strategy", config, StrategyMode.LIVE);

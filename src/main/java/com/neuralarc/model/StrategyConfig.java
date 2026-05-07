@@ -26,7 +26,12 @@ public record StrategyConfig(
         ProfitHoldType profitHoldType,
         BigDecimal profitHoldPercent,
         BigDecimal profitHoldAmount,
-        boolean repeatCycleAfterProfitExitEnabled
+        boolean repeatCycleAfterProfitExitEnabled,
+        ProfitControlMode profitControlMode,
+        ThresholdType automaticStopSellThresholdType,
+        BigDecimal automaticStopSellThreshold,
+        TrailingType automaticStopSellTrailingType,
+        BigDecimal automaticStopSellTrailingValue
 ) {
     public StrategyConfig {
         baseBuyPrice = Monetary.round(baseBuyPrice);
@@ -38,6 +43,11 @@ public record StrategyConfig(
         profitHoldType = profitHoldType == null ? ProfitHoldType.PERCENT_TRAILING : profitHoldType;
         profitHoldPercent = Monetary.round(profitHoldPercent);
         profitHoldAmount = Monetary.round(profitHoldAmount);
+        profitControlMode = profitControlMode == null ? ProfitControlMode.NONE : profitControlMode;
+        automaticStopSellThresholdType = automaticStopSellThresholdType == null ? ThresholdType.PERCENTAGE : automaticStopSellThresholdType;
+        automaticStopSellThreshold = Monetary.round(automaticStopSellThreshold);
+        automaticStopSellTrailingType = automaticStopSellTrailingType == null ? TrailingType.PERCENTAGE : automaticStopSellTrailingType;
+        automaticStopSellTrailingValue = Monetary.round(automaticStopSellTrailingValue);
     }
 
     public StrategyConfig(
@@ -82,7 +92,12 @@ public record StrategyConfig(
                 profitHoldType,
                 profitHoldPercent,
                 profitHoldAmount,
-                false
+                false,
+                ProfitControlMode.NONE,
+                ThresholdType.PERCENTAGE,
+                BigDecimal.ZERO,
+                TrailingType.PERCENTAGE,
+                BigDecimal.ZERO
         );
     }
 
@@ -127,7 +142,12 @@ public record StrategyConfig(
                 profitHoldType,
                 profitHoldPercent,
                 profitHoldAmount,
-                false
+                false,
+                ProfitControlMode.NONE,
+                ThresholdType.PERCENTAGE,
+                BigDecimal.ZERO,
+                TrailingType.PERCENTAGE,
+                BigDecimal.ZERO
         );
     }
 
@@ -176,7 +196,12 @@ public record StrategyConfig(
                 profitHoldType,
                 profitHoldPercent,
                 profitHoldAmount,
-                repeatCycleAfterProfitExitEnabled
+                repeatCycleAfterProfitExitEnabled,
+                ProfitControlMode.NONE,
+                ThresholdType.PERCENTAGE,
+                BigDecimal.ZERO,
+                TrailingType.PERCENTAGE,
+                BigDecimal.ZERO
         );
     }
 
@@ -223,7 +248,12 @@ public record StrategyConfig(
                 profitHoldType,
                 profitHoldPercent,
                 profitHoldAmount,
-                repeatCycleAfterProfitExitEnabled
+                repeatCycleAfterProfitExitEnabled,
+                ProfitControlMode.NONE,
+                ThresholdType.PERCENTAGE,
+                BigDecimal.ZERO,
+                TrailingType.PERCENTAGE,
+                BigDecimal.ZERO
         );
     }
 
@@ -263,7 +293,12 @@ public record StrategyConfig(
                 ProfitHoldType.PERCENT_TRAILING,
                 holdAtTenPercentProfit ? new BigDecimal("10.00") : BigDecimal.ZERO,
                 BigDecimal.ZERO,
-                false
+                false,
+                ProfitControlMode.NONE,
+                ThresholdType.PERCENTAGE,
+                BigDecimal.ZERO,
+                TrailingType.PERCENTAGE,
+                BigDecimal.ZERO
         );
     }
 

@@ -45,7 +45,7 @@ class StrategyActionsPresenterTest {
     @Test
     void manuallyCanceledStrategiesShowPlaceLimitBuyAgain() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
-                new StrategyActionsPresenter.StrategyActionsState(false, true, true, false, "", true, false)
+                new StrategyActionsPresenter.StrategyActionsState(false, true, true, false, "", true, true)
         );
 
         assertEquals("Place Limit Buy Again", viewModel.toggleText());

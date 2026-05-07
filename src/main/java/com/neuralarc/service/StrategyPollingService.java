@@ -219,6 +219,7 @@ public class StrategyPollingService {
             if (!strategyEngine.canAutoRetryFailed(strategy)) {
                 return;
             }
+            LOGGER.info(() -> "[POLL][RETRY][" + strategy.symbol() + "] Reactivating failed strategy for retry mechanism");
             strategy.setStatus(StrategyStatus.ACTIVE);
             strategy.setCurrentState(StrategyLifecycleState.CREATED);
             strategy.setPauseReason(PauseReason.NONE);
@@ -299,6 +300,11 @@ public class StrategyPollingService {
         if (strategy == null) {
             return false;
         }
+        if (strategy.status() == StrategyStatus.PAUSED
+                && strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED) {
+            LOGGER.fine(() -> "[POLL][SCHEDULER][" + strategy.symbol() + "] Polling not resumed because user cancellation requires manual restart");
+            return false;
+        }
         // FAILED/COMPLETED/STOPPED/ARCHIVED belong to history and should not run in poll cycles.
         return strategy.status() == StrategyStatus.ACTIVE;
     }
@@ -321,8 +327,10 @@ public class StrategyPollingService {
             }
         }
         if (marketOpen) {
+            LOGGER.fine("[POLL][SCHEDULER] Market-open transition: evaluating auto-resume candidates");
             resumeAutoPausedStrategies();
         } else {
+            LOGGER.fine("[POLL][SCHEDULER] Market-closed transition: evaluating auto-pause candidates");
             autoPauseActiveStrategiesForMarketClose();
         }
     }
@@ -339,6 +347,9 @@ public class StrategyPollingService {
                 continue;
             }
             if (strategy.pauseReason() != PauseReason.AUTO_MARKET_CLOSED) {
+                if (strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED) {
+                    LOGGER.fine(() -> "[POLL][SCHEDULER][" + strategy.symbol() + "] Manual cancel detected; waiting for user to click Place Limit Buy Again");
+                }
                 continue;
             }
             strategyService.autoResumeFromMarketClose(strategy.id(), "Strategy auto-resumed because market is open");

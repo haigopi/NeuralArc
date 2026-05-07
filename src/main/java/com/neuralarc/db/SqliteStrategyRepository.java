@@ -1,12 +1,15 @@
 package com.neuralarc.db;
 
 import com.neuralarc.model.PauseReason;
+import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
+import com.neuralarc.model.ThresholdType;
+import com.neuralarc.model.TrailingType;
 import com.neuralarc.service.StrategyRepository;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -180,8 +183,11 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     last_polled_at, last_error, last_event,
                     latest_order_status, latest_alpaca_order_id,
                     pause_reason, resume_state_before_pause,
+                    profit_control_mode, automatic_stop_sell_threshold_type,
+                    automatic_stop_sell_threshold, automatic_stop_sell_trailing_type,
+                    automatic_stop_sell_trailing_value,
                     created_at, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name, symbol=excluded.symbol,
                     mode=excluded.mode, status=excluded.status, current_state=excluded.current_state,
@@ -220,6 +226,11 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     latest_alpaca_order_id=excluded.latest_alpaca_order_id,
                     pause_reason=excluded.pause_reason,
                     resume_state_before_pause=excluded.resume_state_before_pause,
+                    profit_control_mode=excluded.profit_control_mode,
+                    automatic_stop_sell_threshold_type=excluded.automatic_stop_sell_threshold_type,
+                    automatic_stop_sell_threshold=excluded.automatic_stop_sell_threshold,
+                    automatic_stop_sell_trailing_type=excluded.automatic_stop_sell_trailing_type,
+                    automatic_stop_sell_trailing_value=excluded.automatic_stop_sell_trailing_value,
                     created_at=excluded.created_at,
                     updated_at=excluded.updated_at
                 """;
@@ -252,8 +263,11 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     last_polled_at, last_error, last_event,
                     latest_order_status, latest_alpaca_order_id,
                     pause_reason, resume_state_before_pause,
+                    profit_control_mode, automatic_stop_sell_threshold_type,
+                    automatic_stop_sell_threshold, automatic_stop_sell_trailing_type,
+                    automatic_stop_sell_trailing_value,
                     created_at, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             bindStrategy(ps, s);
@@ -304,6 +318,11 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         ps.setString(i++, s.latestAlpacaOrderId() == null ? "" : s.latestAlpacaOrderId());
         ps.setString(i++, s.pauseReason().name());
         ps.setString(i++, s.resumeStateBeforePause().name());
+        ps.setString(i++, s.profitControlMode() == null ? ProfitControlMode.NONE.name() : s.profitControlMode().name());
+        ps.setString(i++, s.automaticStopSellThresholdType() == null ? ThresholdType.PERCENTAGE.name() : s.automaticStopSellThresholdType().name());
+        ps.setString(i++, s.automaticStopSellThreshold() == null ? "0.00" : s.automaticStopSellThreshold().toPlainString());
+        ps.setString(i++, s.automaticStopSellTrailingType() == null ? TrailingType.PERCENTAGE.name() : s.automaticStopSellTrailingType().name());
+        ps.setString(i++, s.automaticStopSellTrailingValue() == null ? "0.00" : s.automaticStopSellTrailingValue().toPlainString());
         ps.setString(i++, s.createdAt().toString());
         ps.setString(i, s.updatedAt().toString());
     }
@@ -356,6 +375,11 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         s.setLatestAlpacaOrderId(rs.getString("latest_alpaca_order_id"));
         s.setPauseReason(safePauseReason(rs.getString("pause_reason")));
         s.setResumeStateBeforePause(safeLifecycle(rs.getString("resume_state_before_pause")));
+        s.setProfitControlMode(safeProfitControlMode(rs.getString("profit_control_mode")));
+        s.setAutomaticStopSellThresholdType(safeThresholdType(rs.getString("automatic_stop_sell_threshold_type")));
+        s.setAutomaticStopSellThreshold(decimal(rs, "automatic_stop_sell_threshold"));
+        s.setAutomaticStopSellTrailingType(safeTrailingType(rs.getString("automatic_stop_sell_trailing_type")));
+        s.setAutomaticStopSellTrailingValue(decimal(rs, "automatic_stop_sell_trailing_value"));
         return s;
     }
 
@@ -405,6 +429,11 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         s.setLatestAlpacaOrderId(o.optString("latestAlpacaOrderId", ""));
         s.setPauseReason(safePauseReason(o.optString("pauseReason", "NONE")));
         s.setResumeStateBeforePause(safeLifecycle(o.optString("resumeStateBeforePause", s.currentState().name())));
+        s.setProfitControlMode(safeProfitControlMode(o.optString("profitControlMode", "NONE")));
+        s.setAutomaticStopSellThresholdType(safeThresholdType(o.optString("automaticStopSellThresholdType", "PERCENTAGE")));
+        s.setAutomaticStopSellThreshold(decimal(o, "automaticStopSellThreshold"));
+        s.setAutomaticStopSellTrailingType(safeTrailingType(o.optString("automaticStopSellTrailingType", "PERCENTAGE")));
+        s.setAutomaticStopSellTrailingValue(decimal(o, "automaticStopSellTrailingValue"));
         return s;
     }
 
@@ -449,6 +478,11 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         o.put("latestAlpacaOrderId", s.latestAlpacaOrderId() == null ? "" : s.latestAlpacaOrderId());
         o.put("pauseReason", s.pauseReason().name());
         o.put("resumeStateBeforePause", s.resumeStateBeforePause().name());
+        o.put("profitControlMode", s.profitControlMode() == null ? ProfitControlMode.NONE.name() : s.profitControlMode().name());
+        o.put("automaticStopSellThresholdType", s.automaticStopSellThresholdType() == null ? ThresholdType.PERCENTAGE.name() : s.automaticStopSellThresholdType().name());
+        o.put("automaticStopSellThreshold", s.automaticStopSellThreshold() == null ? "0.00" : s.automaticStopSellThreshold().toPlainString());
+        o.put("automaticStopSellTrailingType", s.automaticStopSellTrailingType() == null ? TrailingType.PERCENTAGE.name() : s.automaticStopSellTrailingType().name());
+        o.put("automaticStopSellTrailingValue", s.automaticStopSellTrailingValue() == null ? "0.00" : s.automaticStopSellTrailingValue().toPlainString());
         return o;
     }
 
@@ -479,6 +513,21 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         catch (IllegalArgumentException ex) { return ProfitHoldType.PERCENT_TRAILING; }
     }
 
+    private ProfitControlMode safeProfitControlMode(String v) {
+        try { return ProfitControlMode.valueOf(v == null || v.isBlank() ? "NONE" : v); }
+        catch (IllegalArgumentException ex) { return ProfitControlMode.NONE; }
+    }
+
+    private ThresholdType safeThresholdType(String v) {
+        try { return ThresholdType.valueOf(v == null || v.isBlank() ? "PERCENTAGE" : v); }
+        catch (IllegalArgumentException ex) { return ThresholdType.PERCENTAGE; }
+    }
+
+    private TrailingType safeTrailingType(String v) {
+        try { return TrailingType.valueOf(v == null || v.isBlank() ? "PERCENTAGE" : v); }
+        catch (IllegalArgumentException ex) { return TrailingType.PERCENTAGE; }
+    }
+
     private PauseReason safePauseReason(String v) {
         try { return PauseReason.valueOf(v == null ? "NONE" : v); }
         catch (IllegalArgumentException ex) { return PauseReason.NONE; }
@@ -489,4 +538,3 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         catch (Exception ex) { return Instant.now(); }
     }
 }
-

@@ -2,6 +2,7 @@ package com.neuralarc.ui;
 
 import com.neuralarc.analytics.AnalyticsEvent;
 import com.neuralarc.model.BrokerType;
+import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.Position;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyMode;
@@ -32,10 +33,14 @@ public final class StrategyActionsController {
         }
 
         boolean wasPaused = entry.isPaused();
+        boolean manualCancelResume = wasPaused
+                && entry.strategy().pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED;
         String strategyId = entry.strategy().id();
         String symbol = entry.strategy().symbol();
         entry.setPauseResumeBusy(true);
-        entry.setPauseResumeBusyText(wasPaused ? "Resuming..." : "Canceling...");
+        entry.setPauseResumeBusyText(wasPaused
+                ? (manualCancelResume ? "Placing Limit Buy..." : "Resuming...")
+                : "Canceling...");
         gateway.refreshStrategyTableRow(row);
 
         gateway.runBackgroundTask(
@@ -48,10 +53,13 @@ public final class StrategyActionsController {
                 },
                 () -> {
                     if (wasPaused) {
-                        gateway.log("Strategy resumed for symbol " + symbol);
+                        gateway.log((manualCancelResume
+                                ? "Place Limit Buy Again requested for symbol "
+                                : "Strategy resumed for symbol ") + symbol);
                     } else {
                         gateway.stopPollingCountdown(strategyId);
-                        gateway.log("Strategy canceled for symbol " + symbol);
+                        gateway.log("Manual cancel applied for symbol " + symbol
+                                + ". Waiting for user action: Place Limit Buy Again.");
                         gateway.publishAnalytics(new AnalyticsEvent("STRATEGY_PAUSED").put("symbol", symbol));
                     }
                     gateway.findStrategyById(strategyId).ifPresent(updated -> {

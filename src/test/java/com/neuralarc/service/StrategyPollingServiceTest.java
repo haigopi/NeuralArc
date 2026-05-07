@@ -188,6 +188,59 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void profitHoldModeUsesProfitActivationThresholdWhenSellTriggerDisabled() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(true);
+        strategy.setTargetSellEnabled(false);
+        strategy.setProfitControlMode(ProfitControlMode.PROFIT_HOLD);
+        strategy.setAutomaticStopSellThresholdType(ThresholdType.PERCENTAGE);
+        strategy.setAutomaticStopSellThreshold(new BigDecimal("25.00"));
+        strategy.setProfitHoldType(ProfitHoldType.PERCENT_TRAILING);
+        strategy.setProfitHoldPercent(new BigDecimal("10.00"));
+        f.strategies.save(strategy);
+
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("9.90"), "{}"));
+        f.service.pollStrategy(strategy.id());
+        assertEquals(0, f.strategies.findById(strategy.id()).orElseThrow().highestObservedPriceAfterTarget().compareTo(BigDecimal.ZERO));
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isEmpty());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.TARGET_SELL).isEmpty());
+
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.50"), "{}"));
+        f.service.pollStrategy(strategy.id());
+        assertEquals(new BigDecimal("10.50"), f.strategies.findById(strategy.id()).orElseThrow().highestObservedPriceAfterTarget());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isEmpty());
+
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("9.40"), "{}"));
+        f.service.pollStrategy(strategy.id());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isPresent());
+    }
+
+    @Test
+    void automaticStopSellUsesProfitActivationThresholdAndConfiguredTrailingValue() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setTargetSellEnabled(false);
+        strategy.setProfitControlMode(ProfitControlMode.AUTOMATIC_STOP_SELL);
+        strategy.setAutomaticStopSellThresholdType(ThresholdType.FIXED_AMOUNT);
+        strategy.setAutomaticStopSellThreshold(new BigDecimal("2.00"));
+        strategy.setAutomaticStopSellTrailingType(TrailingType.FIXED_AMOUNT);
+        strategy.setAutomaticStopSellTrailingValue(new BigDecimal("0.75"));
+        f.strategies.save(strategy);
+
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("9.99"), "{}"));
+        f.service.pollStrategy(strategy.id());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isEmpty());
+
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.00"), "{}"));
+        f.service.pollStrategy(strategy.id());
+
+        StrategyOrder exit = f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).orElseThrow();
+        assertEquals(StrategyOrderType.TRAILING_STOP, exit.orderType());
+        assertEquals(BigDecimal.ZERO, f.alpaca.lastTrailPercent);
+        assertEquals(new BigDecimal("0.75"), f.alpaca.lastTrailPrice);
+    }
+
+    @Test
     void maxQuantityAndCapitalRiskControlsBlockBuy() {
         Fixture f = new Fixture();
         Strategy strategy = new Strategy(
@@ -244,7 +297,7 @@ class StrategyPollingServiceTest {
     }
 
     @Test
-    void manualPauseDuringInFlightPollDoesNotRecreateBaseBuy() throws Exception {
+    void manualCancelDuringInFlightPollDoesNotRecreateBaseBuy() throws Exception {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
         StrategyOrder pendingBase = new StrategyOrder(
@@ -268,7 +321,7 @@ class StrategyPollingServiceTest {
         Strategy paused = f.strategies.findById(strategy.id()).orElseThrow();
         paused.setStatus(StrategyStatus.PAUSED);
         paused.setCurrentState(StrategyLifecycleState.PAUSED);
-        paused.setPauseReason(PauseReason.USER_PAUSED);
+        paused.setPauseReason(PauseReason.MANUAL_LIMIT_BUY_CANCELED);
         f.strategies.save(paused);
 
         f.alpaca.releaseBlockedOpenOrders();
@@ -276,14 +329,13 @@ class StrategyPollingServiceTest {
 
         Strategy after = f.strategies.findById(strategy.id()).orElseThrow();
         assertEquals(StrategyStatus.PAUSED, after.status());
-        assertEquals(PauseReason.USER_PAUSED, after.pauseReason());
+        assertEquals(PauseReason.MANUAL_LIMIT_BUY_CANCELED, after.pauseReason());
 
         List<StrategyOrder> ordersAfter = f.orders.findByStrategyId(strategy.id());
-        long pendingBaseOrders = ordersAfter.stream()
+        long baseBuyOrders = ordersAfter.stream()
                 .filter(order -> order.stage() == StrategyStage.BASE_BUY)
-                .filter(order -> order.status() == StrategyOrderStatus.SUBMITTED || order.status() == StrategyOrderStatus.PENDING)
                 .count();
-        assertEquals(0L, pendingBaseOrders, "No base-buy re-submit after manual pause during in-flight poll");
+        assertEquals(1L, baseBuyOrders, "No additional base-buy order should be created after manual cancel during in-flight poll");
     }
 
     @Test
@@ -646,6 +698,8 @@ class StrategyPollingServiceTest {
         int positionCalls;
         int priceCalls;
         int openOrderCalls;
+        BigDecimal lastTrailPercent = BigDecimal.ZERO;
+        BigDecimal lastTrailPrice = BigDecimal.ZERO;
         private volatile CountDownLatch openOrdersEnteredLatch;
         private volatile CountDownLatch openOrdersReleaseLatch;
 
@@ -663,6 +717,8 @@ class StrategyPollingServiceTest {
         public AlpacaOrderData submitTrailingStopSellOrder(String symbol, int quantity, BigDecimal trailPercent, BigDecimal trailPrice, String clientOrderId) {
             orderCounter++;
             String orderId = "ord-" + orderCounter;
+            lastTrailPercent = trailPercent == null ? BigDecimal.ZERO : trailPercent;
+            lastTrailPrice = trailPrice == null ? BigDecimal.ZERO : trailPrice;
             BigDecimal effectiveLimit = trailPrice != null && trailPrice.compareTo(BigDecimal.ZERO) > 0
                     ? trailPrice
                     : Monetary.zero();

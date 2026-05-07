@@ -7,6 +7,9 @@ import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
+import com.neuralarc.model.ProfitControlMode;
+import com.neuralarc.model.ThresholdType;
+import com.neuralarc.model.TrailingType;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -200,6 +203,21 @@ public class FileStrategyRepository implements StrategyRepository {
                     o.optString("resumeStateBeforePause", strategy.currentState().name()),
                     strategy.currentState()
             ));
+            // Backward compatibility: infer ProfitControlMode from legacy fields if not explicitly set
+            ProfitControlMode profitControlMode = parseProfitControlMode(o.optString("profitControlMode", ""));
+            if (profitControlMode == ProfitControlMode.NONE) {
+                // Infer from legacy fields
+                if (o.optBoolean("sellTriggerEnabled", false)) {
+                    profitControlMode = ProfitControlMode.SELL_TRIGGER;
+                } else if (o.optBoolean("profitHoldEnabled", false)) {
+                    profitControlMode = ProfitControlMode.PROFIT_HOLD;
+                }
+            }
+            strategy.setProfitControlMode(profitControlMode);
+            strategy.setAutomaticStopSellThresholdType(parseThresholdType(o.optString("automaticStopSellThresholdType", "PERCENTAGE")));
+            strategy.setAutomaticStopSellThreshold(decimal(o, "automaticStopSellThreshold", "0.00"));
+            strategy.setAutomaticStopSellTrailingType(parseTrailingType(o.optString("automaticStopSellTrailingType", "PERCENTAGE")));
+            strategy.setAutomaticStopSellTrailingValue(decimal(o, "automaticStopSellTrailingValue", "0.00"));
             result.add(strategy);
         }
         return result;
@@ -251,6 +269,11 @@ public class FileStrategyRepository implements StrategyRepository {
             o.put("latestAlpacaOrderId", s.latestAlpacaOrderId() == null ? "" : s.latestAlpacaOrderId());
             o.put("pauseReason", s.pauseReason().name());
             o.put("resumeStateBeforePause", s.resumeStateBeforePause().name());
+            o.put("profitControlMode", s.profitControlMode() == null ? "NONE" : s.profitControlMode().name());
+            o.put("automaticStopSellThresholdType", s.automaticStopSellThresholdType() == null ? "PERCENTAGE" : s.automaticStopSellThresholdType().name());
+            o.put("automaticStopSellThreshold", s.automaticStopSellThreshold().toPlainString());
+            o.put("automaticStopSellTrailingType", s.automaticStopSellTrailingType() == null ? "PERCENTAGE" : s.automaticStopSellTrailingType().name());
+            o.put("automaticStopSellTrailingValue", s.automaticStopSellTrailingValue().toPlainString());
             arr.put(o);
         }
         return arr;
@@ -290,6 +313,30 @@ public class FileStrategyRepository implements StrategyRepository {
             return StrategyLifecycleState.valueOf(value == null || value.isBlank() ? fallback.name() : value);
         } catch (IllegalArgumentException ex) {
             return fallback;
+        }
+    }
+
+    private ProfitControlMode parseProfitControlMode(String value) {
+        try {
+            return ProfitControlMode.valueOf(value == null || value.isBlank() ? "NONE" : value);
+        } catch (IllegalArgumentException ex) {
+            return ProfitControlMode.NONE;
+        }
+    }
+
+    private ThresholdType parseThresholdType(String value) {
+        try {
+            return ThresholdType.valueOf(value == null || value.isBlank() ? "PERCENTAGE" : value);
+        } catch (IllegalArgumentException ex) {
+            return ThresholdType.PERCENTAGE;
+        }
+    }
+
+    private TrailingType parseTrailingType(String value) {
+        try {
+            return TrailingType.valueOf(value == null || value.isBlank() ? "PERCENTAGE" : value);
+        } catch (IllegalArgumentException ex) {
+            return TrailingType.PERCENTAGE;
         }
     }
 }

@@ -87,7 +87,12 @@ class StrategyServiceTest {
                 ProfitHoldType.PERCENT_TRAILING,
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,
-                false
+                false,
+                ProfitControlMode.NONE,
+                ThresholdType.PERCENTAGE,
+                BigDecimal.ZERO,
+                TrailingType.PERCENTAGE,
+                BigDecimal.ZERO
         );
         Strategy strategy = Strategy.fromConfig("dialog-config-strategy", "MSFT Strategy", config, StrategyMode.PAPER);
 
@@ -213,7 +218,9 @@ class StrategyServiceTest {
         service.pause(strategy.id());
 
         assertTrue(alpaca.canceledOrderIds.contains("ord-1"));
-        assertEquals(StrategyStatus.PAUSED, strategies.findById(strategy.id()).orElseThrow().status());
+        Strategy paused = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.PAUSED, paused.status());
+        assertEquals(PauseReason.MANUAL_LIMIT_BUY_CANCELED, paused.pauseReason());
     }
 
     @Test
@@ -292,6 +299,28 @@ class StrategyServiceTest {
         assertEquals(StrategyStatus.ACTIVE, resumed.status());
         assertEquals(StrategyLifecycleState.BUY_LIMIT_1_PLACED, resumed.currentState());
         assertEquals(PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE, resumed.pauseReason());
+        assertTrue(alpaca.submittedOrders.isEmpty());
+    }
+
+    @Test
+    void autoResumeFromMarketCloseSkipsManuallyCanceledStrategies() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca, new AlwaysOpenMarketHoursService());
+
+        Strategy strategy = baseStrategy("TSLA", 10, new BigDecimal("350.00"));
+        strategy.setStatus(StrategyStatus.PAUSED);
+        strategy.setCurrentState(StrategyLifecycleState.PAUSED);
+        strategy.setPauseReason(PauseReason.MANUAL_LIMIT_BUY_CANCELED);
+        strategies.save(strategy);
+
+        service.autoResumeFromMarketClose(strategy.id(), "Strategy auto-resumed because market is open");
+
+        Strategy after = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.PAUSED, after.status());
+        assertEquals(PauseReason.MANUAL_LIMIT_BUY_CANCELED, after.pauseReason());
         assertTrue(alpaca.submittedOrders.isEmpty());
     }
 

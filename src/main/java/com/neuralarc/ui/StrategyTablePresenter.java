@@ -66,6 +66,10 @@ public final class StrategyTablePresenter {
         if (strategy.status() == StrategyStatus.PAUSED && strategy.pauseReason() == PauseReason.USER_PAUSED) {
             return "Canceled";
         }
+        if (strategy.status() == StrategyStatus.PAUSED
+                && strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED) {
+            return "Cancelled by user. Waiting for manual restart.";
+        }
         if (strategy.status() == StrategyStatus.PAUSED && strategy.pauseReason() == PauseReason.SYSTEM_ERROR) {
             return "Canceled (System Error)";
         }

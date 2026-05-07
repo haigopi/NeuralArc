@@ -4,12 +4,15 @@ import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.model.AutoAnalyzeBundle;
 import com.neuralarc.model.AutoAnalyzeResult;
 import com.neuralarc.model.MarketMode;
+import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.RecommendationAction;
 import com.neuralarc.model.RecommendationType;
 import com.neuralarc.model.ShortTermMarketMode;
 import com.neuralarc.model.StrategyConfig;
 import com.neuralarc.model.StrategyRecommendation;
+import com.neuralarc.model.ThresholdType;
+import com.neuralarc.model.TrailingType;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.AutoAnalyzeService;
 import com.neuralarc.service.StrategyApplyService;
@@ -96,8 +99,7 @@ public class StrategyDialog extends JDialog {
     private final JTextField baseQtyField = new JTextField(25);
     private final JCheckBox stopLossEnabled = new JCheckBox("Enable Stop Loss", true);
     private final JTextField stopLossField = new JTextField(25);
-    private final JTextField sellTriggerField = new JTextField(25);
-    private final JCheckBox sellTriggerEnabled = new JCheckBox("Enable", true);
+    private final ProfitControlsPanel profitControlsPanel = new ProfitControlsPanel();
     private final JTextField loss1PriceField = new JTextField(25);
     private final JTextField loss1QtyField = new JTextField(25);
     private final JTextField loss2PriceField = new JTextField(25);
@@ -105,11 +107,6 @@ public class StrategyDialog extends JDialog {
     private final JCheckBox lossBuyLevelsEnabled = new JCheckBox("Enable Loss Buy Levels", true);
     private final JTextField pollingField = new JTextField(25);
     private final JCheckBox repeatCycleAfterProfitExitEnabled = new JCheckBox("Repeat cycle after profitable exit", false);
-    private final JCheckBox alpacaTrailingStopEnabled = new JCheckBox("Auto place Alpaca trailing stop sell", false);
-    private final JCheckBox profitHoldEnabled = new JCheckBox("Enable Profit Hold", false);
-    private final JComboBox<ProfitHoldType> profitHoldTypeBox = new JComboBox<>(ProfitHoldType.values());
-    private final JTextField profitHoldPercentField = new JTextField(25);
-    private final JTextField profitHoldAmountField = new JTextField(25);
 
     private final JTextArea highSeriesArea = new JTextArea(8, 22);
     private final JTextArea lowSeriesArea = new JTextArea(8, 22);
@@ -181,7 +178,6 @@ public class StrategyDialog extends JDialog {
         configureTooltips();
         wireStopLossFields();
         wireLossBuyLevelFields();
-        wireProfitHoldFields();
         styleInputs();
 
         // Pre-fill Auto Analyze symbol from the strategy config if available
@@ -279,24 +275,6 @@ public class StrategyDialog extends JDialog {
         riskContent.add(Box.createVerticalStrut(SECTION_GAP));
         riskContent.add(lossBuySubPanel);
         riskPanel.add(riskContent);
-
-        JPanel profitControlsPanel = new JPanel(new BorderLayout(0, 8));
-        profitControlsPanel.setBorder(createSectionBorder("Profit Controls"));
-        prepareSection(profitControlsPanel);
-        JPanel profitControlFields = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
-        profitControlFields.setOpaque(false);
-        addRow(profitControlFields, "Enable sell trigger:", sellTriggerEnabled);
-        addRow(profitControlFields, "Sell trigger price:", sellTriggerField);
-        addRow(profitControlFields, "Automatic stop sell placement on Alpaca:", alpacaTrailingStopEnabled);
-        addRow(profitControlFields, "Enable Profit Hold:", profitHoldEnabled);
-        addRow(profitControlFields, "Trailing type:", profitHoldTypeBox);
-        addRow(profitControlFields, "Trailing percent:", profitHoldPercentField);
-        addRow(profitControlFields, "Trailing amount:", profitHoldAmountField);
-        profitControlsPanel.add(profitControlFields, BorderLayout.NORTH);
-        JLabel help = new JLabel("<html>Sell trigger starts profit controls after price reaches the configured trigger.<br>Automatic Alpaca trailing stop places a broker-side trailing stop after trigger.<br>Profit Hold keeps local trailing logic using the same trailing type and value.</html>");
-        help.setForeground(TEXT_MUTED);
-        help.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
-        profitControlsPanel.add(help, BorderLayout.CENTER);
 
         JPanel executionPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
         executionPanel.setBorder(createSectionBorder("Execution"));
@@ -625,7 +603,7 @@ public class StrategyDialog extends JDialog {
 
         basePriceField.setText(base.toPlainString());
         stopLossField.setText(stopLoss.toPlainString());
-        sellTriggerField.setText(sellTrigger.toPlainString());
+        profitControlsPanel.setSellTriggerPrice(sellTrigger);
         loss1PriceField.setText(loss1.toPlainString());
         loss2PriceField.setText(loss2.toPlainString());
 
@@ -694,17 +672,11 @@ public class StrategyDialog extends JDialog {
     private void configureTooltips() {
         basePriceField.setToolTipText(TooltipStyler.text("Initial buy triggers when price is less than or equal to this value."));
         stopLossField.setToolTipText(TooltipStyler.text("Stop Loss activates once price reaches this level, then can trigger stop-loss on reversal."));
-        sellTriggerField.setToolTipText(TooltipStyler.text("Sell trigger starts at this price."));
-        sellTriggerEnabled.setToolTipText(TooltipStyler.text("Enable to activate sell-trigger based profit controls."));
-        alpacaTrailingStopEnabled.setToolTipText(TooltipStyler.text("After trigger, place a broker-side trailing stop sell on Alpaca using the selected trailing type."));
         lossBuyLevelsEnabled.setToolTipText(TooltipStyler.text("When disabled, Loss Buy Level 1 and Loss Buy Level 2 will not trigger."));
         loss1PriceField.setToolTipText(TooltipStyler.text("Loss Buy Level 1 triggers when price is less than or equal to this value."));
         loss2PriceField.setToolTipText(TooltipStyler.text("Loss Buy Level 2 triggers when price is less than or equal to this value."));
         stopLossEnabled.setToolTipText(TooltipStyler.text("When disabled, stop-loss checks and stop-loss sell orders are skipped."));
         pollingField.setToolTipText(TooltipStyler.text("How often the strategy evaluates prices, in seconds."));
-        profitHoldTypeBox.setToolTipText(TooltipStyler.text("Choose whether profit hold exits on a percent pullback or a fixed amount pullback."));
-        profitHoldPercentField.setToolTipText(TooltipStyler.text("Trailing percent below the highest observed price after the target trigger."));
-        profitHoldAmountField.setToolTipText(TooltipStyler.text("Trailing dollar amount below the highest observed price after the target trigger."));
         repeatCycleAfterProfitExitEnabled.setToolTipText(TooltipStyler.text("Optional. When enabled, a new cycle starts only after a profitable exit. Stop-loss and manual close exits do not restart the cycle."));
     }
 
@@ -713,24 +685,18 @@ public class StrategyDialog extends JDialog {
         styleInput(basePriceField);
         styleInput(baseQtyField);
         styleInput(stopLossField);
-        styleInput(sellTriggerField);
         styleInput(loss1PriceField);
         styleInput(loss1QtyField);
         styleInput(loss2PriceField);
         styleInput(loss2QtyField);
         styleInput(pollingField);
-        styleInput(profitHoldPercentField);
-        styleInput(profitHoldAmountField);
         styleInput(highSeriesArea);
         styleInput(lowSeriesArea);
 
         paperMode.setOpaque(false);
         stopLossEnabled.setOpaque(false);
         lossBuyLevelsEnabled.setOpaque(false);
-        sellTriggerEnabled.setOpaque(false);
-        alpacaTrailingStopEnabled.setOpaque(false);
         repeatCycleAfterProfitExitEnabled.setOpaque(false);
-        profitHoldEnabled.setOpaque(false);
     }
 
     private void wireLossBuyLevelFields() {
@@ -818,27 +784,16 @@ public class StrategyDialog extends JDialog {
         baseQtyField.setText(String.valueOf(config.baseBuyQty()));
         stopLossEnabled.setSelected(config.stopLossEnabled());
         stopLossField.setText(config.stopLoss().toPlainString());
-        sellTriggerEnabled.setSelected(config.sellTriggerEnabled());
-        sellTriggerField.setText(config.sellTriggerPrice().toPlainString());
         lossBuyLevelsEnabled.setSelected(config.lossBuyLevelsEnabled());
         loss1PriceField.setText(config.lossBuyLevel1Price().toPlainString());
         loss1QtyField.setText(String.valueOf(config.lossBuyLevel1Qty()));
         loss2PriceField.setText(config.lossBuyLevel2Price().toPlainString());
         loss2QtyField.setText(String.valueOf(config.lossBuyLevel2Qty()));
         pollingField.setText(String.valueOf(config.pollingSeconds()));
-        alpacaTrailingStopEnabled.setSelected(config.alpacaTrailingStopEnabled());
-        profitHoldEnabled.setSelected(config.profitHoldEnabled());
-        profitHoldTypeBox.setSelectedItem(config.profitHoldType());
-        profitHoldPercentField.setText(config.profitHoldPercent().compareTo(BigDecimal.ZERO) > 0
-                ? config.profitHoldPercent().toPlainString()
-                : "10");
-        profitHoldAmountField.setText(config.profitHoldAmount().compareTo(BigDecimal.ZERO) > 0
-                ? config.profitHoldAmount().toPlainString()
-                : "0.50");
         repeatCycleAfterProfitExitEnabled.setSelected(config.repeatCycleAfterProfitExitEnabled());
+        profitControlsPanel.applyConfig(config);
         updateStopLossFieldState();
         updateLossBuyFieldState();
-        updateProfitHoldFieldState();
     }
 
     private void applyDialogDefaults() {
@@ -848,8 +803,6 @@ public class StrategyDialog extends JDialog {
         baseQtyField.setText(DEFAULTS.baseBuyQty());
         stopLossEnabled.setSelected(DEFAULTS.stopLossEnabled());
         stopLossField.setText(DEFAULTS.stopLoss());
-        sellTriggerEnabled.setSelected(DEFAULTS.sellTriggerEnabled());
-        sellTriggerField.setText(DEFAULTS.sellTriggerPrice());
         lossBuyLevelsEnabled.setSelected(true);
         loss1PriceField.setText(DEFAULTS.lossBuyLevel1Price());
         loss1QtyField.setText(DEFAULTS.lossBuyLevel1Qty());
@@ -857,14 +810,37 @@ public class StrategyDialog extends JDialog {
         loss2QtyField.setText(DEFAULTS.lossBuyLevel2Qty());
         pollingField.setText(DEFAULTS.pollingSeconds());
         repeatCycleAfterProfitExitEnabled.setSelected(DEFAULTS.repeatCycleAfterProfitExitEnabled());
-        alpacaTrailingStopEnabled.setSelected(DEFAULTS.alpacaTrailingStopEnabled());
-        profitHoldEnabled.setSelected(DEFAULTS.profitHoldEnabled());
-        profitHoldTypeBox.setSelectedItem(DEFAULTS.profitHoldType());
-        profitHoldPercentField.setText(DEFAULTS.profitHoldPercent());
-        profitHoldAmountField.setText(DEFAULTS.profitHoldAmount());
+        profitControlsPanel.applyConfig(new StrategyConfig(  // Apply defaults to profit controls panel
+                DEFAULTS.symbol(),
+                new BigDecimal(DEFAULTS.baseBuyPrice()),
+                Integer.parseInt(DEFAULTS.baseBuyQty()),
+                DEFAULTS.stopLossEnabled(),
+                new BigDecimal(DEFAULTS.stopLoss()),
+                DEFAULTS.sellTriggerEnabled(),
+                new BigDecimal(DEFAULTS.sellTriggerPrice()),
+                new BigDecimal(DEFAULTS.lossBuyLevel1Price()),
+                Integer.parseInt(DEFAULTS.lossBuyLevel1Qty()),
+                new BigDecimal(DEFAULTS.lossBuyLevel2Price()),
+                Integer.parseInt(DEFAULTS.lossBuyLevel2Qty()),
+                true,
+                false,
+                BigDecimal.ZERO,
+                Integer.parseInt(DEFAULTS.pollingSeconds()),
+                DEFAULTS.paperTrading(),
+                false,
+                DEFAULTS.profitHoldEnabled(),
+                DEFAULTS.profitHoldType(),
+                new BigDecimal(DEFAULTS.profitHoldPercent()),
+                new BigDecimal(DEFAULTS.profitHoldAmount()),
+                DEFAULTS.repeatCycleAfterProfitExitEnabled(),
+                ProfitControlMode.NONE,
+                ThresholdType.PERCENTAGE,
+                BigDecimal.ZERO,
+                TrailingType.PERCENTAGE,
+                BigDecimal.ZERO
+        ));
         updateStopLossFieldState();
         updateLossBuyFieldState();
-        updateProfitHoldFieldState();
     }
 
     private void onSaveForSelectedTab() {
@@ -934,8 +910,8 @@ public class StrategyDialog extends JDialog {
             }
 
             BigDecimal baseBuyPrice = new BigDecimal(basePriceField.getText().trim());
-            boolean sellTriggerOn = sellTriggerEnabled.isSelected();
-            BigDecimal sellTriggerPrice = new BigDecimal(sellTriggerField.getText().trim());
+            boolean sellTriggerOn = profitControlsPanel.getSellTriggerEnabled();
+            BigDecimal sellTriggerPrice = profitControlsPanel.getSellTriggerPrice();
             if (sellTriggerOn && sellTriggerPrice.compareTo(baseBuyPrice) < 0) {
                 JOptionPane.showMessageDialog(this,
                         "Sell trigger price must be greater than or equal to base buy price.",
@@ -982,41 +958,6 @@ public class StrategyDialog extends JDialog {
                 return;
             }
 
-            boolean profitHold = profitHoldEnabled.isSelected();
-            boolean brokerTrailingStop = alpacaTrailingStopEnabled.isSelected();
-            ProfitHoldType profitHoldType = (ProfitHoldType) profitHoldTypeBox.getSelectedItem();
-            BigDecimal profitHoldPercent = profitHoldPercentField.getText().trim().isBlank()
-                    ? BigDecimal.ZERO
-                    : new BigDecimal(profitHoldPercentField.getText().trim());
-            BigDecimal profitHoldAmount = profitHoldAmountField.getText().trim().isBlank()
-                    ? BigDecimal.ZERO
-                    : new BigDecimal(profitHoldAmountField.getText().trim());
-
-            if ((profitHold || brokerTrailingStop) && !sellTriggerOn) {
-                JOptionPane.showMessageDialog(this,
-                        "Enable Sell Trigger to use Profit Hold or Alpaca trailing stop.",
-                        "Invalid Profit Controls",
-                        JOptionPane.WARNING_MESSAGE);
-                return;
-            }
-
-            if (profitHold || brokerTrailingStop) {
-                if (profitHoldType == ProfitHoldType.PERCENT_TRAILING && profitHoldPercent.compareTo(BigDecimal.ZERO) <= 0) {
-                    JOptionPane.showMessageDialog(this,
-                            "Trailing percent must be greater than zero when Percent Trailing is selected.",
-                            "Invalid Profit Hold",
-                            JOptionPane.WARNING_MESSAGE);
-                    return;
-                }
-                if (profitHoldType == ProfitHoldType.FIXED_AMOUNT_TRAILING && profitHoldAmount.compareTo(BigDecimal.ZERO) <= 0) {
-                    JOptionPane.showMessageDialog(this,
-                            "Trailing amount must be greater than zero when Fixed Amount Trailing is selected.",
-                            "Invalid Profit Hold",
-                            JOptionPane.WARNING_MESSAGE);
-                    return;
-                }
-            }
-
             int pollingSeconds = Integer.parseInt(pollingField.getText().trim());
             if (pollingSeconds <= 0) {
                 JOptionPane.showMessageDialog(this,
@@ -1029,14 +970,53 @@ public class StrategyDialog extends JDialog {
             int lossBuyLevel1Qty = lossBuysOn ? Integer.parseInt(loss1QtyField.getText().trim()) : 0;
             int lossBuyLevel2Qty = lossBuysOn ? Integer.parseInt(loss2QtyField.getText().trim()) : 0;
 
+            // Get profit control data from the panel
+            ProfitControlMode profitControlModeFromUI = profitControlsPanel.getSelectedMode();
+            if ((profitControlModeFromUI == ProfitControlMode.AUTOMATIC_STOP_SELL
+                    || profitControlModeFromUI == ProfitControlMode.PROFIT_HOLD)
+                    && profitControlsPanel.getThresholdValue().compareTo(BigDecimal.ZERO) <= 0) {
+                JOptionPane.showMessageDialog(this,
+                        "Profit activation threshold must be greater than zero.",
+                        "Invalid Profit Controls",
+                        JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (profitControlModeFromUI == ProfitControlMode.AUTOMATIC_STOP_SELL
+                    && profitControlsPanel.getTrailingValue().compareTo(BigDecimal.ZERO) <= 0) {
+                JOptionPane.showMessageDialog(this,
+                        "Automatic Stop Sell trailing value must be greater than zero.",
+                        "Invalid Profit Controls",
+                        JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (profitControlModeFromUI == ProfitControlMode.PROFIT_HOLD) {
+                ProfitHoldType profitHoldType = profitControlsPanel.getProfitHoldType();
+                if (profitHoldType == ProfitHoldType.PERCENT_TRAILING
+                        && profitControlsPanel.getProfitHoldPercent().compareTo(BigDecimal.ZERO) <= 0) {
+                    JOptionPane.showMessageDialog(this,
+                            "Profit Hold trailing percent must be greater than zero.",
+                            "Invalid Profit Controls",
+                            JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+                if (profitHoldType == ProfitHoldType.FIXED_AMOUNT_TRAILING
+                        && profitControlsPanel.getProfitHoldAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                    JOptionPane.showMessageDialog(this,
+                            "Profit Hold trailing amount must be greater than zero.",
+                            "Invalid Profit Controls",
+                            JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+            }
+
             result = new StrategyConfig(
                     symbol,
                     baseBuyPrice,
                     Integer.parseInt(baseQtyField.getText().trim()),
                     stopLossOn,
                     stopLossPrice,
-                    sellTriggerOn,
-                    sellTriggerPrice,
+                    profitControlsPanel.getSellTriggerEnabled(),
+                    profitControlsPanel.getSellTriggerPrice(),
                     lossBuyLevel1Price,
                     lossBuyLevel1Qty,
                     lossBuyLevel2Price,
@@ -1046,12 +1026,17 @@ public class StrategyDialog extends JDialog {
                     BigDecimal.ZERO,
                     pollingSeconds,
                     paperMode.isSelected(),
-                    brokerTrailingStop,
-                    profitHold,
-                    profitHoldType,
-                    profitHoldPercent,
-                    profitHoldAmount,
-                    repeatCycleAfterProfitExitEnabled.isSelected()
+                    profitControlsPanel.getAutomaticStopSellEnabled(),
+                    profitControlsPanel.getProfitHoldEnabled(),
+                    profitControlsPanel.getProfitHoldType(),
+                    profitControlsPanel.getProfitHoldPercent(),
+                    profitControlsPanel.getProfitHoldAmount(),
+                    repeatCycleAfterProfitExitEnabled.isSelected(),
+                    profitControlModeFromUI,
+                    profitControlsPanel.getThresholdType(),
+                    profitControlsPanel.getThresholdValue(),
+                    profitControlsPanel.getTrailingType(),
+                    profitControlsPanel.getTrailingValue()
             );
             setVisible(false);
         } catch (NumberFormatException ex) {
@@ -1127,13 +1112,6 @@ public class StrategyDialog extends JDialog {
         }
     }
 
-    private void wireProfitHoldFields() {
-        profitHoldEnabled.addActionListener(e -> updateProfitHoldFieldState());
-        alpacaTrailingStopEnabled.addActionListener(e -> updateProfitHoldFieldState());
-        sellTriggerEnabled.addActionListener(e -> updateProfitHoldFieldState());
-        profitHoldTypeBox.addActionListener(e -> updateProfitHoldFieldState());
-    }
-
     private void wireStopLossFields() {
         stopLossEnabled.addActionListener(e -> updateStopLossFieldState());
     }
@@ -1142,21 +1120,6 @@ public class StrategyDialog extends JDialog {
         stopLossField.setEnabled(stopLossEnabled.isSelected());
     }
 
-    private void updateProfitHoldFieldState() {
-        boolean sellTriggerOn = sellTriggerEnabled.isSelected();
-        boolean useTrailing = profitHoldEnabled.isSelected() || alpacaTrailingStopEnabled.isSelected();
-        ProfitHoldType selectedType = (ProfitHoldType) profitHoldTypeBox.getSelectedItem();
-        sellTriggerField.setEnabled(sellTriggerOn);
-        alpacaTrailingStopEnabled.setEnabled(sellTriggerOn);
-        if (!sellTriggerOn) {
-            alpacaTrailingStopEnabled.setSelected(false);
-            profitHoldEnabled.setSelected(false);
-            useTrailing = false;
-        }
-        profitHoldTypeBox.setEnabled(useTrailing);
-        profitHoldPercentField.setEnabled(useTrailing && selectedType == ProfitHoldType.PERCENT_TRAILING);
-        profitHoldAmountField.setEnabled(useTrailing && selectedType == ProfitHoldType.FIXED_AMOUNT_TRAILING);
-    }
 
     private void runAutoAnalyze() {
         String symbol = aaSymbolField.getText().trim().toUpperCase();
@@ -1487,7 +1450,7 @@ public class StrategyDialog extends JDialog {
         stopLossEnabled.setSelected(true);
         updateStopLossFieldState();
         stopLossField.setText(values.stopLossPrice().toPlainString());
-        sellTriggerField.setText(values.sellRulePrice().toPlainString());
+        profitControlsPanel.setSellTriggerPrice(values.sellRulePrice());
         symbolField.setText(recommendation.symbol());
         tabs.setSelectedIndex(TAB_CURRENT_STRATEGY);
         JOptionPane.showMessageDialog(this,

@@ -112,6 +112,10 @@ public class TradingFrame extends JFrame {
     private static final Color TABLE_SELECTION_BG     = new Color(255, 242, 80);   // yellow row highlight
     private static final Color TABLE_SELECTION_FG     = new Color(25,  20,  5);    // near-black text on yellow
     private static final Color TABLE_SELECTION_BAR_BG = new Color(230, 208, 30);   // progress-bar unfilled on yellow row
+    private static final Color TABLE_ROW_BG_EVEN      = new Color(245, 247, 250);  // light blue-white for even rows
+    private static final Color TABLE_ROW_BG_ODD       = new Color(255, 255, 255);  // white for odd rows
+    private static final Color PNL_POSITIVE_FG        = new Color(27, 94, 32);     // green for positive P&L
+    private static final Color PNL_NEGATIVE_FG        = new Color(120, 120, 120);  // grey for negative P&L
     private static final Color STATUS_TEXT_RUNNING = new Color(46, 125, 50);
     private static final Color STATUS_TEXT_PAUSED = new Color(180, 100, 0);
     private static final Color MODE_TEXT_ALPACA_PAPER = new Color(25, 118, 210);
@@ -703,6 +707,11 @@ public class TradingFrame extends JFrame {
 
         JButton killSwitchButton = new JButton("KILL SWITCH");
         applyButtonIcon(killSwitchButton, "icons/kill-switch.svg", 15);
+        killSwitchButton.setToolTipText(TooltipStyler.text(
+                "Pauses active strategies, cancels open Alpaca orders for their symbols, stops polling countdowns, and saves local state. "
+                        + "It does not automatically liquidate positions.",
+                320
+        ));
         killSwitchButton.setFocusPainted(false);
         killSwitchButton.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
         killSwitchButton.setFont(FontLoader.ui(Font.BOLD, 12f));
@@ -780,6 +789,7 @@ public class TradingFrame extends JFrame {
         StatusRowRenderer statusRowRenderer = new StatusRowRenderer();
         strategyTable.setDefaultRenderer(Object.class, statusRowRenderer);
         strategyTable.setDefaultRenderer(Number.class, statusRowRenderer);
+        strategyTable.getColumnModel().getColumn(6).setCellRenderer(new UnrealizedPnLRenderer());
         strategyTable.getColumnModel().getColumn(7).setCellRenderer(new PollingBarRenderer());
         strategyTable.getColumnModel().getColumn(9).setCellRenderer(new ActionsRenderer());
         strategyTable.getColumnModel().getColumn(7).setPreferredWidth(240);
@@ -3111,7 +3121,8 @@ public class TradingFrame extends JFrame {
                     setBackground(TABLE_SELECTION_BG);
                     setForeground(TABLE_SELECTION_FG);
                 } else {
-                    setBackground(table.getBackground());
+                    // Apply alternating row background colors
+                    setBackground(row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD);
                     if (column == 1) {
                         if (strategies.get(modelRow).strategy.status() == StrategyStatus.ARCHIVED) {
                             setForeground(new Color(108, 117, 125));
@@ -3138,6 +3149,44 @@ public class TradingFrame extends JFrame {
                 case 1 -> CENTER;
                 default -> LEFT;
             };
+        }
+    }
+
+    private final class UnrealizedPnLRenderer extends DefaultTableCellRenderer {
+        @Override
+        public Component getTableCellRendererComponent(
+                JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+            super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+
+            if (isSelected) {
+                setBackground(TABLE_SELECTION_BG);
+                setForeground(TABLE_SELECTION_FG);
+            } else {
+                // Apply alternating row background colors
+                setBackground(row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD);
+                // Color-code based on P&L value
+                if (value != null && !"-".equals(value.toString())) {
+                    try {
+                        BigDecimal pnlValue = new BigDecimal(value.toString());
+                        if (pnlValue.compareTo(BigDecimal.ZERO) > 0) {
+                            setForeground(PNL_POSITIVE_FG);
+                        } else if (pnlValue.compareTo(BigDecimal.ZERO) < 0) {
+                            setForeground(PNL_NEGATIVE_FG);
+                        } else {
+                            setForeground(table.getForeground());
+                        }
+                    } catch (Exception e) {
+                        setForeground(table.getForeground());
+                    }
+                } else {
+                    setForeground(table.getForeground());
+                }
+            }
+
+            setOpaque(true);
+            setHorizontalAlignment(SwingConstants.LEFT);
+            setBorder(new EmptyBorder(0, 10, 0, 10));
+            return this;
         }
     }
 
@@ -3229,7 +3278,12 @@ public class TradingFrame extends JFrame {
                     System.currentTimeMillis()
             );
 
-            setBackground(viewModel.rowBackground());
+            // Apply alternating row background colors
+            if (isSelected) {
+                setBackground(TABLE_SELECTION_BG);
+            } else {
+                setBackground(row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD);
+            }
             progressBar.setValue(viewModel.progress());
             progressBar.setBackground(viewModel.trackBackground());
             progressBar.setForeground(viewModel.progressForeground());
@@ -3278,7 +3332,8 @@ public class TradingFrame extends JFrame {
                     new StrategyActionsPresenter.StrategyActionsState(
                             strategy.strategy.status() == StrategyStatus.ARCHIVED,
                             strategy.isPaused(),
-                            strategy.strategy.pauseReason() == PauseReason.USER_PAUSED,
+                            strategy.strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED
+                                    || strategy.strategy.pauseReason() == PauseReason.USER_PAUSED,
                             strategy.isPauseResumeBusy(),
                             strategy.pauseResumeBusyText(),
                             strategy.strategy.mode() == StrategyMode.PAPER,
@@ -3295,14 +3350,25 @@ public class TradingFrame extends JFrame {
             sellButton.setToolTipText(actionsViewModel.sellEnabled()
                     ? TooltipStyler.text("Sell the open position for this strategy.")
                     : TooltipStyler.text("Sell is available only when Alpaca shows an open position for this strategy."));
-            setBackground(selectionAwareRowColor(isSelected, table));
+            setBackground(selectionAwareRowColor(isSelected, row));
             return this;
         }
     }
 
 
+    private Color selectionAwareRowColor(boolean selected, int row) {
+        if (selected) {
+            return TABLE_SELECTION_BG;
+        }
+        // Return alternating row colors based on row index
+        return row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD;
+    }
+
     private Color selectionAwareRowColor(boolean selected, JTable table) {
-        return selected ? TABLE_SELECTION_BG : table.getBackground();
+        if (selected) {
+            return TABLE_SELECTION_BG;
+        }
+        return table.getBackground();
     }
 
     private void styleActionButton(JButton button, Color background) {

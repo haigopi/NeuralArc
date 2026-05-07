@@ -189,6 +189,7 @@ public final class AppDatabase {
         applyMigration("001_initial_schema", this::migration001);
         applyMigration("002_app_settings",   this::migration002);
         applyMigration("003_profit_controls", this::migration003);
+        applyMigration("004_profit_control_modes", this::migration004);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -344,6 +345,25 @@ public final class AppDatabase {
         }
     }
 
+    private void migration004() throws SQLException {
+        addColumnIfMissing("strategies", "profit_control_mode", "TEXT NOT NULL DEFAULT 'NONE'");
+        addColumnIfMissing("strategies", "automatic_stop_sell_threshold_type", "TEXT NOT NULL DEFAULT 'PERCENTAGE'");
+        addColumnIfMissing("strategies", "automatic_stop_sell_threshold", "TEXT NOT NULL DEFAULT '0.00'");
+        addColumnIfMissing("strategies", "automatic_stop_sell_trailing_type", "TEXT NOT NULL DEFAULT 'PERCENTAGE'");
+        addColumnIfMissing("strategies", "automatic_stop_sell_trailing_value", "TEXT NOT NULL DEFAULT '0.00'");
+    }
+
+    private void addColumnIfMissing(String table, String column, String definition) throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
+        } catch (SQLException ex) {
+            String message = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
+            if (!message.contains("duplicate column name")) {
+                throw ex;
+            }
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Internal helpers
     // -----------------------------------------------------------------------
@@ -411,4 +431,3 @@ public final class AppDatabase {
         void run() throws SQLException;
     }
 }
-
