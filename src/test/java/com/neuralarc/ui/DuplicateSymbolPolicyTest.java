@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.ProfitHoldType;
+import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyLifecycleState;
@@ -42,6 +43,48 @@ class DuplicateSymbolPolicyTest {
     @Test
     void pausedStrategyBlocksSameSymbolAndMode() {
         Strategy paused = strategy("MSFT", StrategyMode.PAPER, StrategyStatus.PAUSED);
+        paused.setPauseReason(PauseReason.AUTO_MARKET_CLOSED);
+
+        assertTrue(DuplicateSymbolPolicy.wouldBeDuplicate("MSFT", StrategyMode.PAPER, List.of(paused), false));
+    }
+
+    @Test
+    void legacyPausedStrategyWithoutReasonDoesNotBlockSameSymbol() {
+        Strategy paused = strategy("TSLA", StrategyMode.PAPER, StrategyStatus.PAUSED);
+        paused.setPauseReason(PauseReason.NONE);
+
+        assertFalse(DuplicateSymbolPolicy.wouldBeDuplicate("TSLA", StrategyMode.PAPER, List.of(paused), false));
+    }
+
+    @Test
+    void manuallyCanceledPausedStrategyDoesNotBlockSameSymbol() {
+        Strategy canceled = strategy("MSFT", StrategyMode.PAPER, StrategyStatus.PAUSED);
+        canceled.setPauseReason(PauseReason.MANUAL_LIMIT_BUY_CANCELED);
+
+        assertFalse(DuplicateSymbolPolicy.wouldBeDuplicate("MSFT", StrategyMode.PAPER, List.of(canceled), false));
+    }
+
+    @Test
+    void userPausedStrategyDoesNotBlockSameSymbol() {
+        Strategy canceled = strategy("MSFT", StrategyMode.PAPER, StrategyStatus.PAUSED);
+        canceled.setPauseReason(PauseReason.USER_PAUSED);
+
+        assertFalse(DuplicateSymbolPolicy.wouldBeDuplicate("MSFT", StrategyMode.PAPER, List.of(canceled), false));
+    }
+
+    @Test
+    void autoPausedStrategyStillBlocksSameSymbol() {
+        Strategy paused = strategy("MSFT", StrategyMode.PAPER, StrategyStatus.PAUSED);
+        paused.setPauseReason(PauseReason.AUTO_MARKET_CLOSED);
+
+        assertTrue(DuplicateSymbolPolicy.wouldBeDuplicate("MSFT", StrategyMode.PAPER, List.of(paused), false));
+    }
+
+    @Test
+    void systemPausedStrategyStillBlocksSameSymbol() {
+        Strategy paused = strategy("MSFT", StrategyMode.PAPER, StrategyStatus.PAUSED);
+        paused.setPauseReason(PauseReason.SYSTEM_ERROR);
+
         assertTrue(DuplicateSymbolPolicy.wouldBeDuplicate("MSFT", StrategyMode.PAPER, List.of(paused), false));
     }
 

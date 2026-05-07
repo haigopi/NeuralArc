@@ -83,7 +83,18 @@ public final class StrategyTablePresenter {
                 && !strategy.latestOrderStatus().isBlank()) {
             return lifecycle + " (" + BrokerOrderStatusUtil.displayLabel(strategy.latestOrderStatus()) + ")";
         }
+        if (strategy.status() == StrategyStatus.ACTIVE && isWaitingForNextRule(strategy.currentState())) {
+            return lifecycle + " - Waiting on next rule";
+        }
         return lifecycle;
+    }
+
+    private boolean isWaitingForNextRule(StrategyLifecycleState state) {
+        return state == StrategyLifecycleState.BASE_BUY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_FILLED
+                || state == StrategyLifecycleState.STOP_LOSS_ACTIVE
+                || state == StrategyLifecycleState.PROFIT_HOLD_ACTIVE;
     }
 
     public Object valueAt(Strategy strategy, Position position, int columnIndex, String statusLabel, String brokerModeLabel) {
@@ -107,4 +118,3 @@ public final class StrategyTablePresenter {
         };
     }
 }
-

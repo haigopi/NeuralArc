@@ -36,6 +36,9 @@ public final class StrategyActionsController {
         if (wasPaused && !gateway.marketOpenForUi()) {
             return;
         }
+        if (!wasPaused && !confirmCancel(entry.strategy())) {
+            return;
+        }
         boolean manualCancelResume = wasPaused
                 && entry.strategy().pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED;
         String strategyId = entry.strategy().id();
@@ -83,6 +86,24 @@ public final class StrategyActionsController {
                     gateway.refreshPanels();
                 }
         );
+    }
+
+    private boolean confirmCancel(Strategy strategy) {
+        String modeLabel = strategy.mode() == StrategyMode.PAPER ? "Paper Trading" : "Live Trading";
+        String message = "<html><body style='width:340px'>"
+                + "<b>Cancel the \"" + strategy.symbol() + "\" strategy?</b><br><br>"
+                + "This cancels open Alpaca orders for this strategy, stops polling, and saves the strategy as canceled.<br><br>"
+                + "• Mode: " + modeLabel + "<br>"
+                + "• Manual selling remains available if a position is still open.<br><br>"
+                + "You can restart it later using <b>Place Limit Buy Again</b>."
+                + "</body></html>";
+        int choice = gateway.confirm(
+                message,
+                "Cancel Strategy — " + strategy.symbol(),
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        return choice == JOptionPane.YES_OPTION;
     }
 
     public void previewLivePromotion(int viewRow) {

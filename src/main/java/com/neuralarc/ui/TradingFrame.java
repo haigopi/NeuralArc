@@ -47,7 +47,6 @@ import java.awt.Container;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
-import java.awt.FlowLayout;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
@@ -174,6 +173,8 @@ public class TradingFrame extends JFrame {
     private final StrategyTablePresenter strategyTablePresenter = new StrategyTablePresenter();
     private final SystemMetricsPresenter systemMetricsPresenter = new SystemMetricsPresenter();
     private final KillSwitchController killSwitchController;
+    private final JButton refreshPortfolioButton = new JButton("Refresh Portfolio");
+    private final PortfolioRefreshController portfolioRefreshController;
     private final List<ManagedStrategy> strategies = new ArrayList<>();
     private final List<HistoryTablePresenter.HistoryRow> filledOrderRows = new ArrayList<>();
     private final StrategyGridTableModel strategyTableModel = new StrategyGridTableModel(
@@ -270,6 +271,39 @@ public class TradingFrame extends JFrame {
         strategyRepository = new SqliteStrategyRepository(appDatabase);
         strategyOrderRepository = new SqliteStrategyOrderRepository(appDatabase);
         strategyEventRepository = new SqliteStrategyExecutionEventRepository(appDatabase);
+        portfolioRefreshController = new PortfolioRefreshController(
+                strategyRepository,
+                uiPollingExecutor,
+                new PortfolioRefreshController.Gateway() {
+                    @Override public boolean isConnected() { return connectionOk; }
+                    @Override public BrokerType brokerType() { return currentBrokerType; }
+                    @Override public HttpAlpacaClient alpacaClientForMode(ApplicationMode mode) { return TradingFrame.this.alpacaClientForMode(mode); }
+                    @Override public void onRefreshStarted() { setPortfolioRefreshButtonBusy(true); }
+                    @Override public void onRefreshFinished() { setPortfolioRefreshButtonBusy(false); }
+                    @Override public void syncStrategies(List<Strategy> strategies) { TradingFrame.this.syncStrategies(strategies); }
+                    @Override public void applyPositionSnapshots(Map<String, Position> snapshots) { TradingFrame.this.applyPositionSnapshots(snapshots); }
+                    @Override public void refreshStrategyTableContent() { TradingFrame.this.refreshStrategyTableContent(); }
+                    @Override public void refreshPanels() { TradingFrame.this.refreshPanels(); }
+                    @Override public void updateStatusBar() { TradingFrame.this.updateStatusBar(); }
+                    @Override public void log(String message) { TradingFrame.this.log(message); }
+                    @Override public void showConnectionRequired() {
+                        JOptionPane.showMessageDialog(
+                                TradingFrame.this,
+                                "Connect to Alpaca before refreshing the portfolio.",
+                                "Portfolio Refresh",
+                                JOptionPane.WARNING_MESSAGE
+                        );
+                    }
+                    @Override public void showRefreshFailed(String message) {
+                        JOptionPane.showMessageDialog(
+                                TradingFrame.this,
+                                "Failed to refresh portfolio: " + message,
+                                "Portfolio Refresh Failed",
+                                JOptionPane.ERROR_MESSAGE
+                        );
+                    }
+                }
+        );
         tradingRuntimeSupport = new TradingRuntimeSupport(
                 strategyRepository,
                 strategyOrderRepository,
@@ -572,6 +606,7 @@ public class TradingFrame extends JFrame {
                 updateHeaderModeStatus(brokerType);
                 updateStatusBar();
                 initPersistenceAndRestore();
+                portfolioRefreshController.refresh(false);
             }
 
             @Override
@@ -673,25 +708,23 @@ public class TradingFrame extends JFrame {
         headerTotalsSeparator.setBorder(new EmptyBorder(0, 2, 0, 2));
         liveUnrealizedSummary.setBorder(new EmptyBorder(0, 8, 0, 8));
 
-        JPanel leftControls = new JPanel(new GridBagLayout());
-        leftControls.setOpaque(false);
-        GridBagConstraints headerLeftGbc = new GridBagConstraints();
-        headerLeftGbc.gridx = 0;
-        headerLeftGbc.gridy = 0;
-        headerLeftGbc.anchor = GridBagConstraints.CENTER;
-        leftControls.add(headerStatus, headerLeftGbc);
-
-        JPanel headerTotalsPanel = new JPanel(new GridBagLayout());
-        headerTotalsPanel.setOpaque(false);
-        GridBagConstraints totalsGbc = new GridBagConstraints();
-        totalsGbc.gridy = 0;
-        totalsGbc.anchor = GridBagConstraints.CENTER;
-        totalsGbc.gridx = 0;
-        headerTotalsPanel.add(paperUnrealizedSummary, totalsGbc);
-        totalsGbc.gridx = 1;
-        headerTotalsPanel.add(headerTotalsSeparator, totalsGbc);
-        totalsGbc.gridx = 2;
-        headerTotalsPanel.add(liveUnrealizedSummary, totalsGbc);
+        JPanel headerInfoPanel = new JPanel(new GridBagLayout());
+        headerInfoPanel.setOpaque(false);
+        GridBagConstraints headerInfoGbc = new GridBagConstraints();
+        headerInfoGbc.gridy = 0;
+        headerInfoGbc.anchor = GridBagConstraints.CENTER;
+        headerInfoGbc.gridx = 0;
+        headerInfoPanel.add(headerStatus, headerInfoGbc);
+        headerInfoGbc.gridx = 1;
+        headerInfoPanel.add(paperUnrealizedSummary, headerInfoGbc);
+        headerInfoGbc.gridx = 2;
+        headerInfoPanel.add(headerTotalsSeparator, headerInfoGbc);
+        headerInfoGbc.gridx = 3;
+        headerInfoPanel.add(liveUnrealizedSummary, headerInfoGbc);
+        headerInfoGbc.gridx = 4;
+        headerInfoGbc.weightx = 1.0;
+        headerInfoGbc.fill = GridBagConstraints.HORIZONTAL;
+        headerInfoPanel.add(Box.createHorizontalGlue(), headerInfoGbc);
 
         JPanel rightControls = new JPanel(new GridBagLayout());
         rightControls.setOpaque(false);
@@ -702,8 +735,10 @@ public class TradingFrame extends JFrame {
         rightControlsGbc.gridx = 0;
         rightControls.add(addStrategyButton, rightControlsGbc);
         rightControlsGbc.gridx = 1;
-        rightControls.add(portfolioActionsButton, rightControlsGbc);
+        rightControls.add(refreshPortfolioButton, rightControlsGbc);
         rightControlsGbc.gridx = 2;
+        rightControls.add(portfolioActionsButton, rightControlsGbc);
+        rightControlsGbc.gridx = 3;
         rightControls.add(settingsButton, rightControlsGbc);
 
         JButton killSwitchButton = new JButton("KILL SWITCH");
@@ -769,11 +804,10 @@ public class TradingFrame extends JFrame {
             }
         });
         killSwitchButton.addActionListener(e -> killAllStrategies());
-        rightControlsGbc.gridx = 3;
+        rightControlsGbc.gridx = 4;
         rightControlsGbc.insets = new java.awt.Insets(0, 0, 0, 0);
         rightControls.add(killSwitchButton, rightControlsGbc);
-        headerPanel.add(leftControls, BorderLayout.WEST);
-        headerPanel.add(headerTotalsPanel, BorderLayout.CENTER);
+        headerPanel.add(headerInfoPanel, BorderLayout.CENTER);
         headerPanel.add(rightControls, BorderLayout.EAST);
 
         strategyTable.setRowHeight(34);
@@ -1173,11 +1207,17 @@ public class TradingFrame extends JFrame {
         applyFontRecursively(this);
 
         styleHeaderButton(addStrategyButton);
+        styleHeaderButton(refreshPortfolioButton);
         styleHeaderButton(portfolioActionsButton);
         styleHeaderButton(settingsButton);
         applyButtonIcon(addStrategyButton, "icons/add-stock-strategy.svg", 16);
+        applyButtonIcon(refreshPortfolioButton, "icons/actions.svg", 16);
         applyButtonIcon(portfolioActionsButton, "icons/actions.svg", 16);
         applyButtonIcon(settingsButton, "icons/settings.svg", 16);
+        refreshPortfolioButton.setToolTipText(TooltipStyler.text(
+                "Refetches Alpaca positions and updates matching Current Strategies with broker-side position data.",
+                320
+        ));
     }
 
     private void applyDataViewFonts() {
@@ -1210,6 +1250,11 @@ public class TradingFrame extends JFrame {
         rulesSectionTitle.setFont(FontLoader.ui(Font.BOLD, 10f));
         positionSummary.setFont(FontLoader.ui(Font.PLAIN, 10f));
         ruleState.setFont(FontLoader.ui(Font.PLAIN, 10f));
+    }
+
+    private void setPortfolioRefreshButtonBusy(boolean busy) {
+        refreshPortfolioButton.setEnabled(!busy);
+        refreshPortfolioButton.setText(busy ? "Refreshing..." : "Refresh Portfolio");
     }
 
     private JPanel createDetailSection(JLabel titleLabel, JLabel contentLabel) {
@@ -1423,6 +1468,7 @@ public class TradingFrame extends JFrame {
 
     private void wireEvents() {
         addStrategyButton.addActionListener(e -> addStrategy());
+        refreshPortfolioButton.addActionListener(e -> portfolioRefreshController.refresh(true));
         portfolioActionsButton.addActionListener(e -> showPortfolioActionsMenu());
         settingsButton.addActionListener(e -> openSettingsDialog());
     }
@@ -1960,16 +2006,9 @@ public class TradingFrame extends JFrame {
         ensureAnalyticsPublisher();
         syncStrategiesFromRepository();
         updateHeaderModeStatus(currentBrokerType);
-        refreshStrategyTableData();
         selectedStrategyId = strategy.id();
-        restoreSelectedRow();
-        int selectedModelRow = strategyTable.getSelectedRow() >= 0
-                ? strategyTable.convertRowIndexToModel(strategyTable.getSelectedRow())
-                : strategies.size() - 1;
-        int addedViewRow = safeConvertModelRowToView(selectedModelRow);
-        if (addedViewRow >= 0) {
-            strategyTable.setRowSelectionInterval(addedViewRow, addedViewRow);
-        }
+        refreshStrategyTableData();
+        SwingUtilities.invokeLater(() -> selectAndRevealStrategy(strategy.id()));
         updateSelectedStrategy();
         refreshPanels();
     }
@@ -2412,6 +2451,20 @@ public class TradingFrame extends JFrame {
         preservingSelection = false;
     }
 
+    private boolean selectAndRevealStrategy(String strategyId) {
+        if (strategyId == null || strategyId.isBlank()) {
+            return false;
+        }
+        selectedStrategyId = strategyId;
+        restoreSelectedRow();
+        int selectedViewRow = strategyTable.getSelectedRow();
+        if (selectedViewRow < 0) {
+            return false;
+        }
+        strategyTable.scrollRectToVisible(strategyTable.getCellRect(selectedViewRow, 0, true));
+        return true;
+    }
+
     private int safeConvertModelRowToView(int modelRow) {
         if (modelRow < 0 || modelRow >= strategyTableModel.getRowCount()) {
             return -1;
@@ -2458,6 +2511,9 @@ public class TradingFrame extends JFrame {
         rememberSelectedStrategy();
         preservingSelection = true;
         strategyTableModel.fireTableDataChanged();
+        if (strategyTable.getRowSorter() instanceof TableRowSorter<?> sorter) {
+            sorter.allRowsChanged();
+        }
         refreshFilledOrdersTableData();
         preservingSelection = false;
         SwingUtilities.invokeLater(this::restoreSelectedRow);
@@ -2498,6 +2554,17 @@ public class TradingFrame extends JFrame {
         }
         if (entry.strategy.status() == StrategyStatus.ARCHIVED || entry.strategy.status() == StrategyStatus.STOPPED) {
             return false;
+        }
+        if (entry.strategy.status() == StrategyStatus.PAUSED
+                && (entry.strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED
+                || entry.strategy.pauseReason() == PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE
+                || entry.strategy.pauseReason() == PauseReason.SYSTEM_ERROR)) {
+            return true;
+        }
+        if (entry.strategy.status() == StrategyStatus.PAUSED
+                && (entry.strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED
+                || entry.strategy.pauseReason() == PauseReason.USER_PAUSED)) {
+            return true;
         }
         // Keep showing rows that still have live exposure on the broker side.
         return entry.strategy.status() == StrategyStatus.ACTIVE

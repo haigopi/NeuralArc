@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
@@ -11,9 +12,10 @@ import java.util.List;
  * a duplicate conflict, taking into account the operator-configured duplicate-symbol setting.
  *
  * <p>When {@code allowDuplicates} is {@code true}, no conflict is ever reported.
- * When {@code false} (the default), a conflict is reported only when an <em>active or
- * paused</em> strategy already exists for the same symbol and mode. Strategies that are
- * stopped, completed, failed, or archived are not considered blocking — they represent
+ * When {@code false} (the default), a conflict is reported only when an <em>active</em>
+ * or system-paused operational strategy already exists for the same symbol and mode.
+ * Strategies that are user-canceled, manually canceled, stopped, completed, failed,
+ * archived, or legacy paused-without-reason are not considered blocking — they represent
  * finished trades in history and should not prevent new strategies for the same symbol.
  */
 public final class DuplicateSymbolPolicy {
@@ -59,7 +61,19 @@ public final class DuplicateSymbolPolicy {
         return existingStrategies.stream()
                 .filter(s -> !s.id().equals(ignoredId))
                 .filter(s -> s.mode() == mode)
-                .filter(s -> s.status() == StrategyStatus.ACTIVE || s.status() == StrategyStatus.PAUSED)
+                .filter(DuplicateSymbolPolicy::blocksDuplicate)
                 .anyMatch(s -> s.symbol().equalsIgnoreCase(symbol));
+    }
+
+    private static boolean blocksDuplicate(Strategy strategy) {
+        if (strategy.status() == StrategyStatus.ACTIVE) {
+            return true;
+        }
+        if (strategy.status() != StrategyStatus.PAUSED) {
+            return false;
+        }
+        return strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED
+                || strategy.pauseReason() == PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE
+                || strategy.pauseReason() == PauseReason.SYSTEM_ERROR;
     }
 }

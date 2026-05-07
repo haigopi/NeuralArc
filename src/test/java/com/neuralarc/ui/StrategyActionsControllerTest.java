@@ -54,6 +54,32 @@ class StrategyActionsControllerTest {
     }
 
     @Test
+    void cancelActiveStrategyReturnsEarlyWhenConfirmationDeclined() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        gateway.confirmResult = JOptionPane.NO_OPTION;
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.togglePauseResume(0);
+
+        assertEquals(1, gateway.confirmCalls);
+        assertEquals(0, gateway.backgroundTasksRun);
+        assertEquals(0, gateway.refreshRowCalls);
+    }
+
+    @Test
+    void cancelActiveStrategyRunsAfterConfirmationAccepted() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        gateway.confirmResult = JOptionPane.YES_OPTION;
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.togglePauseResume(0);
+
+        assertEquals(1, gateway.confirmCalls);
+        assertEquals(1, gateway.backgroundTasksRun);
+        assertEquals(1, gateway.refreshRowCalls);
+    }
+
+    @Test
     void previewLivePromotionReturnsEarlyForLiveStrategy() {
         FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.LIVE, StrategyStatus.ACTIVE));
         StrategyActionsController controller = new StrategyActionsController(gateway);
@@ -161,6 +187,7 @@ class StrategyActionsControllerTest {
         int refreshRowCalls;
         int previewDialogCalls;
         int confirmCalls;
+        int confirmResult = JOptionPane.NO_OPTION;
         boolean marketOpen = true;
         boolean openPosition;
 
@@ -206,7 +233,7 @@ class StrategyActionsControllerTest {
         @Override public void addArchivedRealized(StrategyMode mode, BigDecimal amount) { }
         @Override public void log(String message) { }
         @Override public void publishAnalytics(AnalyticsEvent event) { }
-        @Override public int confirm(String message, String title, int optionType, int messageType) { confirmCalls++; return JOptionPane.NO_OPTION; }
+        @Override public int confirm(String message, String title, int optionType, int messageType) { confirmCalls++; return confirmResult; }
         @Override public void showMessage(String message, String title, int messageType) { }
         @Override public StrategyActionsController.PromotionDialogResult showLivePromotionDialog(StrategyService.LivePromotionPreview preview, String realizedPnl, String unrealizedPnl) {
             previewDialogCalls++;

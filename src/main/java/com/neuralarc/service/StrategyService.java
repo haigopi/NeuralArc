@@ -141,6 +141,9 @@ public class StrategyService {
         boolean refreshActiveOrders = persisted.status() == StrategyStatus.ACTIVE;
         boolean resubmitClosedStrategy = shouldResubmitClosedStrategyAfterEdit(persisted)
                 && strategyEngine.canAutoRetryFailed(persisted);
+        boolean resubmitManualCancelStrategy = shouldResubmitManualCancelStrategyAfterEdit(persisted)
+                && strategyEngine.canAutoRetryFailed(persisted);
+        boolean resubmitEditedStrategy = resubmitClosedStrategy || resubmitManualCancelStrategy;
         if (refreshActiveOrders) {
             // For active strategies, cancel any currently open Alpaca orders before applying
             // edited pricing/quantity so new orders are created from updated settings.
@@ -152,7 +155,7 @@ public class StrategyService {
 
         strategy.clearLastError();
         strategy.setPauseReason(PauseReason.NONE);
-        if (resubmitClosedStrategy) {
+        if (resubmitEditedStrategy) {
             cancelPendingLocalOrders(persisted);
             strategy.setStatus(StrategyStatus.ACTIVE);
             strategy.setCurrentState(StrategyLifecycleState.CREATED);
@@ -165,7 +168,7 @@ public class StrategyService {
         if (refreshActiveOrders && strategy.status() == StrategyStatus.ACTIVE) {
             strategyEngine.resumeStrategy(strategy);
         }
-        if (resubmitClosedStrategy) {
+        if (resubmitEditedStrategy) {
             strategyEngine.submitBaseBuy(strategy, false);
         }
 
@@ -176,6 +179,12 @@ public class StrategyService {
         return persisted.status() == StrategyStatus.FAILED
                 && (persisted.currentState() == StrategyLifecycleState.FAILED
                 || isClosedBrokerStatus(persisted.latestOrderStatus()));
+    }
+
+    private boolean shouldResubmitManualCancelStrategyAfterEdit(Strategy persisted) {
+        return persisted.status() == StrategyStatus.PAUSED
+                && (persisted.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED
+                || persisted.pauseReason() == PauseReason.USER_PAUSED);
     }
 
     private boolean isClosedBrokerStatus(String status) {

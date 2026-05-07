@@ -24,6 +24,9 @@ public final class HistoryTablePresenter {
     public List<HistoryRow> buildRows(List<HistorySource> sources, Function<Instant, String> timestampFormatter) {
         List<HistoryRow> rows = new ArrayList<>();
         for (HistorySource source : sources) {
+            if (!includeInTradeHistory(source)) {
+                continue;
+            }
             rows.addAll(buildFilledRows(source, timestampFormatter));
             appendFallbackRowIfNeeded(rows, source, timestampFormatter);
         }
@@ -32,6 +35,25 @@ public final class HistoryTablePresenter {
                 .thenComparing(HistoryRow::sortPriority)
                 .thenComparing(HistoryRow::sortTime, Comparator.nullsLast(Comparator.reverseOrder())));
         return withSubtotals(rows);
+    }
+
+    private boolean includeInTradeHistory(HistorySource source) {
+        if (source == null || source.strategyStatusEnum() != StrategyStatus.COMPLETED) {
+            return false;
+        }
+        return source.orders().stream()
+                .anyMatch(order -> order.status() == StrategyOrderStatus.FILLED
+                        && order.side() == StrategyOrderSide.SELL
+                        && isCompletedSellStage(order.stage()));
+    }
+
+    private boolean isCompletedSellStage(StrategyStage stage) {
+        return stage == StrategyStage.TARGET_SELL
+                || stage == StrategyStage.PROFIT_EXIT
+                || stage == StrategyStage.STOP_LOSS
+                || stage == StrategyStage.LOSS_EXIT
+                || stage == StrategyStage.MANUAL_EXIT
+                || stage == StrategyStage.CLOSE_POSITION;
     }
 
     private List<HistoryRow> buildFilledRows(HistorySource source, Function<Instant, String> timestampFormatter) {
@@ -318,4 +340,3 @@ public final class HistoryTablePresenter {
         SUBTOTAL
     }
 }
-

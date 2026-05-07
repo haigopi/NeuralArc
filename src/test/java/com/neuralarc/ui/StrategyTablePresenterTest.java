@@ -30,6 +30,17 @@ class StrategyTablePresenterTest {
         assertEquals("Cancelled by user. Waiting for manual restart.", label);
     }
 
+    @Test
+    void activeFilledBaseBuyShowsWaitingForNextRule() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+
+        String label = presenter.displayStatusLabel(strategy, false, false, false);
+
+        assertEquals("Base Buy Filled - Waiting on next rule", label);
+    }
+
     private Strategy strategy() {
         return new Strategy(
                 UUID.randomUUID().toString(),
@@ -68,4 +79,3 @@ class StrategyTablePresenterTest {
         );
     }
 }
-

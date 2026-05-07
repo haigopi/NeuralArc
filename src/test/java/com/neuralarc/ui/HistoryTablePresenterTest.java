@@ -20,7 +20,7 @@ class HistoryTablePresenterTest {
     private final HistoryTablePresenter presenter = new HistoryTablePresenter();
 
     @Test
-    void completedStrategyWithoutFilledOrdersAddsFallbackHistoryRow() {
+    void completedStrategyWithoutSellFillDoesNotAppearInTradeHistory() {
         HistoryTablePresenter.HistorySource source = new HistoryTablePresenter.HistorySource(
                 "AAPL",
                 "Paper",
@@ -34,9 +34,25 @@ class HistoryTablePresenterTest {
 
         List<HistoryTablePresenter.HistoryRow> rows = presenter.buildRows(List.of(source), instant -> "formatted");
 
-        assertEquals(1, rows.size());
-        assertEquals("Completed", rows.getFirst().stage());
-        assertEquals("formatted", rows.getFirst().whenDisplay());
+        assertTrue(rows.isEmpty());
+    }
+
+    @Test
+    void activeStrategyWithOnlyFilledBuyDoesNotAppearInTradeHistory() {
+        HistoryTablePresenter.HistorySource source = new HistoryTablePresenter.HistorySource(
+                "AAPL",
+                "Paper",
+                "Base Buy Filled",
+                "Base Buy Filled",
+                "",
+                Instant.now(),
+                StrategyStatus.ACTIVE,
+                List.of(filledOrder("AAPL", StrategyStage.BASE_BUY, StrategyOrderSide.BUY, "10", "100.00", "100.00"))
+        );
+
+        List<HistoryTablePresenter.HistoryRow> rows = presenter.buildRows(List.of(source), instant -> "t");
+
+        assertTrue(rows.isEmpty());
     }
 
     @Test
@@ -44,11 +60,11 @@ class HistoryTablePresenterTest {
         HistoryTablePresenter.HistorySource source = new HistoryTablePresenter.HistorySource(
                 "AAPL",
                 "Paper",
-                "Active",
-                "Active",
+                "Completed",
+                "Completed",
                 "",
                 Instant.now(),
-                StrategyStatus.ACTIVE,
+                StrategyStatus.COMPLETED,
                 List.of(
                         filledOrder("AAPL", StrategyStage.BASE_BUY, StrategyOrderSide.BUY, "10", "100.00", "100.00"),
                         filledOrder("AAPL", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL, "4", "110.00", "110.00"),
@@ -71,11 +87,11 @@ class HistoryTablePresenterTest {
         HistoryTablePresenter.HistorySource source = new HistoryTablePresenter.HistorySource(
                 "AAPL",
                 "Paper",
-                "Active",
-                "Active",
+                "Completed",
+                "Completed",
                 "",
                 Instant.now(),
-                StrategyStatus.ACTIVE,
+                StrategyStatus.COMPLETED,
                 List.of(
                         filledOrderWithReportedQuantity("AAPL", StrategyStage.BASE_BUY, StrategyOrderSide.BUY,
                                 "10", "100.00", "0", "100.00"),

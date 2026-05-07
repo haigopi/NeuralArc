@@ -601,6 +601,46 @@ class StrategyServiceTest {
     }
 
     @Test
+    void updateManuallyCanceledStrategyStartsNewBaseBuyCycle() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.PAUSED);
+        strategy.setCurrentState(StrategyLifecycleState.PAUSED);
+        strategy.setPauseReason(PauseReason.MANUAL_LIMIT_BUY_CANCELED);
+        strategies.save(strategy);
+        StrategyOrder staleLocalPending = new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY, "canceled-order", "canceled-client", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("8.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        );
+        orders.save(staleLocalPending);
+
+        Strategy updated = strategyWithId(strategy.id(), "AAPL", 10, new BigDecimal("7.50"));
+        updated.setStatus(StrategyStatus.PAUSED);
+        updated.setCurrentState(StrategyLifecycleState.PAUSED);
+        updated.setPauseReason(PauseReason.MANUAL_LIMIT_BUY_CANCELED);
+
+        Optional<Strategy> result = service.updateStrategy(updated);
+
+        assertTrue(result.isPresent());
+        Strategy persisted = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, persisted.status());
+        assertEquals(StrategyLifecycleState.BASE_BUY_PLACED, persisted.currentState());
+        assertEquals(PauseReason.NONE, persisted.pauseReason());
+        assertEquals("new", persisted.latestOrderStatus());
+        assertEquals(1, alpaca.submittedOrders.size());
+        assertEquals(new BigDecimal("7.50"), alpaca.submittedOrders.getFirst().limitPrice());
+        assertTrue(strategies.findActive().stream().anyMatch(active -> active.id().equals(strategy.id())));
+        assertEquals(StrategyOrderStatus.CANCELED, orders.findByClientOrderId("canceled-client").orElseThrow().status());
+    }
+
+    @Test
     void updatePausedStrategyDoesNotCancelOrRecreateOrders() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

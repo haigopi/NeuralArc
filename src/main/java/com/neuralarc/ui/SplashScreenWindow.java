@@ -30,13 +30,12 @@ public class SplashScreenWindow extends JWindow {
     private static final Color ACCENT_END = new Color(120, 185, 255);
 
     private final JProgressBar progressBar = new JProgressBar(0, 100);
-    private final Timer progressTimer;
-    private final long startedAtMillis;
     private final int splashDurationMillis;
+    private Timer progressTimer;
+    private long startedAtMillis;
 
     public SplashScreenWindow(int splashDurationMillis) {
         this.splashDurationMillis = Math.max(0, splashDurationMillis);
-        this.startedAtMillis = System.currentTimeMillis();
         setBackground(BACKDROP);
 
         JPanel root = new JPanel(new BorderLayout());
@@ -107,7 +106,6 @@ public class SplashScreenWindow extends JWindow {
         setAlwaysOnTop(true);
         setSize(new Dimension(580, 438));
         setLocationRelativeTo(null);
-        progressTimer = startProgressAnimation();
     }
 
     private ImageIcon loadLogo() {
@@ -124,27 +122,46 @@ public class SplashScreenWindow extends JWindow {
     public void dispose() {
         if (progressTimer != null) {
             progressTimer.stop();
+            progressTimer = null;
         }
         super.dispose();
     }
 
-    private Timer startProgressAnimation() {
+    @Override
+    public void setVisible(boolean visible) {
+        super.setVisible(visible);
+        if (visible) {
+            startProgressAnimation();
+        }
+    }
+
+    private void startProgressAnimation() {
+        if (progressTimer != null && progressTimer.isRunning()) {
+            return;
+        }
+        startedAtMillis = System.currentTimeMillis();
         if (splashDurationMillis <= 0) {
             progressBar.setValue(100);
-            return new Timer(0, null);
+            progressBar.repaint();
+            return;
         }
 
-        Timer timer = new Timer(40, null);
+        progressBar.setValue(0);
+        progressBar.repaint();
+
+        Timer timer = new Timer(30, null);
+        timer.setCoalesce(true);
         timer.addActionListener(event -> {
             long elapsed = System.currentTimeMillis() - startedAtMillis;
             int progress = (int) Math.min(100L, Math.round((elapsed * 100.0d) / splashDurationMillis));
             progressBar.setValue(progress);
+            progressBar.repaint();
             if (progress >= 100) {
                 ((Timer) event.getSource()).stop();
             }
         });
         timer.start();
-        return timer;
+        progressTimer = timer;
     }
 
     private static final class RoundedGradientPanel extends JPanel {
@@ -190,10 +207,11 @@ public class SplashScreenWindow extends JWindow {
             g2.setColor(TRACK);
             g2.fillRoundRect(0, 0, width, height, arc, arc);
 
-            int amountFull = getAmountFull(null, width, height);
+            int amountFull = Math.max(0, Math.min(width, getAmountFull(null, width, height)));
             if (amountFull > 0) {
                 g2.setPaint(new GradientPaint(0, 0, ACCENT_START, width, 0, ACCENT_END));
-                g2.fillRoundRect(0, 0, amountFull, height, arc, arc);
+                int fillArc = Math.min(arc, amountFull * 2);
+                g2.fillRoundRect(0, 0, amountFull, height, fillArc, fillArc);
             }
 
             g2.dispose();
