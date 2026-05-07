@@ -37,13 +37,29 @@ public final class DuplicateSymbolPolicy {
             List<Strategy> existingStrategies,
             boolean allowDuplicates
     ) {
+        return wouldBeDuplicate(symbol, mode, existingStrategies, allowDuplicates, "");
+    }
+
+    /**
+     * Returns {@code true} when saving a strategy would conflict with another active
+     * or paused strategy for the same symbol/mode. The supplied strategy id is ignored
+     * so Edit can save an existing row without treating itself as a duplicate.
+     */
+    public static boolean wouldBeDuplicate(
+            String symbol,
+            StrategyMode mode,
+            List<Strategy> existingStrategies,
+            boolean allowDuplicates,
+            String ignoredStrategyId
+    ) {
         if (allowDuplicates) {
             return false;
         }
+        String ignoredId = ignoredStrategyId == null ? "" : ignoredStrategyId;
         return existingStrategies.stream()
+                .filter(s -> !s.id().equals(ignoredId))
                 .filter(s -> s.mode() == mode)
                 .filter(s -> s.status() == StrategyStatus.ACTIVE || s.status() == StrategyStatus.PAUSED)
                 .anyMatch(s -> s.symbol().equalsIgnoreCase(symbol));
     }
 }
-

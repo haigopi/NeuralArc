@@ -38,7 +38,8 @@ class StrategyFromConfigTest {
                 ThresholdType.PERCENTAGE,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                true
         );
 
         Strategy strategy = Strategy.fromConfig("strategy-1", "TSLA Strategy", config, StrategyMode.PAPER);
@@ -80,7 +81,8 @@ class StrategyFromConfigTest {
                 ThresholdType.PERCENTAGE,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                true
         );
 
         Strategy strategy = Strategy.fromConfig("strategy-2", "AAPL Strategy", config, StrategyMode.LIVE);
@@ -94,6 +96,7 @@ class StrategyFromConfigTest {
         assertEquals(ProfitHoldType.FIXED_AMOUNT_TRAILING, strategy.profitHoldType());
         assertEquals(new BigDecimal("1.25"), strategy.profitHoldAmount());
         assertTrue(strategy.restartAfterExitEnabled());
+        assertTrue(strategy.resubmitOnExpiryEnabled());
         assertEquals(45, strategy.pollingIntervalSeconds());
     }
 }

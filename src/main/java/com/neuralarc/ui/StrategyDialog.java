@@ -107,6 +107,7 @@ public class StrategyDialog extends JDialog {
     private final JCheckBox lossBuyLevelsEnabled = new JCheckBox("Enable Loss Buy Levels", true);
     private final JTextField pollingField = new JTextField(25);
     private final JCheckBox repeatCycleAfterProfitExitEnabled = new JCheckBox("Repeat cycle after profitable exit", false);
+    private final JCheckBox resubmitOnExpiryEnabled = new JCheckBox("Resubmit strategy on expiry", false);
 
     private final JTextArea highSeriesArea = new JTextArea(8, 22);
     private final JTextArea lowSeriesArea = new JTextArea(8, 22);
@@ -300,10 +301,11 @@ public class StrategyDialog extends JDialog {
         JPanel cycleBehaviorPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
         cycleBehaviorPanel.setBorder(createSectionBorder("Cycle Behavior"));
         addRow(cycleBehaviorPanel, "Repeat cycle after profitable exit (optional):", repeatCycleAfterProfitExitEnabled);
+        addRow(cycleBehaviorPanel, "Resubmit strategy on expiry:", resubmitOnExpiryEnabled);
         prepareSection(cycleBehaviorPanel);
         JPanel cycleBehaviorSection = describedSection(
                 cycleBehaviorPanel,
-                "When enabled, a completed profitable exit can start a new buy cycle. Defensive exits and manual closes do not restart automatically."
+                "Controls automatic re-entry behavior. Expired Alpaca orders are resubmitted only when Resubmit strategy on expiry is enabled."
         );
 
         content.add(strategySection);
@@ -723,6 +725,7 @@ public class StrategyDialog extends JDialog {
         stopLossEnabled.setToolTipText(TooltipStyler.text("When disabled, stop-loss checks and stop-loss sell orders are skipped."));
         pollingField.setToolTipText(TooltipStyler.text("How often the strategy evaluates prices, in seconds."));
         repeatCycleAfterProfitExitEnabled.setToolTipText(TooltipStyler.text("Optional. When enabled, a new cycle starts only after a profitable exit. Stop-loss and manual close exits do not restart the cycle."));
+        resubmitOnExpiryEnabled.setToolTipText(TooltipStyler.text("When enabled, polling can reactivate and resubmit this strategy after Alpaca marks its current order expired."));
     }
 
     private void styleInputs() {
@@ -742,6 +745,7 @@ public class StrategyDialog extends JDialog {
         stopLossEnabled.setOpaque(false);
         lossBuyLevelsEnabled.setOpaque(false);
         repeatCycleAfterProfitExitEnabled.setOpaque(false);
+        resubmitOnExpiryEnabled.setOpaque(false);
     }
 
     private void wireLossBuyLevelFields() {
@@ -841,6 +845,7 @@ public class StrategyDialog extends JDialog {
         loss2QtyField.setText(String.valueOf(config.lossBuyLevel2Qty()));
         pollingField.setText(String.valueOf(config.pollingSeconds()));
         repeatCycleAfterProfitExitEnabled.setSelected(config.repeatCycleAfterProfitExitEnabled());
+        resubmitOnExpiryEnabled.setSelected(config.resubmitOnExpiryEnabled());
         profitControlsPanel.applyConfig(config);
         updateStopLossFieldState();
         updateLossBuyFieldState();
@@ -860,6 +865,7 @@ public class StrategyDialog extends JDialog {
         loss2QtyField.setText(DEFAULTS.lossBuyLevel2Qty());
         pollingField.setText(DEFAULTS.pollingSeconds());
         repeatCycleAfterProfitExitEnabled.setSelected(DEFAULTS.repeatCycleAfterProfitExitEnabled());
+        resubmitOnExpiryEnabled.setSelected(DEFAULTS.resubmitOnExpiryEnabled());
         profitControlsPanel.applyConfig(new StrategyConfig(  // Apply defaults to profit controls panel
                 DEFAULTS.symbol(),
                 new BigDecimal(DEFAULTS.baseBuyPrice()),
@@ -887,7 +893,8 @@ public class StrategyDialog extends JDialog {
                 ThresholdType.FIXED_AMOUNT,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                DEFAULTS.resubmitOnExpiryEnabled()
         ));
         updateStopLossFieldState();
         updateLossBuyFieldState();
@@ -1086,7 +1093,8 @@ public class StrategyDialog extends JDialog {
                     profitControlsPanel.getThresholdType(),
                     profitControlsPanel.getThresholdValue(),
                     profitControlsPanel.getTrailingType(),
-                    profitControlsPanel.getTrailingValue()
+                    profitControlsPanel.getTrailingValue(),
+                    resubmitOnExpiryEnabled.isSelected()
             );
             setVisible(false);
         } catch (NumberFormatException ex) {
@@ -1130,7 +1138,8 @@ public class StrategyDialog extends JDialog {
                 parseProfitHoldType(properties, "profitHoldType", ProfitHoldType.PERCENT_TRAILING),
                 property(properties, "profitHoldPercent", "10"),
                 property(properties, "profitHoldAmount", "0.50"),
-                parseBoolean(properties, "repeatCycleAfterProfitExitEnabled", false)
+                parseBoolean(properties, "repeatCycleAfterProfitExitEnabled", false),
+                parseBoolean(properties, "resubmitOnExpiryEnabled", false)
         );
     }
 
@@ -1614,6 +1623,7 @@ public class StrategyDialog extends JDialog {
             ProfitHoldType profitHoldType,
             String profitHoldPercent,
             String profitHoldAmount,
-            boolean repeatCycleAfterProfitExitEnabled
+            boolean repeatCycleAfterProfitExitEnabled,
+            boolean resubmitOnExpiryEnabled
     ) {}
 }

@@ -31,7 +31,8 @@ public record StrategyConfig(
         ThresholdType automaticStopSellThresholdType,
         BigDecimal automaticStopSellThreshold,
         TrailingType automaticStopSellTrailingType,
-        BigDecimal automaticStopSellTrailingValue
+        BigDecimal automaticStopSellTrailingValue,
+        boolean resubmitOnExpiryEnabled
 ) {
     public StrategyConfig {
         baseBuyPrice = Monetary.round(baseBuyPrice);
@@ -53,6 +54,67 @@ public record StrategyConfig(
         automaticStopSellThreshold = Monetary.round(automaticStopSellThreshold);
         automaticStopSellTrailingType = automaticStopSellTrailingType == null ? TrailingType.PERCENTAGE : automaticStopSellTrailingType;
         automaticStopSellTrailingValue = Monetary.round(automaticStopSellTrailingValue);
+    }
+
+    public StrategyConfig(
+            String symbol,
+            BigDecimal baseBuyPrice,
+            int baseBuyQty,
+            boolean stopLossEnabled,
+            BigDecimal stopLoss,
+            boolean sellTriggerEnabled,
+            BigDecimal sellTriggerPrice,
+            BigDecimal lossBuyLevel1Price,
+            int lossBuyLevel1Qty,
+            BigDecimal lossBuyLevel2Price,
+            int lossBuyLevel2Qty,
+            boolean lossBuyLevelsEnabled,
+            boolean optionalLossExitEnabled,
+            BigDecimal optionalLossExitPrice,
+            int pollingSeconds,
+            boolean paperTrading,
+            boolean alpacaTrailingStopEnabled,
+            boolean profitHoldEnabled,
+            ProfitHoldType profitHoldType,
+            BigDecimal profitHoldPercent,
+            BigDecimal profitHoldAmount,
+            boolean repeatCycleAfterProfitExitEnabled,
+            ProfitControlMode profitControlMode,
+            ThresholdType automaticStopSellThresholdType,
+            BigDecimal automaticStopSellThreshold,
+            TrailingType automaticStopSellTrailingType,
+            BigDecimal automaticStopSellTrailingValue
+    ) {
+        this(
+                symbol,
+                baseBuyPrice,
+                baseBuyQty,
+                stopLossEnabled,
+                stopLoss,
+                sellTriggerEnabled,
+                sellTriggerPrice,
+                lossBuyLevel1Price,
+                lossBuyLevel1Qty,
+                lossBuyLevel2Price,
+                lossBuyLevel2Qty,
+                lossBuyLevelsEnabled,
+                optionalLossExitEnabled,
+                optionalLossExitPrice,
+                pollingSeconds,
+                paperTrading,
+                alpacaTrailingStopEnabled,
+                profitHoldEnabled,
+                profitHoldType,
+                profitHoldPercent,
+                profitHoldAmount,
+                repeatCycleAfterProfitExitEnabled,
+                profitControlMode,
+                automaticStopSellThresholdType,
+                automaticStopSellThreshold,
+                automaticStopSellTrailingType,
+                automaticStopSellTrailingValue,
+                false
+        );
     }
 
     public StrategyConfig(
@@ -102,7 +164,8 @@ public record StrategyConfig(
                 ThresholdType.FIXED_AMOUNT,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                false
         );
     }
 
@@ -152,7 +215,8 @@ public record StrategyConfig(
                 ThresholdType.FIXED_AMOUNT,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                false
         );
     }
 
@@ -206,7 +270,8 @@ public record StrategyConfig(
                 ThresholdType.FIXED_AMOUNT,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                false
         );
     }
 
@@ -258,7 +323,8 @@ public record StrategyConfig(
                 ThresholdType.FIXED_AMOUNT,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                false
         );
     }
 
@@ -303,7 +369,8 @@ public record StrategyConfig(
                 ThresholdType.FIXED_AMOUNT,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
-                BigDecimal.ZERO
+                BigDecimal.ZERO,
+                false
         );
     }
 

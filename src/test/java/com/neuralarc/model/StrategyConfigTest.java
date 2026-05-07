@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class StrategyConfigTest {
     @Test
@@ -156,6 +157,7 @@ class StrategyConfigTest {
         );
 
         assertEquals(ProfitControlMode.NONE, config.profitControlMode());
+        assertFalse(config.resubmitOnExpiryEnabled());
     }
 
 }

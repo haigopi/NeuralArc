@@ -218,6 +218,7 @@ public class FileStrategyRepository implements StrategyRepository {
             strategy.setAutomaticStopSellThreshold(decimal(o, "automaticStopSellThreshold", "0.00"));
             strategy.setAutomaticStopSellTrailingType(parseTrailingType(o.optString("automaticStopSellTrailingType", "PERCENTAGE")));
             strategy.setAutomaticStopSellTrailingValue(decimal(o, "automaticStopSellTrailingValue", "0.00"));
+            strategy.setResubmitOnExpiryEnabled(o.optBoolean("resubmitOnExpiryEnabled", false));
             result.add(strategy);
         }
         return result;
@@ -274,6 +275,7 @@ public class FileStrategyRepository implements StrategyRepository {
             o.put("automaticStopSellThreshold", s.automaticStopSellThreshold().toPlainString());
             o.put("automaticStopSellTrailingType", s.automaticStopSellTrailingType() == null ? "PERCENTAGE" : s.automaticStopSellTrailingType().name());
             o.put("automaticStopSellTrailingValue", s.automaticStopSellTrailingValue().toPlainString());
+            o.put("resubmitOnExpiryEnabled", s.resubmitOnExpiryEnabled());
             arr.put(o);
         }
         return arr;

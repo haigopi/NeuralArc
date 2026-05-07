@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.StrategyStatus;
+import com.neuralarc.util.BrokerOrderStatusUtil;
 
 import java.awt.Color;
 
@@ -37,7 +38,7 @@ public final class StrategyActionsPresenter {
                 : status == StrategyStatus.COMPLETED
                 ? "Completed"
                 : status == StrategyStatus.FAILED
-                ? "Failed"
+                ? failedStatusText(state.latestOrderStatus())
                 : status == StrategyStatus.STOPPED
                 ? "Stopped"
                 : paused
@@ -63,6 +64,11 @@ public final class StrategyActionsPresenter {
         );
     }
 
+    private String failedStatusText(String latestOrderStatus) {
+        String normalized = BrokerOrderStatusUtil.normalize(latestOrderStatus);
+        return normalized.isBlank() ? "Failed" : BrokerOrderStatusUtil.displayLabel(normalized);
+    }
+
     public record StrategyActionsState(
             StrategyStatus status,
             boolean manuallyCanceled,
@@ -70,10 +76,24 @@ public final class StrategyActionsPresenter {
             String busyText,
             boolean paperMode,
             boolean hasPosition,
-            boolean marketOpenForUi
+            boolean marketOpenForUi,
+            String latestOrderStatus
     ) {
+        public StrategyActionsState(
+                StrategyStatus status,
+                boolean manuallyCanceled,
+                boolean busy,
+                String busyText,
+                boolean paperMode,
+                boolean hasPosition,
+                boolean marketOpenForUi
+        ) {
+            this(status, manuallyCanceled, busy, busyText, paperMode, hasPosition, marketOpenForUi, "");
+        }
+
         public StrategyActionsState {
             busyText = busyText == null || busyText.isBlank() ? "Working..." : busyText;
+            latestOrderStatus = latestOrderStatus == null ? "" : latestOrderStatus;
         }
     }
 

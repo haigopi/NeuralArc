@@ -139,6 +139,8 @@ public class StrategyService {
 
         Strategy persisted = existing.get();
         boolean refreshActiveOrders = persisted.status() == StrategyStatus.ACTIVE;
+        boolean resubmitClosedStrategy = shouldResubmitClosedStrategyAfterEdit(persisted)
+                && strategyEngine.canAutoRetryFailed(persisted);
         if (refreshActiveOrders) {
             // For active strategies, cancel any currently open Alpaca orders before applying
             // edited pricing/quantity so new orders are created from updated settings.
@@ -150,14 +152,47 @@ public class StrategyService {
 
         strategy.clearLastError();
         strategy.setPauseReason(PauseReason.NONE);
+        if (resubmitClosedStrategy) {
+            cancelPendingLocalOrders(persisted);
+            strategy.setStatus(StrategyStatus.ACTIVE);
+            strategy.setCurrentState(StrategyLifecycleState.CREATED);
+            strategy.setLatestOrderStatus("");
+            strategy.setLatestAlpacaOrderId("");
+        }
         strategyRepository.save(strategy);
         stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.STRATEGY_UPDATED, "Strategy updated", "{}");
 
         if (refreshActiveOrders && strategy.status() == StrategyStatus.ACTIVE) {
             strategyEngine.resumeStrategy(strategy);
         }
+        if (resubmitClosedStrategy) {
+            strategyEngine.submitBaseBuy(strategy, false);
+        }
 
         return Optional.of(strategy);
+    }
+
+    private boolean shouldResubmitClosedStrategyAfterEdit(Strategy persisted) {
+        return persisted.status() == StrategyStatus.FAILED
+                && (persisted.currentState() == StrategyLifecycleState.FAILED
+                || isClosedBrokerStatus(persisted.latestOrderStatus()));
+    }
+
+    private boolean isClosedBrokerStatus(String status) {
+        String normalized = BrokerOrderStatusUtil.normalize(status);
+        return "expired".equals(normalized)
+                || "canceled".equals(normalized)
+                || "cancelled".equals(normalized);
+    }
+
+    private void cancelPendingLocalOrders(Strategy strategy) {
+        for (StrategyOrder order : orderRepository.findByStrategyId(strategy.id())) {
+            if (!order.isPending()) {
+                continue;
+            }
+            order.setStatus(StrategyOrderStatus.CANCELED);
+            orderRepository.save(order);
+        }
     }
 
     public void pause(String strategyId) {
@@ -652,6 +687,7 @@ public class StrategyService {
         liveStrategy.setAutomaticStopSellThreshold(paperStrategy.automaticStopSellThreshold());
         liveStrategy.setAutomaticStopSellTrailingType(paperStrategy.automaticStopSellTrailingType());
         liveStrategy.setAutomaticStopSellTrailingValue(paperStrategy.automaticStopSellTrailingValue());
+        liveStrategy.setResubmitOnExpiryEnabled(paperStrategy.resubmitOnExpiryEnabled());
         liveStrategy.setPauseReason(PauseReason.NONE);
         liveStrategy.setResumeStateBeforePause(StrategyLifecycleState.CREATED);
         return liveStrategy;

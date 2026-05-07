@@ -186,8 +186,9 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     profit_control_mode, automatic_stop_sell_threshold_type,
                     automatic_stop_sell_threshold, automatic_stop_sell_trailing_type,
                     automatic_stop_sell_trailing_value,
+                    resubmit_on_expiry_enabled,
                     created_at, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name, symbol=excluded.symbol,
                     mode=excluded.mode, status=excluded.status, current_state=excluded.current_state,
@@ -231,6 +232,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     automatic_stop_sell_threshold=excluded.automatic_stop_sell_threshold,
                     automatic_stop_sell_trailing_type=excluded.automatic_stop_sell_trailing_type,
                     automatic_stop_sell_trailing_value=excluded.automatic_stop_sell_trailing_value,
+                    resubmit_on_expiry_enabled=excluded.resubmit_on_expiry_enabled,
                     created_at=excluded.created_at,
                     updated_at=excluded.updated_at
                 """;
@@ -266,8 +268,9 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     profit_control_mode, automatic_stop_sell_threshold_type,
                     automatic_stop_sell_threshold, automatic_stop_sell_trailing_type,
                     automatic_stop_sell_trailing_value,
+                    resubmit_on_expiry_enabled,
                     created_at, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             bindStrategy(ps, s);
@@ -323,6 +326,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         ps.setString(i++, s.automaticStopSellThreshold() == null ? "0.00" : s.automaticStopSellThreshold().toPlainString());
         ps.setString(i++, s.automaticStopSellTrailingType() == null ? TrailingType.PERCENTAGE.name() : s.automaticStopSellTrailingType().name());
         ps.setString(i++, s.automaticStopSellTrailingValue() == null ? "0.00" : s.automaticStopSellTrailingValue().toPlainString());
+        ps.setInt(i++, s.resubmitOnExpiryEnabled() ? 1 : 0);
         ps.setString(i++, s.createdAt().toString());
         ps.setString(i, s.updatedAt().toString());
     }
@@ -380,6 +384,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         s.setAutomaticStopSellThreshold(decimal(rs, "automatic_stop_sell_threshold"));
         s.setAutomaticStopSellTrailingType(safeTrailingType(rs.getString("automatic_stop_sell_trailing_type")));
         s.setAutomaticStopSellTrailingValue(decimal(rs, "automatic_stop_sell_trailing_value"));
+        s.setResubmitOnExpiryEnabled(rs.getInt("resubmit_on_expiry_enabled") == 1);
         return s;
     }
 
@@ -434,6 +439,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         s.setAutomaticStopSellThreshold(decimal(o, "automaticStopSellThreshold"));
         s.setAutomaticStopSellTrailingType(safeTrailingType(o.optString("automaticStopSellTrailingType", "PERCENTAGE")));
         s.setAutomaticStopSellTrailingValue(decimal(o, "automaticStopSellTrailingValue"));
+        s.setResubmitOnExpiryEnabled(o.optBoolean("resubmitOnExpiryEnabled", false));
         return s;
     }
 
@@ -483,6 +489,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         o.put("automaticStopSellThreshold", s.automaticStopSellThreshold() == null ? "0.00" : s.automaticStopSellThreshold().toPlainString());
         o.put("automaticStopSellTrailingType", s.automaticStopSellTrailingType() == null ? TrailingType.PERCENTAGE.name() : s.automaticStopSellTrailingType().name());
         o.put("automaticStopSellTrailingValue", s.automaticStopSellTrailingValue() == null ? "0.00" : s.automaticStopSellTrailingValue().toPlainString());
+        o.put("resubmitOnExpiryEnabled", s.resubmitOnExpiryEnabled());
         return o;
     }
 

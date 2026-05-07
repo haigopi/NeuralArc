@@ -55,6 +55,7 @@ public class Strategy {
     private BigDecimal automaticStopSellThreshold;
     private TrailingType automaticStopSellTrailingType;
     private BigDecimal automaticStopSellTrailingValue;
+    private boolean resubmitOnExpiryEnabled;
 
     public Strategy(
             String id,
@@ -134,6 +135,7 @@ public class Strategy {
         this.automaticStopSellThreshold = BigDecimal.ZERO;
         this.automaticStopSellTrailingType = TrailingType.PERCENTAGE;
         this.automaticStopSellTrailingValue = BigDecimal.ZERO;
+        this.resubmitOnExpiryEnabled = false;
     }
 
     public Strategy(
@@ -259,6 +261,7 @@ public class Strategy {
         strategy.setAutomaticStopSellThreshold(config.automaticStopSellThreshold());
         strategy.setAutomaticStopSellTrailingType(config.automaticStopSellTrailingType());
         strategy.setAutomaticStopSellTrailingValue(config.automaticStopSellTrailingValue());
+        strategy.setResubmitOnExpiryEnabled(config.resubmitOnExpiryEnabled());
         return strategy;
     }
 
@@ -423,10 +426,12 @@ public class Strategy {
     public BigDecimal automaticStopSellThreshold() { return automaticStopSellThreshold; }
     public TrailingType automaticStopSellTrailingType() { return automaticStopSellTrailingType; }
     public BigDecimal automaticStopSellTrailingValue() { return automaticStopSellTrailingValue; }
+    public boolean resubmitOnExpiryEnabled() { return resubmitOnExpiryEnabled; }
 
     public void setProfitControlMode(ProfitControlMode mode) { this.profitControlMode = mode == null ? ProfitControlMode.NONE : mode; touch(); }
     public void setAutomaticStopSellThresholdType(ThresholdType type) { this.automaticStopSellThresholdType = type == null ? ThresholdType.FIXED_AMOUNT : type; touch(); }
     public void setAutomaticStopSellThreshold(BigDecimal value) { this.automaticStopSellThreshold = money(value); touch(); }
     public void setAutomaticStopSellTrailingType(TrailingType type) { this.automaticStopSellTrailingType = type == null ? TrailingType.PERCENTAGE : type; touch(); }
     public void setAutomaticStopSellTrailingValue(BigDecimal value) { this.automaticStopSellTrailingValue = money(value); touch(); }
+    public void setResubmitOnExpiryEnabled(boolean enabled) { this.resubmitOnExpiryEnabled = enabled; touch(); }
 }

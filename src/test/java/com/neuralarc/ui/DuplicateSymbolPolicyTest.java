@@ -115,6 +115,25 @@ class DuplicateSymbolPolicyTest {
                 List.of(stopped, active), false));
     }
 
+    @Test
+    void editIgnoresCurrentStrategyWhenSymbolIsUnchanged() {
+        Strategy active = strategy("AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        assertFalse(DuplicateSymbolPolicy.wouldBeDuplicate("AAPL", StrategyMode.PAPER,
+                List.of(active), false, active.id()));
+    }
+
+    @Test
+    void editIgnoresClosedHistoryButBlocksAnotherActiveStrategy() {
+        Strategy closedHistory = strategy("AAPL", StrategyMode.PAPER, StrategyStatus.FAILED);
+        Strategy edited = strategy("AAPL", StrategyMode.PAPER, StrategyStatus.COMPLETED);
+        Strategy otherActive = strategy("AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE);
+
+        assertFalse(DuplicateSymbolPolicy.wouldBeDuplicate("AAPL", StrategyMode.PAPER,
+                List.of(closedHistory, edited), false, edited.id()));
+        assertTrue(DuplicateSymbolPolicy.wouldBeDuplicate("AAPL", StrategyMode.PAPER,
+                List.of(closedHistory, edited, otherActive), false, edited.id()));
+    }
+
     // ---- AddStrategyDuplicateCheck tests for settings integration ----
 
     @Test
@@ -166,4 +185,3 @@ class DuplicateSymbolPolicyTest {
         return s;
     }
 }
-

@@ -356,6 +356,44 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void pollCycleResubmitsExpiredFailedStrategyWhenEnabled() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        strategy.setResubmitOnExpiryEnabled(true);
+        f.strategies.save(strategy);
+        f.alpaca.position = Optional.empty();
+        f.alpaca.orderById.clear();
+
+        f.service.pollDueStrategies();
+
+        Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, updated.status());
+        assertEquals("new", updated.latestOrderStatus());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).isPresent());
+    }
+
+    @Test
+    void pollCycleDoesNotResubmitExpiredFailedStrategyWhenDisabled() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        f.strategies.save(strategy);
+        f.alpaca.position = Optional.empty();
+        f.alpaca.orderById.clear();
+
+        f.service.pollDueStrategies();
+
+        Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.FAILED, updated.status());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).isEmpty());
+    }
+
+    @Test
     void profitableExitRestartsCycleWhenRepeatAfterProfitEnabled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);

@@ -75,6 +75,16 @@ class StrategyActionsPresenterTest {
     }
 
     @Test
+    void failedStrategyUsesLatestBrokerStatusForToggleText() {
+        StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
+                new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.FAILED, false, false, "", true, false, true, "expired")
+        );
+
+        assertEquals("Expired", viewModel.toggleText());
+        assertFalse(viewModel.toggleEnabled());
+    }
+
+    @Test
     void pausedStrategyDisablesResumeWhenMarketClosed() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
                 new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.PAUSED, false, false, "", true, true, false)

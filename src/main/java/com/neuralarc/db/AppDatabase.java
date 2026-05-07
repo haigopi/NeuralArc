@@ -190,6 +190,7 @@ public final class AppDatabase {
         applyMigration("002_app_settings",   this::migration002);
         applyMigration("003_profit_controls", this::migration003);
         applyMigration("004_profit_control_modes", this::migration004);
+        applyMigration("005_resubmit_on_expiry", this::migration005);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -258,6 +259,7 @@ public final class AppDatabase {
                         profit_hold_amount              TEXT NOT NULL DEFAULT '0.00',
                         highest_observed_price          TEXT NOT NULL DEFAULT '0.00',
                         restart_after_exit_enabled      INTEGER NOT NULL DEFAULT 0,
+                        resubmit_on_expiry_enabled      INTEGER NOT NULL DEFAULT 0,
                         max_total_quantity              INTEGER NOT NULL DEFAULT 0,
                         max_capital_allowed             TEXT NOT NULL DEFAULT '0.00',
                         polling_interval_seconds        INTEGER NOT NULL DEFAULT 10,
@@ -351,6 +353,10 @@ public final class AppDatabase {
         addColumnIfMissing("strategies", "automatic_stop_sell_threshold", "TEXT NOT NULL DEFAULT '0.00'");
         addColumnIfMissing("strategies", "automatic_stop_sell_trailing_type", "TEXT NOT NULL DEFAULT 'PERCENTAGE'");
         addColumnIfMissing("strategies", "automatic_stop_sell_trailing_value", "TEXT NOT NULL DEFAULT '0.00'");
+    }
+
+    private void migration005() throws SQLException {
+        addColumnIfMissing("strategies", "resubmit_on_expiry_enabled", "INTEGER NOT NULL DEFAULT 0");
     }
 
     private void addColumnIfMissing(String table, String column, String definition) throws SQLException {

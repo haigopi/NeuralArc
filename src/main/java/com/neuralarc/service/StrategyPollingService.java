@@ -8,6 +8,7 @@ import com.neuralarc.model.StrategyEventType;
 import com.neuralarc.model.StrategyExecutionEvent;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyStatus;
+import com.neuralarc.util.BrokerOrderStatusUtil;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -216,10 +217,10 @@ public class StrategyPollingService {
         }
         Strategy strategy = maybeStrategy.get();
         if (strategy.status() == StrategyStatus.FAILED) {
-            if (!strategyEngine.canAutoRetryFailed(strategy)) {
+            if (!isExpiryResubmitEligible(strategy) || !strategyEngine.canAutoRetryFailed(strategy)) {
                 return;
             }
-            LOGGER.info(() -> "[POLL][RETRY][" + strategy.symbol() + "] Reactivating failed strategy for retry mechanism");
+            LOGGER.info(() -> "[POLL][EXPIRY_RESUBMIT][" + strategy.symbol() + "] Reactivating expired strategy for automatic resubmission");
             strategy.setStatus(StrategyStatus.ACTIVE);
             strategy.setCurrentState(StrategyLifecycleState.CREATED);
             strategy.setPauseReason(PauseReason.NONE);
@@ -305,8 +306,16 @@ public class StrategyPollingService {
             LOGGER.fine(() -> "[POLL][SCHEDULER][" + strategy.symbol() + "] Polling not resumed because user cancellation requires manual restart");
             return false;
         }
-        // FAILED/COMPLETED/STOPPED/ARCHIVED belong to history and should not run in poll cycles.
-        return strategy.status() == StrategyStatus.ACTIVE;
+        // FAILED/COMPLETED/STOPPED/ARCHIVED belong to history and should not run in poll cycles
+        // unless the operator explicitly enabled expiry resubmission for an expired order.
+        return strategy.status() == StrategyStatus.ACTIVE || isExpiryResubmitEligible(strategy);
+    }
+
+    private boolean isExpiryResubmitEligible(Strategy strategy) {
+        return strategy != null
+                && strategy.status() == StrategyStatus.FAILED
+                && strategy.resubmitOnExpiryEnabled()
+                && "expired".equals(BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus()));
     }
 
     private boolean isStreamHealthy(Instant now) {

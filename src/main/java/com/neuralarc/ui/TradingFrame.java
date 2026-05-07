@@ -1989,9 +1989,15 @@ public class TradingFrame extends JFrame {
             return;
         }
 
-        ManagedStrategy duplicate = findStrategy(updated.symbol(), entry.strategy.mode(), false);
-        if (duplicate != null && duplicate != entry) {
-            JOptionPane.showMessageDialog(this, "A strategy for this symbol already exists.", "Duplicate Symbol", JOptionPane.WARNING_MESSAGE);
+        boolean allowDuplicateSymbols = settingsDialog.appliedAllowDuplicateSymbolStrategies();
+        if (DuplicateSymbolPolicy.wouldBeDuplicate(
+                updated.symbol(),
+                entry.strategy.mode(),
+                strategyRepository.findAll(),
+                allowDuplicateSymbols,
+                entry.strategy.id()
+        )) {
+            JOptionPane.showMessageDialog(this, "An active or paused strategy for this symbol already exists.", "Duplicate Symbol", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
@@ -3351,7 +3357,8 @@ public class TradingFrame extends JFrame {
                             strategy.pauseResumeBusyText(),
                             strategy.strategy.mode() == StrategyMode.PAPER,
                             strategy.cachedPosition().getTotalShares() > 0,
-                            isMarketOpenForUi()
+                            isMarketOpenForUi(),
+                            strategy.strategy.latestOrderStatus()
                     )
             );
             toggleButton.setText(actionsViewModel.toggleText());
