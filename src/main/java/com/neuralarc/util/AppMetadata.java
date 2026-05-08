@@ -9,7 +9,7 @@ import java.util.Properties;
 
 public final class AppMetadata {
     private static final Properties PROPERTIES = loadProperties();
-    private static final int DEFAULT_SPLASH_DURATION_MILLIS = 3000;
+    private static final int DEFAULT_SPLASH_DURATION_MILLIS = 2000;
     private static final int DEFAULT_STRATEGY_POLLING_SECONDS = 20;
 
     private AppMetadata() {
