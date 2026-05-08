@@ -27,7 +27,7 @@ public class NeuralArc {
             installMacApplicationMenu(frame);
             frame.setVisible(true);
 
-            SplashScreenWindow splash = new SplashScreenWindow(splashDurationMillis);
+            SplashScreenWindow splash = new SplashScreenWindow();
             installApplicationIcon(splash);
             splash.setLocationRelativeTo(frame);
             splash.setVisible(true);
