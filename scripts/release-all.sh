@@ -79,21 +79,34 @@ fi
 TAG="v$VERSION"
 MAC_DMG="$PROJECT_DIR/artifacts/macos/NeuralArc-$VERSION.dmg"
 WIN_EXE="$PROJECT_DIR/artifacts/windows/NeuralArc-$VERSION.exe"
+LINUX_DEB="$PROJECT_DIR/artifacts/linux/NeuralArc-$VERSION.deb"
 MAC_README="$PROJECT_DIR/artifacts/macos/README-$VERSION.md"
 WIN_README="$PROJECT_DIR/artifacts/windows/README-$VERSION.md"
 
+ASSETS=()
 MISSING_ASSETS=()
-[[ ! -f "$MAC_DMG" ]] && MISSING_ASSETS+=("$MAC_DMG")
-[[ ! -f "$WIN_EXE" ]] && MISSING_ASSETS+=("$WIN_EXE")
+for candidate in "$MAC_DMG" "$WIN_EXE" "$LINUX_DEB"; do
+  if [[ -f "$candidate" ]]; then
+    ASSETS+=("$candidate")
+  else
+    MISSING_ASSETS+=("$candidate")
+  fi
+done
+
+if [[ ${#ASSETS[@]} -eq 0 ]]; then
+  echo "No release artifacts found for $TAG." >&2
+  echo "Expected one or more of:" >&2
+  for missing in "${MISSING_ASSETS[@]}"; do
+    echo "  $missing" >&2
+  done
+  exit 1
+fi
 
 if [[ ${#MISSING_ASSETS[@]} -gt 0 ]]; then
-  echo "Both artifacts are required before release." >&2
+  echo "Continuing with ${#ASSETS[@]} built artifact(s). Missing artifact(s):" >&2
   for missing in "${MISSING_ASSETS[@]}"; do
-    echo "  missing: $missing" >&2
+    echo "  $missing" >&2
   done
-  if [[ "$DRY_RUN" == false ]]; then
-    exit 1
-  fi
 fi
 
 if ! command -v gh >/dev/null 2>&1; then
@@ -122,13 +135,13 @@ if [[ "$DRY_RUN" == true ]]; then
   else
     echo "[dry-run] gh release create $TAG --title NeuralArc $TAG --draft ${NOTES_ARGS[*]}"
   fi
-  echo "[dry-run] gh release upload $TAG --clobber $MAC_DMG $WIN_EXE"
+  echo "[dry-run] gh release upload $TAG --clobber ${ASSETS[*]}"
   exit 0
 fi
 
 if gh release view "$TAG" >/dev/null 2>&1; then
   echo "Release $TAG already exists. Uploading artifacts with --clobber..."
-  gh release upload "$TAG" --clobber "$MAC_DMG" "$WIN_EXE"
+  gh release upload "$TAG" --clobber "${ASSETS[@]}"
 else
   echo "Creating release $TAG..."
   if [[ "$PUBLISH" == true ]]; then
@@ -136,8 +149,7 @@ else
   else
     gh release create "$TAG" --title "NeuralArc $TAG" --draft "${NOTES_ARGS[@]}"
   fi
-  gh release upload "$TAG" --clobber "$MAC_DMG" "$WIN_EXE"
+  gh release upload "$TAG" --clobber "${ASSETS[@]}"
 fi
 
-echo "Release completed for $TAG"
-
+echo "Release completed for $TAG with ${#ASSETS[@]} artifact(s)."

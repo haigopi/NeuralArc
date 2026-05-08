@@ -114,7 +114,8 @@
     .dot-link:focus-visible,
     .top-home:focus-visible,
     .button:focus-visible,
-    .button-secondary:focus-visible {
+    .button-secondary:focus-visible,
+    .download-option:focus-visible {
       outline: 2px solid rgba(143, 217, 255, 0.92);
       outline-offset: 3px;
     }
@@ -221,6 +222,8 @@
     }
 
     .hero-copy {
+      position: relative;
+      z-index: 3;
       padding: 34px 0;
     }
 
@@ -303,6 +306,12 @@
       transition: transform .16s ease, border-color .16s ease, background .16s ease;
     }
 
+    button.button,
+    button.button-secondary {
+      cursor: pointer;
+      font: inherit;
+    }
+
     .button:hover,
     .button-secondary:hover {
       transform: translateY(-1px);
@@ -318,6 +327,83 @@
       background: linear-gradient(90deg, #7cf6c4 0%, #8fd9ff 20%, #bba8ff 46%, #ff9ec7 72%, #ffd27a 100%);
       color: #06101a;
       border-color: rgba(255, 255, 255, 0.26);
+    }
+
+    .download-menu {
+      position: relative;
+      display: inline-flex;
+      z-index: 12;
+    }
+
+    .download-menu.is-open {
+      z-index: 120;
+    }
+
+    .download-toggle {
+      gap: 10px;
+    }
+
+    .download-toggle::after {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(45deg) translateY(-2px);
+      transition: transform .16s ease;
+    }
+
+    .download-menu.is-open .download-toggle::after {
+      transform: rotate(225deg) translateY(-2px);
+    }
+
+    .download-options {
+      position: absolute;
+      top: calc(100% + 10px);
+      left: 0;
+      z-index: 121;
+      min-width: 240px;
+      padding: 8px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(7, 18, 29, 0.96);
+      box-shadow: var(--shadow);
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-4px);
+      transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
+      backdrop-filter: blur(14px);
+    }
+
+    .download-menu.is-open .download-options,
+    .download-menu:focus-within .download-options {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+
+    .download-option {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px;
+      border-radius: 12px;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 700;
+      transition: background .16s ease, color .16s ease;
+    }
+
+    .download-option:hover {
+      background: rgba(124, 246, 196, 0.12);
+      color: var(--accent);
+    }
+
+    .download-option small {
+      color: var(--muted);
+      font-size: .76rem;
+      font-weight: 700;
     }
 
     .button-secondary {
@@ -541,6 +627,10 @@
       background-size: cover;
       opacity: 0.035;
       animation: sectionGlow 11s ease-in-out infinite 1.8s;
+    }
+
+    .panel--full-screen.get-started {
+      overflow: visible;
     }
 
     .panel--full-screen.ai-ready::after {
@@ -969,7 +1059,14 @@
           <h1>TRADE LOCAL.<br>STAY PRIVATE.<br>BE AUTONOMOUS.</h1>
           <p class="lead">Start in simulation mode, verify your strategies, and promote to live when ready. Security, trust, and AI, all in one and local to your machine.</p>
           <div class="hero-actions">
-            <a class="button" href="#get-started">Download App</a>
+            <div class="download-menu">
+              <button class="button download-toggle" type="button" aria-haspopup="true" aria-expanded="false">Download App</button>
+              <div class="download-options" role="menu" aria-label="Download NeuralArc">
+                <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" role="menuitem" data-download-platform="windows">Windows <small>EXE</small></a>
+                <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" role="menuitem" data-download-platform="mac">Mac <small>DMG</small></a>
+                <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" role="menuitem" data-download-platform="linux">Linux <small>DEB</small></a>
+              </div>
+            </div>
             <a class="button-secondary" href="#get-started">Get Started</a>
           </div>
         </article>
@@ -1110,7 +1207,14 @@ live: manual promotion only</pre>
               <li>The initial path takes only a few minutes and a few clicks.</li>
             </ul>
             <div class="card-action">
-              <a class="button" href="#top">Download NeuralArc</a>
+              <div class="download-menu">
+                <button class="button download-toggle" type="button" aria-haspopup="true" aria-expanded="false">Download NeuralArc</button>
+                <div class="download-options" role="menu" aria-label="Download NeuralArc">
+                  <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" role="menuitem" data-download-platform="windows">Windows <small>EXE</small></a>
+                  <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" role="menuitem" data-download-platform="mac">Mac <small>DMG</small></a>
+                  <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" role="menuitem" data-download-platform="linux">Linux <small>DEB</small></a>
+                </div>
+              </div>
             </div>
           </section>
         </div>
@@ -1181,6 +1285,81 @@ live: manual promotion only</pre>
       };
       onScroll();
       window.addEventListener("scroll", onScroll, { passive: true });
+    })();
+  </script>
+  <script>
+    (function () {
+      const latestReleaseApiUrl = "https://api.github.com/repos/haigopi/NeuralArc/releases/latest";
+      const latestReleasePageUrl = "https://github.com/haigopi/NeuralArc/releases/latest";
+      const menus = document.querySelectorAll(".download-menu");
+      const toggles = document.querySelectorAll(".download-toggle");
+      const platformMatchers = {
+        windows: [/\.exe$/i, /\.msi$/i],
+        mac: [/\.dmg$/i, /\.pkg$/i],
+        linux: [/\.deb$/i, /\.appimage$/i, /\.tar\.gz$/i, /\.tgz$/i, /\.zip$/i, /\.jar$/i]
+      };
+
+      const closeMenus = () => {
+        menus.forEach((menu) => {
+          menu.classList.remove("is-open");
+          const toggle = menu.querySelector(".download-toggle");
+          if (toggle) {
+            toggle.setAttribute("aria-expanded", "false");
+          }
+        });
+      };
+
+      toggles.forEach((toggle) => {
+        toggle.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const menu = toggle.closest(".download-menu");
+          const isOpen = menu.classList.contains("is-open");
+          closeMenus();
+          menu.classList.toggle("is-open", !isOpen);
+          toggle.setAttribute("aria-expanded", String(!isOpen));
+        });
+      });
+
+      document.addEventListener("click", closeMenus);
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          closeMenus();
+        }
+      });
+
+      const selectAsset = (assets, platform) => {
+        const matchers = platformMatchers[platform] || [];
+        for (const matcher of matchers) {
+          const asset = assets.find((candidate) => matcher.test(candidate.name || ""));
+          if (asset) {
+            return asset;
+          }
+        }
+        return null;
+      };
+
+      fetch(latestReleaseApiUrl, {
+        headers: { "Accept": "application/vnd.github+json" }
+      })
+        .then((response) => response.ok ? response.json() : Promise.reject(new Error("Release lookup failed")))
+        .then((release) => {
+          const assets = Array.isArray(release.assets) ? release.assets : [];
+          document.querySelectorAll("[data-download-platform]").forEach((link) => {
+            const asset = selectAsset(assets, link.dataset.downloadPlatform);
+            link.href = asset && asset.browser_download_url ? asset.browser_download_url : (release.html_url || latestReleasePageUrl);
+            if (asset && asset.name) {
+              const meta = link.querySelector("small");
+              if (meta) {
+                meta.textContent = asset.name.split(".").pop().toUpperCase();
+              }
+            }
+          });
+        })
+        .catch(() => {
+          document.querySelectorAll("[data-download-platform]").forEach((link) => {
+            link.href = latestReleasePageUrl;
+          });
+        });
     })();
   </script>
   <script>

@@ -68,6 +68,7 @@ case "$OS_NAME" in
     run_cmd "$SCRIPT_DIR/package-macos.sh" "$VERSION"
     echo "macOS artifact done."
     echo "Windows EXE must be built on Windows: ./scripts/package-windows.ps1 $VERSION"
+    echo "Linux DEB must be built on Linux: ./scripts/package-linux.sh $VERSION"
     ;;
   MINGW*|MSYS*|CYGWIN*)
     if command -v pwsh >/dev/null 2>&1; then
@@ -77,11 +78,13 @@ case "$OS_NAME" in
     fi
     echo "Windows artifact done."
     echo "macOS DMG must be built on macOS: ./scripts/package-macos.sh $VERSION"
+    echo "Linux DEB must be built on Linux: ./scripts/package-linux.sh $VERSION"
     ;;
   Linux)
-    echo "This host cannot produce DMG/EXE with jpackage." >&2
-    echo "Build on macOS for DMG and on Windows for EXE." >&2
-    exit 1
+    run_cmd "$SCRIPT_DIR/package-linux.sh" "$VERSION"
+    echo "Linux artifact done."
+    echo "macOS DMG must be built on macOS: ./scripts/package-macos.sh $VERSION"
+    echo "Windows EXE must be built on Windows: ./scripts/package-windows.ps1 $VERSION"
     ;;
   *)
     echo "Unsupported host OS [$OS_NAME]." >&2
@@ -90,4 +93,3 @@ case "$OS_NAME" in
 esac
 
 echo "Artifacts directory: $PROJECT_DIR/artifacts"
-
