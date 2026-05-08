@@ -70,6 +70,57 @@ class PortfolioActionsSupportTest {
         assertTrue(message.contains("TSLA: no open quantity"));
     }
 
+    @Test
+    void cancelPendingLimitBuysTargetsActiveStrategies() {
+        ManagedStrategy active = managed("AAPL", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy paused = managed("MSFT", StrategyStatus.PAUSED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(active, paused),
+                PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_BUYS
+        );
+
+        assertEquals(1, targets.size());
+        assertEquals("AAPL", targets.getFirst().strategy.symbol());
+    }
+
+    @Test
+    void promoteAllTargetsActiveAndPausedPaperStrategiesOnly() {
+        ManagedStrategy activePaper = managed("AAPL", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy pausedPaper = managed("MSFT", StrategyStatus.PAUSED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy live = managed("TSLA", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        live.strategy.setMode(StrategyMode.LIVE);
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(activePaper, pausedPaper, live),
+                PortfolioActionsSupport.BulkAction.PROMOTE_ALL_TO_LIVE
+        );
+
+        assertEquals(2, targets.size());
+        assertEquals(List.of("AAPL", "MSFT"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
+    void bulkActionConfirmationUsesSpecificDescription() {
+        String message = support.buildConfirmationMessage(
+                PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_BUYS,
+                List.of(managed("AAPL", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO))
+        );
+
+        assertTrue(message.contains("Cancel pending limit buy orders"));
+        assertTrue(message.contains("Open positions and sell orders are not closed"));
+    }
+
+    @Test
+    void bulkActionResultMessageUsesSucceededLabel() {
+        String message = support.buildResultMessage(
+                PortfolioActionsSupport.BulkAction.PROMOTE_ALL_TO_LIVE,
+                new PortfolioActionsSupport.BatchResult(List.of("AAPL"), List.of())
+        );
+
+        assertTrue(message.contains("Succeeded: 1"));
+    }
+
     private static ManagedStrategy managed(String symbol, StrategyStatus status, int shares, BigDecimal avgCost, BigDecimal lastPrice) {
         ManagedStrategy managed = new ManagedStrategy(baseStrategy(symbol, status));
         Position position = new Position(symbol);
@@ -119,4 +170,3 @@ class PortfolioActionsSupportTest {
         );
     }
 }
-

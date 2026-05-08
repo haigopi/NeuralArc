@@ -38,7 +38,7 @@ public final class HistoryTablePresenter {
     }
 
     private boolean includeInTradeHistory(HistorySource source) {
-        if (source == null || source.strategyStatusEnum() != StrategyStatus.COMPLETED) {
+        if (source == null) {
             return false;
         }
         return source.orders().stream()

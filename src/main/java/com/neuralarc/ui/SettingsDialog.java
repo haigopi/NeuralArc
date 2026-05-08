@@ -26,6 +26,8 @@ public class SettingsDialog extends JDialog {
     private static final int SECTION_GAP = 12;
     private static final int FIELD_GAP = 10;
     private static final int SECTION_INNER_PADDING = 10;
+    private static final int FORM_LABEL_COLUMN_WIDTH = 210;
+    private static final int FORM_VALUE_COLUMN_WIDTH = 320;
     private static final Color DIALOG_BG = UIManager.getColor("Panel.background") != null
             ? UIManager.getColor("Panel.background")
             : Color.WHITE;
@@ -99,32 +101,18 @@ public class SettingsDialog extends JDialog {
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, 0, OUTER_PADDING));
 
-        JPanel userPanel = new JPanel(new GridBagLayout());
-        userPanel.setBorder(createSectionBorder("User Details"));
-        GridBagConstraints userGbc = new GridBagConstraints();
-        userGbc.gridx = 0;
-        userGbc.gridy = 0;
-        userGbc.weightx = 0.32;
-        userGbc.fill = GridBagConstraints.HORIZONTAL;
-        userGbc.anchor = GridBagConstraints.NORTHWEST;
-        userGbc.insets = new Insets(0, 0, FIELD_GAP, FIELD_GAP);
-        userPanel.add(new JLabel("User Email:"), userGbc);
-        userGbc.gridx = 1;
-        userGbc.weightx = 0.68;
-        userGbc.insets = new Insets(0, 0, FIELD_GAP, 0);
-        userPanel.add(emailField, userGbc);
+        JPanel userPanel = createFormPanel("User Details");
+        int userRow = 0;
+        addFormRow(userPanel, userRow++, "User Email:", emailField, true);
 
         JPanel emailPreferences = new JPanel();
         emailPreferences.setLayout(new BoxLayout(emailPreferences, BoxLayout.Y_AXIS));
         emailPreferences.setOpaque(false);
         emailPreferences.setBorder(new EmptyBorder(2, 0, 2, 0));
-        JLabel emailPreferenceDescription = new JLabel("<html><div style='max-width:420px; width:420px; line-height:1.35;'>"
-                + "Choose which strategy emails should be sent to the user email above. "
-                + "Buy notifications are sent when a buy order is placed and waiting for fill. "
-                + "Sell notifications are sent when a sell order is filled."
-                + "</div></html>");
-        emailPreferenceDescription.setForeground(TEXT_MUTED);
-        emailPreferenceDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        JLabel emailPreferenceDescription = mutedDescription(
+                "Choose which strategy emails to send. Buy alerts are sent when a buy order is placed. "
+                        + "Sell alerts are sent when a sell order is filled."
+        );
         emailOnBuyExpected.setAlignmentX(Component.LEFT_ALIGNMENT);
         emailOnSellExecuted.setAlignmentX(Component.LEFT_ALIGNMENT);
         emailPreferenceDescription.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -133,54 +121,37 @@ public class SettingsDialog extends JDialog {
         emailPreferences.add(emailOnSellExecuted);
         emailPreferences.add(Box.createVerticalStrut(8));
         emailPreferences.add(emailPreferenceDescription);
-        userGbc.gridx = 0;
-        userGbc.gridy = 1;
-        userGbc.weightx = 0.32;
-        userGbc.insets = new Insets(0, 0, 0, FIELD_GAP);
-        userPanel.add(new JLabel("Email Communications:"), userGbc);
-        userGbc.gridx = 1;
-        userGbc.weightx = 0.68;
-        userGbc.insets = new Insets(0, 0, 0, 0);
-        userPanel.add(emailPreferences, userGbc);
+        addFormRow(userPanel, userRow, "Email Communications:", emailPreferences, false);
 
-        JPanel apiPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
-        apiPanel.setBorder(createSectionBorder("Alpaca API Details"));
-        apiPanel.add(new JLabel("Broker:"));
-        apiPanel.add(brokerBox);
-        apiPanel.add(applicationModeLabel);
-        apiPanel.add(appModeBox);
-        apiPanel.add(apiKeyLabel);
-        apiPanel.add(apiKeyField);
-        apiPanel.add(apiSecretLabel);
-        apiPanel.add(apiSecretField);
+        JPanel apiPanel = createFormPanel("Alpaca API Details");
+        int apiRow = 0;
+        addFormRow(apiPanel, apiRow++, "Broker:", brokerBox, true);
+        addFormRow(apiPanel, apiRow++, applicationModeLabel, appModeBox, true);
+        addFormRow(apiPanel, apiRow++, apiKeyLabel, apiKeyField, true);
+        addFormRow(apiPanel, apiRow++, apiSecretLabel, apiSecretField, true);
         saveCredentials.setSelected(true);
         saveCredentials.setEnabled(false);
-        apiPanel.add(new JLabel(""));
-        apiPanel.add(saveCredentials);
+        addFormRow(apiPanel, apiRow++, "Credential storage:", saveCredentials, true);
         DialogButtonStyles.apply(verifyConnectionButton, "icons/verify.svg");
         verifyConnectionButton.addActionListener(e -> verifyConnection());
         brokerBox.addActionListener(e -> updateBrokerControlState());
         appModeBox.addActionListener(e -> onModeChanged());
-        apiPanel.add(connectionStatus);
-        apiPanel.add(verifyConnectionButton);
+        JPanel connectionActions = new JPanel(new BorderLayout(FIELD_GAP, 0));
+        connectionActions.setOpaque(false);
+        connectionActions.add(connectionStatus, BorderLayout.CENTER);
+        connectionActions.add(verifyConnectionButton, BorderLayout.EAST);
+        addFormRow(apiPanel, apiRow, "Connection:", connectionActions, false);
 
         JPanel telemetryPanel = new JPanel(new GridBagLayout());
         telemetryPanel.setOpaque(false);
 
         boolean analyticsGloballyEnabled = AppMetadata.analyticsEnabled();
-        JLabel telemetryDescription = new JLabel(
-                "<html><div style='max-width:320px; width:320px; line-height:1.35;'>"
-                        + (analyticsGloballyEnabled
-                            ? "To support auditing, fraud prevention, and anomaly detection, operational app telemetry "
-                              + "can be streamed to our servers.<br><br>"
-                              + "Telemetry remains anonymized and does not include personal user details."
-                            : "<b>Analytics is currently disabled at the application level</b> "
-                              + "(<code>app.analytics.enabled=false</code> in app.properties).<br><br>"
-                              + "The checkbox below has no effect until analytics is re-enabled in app.properties.")
-                        + "</div></html>"
+        JLabel telemetryDescription = mutedDescription(
+                analyticsGloballyEnabled
+                        ? "Shares anonymized operational telemetry for diagnostics and reliability monitoring."
+                        : "Analytics is disabled globally in app.properties (app.analytics.enabled=false). "
+                        + "This checkbox has no effect until analytics is enabled."
         );
-        telemetryDescription.setForeground(TEXT_MUTED);
-        telemetryDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
         if (!analyticsGloballyEnabled) {
             telemetryEnabled.setEnabled(false);
             telemetryEnabled.setSelected(false);
@@ -228,26 +199,20 @@ public class SettingsDialog extends JDialog {
         marketHoursLabelConstraints.insets = new Insets(0, 0, 0, FIELD_GAP);
         marketHoursPanel.add(new JLabel("Session Controls:"), marketHoursLabelConstraints);
 
-        JLabel autoPauseDescription = new JLabel("<html><div style='max-width:320px; width:320px; line-height:1.35;'>"
-                + "Reduces API usage by pausing strategy polling outside regular market hours. "
-                + "Active strategies resume automatically when the market opens, unless manually paused by the user."
-                + "</div></html>");
-        autoPauseDescription.setForeground(TEXT_MUTED);
-        autoPauseDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        JLabel autoPauseDescription = mutedDescription(
+                "Pauses strategy polling when the market session is closed. "
+                        + "Eligible strategies resume automatically when the market reopens."
+        );
 
-        JLabel extendedHoursDescription = new JLabel("<html><div style='max-width:320px; width:320px; line-height:1.35;'>"
-                + "Allows eligible orders during pre-market and after-hours sessions. "
-                + "This may involve lower liquidity, wider spreads, and higher risk."
-                + "</div></html>");
-        extendedHoursDescription.setForeground(TEXT_MUTED);
-        extendedHoursDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        JLabel extendedHoursDescription = mutedDescription(
+                "Allows eligible orders in pre-market and after-hours sessions. "
+                        + "Extended hours can have wider spreads and lower liquidity."
+        );
 
-        JLabel allowDuplicateSymbolsDescription = new JLabel("<html><div style='max-width:320px; width:320px; line-height:1.35;'>"
-                + "When enabled, multiple strategies can be added for the same stock symbol. "
-                + "By default, only one active or paused strategy per symbol is allowed."
-                + "</div></html>");
-        allowDuplicateSymbolsDescription.setForeground(TEXT_MUTED);
-        allowDuplicateSymbolsDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        JLabel allowDuplicateSymbolsDescription = mutedDescription(
+                "Allows multiple strategies for the same symbol. "
+                        + "When disabled, only one active or paused strategy per symbol is allowed."
+        );
 
         JPanel marketHoursContent = new JPanel();
         marketHoursContent.setLayout(new BoxLayout(marketHoursContent, BoxLayout.Y_AXIS));
@@ -286,11 +251,9 @@ public class SettingsDialog extends JDialog {
         deleteAllDataButton.setForeground(new Color(180, 30, 30));
         deleteAllDataButton.addActionListener(e -> deleteAllData());
 
-        JLabel dangerDescription = new JLabel("<html><div style='width:100%;color:#9AA0A8;'>"
-                + "Deletes local settings, saved credentials, strategies, and cached app data. This action cannot be undone."
-                + "</div></html>");
-        dangerDescription.setForeground(new Color(154, 160, 168));
-        dangerDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        JLabel dangerDescription = mutedDescription(
+                "Deletes local settings, credentials, strategies, and cached app data. This action cannot be undone."
+        );
         dangerZonePanel.add(deleteAllDataButton);
         dangerZonePanel.add(dangerDescription);
 
@@ -300,11 +263,9 @@ public class SettingsDialog extends JDialog {
         DialogButtonStyles.apply(importStrategiesButton, "icons/apply.svg");
         exportStrategiesButton.addActionListener(e -> exportStrategies());
         importStrategiesButton.addActionListener(e -> importStrategies());
-        JLabel transferDescription = new JLabel("<html><div style='width:100%;color:#9AA0A8;'>"
-                + "Export/import strategies JSON only. Settings, credentials, orders, and logs are not included."
-                + "</div></html>");
-        transferDescription.setForeground(new Color(154, 160, 168));
-        transferDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        JLabel transferDescription = mutedDescription(
+                "Exports and imports strategy JSON only. Settings, credentials, orders, and logs are not included."
+        );
         strategyTransferPanel.add(exportStrategiesButton);
         strategyTransferPanel.add(importStrategiesButton);
         strategyTransferPanel.add(transferDescription);
@@ -749,6 +710,66 @@ public class SettingsDialog extends JDialog {
 
     public record StrategyTransferResult(boolean success, String message) {}
 
+    private JPanel createFormPanel(String title) {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setOpaque(false);
+        panel.setBorder(createSectionBorder(title));
+        return panel;
+    }
+
+    private void addFormRow(JPanel panel, int row, String labelText, JComponent valueComponent, boolean singleLine) {
+        JLabel label = new JLabel(labelText);
+        addFormRow(panel, row, label, valueComponent, singleLine);
+    }
+
+    private void addFormRow(JPanel panel, int row, JLabel label, JComponent valueComponent, boolean singleLine) {
+        label.setHorizontalAlignment(SwingConstants.LEFT);
+        label.setPreferredSize(new Dimension(FORM_LABEL_COLUMN_WIDTH, label.getPreferredSize().height));
+
+        GridBagConstraints labelGbc = new GridBagConstraints();
+        labelGbc.gridx = 0;
+        labelGbc.gridy = row;
+        labelGbc.weightx = 0;
+        labelGbc.fill = GridBagConstraints.NONE;
+        labelGbc.anchor = GridBagConstraints.NORTHWEST;
+        labelGbc.insets = new Insets(0, 0, FIELD_GAP, FIELD_GAP);
+
+        GridBagConstraints valueGbc = new GridBagConstraints();
+        valueGbc.gridx = 1;
+        valueGbc.gridy = row;
+        valueGbc.weightx = 1;
+        valueGbc.fill = GridBagConstraints.HORIZONTAL;
+        valueGbc.anchor = GridBagConstraints.NORTHWEST;
+        valueGbc.insets = new Insets(0, 0, FIELD_GAP, 0);
+
+        if (!singleLine) {
+            valueGbc.fill = GridBagConstraints.BOTH;
+            valueGbc.weighty = 1;
+        } else {
+            constrainFormValueWidth(valueComponent);
+        }
+
+        panel.add(label, labelGbc);
+        panel.add(valueComponent, valueGbc);
+    }
+
+    private void constrainFormValueWidth(JComponent component) {
+        if (component instanceof JTextField
+                || component instanceof JPasswordField
+                || component instanceof JComboBox) {
+            Dimension preferred = component.getPreferredSize();
+            int width = Math.min(FORM_VALUE_COLUMN_WIDTH, preferred.width > 0 ? preferred.width : FORM_VALUE_COLUMN_WIDTH);
+            component.setPreferredSize(new Dimension(width, preferred.height));
+            component.setMaximumSize(new Dimension(width, preferred.height));
+        }
+    }
+
+    private JLabel mutedDescription(String text) {
+        JLabel label = new JLabel("<html><div style='width:360px;'>" + text + "</div></html>");
+        label.putClientProperty("neuralarc.mutedDescription", Boolean.TRUE);
+        return label;
+    }
+
     private JComponent createCollapsibleSection(String title, JComponent sectionContent, boolean initiallyExpanded) {
         JPanel container = new JPanel(new BorderLayout(0, 8));
         container.setOpaque(false);
@@ -825,7 +846,12 @@ public class SettingsDialog extends JDialog {
             panel.setBackground(DIALOG_BG);
         }
         if (component instanceof JLabel label) {
-            label.setForeground(TEXT_PRIMARY);
+            if (Boolean.TRUE.equals(label.getClientProperty("neuralarc.mutedDescription"))) {
+                label.setForeground(TEXT_MUTED);
+                label.setFont(FontLoader.ui(Font.PLAIN, 11f));
+            } else {
+                label.setForeground(TEXT_PRIMARY);
+            }
         }
         if (component instanceof JTextField field) {
             styleInput(field);

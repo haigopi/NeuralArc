@@ -6,6 +6,9 @@ import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyConfig;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
+import com.neuralarc.util.Monetary;
+
+import java.math.BigDecimal;
 
 /**
  * Runtime wrapper for a Strategy with cached broker position state,
@@ -15,6 +18,8 @@ import com.neuralarc.model.StrategyStatus;
 final class ManagedStrategy {
     Strategy strategy;
     private Position cachedPosition;
+    private BigDecimal cachedLastSellPrice = Monetary.zero();
+    private BigDecimal cachedRealizedPnl = Monetary.zero();
     volatile long lastDisplayedPositionFetchAtMillis;
     volatile long pollIntervalMillis;
     volatile long nextPollDueAtMillis;
@@ -118,6 +123,19 @@ final class ManagedStrategy {
     void setCachedPosition(Position position) {
         this.cachedPosition = position == null ? new Position(strategy.symbol()) : position.copy();
         this.lastDisplayedPositionFetchAtMillis = System.currentTimeMillis();
+    }
+
+    BigDecimal cachedLastSellPrice() {
+        return Monetary.round(cachedLastSellPrice);
+    }
+
+    BigDecimal cachedRealizedPnl() {
+        return Monetary.round(cachedRealizedPnl);
+    }
+
+    void setTradeSnapshot(BigDecimal lastSellPrice, BigDecimal realizedPnl) {
+        this.cachedLastSellPrice = Monetary.round(lastSellPrice);
+        this.cachedRealizedPnl = Monetary.round(realizedPnl);
     }
 
     boolean shouldRefreshDisplayedPosition() {

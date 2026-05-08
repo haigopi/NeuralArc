@@ -224,6 +224,34 @@ public class StrategyService {
         });
     }
 
+    public LimitBuyCancelResult cancelPendingLimitBuys(String strategyId) {
+        Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
+        if (maybeStrategy.isEmpty()) {
+            return LimitBuyCancelResult.failed("Strategy not found");
+        }
+        Strategy strategy = maybeStrategy.get();
+        int canceledCount = cancelPendingLimitBuyOrders(strategy);
+        if (canceledCount <= 0) {
+            return LimitBuyCancelResult.failed("No pending limit buy orders found");
+        }
+
+        rememberResumeStateBeforePause(strategy);
+        strategy.setStatus(StrategyStatus.PAUSED);
+        strategy.setCurrentState(StrategyLifecycleState.PAUSED);
+        strategy.setPauseReason(PauseReason.MANUAL_LIMIT_BUY_CANCELED);
+        strategy.setLatestOrderStatus("canceled");
+        strategy.clearLastError();
+        strategyRepository.save(strategy);
+        stateMachine.transition(
+                strategy,
+                StrategyLifecycleState.PAUSED,
+                StrategyEventType.STRATEGY_PAUSED,
+                "Pending limit buy order(s) canceled; waiting for user to click Place Limit Buy Again",
+                "{}"
+        );
+        return LimitBuyCancelResult.success(canceledCount);
+    }
+
     public void resume(String strategyId) {
         strategyRepository.findById(strategyId).ifPresent(strategy -> {
             boolean manualCancelResume = strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED;
@@ -580,6 +608,66 @@ public class StrategyService {
         }
     }
 
+    private int cancelPendingLimitBuyOrders(Strategy strategy) {
+        int canceledCount = 0;
+        List<com.neuralarc.api.AlpacaOrderData> openOrders = alpacaClient.getOpenOrders(strategy.symbol());
+        for (com.neuralarc.api.AlpacaOrderData remoteOrder : openOrders) {
+            if (!isPendingLimitBuy(remoteOrder)) {
+                continue;
+            }
+            if (alpacaClient.cancelOrder(remoteOrder.orderId())) {
+                canceledCount++;
+                markMatchingLocalLimitBuyCanceled(strategy, remoteOrder);
+            }
+        }
+
+        for (StrategyOrder localOrder : orderRepository.findByStrategyId(strategy.id())) {
+            if (!isPendingLimitBuy(localOrder)) {
+                continue;
+            }
+            localOrder.setStatus(StrategyOrderStatus.CANCELED);
+            orderRepository.save(localOrder);
+            canceledCount++;
+        }
+        return canceledCount;
+    }
+
+    private void markMatchingLocalLimitBuyCanceled(Strategy strategy, com.neuralarc.api.AlpacaOrderData remoteOrder) {
+        for (StrategyOrder localOrder : orderRepository.findByStrategyId(strategy.id())) {
+            if (!isPendingLimitBuy(localOrder)) {
+                continue;
+            }
+            boolean sameOrder = remoteOrder.orderId().equals(localOrder.alpacaOrderId())
+                    || remoteOrder.clientOrderId().equals(localOrder.clientOrderId());
+            if (!sameOrder) {
+                continue;
+            }
+            localOrder.setStatus(StrategyOrderStatus.CANCELED);
+            localOrder.setRawResponseJson(remoteOrder.rawJson());
+            orderRepository.save(localOrder);
+        }
+    }
+
+    private boolean isPendingLimitBuy(com.neuralarc.api.AlpacaOrderData order) {
+        if (order == null || !"buy".equalsIgnoreCase(order.side()) || !"limit".equalsIgnoreCase(order.type())) {
+            return false;
+        }
+        String normalized = BrokerOrderStatusUtil.normalize(order.status());
+        return !"filled".equals(normalized)
+                && !"canceled".equals(normalized)
+                && !"cancelled".equals(normalized)
+                && !"expired".equals(normalized)
+                && !"rejected".equals(normalized)
+                && !"failed".equals(normalized);
+    }
+
+    private boolean isPendingLimitBuy(StrategyOrder order) {
+        return order != null
+                && order.side() == StrategyOrderSide.BUY
+                && order.orderType() == StrategyOrderType.LIMIT
+                && order.isPending();
+    }
+
     private Strategy buildRemoteStrategy(
             String symbol,
             List<com.neuralarc.api.AlpacaOrderData> openOrders,
@@ -808,6 +896,16 @@ public class StrategyService {
 
         public static StrategyCreationResult failed(String error) {
             return new StrategyCreationResult(false, null, null, null, null, error == null ? "Unknown error" : error);
+        }
+    }
+
+    public record LimitBuyCancelResult(boolean success, int canceledCount, String error) {
+        public static LimitBuyCancelResult success(int canceledCount) {
+            return new LimitBuyCancelResult(true, canceledCount, null);
+        }
+
+        public static LimitBuyCancelResult failed(String error) {
+            return new LimitBuyCancelResult(false, 0, error == null ? "Unknown error" : error);
         }
     }
 

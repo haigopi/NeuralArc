@@ -56,6 +56,27 @@ class HistoryTablePresenterTest {
     }
 
     @Test
+    void activeRepeatStrategyWithFilledSellAppearsInTradeHistory() {
+        HistoryTablePresenter.HistorySource source = new HistoryTablePresenter.HistorySource(
+                "AAPL",
+                "Paper",
+                "Active",
+                "Limit Base Buy Placed",
+                "",
+                Instant.now(),
+                StrategyStatus.ACTIVE,
+                List.of(
+                        filledOrder("AAPL", StrategyStage.BASE_BUY, StrategyOrderSide.BUY, "10", "100.00", "100.00"),
+                        filledOrder("AAPL", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL, "10", "110.00", "110.00")
+                )
+        );
+
+        List<HistoryTablePresenter.HistoryRow> rows = presenter.buildRows(List.of(source), instant -> "t");
+
+        assertTrue(rows.stream().anyMatch(row -> "SELL".equals(row.side())));
+    }
+
+    @Test
     void filledSellRowsProduceSubtotalPerSymbol() {
         HistoryTablePresenter.HistorySource source = new HistoryTablePresenter.HistorySource(
                 "AAPL",

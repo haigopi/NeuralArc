@@ -93,6 +93,10 @@ public class StrategyEngine {
         }
     }
 
+    public void setEmailNotificationListener(TradeEmailNotificationService.EmailNotificationListener listener) {
+        emailNotificationService.setNotificationListener(listener);
+    }
+
     /**
      * Legacy reconcile entry-point (void). Streaming and resume paths use this.
      * Delegates to the tracked overload with an empty price cache; outcomes are discarded.

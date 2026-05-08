@@ -14,6 +14,7 @@ import com.neuralarc.service.StrategyPollingService;
 import com.neuralarc.service.StrategyRepository;
 import com.neuralarc.service.StrategyService;
 import com.neuralarc.service.StrategyValidator;
+import com.neuralarc.service.TradeEmailNotificationService;
 import com.neuralarc.util.AppMetadata;
 
 public final class TradingRuntimeSupport {
@@ -73,6 +74,15 @@ public final class TradingRuntimeSupport {
             ApplicationMode mode,
             StrategyPollingService.PollListener pollListener
     ) {
+        return createRuntimeServices(runtimeClient, mode, pollListener, TradeEmailNotificationService.EmailNotificationListener.NOOP);
+    }
+
+    public RuntimeServices createRuntimeServices(
+            HttpAlpacaClient runtimeClient,
+            ApplicationMode mode,
+            StrategyPollingService.PollListener pollListener,
+            TradeEmailNotificationService.EmailNotificationListener emailNotificationListener
+    ) {
         if (runtimeClient == null) {
             return new RuntimeServices(null, null);
         }
@@ -89,6 +99,7 @@ public final class TradingRuntimeSupport {
                 marketHoursService
         );
         pollingService.setPollListener(pollListener);
+        pollingService.setEmailNotificationListener(emailNotificationListener);
         return new RuntimeServices(strategyService, pollingService);
     }
 

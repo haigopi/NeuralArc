@@ -7,15 +7,18 @@ import java.util.List;
 
 final class KillSwitchController {
     private final Gateway gateway;
+    private final UserActionLogSupport actionLog;
 
     KillSwitchController(Gateway gateway) {
         this.gateway = gateway;
+        this.actionLog = new UserActionLogSupport(gateway::log);
     }
 
     void activate() {
+        actionLog.started("Kill Switch");
         List<ManagedStrategy> strategies = gateway.strategies();
         if (strategies.isEmpty()) {
-            gateway.log("[KILL SWITCH] No active strategies to stop.");
+            actionLog.skipped("Kill Switch", "No active strategies to stop.");
             return;
         }
 
@@ -34,7 +37,7 @@ final class KillSwitchController {
         gateway.updateStatusBar();
         gateway.refreshPanels();
 
-        gateway.log("[KILL SWITCH] Stopped " + stoppedCount + " strategy(ies) and saved to file.");
+        actionLog.completed("Kill Switch", "Stopped " + stoppedCount + " strategy(ies) and saved to file.");
         gateway.publishAnalytics(new AnalyticsEvent("KILL_SWITCH_ACTIVATED").put("strategiesStopped", stoppedCount));
     }
 

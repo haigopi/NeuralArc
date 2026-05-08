@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.PauseReason;
+import com.neuralarc.model.Position;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
@@ -39,6 +40,45 @@ class StrategyTablePresenterTest {
         String label = presenter.displayStatusLabel(strategy, false, false, false);
 
         assertEquals("Base Buy Filled - Waiting on next rule", label);
+    }
+
+    @Test
+    void valueAtUsesLastSellPriceAndRealizedPnlForClosedPosition() {
+        Position position = new Position("AAPL");
+
+        assertEquals("120.00", presenter.valueAt(
+                strategy(),
+                position,
+                new BigDecimal("120.00"),
+                new BigDecimal("200.00"),
+                4,
+                "Completed",
+                "Paper"
+        ));
+        assertEquals("200.00", presenter.valueAt(
+                strategy(),
+                position,
+                new BigDecimal("120.00"),
+                new BigDecimal("200.00"),
+                6,
+                "Completed",
+                "Paper"
+        ));
+    }
+
+    @Test
+    void valueAtShowsNegativeRealizedPnlForClosedPosition() {
+        Position position = new Position("AAPL");
+
+        assertEquals("-45.67", presenter.valueAt(
+                strategy(),
+                position,
+                new BigDecimal("95.00"),
+                new BigDecimal("-45.67"),
+                6,
+                "Completed",
+                "Paper"
+        ));
     }
 
     private Strategy strategy() {

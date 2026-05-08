@@ -22,7 +22,12 @@ final class UpdateCheckSupport {
     }
 
     static void checkForUpdates(Component parent, AbstractButton triggerButton) {
+        checkForUpdates(parent, triggerButton, null);
+    }
+
+    static void checkForUpdates(Component parent, AbstractButton triggerButton, UserActionLogSupport actionLog) {
         if (!AppMetadata.updateCheckEnabled()) {
+            logSkipped(actionLog, "Update checks are disabled in app.properties.");
             JOptionPane.showMessageDialog(parent,
                     "Update checks are disabled in app.properties.",
                     "Updates Disabled",
@@ -32,6 +37,7 @@ final class UpdateCheckSupport {
 
         GitHubReleaseUpdateService service = new GitHubReleaseUpdateService(AppMetadata.githubLatestReleaseUrl());
         if (!service.isConfigured()) {
+            logFailed(actionLog, service.missingConfigMessage());
             JOptionPane.showMessageDialog(parent,
                     service.missingConfigMessage(),
                     "Update URL Missing",
@@ -58,8 +64,18 @@ final class UpdateCheckSupport {
                     triggerButton.setText(originalText);
                 }
                 try {
-                    showResultDialog(parent, get());
+                    GitHubReleaseUpdateService.UpdateCheckResult result = get();
+                    if (actionLog != null) {
+                        actionLog.completed(
+                                "Check Updates",
+                                result.updateAvailable()
+                                        ? "Update available: " + safe(result.latestVersion())
+                                        : "Application is up to date."
+                        );
+                    }
+                    showResultDialog(parent, result);
                 } catch (Exception ex) {
+                    logFailed(actionLog, ex.getMessage());
                     JOptionPane.showMessageDialog(parent,
                             "Unable to check for updates.\n" + ex.getMessage(),
                             "Update Check Failed",
@@ -68,6 +84,18 @@ final class UpdateCheckSupport {
             }
         };
         worker.execute();
+    }
+
+    private static void logSkipped(UserActionLogSupport actionLog, String reason) {
+        if (actionLog != null) {
+            actionLog.skipped("Check Updates", reason);
+        }
+    }
+
+    private static void logFailed(UserActionLogSupport actionLog, String reason) {
+        if (actionLog != null) {
+            actionLog.failed("Check Updates", reason);
+        }
     }
 
     private static void showResultDialog(Component parent, GitHubReleaseUpdateService.UpdateCheckResult result) {

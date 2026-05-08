@@ -26,8 +26,9 @@ class KillSwitchControllerTest {
 
         new KillSwitchController(gateway).activate();
 
-        assertEquals(1, gateway.logs.size());
-        assertTrue(gateway.logs.getFirst().contains("No active strategies"));
+        assertEquals(2, gateway.logs.size());
+        assertTrue(gateway.logs.getFirst().contains("Started"));
+        assertTrue(gateway.logs.get(1).contains("No active strategies"));
         assertEquals(0, gateway.pauseCalls.size());
     }
 
@@ -215,4 +216,3 @@ class KillSwitchControllerTest {
         }
     }
 }
-

@@ -684,6 +684,74 @@ class StrategyServiceTest {
     }
 
     @Test
+    void cancelPendingLimitBuysCancelsOnlyPendingLimitBuyOrdersAndPausesStrategy() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("180.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
+        strategies.save(strategy);
+        StrategyOrder buyOrder = new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY, "ord-buy", "client-buy", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("180.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        );
+        StrategyOrder sellOrder = new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.TARGET_SELL, "ord-sell", "client-sell", "AAPL",
+                StrategyOrderSide.SELL, StrategyOrderType.LIMIT, new BigDecimal("190.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        );
+        orders.save(buyOrder);
+        orders.save(sellOrder);
+        alpaca.openOrders.add(new AlpacaOrderData("ord-buy", "client-buy", "AAPL", "buy", "limit", new BigDecimal("180.00"), BigDecimal.ZERO, BigDecimal.ZERO, "new", "{}"));
+        alpaca.openOrders.add(new AlpacaOrderData("ord-sell", "client-sell", "AAPL", "sell", "limit", new BigDecimal("190.00"), BigDecimal.ZERO, BigDecimal.ZERO, "new", "{}"));
+
+        StrategyService.LimitBuyCancelResult result = service.cancelPendingLimitBuys(strategy.id());
+
+        assertTrue(result.success());
+        assertEquals(1, result.canceledCount());
+        assertEquals(List.of("ord-buy"), alpaca.canceledOrderIds);
+        assertEquals(StrategyOrderStatus.CANCELED, orders.findByAlpacaOrderId("ord-buy").orElseThrow().status());
+        assertEquals(StrategyOrderStatus.SUBMITTED, orders.findByAlpacaOrderId("ord-sell").orElseThrow().status());
+        Strategy paused = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.PAUSED, paused.status());
+        assertEquals(StrategyLifecycleState.PAUSED, paused.currentState());
+        assertEquals(PauseReason.MANUAL_LIMIT_BUY_CANCELED, paused.pauseReason());
+    }
+
+    @Test
+    void cancelPendingLimitBuysReportsFailureWhenNoLimitBuyIsPending() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("180.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategies.save(strategy);
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY, "ord-filled", "client-filled", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("180.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), new BigDecimal("10"), new BigDecimal("180.00"), StrategyOrderStatus.FILLED,
+                Instant.now(), Instant.now(), Instant.now(), "{}"
+        ));
+
+        StrategyService.LimitBuyCancelResult result = service.cancelPendingLimitBuys(strategy.id());
+
+        assertFalse(result.success());
+        assertTrue(result.error().contains("No pending limit buy orders"));
+        assertTrue(alpaca.canceledOrderIds.isEmpty());
+        assertEquals(StrategyStatus.ACTIVE, strategies.findById(strategy.id()).orElseThrow().status());
+    }
+
+    @Test
     void promotePaperStrategyToLiveClonesAndArchivesPaperStrategy() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

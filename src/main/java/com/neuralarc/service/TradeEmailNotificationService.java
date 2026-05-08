@@ -20,6 +20,7 @@ public class TradeEmailNotificationService {
     private final AppSettingsService appSettingsService;
     private final EmailSender emailSender;
     private final Executor executor;
+    private volatile EmailNotificationListener notificationListener = EmailNotificationListener.NOOP;
 
     public TradeEmailNotificationService(AppSettingsService appSettingsService) {
         this(appSettingsService, new MailjetEmailSender(), DEFAULT_EXECUTOR);
@@ -36,7 +37,7 @@ public class TradeEmailNotificationService {
         if (!settings.emailOnBuyExpected()) {
             return;
         }
-        sendAsync(settings.userEmail(), buySubject(strategy), buyText(strategy, order), buyHtml(strategy, order));
+        sendAsync("BUY_EXPECTED", strategy.symbol(), settings.userEmail(), buySubject(strategy), buyText(strategy, order), buyHtml(strategy, order));
     }
 
     public void notifySellExecuted(Strategy strategy, StrategyOrder order) {
@@ -44,18 +45,24 @@ public class TradeEmailNotificationService {
         if (!settings.emailOnSellExecuted()) {
             return;
         }
-        sendAsync(settings.userEmail(), sellSubject(strategy), sellText(strategy, order), sellHtml(strategy, order));
+        sendAsync("SELL_EXECUTED", strategy.symbol(), settings.userEmail(), sellSubject(strategy), sellText(strategy, order), sellHtml(strategy, order));
     }
 
-    private void sendAsync(String recipient, String subject, String textBody, String htmlBody) {
+    public void setNotificationListener(EmailNotificationListener notificationListener) {
+        this.notificationListener = notificationListener == null ? EmailNotificationListener.NOOP : notificationListener;
+    }
+
+    private void sendAsync(String eventType, String symbol, String recipient, String subject, String textBody, String htmlBody) {
         if (recipient == null || recipient.isBlank()) {
             return;
         }
         executor.execute(() -> {
             try {
                 emailSender.send(recipient.trim(), subject, textBody, htmlBody);
+                notificationListener.onEmailSent(eventType, symbol, recipient.trim(), subject);
             } catch (Exception ex) {
                 LOGGER.log(Level.WARNING, "Failed to send trade email notification", ex);
+                notificationListener.onEmailFailed(eventType, symbol, recipient.trim(), subject, ex.getMessage());
             }
         });
     }
@@ -117,12 +124,20 @@ public class TradeEmailNotificationService {
         void send(String recipientEmail, String subject, String textBody, String htmlBody) throws Exception;
     }
 
+    public interface EmailNotificationListener {
+        EmailNotificationListener NOOP = new EmailNotificationListener() {};
+
+        default void onEmailSent(String eventType, String symbol, String recipientEmail, String subject) {}
+
+        default void onEmailFailed(String eventType, String symbol, String recipientEmail, String subject, String error) {}
+    }
+
     private static final class MailjetEmailSender implements EmailSender {
         @Override
         public void send(String recipientEmail, String subject, String textBody, String htmlBody) throws Exception {
             FeedbackEmailService emailService = FeedbackEmailService.fromConfiguration();
             if (!emailService.isConfigured()) {
-                return;
+                throw new IllegalStateException("Mailjet email is not configured");
             }
             emailService.sendUserNotification(recipientEmail, subject, textBody, htmlBody);
         }

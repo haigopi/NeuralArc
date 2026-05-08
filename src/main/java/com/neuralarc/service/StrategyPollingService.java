@@ -257,6 +257,10 @@ public class StrategyPollingService {
         this.pollListener = pollListener == null ? PollListener.NOOP : pollListener;
     }
 
+    public void setEmailNotificationListener(TradeEmailNotificationService.EmailNotificationListener listener) {
+        strategyEngine.setEmailNotificationListener(listener);
+    }
+
     public void shutdown() {
         pollExecutor.shutdownNow();
     }

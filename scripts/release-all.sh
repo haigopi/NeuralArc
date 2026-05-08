@@ -14,7 +14,7 @@ usage() {
 Usage: ./scripts/release-all.sh [options]
 
 Options:
-  --version X.Y.Z   Use explicit version (otherwise derived from Gradle)
+  --version X.Y.Z   Use explicit version (otherwise auto-increments latest release patch)
   --draft           Create or keep release as draft (default publishes)
   --publish         Publish release (default; kept for compatibility)
   --skip-build      Skip build step and only publish existing artifacts
@@ -65,23 +65,111 @@ run_cmd() {
   fi
 }
 
+if ! command -v gh >/dev/null 2>&1; then
+  echo "GitHub CLI (gh) is required. Install it first." >&2
+  exit 1
+fi
+
+if [[ "$DRY_RUN" == false ]] && ! gh auth status -h github.com >/dev/null 2>&1; then
+  echo "gh is not authenticated. Run: gh auth login" >&2
+  exit 1
+fi
+
 version_from_gradle() {
   "$PROJECT_DIR/gradlew" -q properties --property version | tail -n 1 | awk '{print $2}'
 }
 
-RAW_VERSION="${EXPLICIT_VERSION:-$(version_from_gradle)}"
-VERSION="$(printf '%s' "$RAW_VERSION" | sed -E 's/[^0-9.].*$//')"
+normalize_version() {
+  printf '%s' "$1" | sed -E 's/^v//; s/[^0-9.].*$//'
+}
+
+latest_release_version() {
+  if [[ "$DRY_RUN" == true ]]; then
+    git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | sed -E 's/^v//' | sort -V | tail -n 1
+    return
+  fi
+  gh release list --limit 100 --json tagName --jq '.[].tagName' \
+    | sed -E 's/^v//; s/[^0-9.].*$//' \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -V \
+    | tail -n 1
+}
+
+increment_patch_version() {
+  local version="$1"
+  local major minor patch
+  IFS='.' read -r major minor patch <<<"$version"
+  major="${major:-0}"
+  minor="${minor:-0}"
+  patch="${patch:-0}"
+  printf '%s.%s.%s\n' "$major" "$minor" "$((patch + 1))"
+}
+
+release_exists() {
+  local tag="$1"
+  [[ "$DRY_RUN" == true ]] && return 1
+  gh release view "$tag" >/dev/null 2>&1
+}
+
+tag_exists() {
+  local tag="$1"
+  if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+    return 0
+  fi
+  [[ "$DRY_RUN" == true ]] && return 1
+  git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1
+}
+
+next_release_version() {
+  local latest base candidate
+  latest="$(latest_release_version || true)"
+  if [[ -n "$latest" ]]; then
+    candidate="$(increment_patch_version "$latest")"
+  else
+    base="$(normalize_version "$(version_from_gradle)")"
+    candidate="${base:-1.0.0}"
+  fi
+
+  while release_exists "v$candidate" || tag_exists "v$candidate"; do
+    candidate="$(increment_patch_version "$candidate")"
+  done
+  printf '%s\n' "$candidate"
+}
+
+verify_download_links_point_to_latest_release() {
+  local index_file="$PROJECT_DIR/docs/index.html"
+  if [[ ! -f "$index_file" ]]; then
+    echo "Missing docs/index.html; cannot verify download links." >&2
+    exit 1
+  fi
+  if ! grep -q "https://api.github.com/repos/haigopi/NeuralArc/releases/latest" "$index_file"; then
+    echo "docs/index.html must use the GitHub latest release API for download asset resolution." >&2
+    exit 1
+  fi
+  if ! grep -q "https://github.com/haigopi/NeuralArc/releases/latest" "$index_file"; then
+    echo "docs/index.html must use /releases/latest as the download fallback URL." >&2
+    exit 1
+  fi
+}
+
+if [[ -n "$EXPLICIT_VERSION" ]]; then
+  VERSION="$(normalize_version "$EXPLICIT_VERSION")"
+else
+  VERSION="$(next_release_version)"
+fi
 
 if [[ -z "$VERSION" ]]; then
-  echo "Unable to derive a valid numeric version from [$RAW_VERSION]." >&2
+  echo "Unable to derive a valid numeric release version." >&2
   exit 1
 fi
+
+TAG="v$VERSION"
+verify_download_links_point_to_latest_release
 
 if [[ "$SKIP_BUILD" == false ]]; then
   run_cmd "$SCRIPT_DIR/build-all.sh" --version "$VERSION"
 fi
 
-TAG="v$VERSION"
 MAC_DMG="$PROJECT_DIR/artifacts/macos/NeuralArc-$VERSION.dmg"
 WIN_EXE="$PROJECT_DIR/artifacts/windows/NeuralArc-$VERSION.exe"
 LINUX_DEB="$PROJECT_DIR/artifacts/linux/NeuralArc-$VERSION.deb"
@@ -112,16 +200,6 @@ if [[ ${#MISSING_ASSETS[@]} -gt 0 ]]; then
   for missing in "${MISSING_ASSETS[@]}"; do
     echo "  $missing" >&2
   done
-fi
-
-if ! command -v gh >/dev/null 2>&1; then
-  echo "GitHub CLI (gh) is required. Install it first." >&2
-  exit 1
-fi
-
-if [[ "$DRY_RUN" == false ]] && ! gh auth status -h github.com >/dev/null 2>&1; then
-  echo "gh is not authenticated. Run: gh auth login" >&2
-  exit 1
 fi
 
 NOTES_ARGS=(--notes "Release $TAG")

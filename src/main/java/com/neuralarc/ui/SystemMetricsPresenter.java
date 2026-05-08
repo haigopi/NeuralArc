@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.Position;
+import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.util.Monetary;
 
 import java.lang.management.ManagementFactory;
@@ -17,6 +18,9 @@ public final class SystemMetricsPresenter {
     public String formatMarketValueText(List<ManagedStrategy> strategies) {
         BigDecimal total = BigDecimal.ZERO;
         for (ManagedStrategy strategy : strategies) {
+            if (strategy == null || strategy.strategy == null || strategy.strategy.status() == StrategyStatus.COMPLETED) {
+                continue;
+            }
             total = total.add(strategy.cachedPosition().marketValue());
         }
         return "Market Value: " + Monetary.round(total).toPlainString();
@@ -46,4 +50,3 @@ public final class SystemMetricsPresenter {
         return "Memory: " + usedMb + " MB";
     }
 }
-

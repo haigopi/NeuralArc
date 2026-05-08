@@ -34,12 +34,16 @@ class TradeEmailNotificationServiceTest {
         AppSettingsService settings = settings(true, false);
         RecordingSender sender = new RecordingSender();
         TradeEmailNotificationService service = new TradeEmailNotificationService(settings, sender, Runnable::run);
+        RecordingEmailListener listener = new RecordingEmailListener();
+        service.setNotificationListener(listener);
 
         service.notifyBuyExpected(strategy(), order(StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.SUBMITTED));
 
         assertEquals(1, sender.messages.size());
         assertEquals("user@example.com", sender.messages.getFirst().recipient());
         assertTrue(sender.messages.getFirst().subject().contains("buy order placed"));
+        assertEquals(1, listener.sent.size());
+        assertTrue(listener.sent.getFirst().contains("BUY_EXPECTED:AAPL:user@example.com"));
     }
 
     @Test
@@ -64,6 +68,19 @@ class TradeEmailNotificationServiceTest {
         assertEquals(1, sender.messages.size());
         assertEquals("user@example.com", sender.messages.getFirst().recipient());
         assertTrue(sender.messages.getFirst().subject().contains("sell order executed"));
+    }
+
+    @Test
+    void reportsFailureWhenEmailSenderFails() throws Exception {
+        AppSettingsService settings = settings(true, false);
+        TradeEmailNotificationService service = new TradeEmailNotificationService(settings, new FailingSender(), Runnable::run);
+        RecordingEmailListener listener = new RecordingEmailListener();
+        service.setNotificationListener(listener);
+
+        service.notifyBuyExpected(strategy(), order(StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.SUBMITTED));
+
+        assertEquals(1, listener.failed.size());
+        assertTrue(listener.failed.getFirst().contains("BUY_EXPECTED:AAPL:user@example.com:boom"));
     }
 
     private AppSettingsService settings(boolean buyExpected, boolean sellExecuted) throws Exception {
@@ -149,6 +166,28 @@ class TradeEmailNotificationServiceTest {
         @Override
         public void send(String recipientEmail, String subject, String textBody, String htmlBody) {
             messages.add(new Message(recipientEmail, subject, textBody, htmlBody));
+        }
+    }
+
+    private static final class FailingSender implements TradeEmailNotificationService.EmailSender {
+        @Override
+        public void send(String recipientEmail, String subject, String textBody, String htmlBody) {
+            throw new IllegalStateException("boom");
+        }
+    }
+
+    private static final class RecordingEmailListener implements TradeEmailNotificationService.EmailNotificationListener {
+        private final List<String> sent = new ArrayList<>();
+        private final List<String> failed = new ArrayList<>();
+
+        @Override
+        public void onEmailSent(String eventType, String symbol, String recipientEmail, String subject) {
+            sent.add(eventType + ":" + symbol + ":" + recipientEmail + ":" + subject);
+        }
+
+        @Override
+        public void onEmailFailed(String eventType, String symbol, String recipientEmail, String subject, String error) {
+            failed.add(eventType + ":" + symbol + ":" + recipientEmail + ":" + error);
         }
     }
 

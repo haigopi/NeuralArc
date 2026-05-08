@@ -16,9 +16,11 @@ import java.util.Optional;
 
 public final class StrategyActionsController {
     private final Gateway gateway;
+    private final UserActionLogSupport actionLog;
 
     public StrategyActionsController(Gateway gateway) {
         this.gateway = gateway;
+        this.actionLog = new UserActionLogSupport(gateway::log);
     }
 
     public void togglePauseResume(int viewRow) {
@@ -34,15 +36,21 @@ public final class StrategyActionsController {
 
         boolean wasPaused = entry.isPaused();
         if (wasPaused && !gateway.marketOpenForUi()) {
+            actionLog.skipped("Place Limit Buy Again", "Market is closed for " + entry.strategy().symbol() + ".");
             return;
         }
         if (!wasPaused && !confirmCancel(entry.strategy())) {
+            actionLog.canceled("Cancel Strategy " + entry.strategy().symbol());
             return;
         }
         boolean manualCancelResume = wasPaused
                 && entry.strategy().pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED;
         String strategyId = entry.strategy().id();
         String symbol = entry.strategy().symbol();
+        String actionName = wasPaused
+                ? (manualCancelResume ? "Place Limit Buy Again " + symbol : "Resume Strategy " + symbol)
+                : "Cancel Strategy " + symbol;
+        actionLog.started(actionName);
         entry.setPauseResumeBusy(true);
         entry.setPauseResumeBusyText(wasPaused
                 ? (manualCancelResume ? "Placing Limit Buy..." : "Resuming...")
@@ -62,10 +70,12 @@ public final class StrategyActionsController {
                         gateway.log((manualCancelResume
                                 ? "Place Limit Buy Again requested for symbol "
                                 : "Strategy resumed for symbol ") + symbol);
+                        actionLog.completed(actionName);
                     } else {
                         gateway.stopPollingCountdown(strategyId);
                         gateway.log("Manual cancel applied for symbol " + symbol
                                 + ". Waiting for user action: Place Limit Buy Again.");
+                        actionLog.completed(actionName);
                         gateway.publishAnalytics(new AnalyticsEvent("STRATEGY_PAUSED").put("symbol", symbol));
                     }
                     gateway.findStrategyById(strategyId).ifPresent(updated -> {
@@ -77,7 +87,10 @@ public final class StrategyActionsController {
                         }
                     });
                 },
-                ex -> gateway.log("Cancel/Resume failed for symbol " + symbol + ": " + ex.getMessage()),
+                ex -> {
+                    gateway.log("Cancel/Resume failed for symbol " + symbol + ": " + ex.getMessage());
+                    actionLog.failed(actionName, ex.getMessage());
+                },
                 () -> {
                     entry.setPauseResumeBusy(false);
                     entry.setPauseResumeBusyText("");
@@ -116,20 +129,24 @@ public final class StrategyActionsController {
         if (entry.strategy().mode() != StrategyMode.PAPER
                 || !isPromotionAllowed(entry.strategy().status())
                 || !gateway.marketOpenForUi()) {
+            actionLog.skipped("Promote to Live", "Strategy is not eligible or market is closed.");
             return;
         }
 
+        actionLog.started("Promote to Live " + entry.strategy().symbol());
         StrategyService.LivePromotionPreview preview = gateway.strategyService().previewLivePromotion(entry.strategy().id());
         Position paperPosition = gateway.loadPositionForStrategy(entry.strategy());
         String realizedPnl = Monetary.round(gateway.realizedPnlForStrategy(entry.strategy().id())).toPlainString();
         String unrealizedPnl = Monetary.round(paperPosition.unrealizedPnl()).toPlainString();
         PromotionDialogResult dialogResult = gateway.showLivePromotionDialog(preview, realizedPnl, unrealizedPnl);
         if (!dialogResult.proceed()) {
+            actionLog.canceled("Promote to Live " + entry.strategy().symbol());
             return;
         }
 
         StrategyService.LivePromotionResult result = gateway.strategyService().promotePaperStrategyToLive(entry.strategy().id());
         if (!result.success()) {
+            actionLog.failed("Promote to Live " + entry.strategy().symbol(), result.error());
             gateway.showMessage(result.error(), "Live Promotion Failed", JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -147,6 +164,7 @@ public final class StrategyActionsController {
         gateway.refreshPanels();
         gateway.updateStatusBar();
         gateway.log("[" + entry.strategy().symbol() + "] Promoted paper strategy to LIVE and archived the paper copy.");
+        actionLog.completed("Promote to Live " + entry.strategy().symbol());
         gateway.showMessage(
                 "LIVE strategy created successfully.\nPaper strategy archived locally.\nLive Order ID: " + result.alpacaOrderId(),
                 "Promotion Complete",
@@ -171,6 +189,7 @@ public final class StrategyActionsController {
         ActionEntry entry = gateway.entryAt(row);
         Strategy strategy = entry.strategy();
         if (!isSellAllowed(strategy.status()) || !gateway.hasOpenPosition(strategy) || !gateway.marketOpenForUi()) {
+            actionLog.skipped("Sell Position", "Strategy is not sellable, has no open position, or market is closed.");
             return;
         }
 
@@ -189,9 +208,11 @@ public final class StrategyActionsController {
                 JOptionPane.WARNING_MESSAGE
         );
         if (choice != JOptionPane.YES_OPTION) {
+            actionLog.canceled("Sell Position " + strategy.symbol());
             return;
         }
 
+        actionLog.started("Sell Position " + strategy.symbol());
         gateway.runBackgroundTask(
                 () -> {
                     StrategyService.StrategyCreationResult result = gateway.sellPosition(strategy);
@@ -202,12 +223,16 @@ public final class StrategyActionsController {
                 () -> {
                     gateway.findStrategyById(strategy.id()).ifPresent(entry::syncFrom);
                     gateway.log("Manual sell order submitted for symbol " + strategy.symbol());
+                    actionLog.completed("Sell Position " + strategy.symbol(), "Manual sell order submitted.");
                 },
-                ex -> gateway.showMessage(
-                        "Failed to submit sell order for " + strategy.symbol() + ": " + ex.getMessage(),
-                        "Sell Failed",
-                        JOptionPane.ERROR_MESSAGE
-                ),
+                ex -> {
+                    actionLog.failed("Sell Position " + strategy.symbol(), ex.getMessage());
+                    gateway.showMessage(
+                            "Failed to submit sell order for " + strategy.symbol() + ": " + ex.getMessage(),
+                            "Sell Failed",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                },
                 () -> {
                     gateway.refreshStrategyTableRow(row);
                     gateway.updateSelectedStrategy();
@@ -251,9 +276,11 @@ public final class StrategyActionsController {
                 JOptionPane.WARNING_MESSAGE
         );
         if (choice != JOptionPane.YES_OPTION) {
+            actionLog.canceled("Delete Strategy " + strategy.symbol());
             return;
         }
 
+        actionLog.started("Delete Strategy " + strategy.symbol());
         BigDecimal realizedAtDeletion = gateway.realizedPnlForStrategy(strategy.id());
         gateway.addArchivedRealized(strategy.mode(), realizedAtDeletion);
         gateway.strategyService().delete(strategy.id());
@@ -277,6 +304,7 @@ public final class StrategyActionsController {
         }
         gateway.updateStatusBar();
         gateway.refreshPanels();
+        actionLog.completed("Delete Strategy " + strategy.symbol());
     }
 
     public interface ActionEntry {

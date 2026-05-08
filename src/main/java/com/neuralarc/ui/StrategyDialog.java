@@ -34,6 +34,8 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.GraphicsEnvironment;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
 import java.awt.Rectangle;
@@ -53,6 +55,7 @@ public class StrategyDialog extends JDialog {
     private static final int SECTION_GAP = 12;
     private static final int FIELD_GAP = 10;
     private static final int SECTION_INNER_PADDING = 10;
+    private static final int FORM_LABEL_COLUMN_WIDTH = 220;
     private static final int RISK_CONTROLS_HORIZONTAL_PADDING = 12;
     private static final int MAX_MONTHS_BACK = 12;
     private static final int DIALOG_TARGET_WIDTH = 860;
@@ -238,7 +241,7 @@ public class StrategyDialog extends JDialog {
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
 
-        JPanel strategyPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        JPanel strategyPanel = new JPanel(new GridBagLayout());
         strategyPanel.setBorder(createSectionBorder("Strategy Parameters"));
         addRow(strategyPanel, "Symbol:", symbolField);
         addRow(strategyPanel, "Trading mode:", paperMode);
@@ -261,7 +264,7 @@ public class StrategyDialog extends JDialog {
         riskContent.setBorder(new EmptyBorder(0, RISK_CONTROLS_HORIZONTAL_PADDING, 0, RISK_CONTROLS_HORIZONTAL_PADDING));
         riskContent.setOpaque(false);
 
-        JPanel stopLossSubPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        JPanel stopLossSubPanel = new JPanel(new GridBagLayout());
         stopLossSubPanel.setBorder(createSubSectionBorder("Stop Loss"));
         prepareSubSection(stopLossSubPanel);
         addRow(stopLossSubPanel, "Set Stop Loss:", stopLossEnabled);
@@ -271,7 +274,7 @@ public class StrategyDialog extends JDialog {
                 "Defensive exit rule. When enabled, polling watches for downside movement and can submit a stop-loss sell."
         );
 
-        JPanel lossBuySubPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        JPanel lossBuySubPanel = new JPanel(new GridBagLayout());
         lossBuySubPanel.setBorder(createSubSectionBorder("Loss Buy Levels"));
         prepareSubSection(lossBuySubPanel);
         addRow(lossBuySubPanel, "Enable:", lossBuyLevelsEnabled);
@@ -289,7 +292,7 @@ public class StrategyDialog extends JDialog {
         riskContent.add(lossBuySection);
         riskPanel.add(riskContent);
 
-        JPanel executionPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        JPanel executionPanel = new JPanel(new GridBagLayout());
         executionPanel.setBorder(createSectionBorder("Execution"));
         addRow(executionPanel, "Polling interval seconds:", pollingField);
         prepareSection(executionPanel);
@@ -298,7 +301,7 @@ public class StrategyDialog extends JDialog {
                 "Controls how often this strategy evaluates market price, risk rules, and the selected profit-control strategy."
         );
 
-        JPanel cycleBehaviorPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        JPanel cycleBehaviorPanel = new JPanel(new GridBagLayout());
         cycleBehaviorPanel.setBorder(createSectionBorder("Cycle Behavior"));
         addRow(cycleBehaviorPanel, "Repeat cycle after profitable exit (optional):", repeatCycleAfterProfitExitEnabled);
         addRow(cycleBehaviorPanel, "Resubmit strategy on expiry:", resubmitOnExpiryEnabled);
@@ -372,7 +375,7 @@ public class StrategyDialog extends JDialog {
         inputPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         inputPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
 
-        JPanel inputFields = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        JPanel inputFields = new JPanel(new GridBagLayout());
         inputFields.setOpaque(false);
         addRow(inputFields, "Symbol:", aaSymbolField);
         addRow(inputFields, "Months back (max 12):", aaMonthsSpinner);
@@ -651,6 +654,34 @@ public class StrategyDialog extends JDialog {
         JLabel rowLabel = new JLabel(label);
         rowLabel.setLabelFor(component);
         rowLabel.setToolTipText(component.getToolTipText());
+        if (panel.getLayout() instanceof GridBagLayout) {
+            Object rowProperty = panel.getClientProperty("neuralarc.formRow");
+            int row = rowProperty instanceof Integer ? (Integer) rowProperty : 0;
+
+            rowLabel.setHorizontalAlignment(SwingConstants.LEFT);
+            rowLabel.setPreferredSize(new Dimension(FORM_LABEL_COLUMN_WIDTH, rowLabel.getPreferredSize().height));
+
+            GridBagConstraints labelGbc = new GridBagConstraints();
+            labelGbc.gridx = 0;
+            labelGbc.gridy = row;
+            labelGbc.weightx = 0;
+            labelGbc.fill = GridBagConstraints.NONE;
+            labelGbc.anchor = GridBagConstraints.NORTHWEST;
+            labelGbc.insets = new Insets(0, 0, FIELD_GAP, FIELD_GAP);
+
+            GridBagConstraints valueGbc = new GridBagConstraints();
+            valueGbc.gridx = 1;
+            valueGbc.gridy = row;
+            valueGbc.weightx = 1;
+            valueGbc.fill = GridBagConstraints.HORIZONTAL;
+            valueGbc.anchor = GridBagConstraints.NORTHWEST;
+            valueGbc.insets = new Insets(0, 0, FIELD_GAP, 0);
+
+            panel.add(rowLabel, labelGbc);
+            panel.add(component, valueGbc);
+            panel.putClientProperty("neuralarc.formRow", row + 1);
+            return;
+        }
         panel.add(rowLabel);
         panel.add(component);
     }

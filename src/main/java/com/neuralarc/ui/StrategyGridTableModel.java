@@ -7,13 +7,12 @@ import com.neuralarc.util.FontLoader;
 import javax.swing.table.AbstractTableModel;
 import java.awt.Font;
 import java.util.List;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 final class StrategyGridTableModel extends AbstractTableModel {
     static final String[] COLUMNS = {
             "Symbol", "Status", "Shares", "Avg Cost", "Stock Price", "Market Value",
-            "Unrealized P&L", "Polling", "Broker + Mode", "Actions"
+            "P&L", "Polling", "Broker + Mode", "Actions"
     };
 
     private final List<ManagedStrategy> strategies;
@@ -44,6 +43,8 @@ final class StrategyGridTableModel extends AbstractTableModel {
         return strategyTablePresenter.valueAt(
                 entry.strategy,
                 entry.cachedPosition(),
+                entry.cachedLastSellPrice(),
+                entry.cachedRealizedPnl(),
                 columnIndex,
                 statusLabel,
                 brokerModeLabelFn.apply(entry.strategy)
@@ -55,4 +56,3 @@ final class StrategyGridTableModel extends AbstractTableModel {
         return false; // Actions handled via table MouseListener; no cell editor needed.
     }
 }
-

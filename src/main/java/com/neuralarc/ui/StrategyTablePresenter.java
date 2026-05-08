@@ -97,14 +97,22 @@ public final class StrategyTablePresenter {
                 || state == StrategyLifecycleState.PROFIT_HOLD_ACTIVE;
     }
 
-    public Object valueAt(Strategy strategy, Position position, int columnIndex, String statusLabel, String brokerModeLabel) {
+    public Object valueAt(
+            Strategy strategy,
+            Position position,
+            BigDecimal lastSellPrice,
+            BigDecimal realizedPnl,
+            int columnIndex,
+            String statusLabel,
+            String brokerModeLabel
+    ) {
         if (columnIndex >= 2 && columnIndex <= 6) {
             return switch (columnIndex) {
                 case 2 -> position.getTotalShares();
                 case 3 -> position.getTotalShares() > 0 ? position.getAverageCost().toPlainString() : "-";
-                case 4 -> position.getLastPrice().compareTo(BigDecimal.ZERO) > 0 ? position.getLastPrice().toPlainString() : "-";
+                case 4 -> displayPrice(position, lastSellPrice);
                 case 5 -> position.getTotalShares() > 0 ? position.marketValue().toPlainString() : "-";
-                case 6 -> position.getTotalShares() > 0 ? position.unrealizedPnl().toPlainString() : "-";
+                case 6 -> displayPnl(position, realizedPnl);
                 default -> "";
             };
         }
@@ -116,5 +124,25 @@ public final class StrategyTablePresenter {
             case 9 -> statusLabel;
             default -> "";
         };
+    }
+
+    private String displayPrice(Position position, BigDecimal lastSellPrice) {
+        if (position.getLastPrice().compareTo(BigDecimal.ZERO) > 0) {
+            return position.getLastPrice().toPlainString();
+        }
+        if (lastSellPrice != null && lastSellPrice.compareTo(BigDecimal.ZERO) > 0) {
+            return lastSellPrice.toPlainString();
+        }
+        return "-";
+    }
+
+    private String displayPnl(Position position, BigDecimal realizedPnl) {
+        if (position.getTotalShares() > 0) {
+            return position.unrealizedPnl().toPlainString();
+        }
+        if (realizedPnl != null && realizedPnl.compareTo(BigDecimal.ZERO) != 0) {
+            return realizedPnl.toPlainString();
+        }
+        return "-";
     }
 }

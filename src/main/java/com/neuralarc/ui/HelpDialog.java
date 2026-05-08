@@ -59,7 +59,7 @@ public class HelpDialog extends JDialog {
         {
             "Application - What should I watch on the main screen?",
             "The main grid is the operator console.\n\n" +
-            "- Stock Price, Shares, Avg Cost, Market Value, and Unrealized P&L show current position context.\n" +
+            "- Stock Price, Shares, Avg Cost, Market Value, and P&L show current or completed position context.\n" +
             "- The polling bar shows when the next rule check is due or when a broker request is in progress.\n" +
             "- Broker, Market, Trade Stream, CPU, Memory, and total Market Value are shown in the bottom status bar.\n\n" +
             "Rows with no position can still show latest price when available."
@@ -69,6 +69,8 @@ public class HelpDialog extends JDialog {
             "Each strategy row can show a Sell button when that strategy has an open position.\n\n" +
             "- Sell submits a manual limit sell for that strategy after confirmation.\n" +
             "- Portfolio Actions can sell profitable positions, all open positions, or losing positions after confirmation.\n" +
+            "- Cancel All Pending Limit Buys cancels pending limit buy orders without closing open positions or sell orders.\n" +
+            "- Promote All to Live validates eligible paper strategies and creates live strategies using the same promotion rules as the row action.\n" +
             "- These actions use Alpaca and then refresh the grid and status values.\n\n" +
             "Review the confirmation dialog before submitting any sell action."
         },

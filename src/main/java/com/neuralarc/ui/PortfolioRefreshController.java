@@ -42,6 +42,7 @@ final class PortfolioRefreshController {
     private final StrategyRepository strategyRepository;
     private final ExecutorService executor;
     private final Gateway gateway;
+    private final UserActionLogSupport actionLog;
     private final AtomicBoolean refreshInFlight = new AtomicBoolean(false);
 
     PortfolioRefreshController(
@@ -52,21 +53,26 @@ final class PortfolioRefreshController {
         this.strategyRepository = strategyRepository;
         this.executor = executor;
         this.gateway = gateway;
+        this.actionLog = new UserActionLogSupport(gateway::log);
     }
 
     void refresh(boolean manualTrigger) {
         if (!refreshInFlight.compareAndSet(false, true)) {
             if (manualTrigger) {
-                gateway.log("[PORTFOLIO][REFRESH] Refresh already in progress.");
+                actionLog.skipped("Refresh Portfolio", "Refresh already in progress.");
             }
             return;
         }
         if (!gateway.isConnected() || gateway.brokerType() != BrokerType.ALPACA) {
             refreshInFlight.set(false);
             if (manualTrigger) {
+                actionLog.failed("Refresh Portfolio", "Connect to Alpaca before refreshing the portfolio.");
                 runOnEdt(gateway::showConnectionRequired);
             }
             return;
+        }
+        if (manualTrigger) {
+            actionLog.started("Refresh Portfolio");
         }
         runOnEdt(gateway::onRefreshStarted);
         executor.submit(() -> refreshInBackground(manualTrigger));
@@ -89,7 +95,7 @@ final class PortfolioRefreshController {
             gateway.refreshStrategyTableContent();
             gateway.refreshPanels();
             gateway.updateStatusBar();
-            gateway.log("[PORTFOLIO][REFRESH] Refreshed "
+            actionLog.completed("Refresh Portfolio", "Refreshed "
                     + snapshots.size()
                     + " strategy position snapshot(s) from Alpaca.");
         } finally {
@@ -99,7 +105,7 @@ final class PortfolioRefreshController {
 
     private void applyFailedRefresh(boolean manualTrigger, Exception ex) {
         try {
-            gateway.log("[PORTFOLIO][REFRESH] Failed: " + ex.getMessage());
+            actionLog.failed("Refresh Portfolio", ex.getMessage());
             if (manualTrigger) {
                 gateway.showRefreshFailed(ex.getMessage());
             }

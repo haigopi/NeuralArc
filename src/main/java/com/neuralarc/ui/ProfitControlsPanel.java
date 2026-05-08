@@ -24,6 +24,7 @@ public class ProfitControlsPanel extends JPanel {
     private static final int FIELD_GAP = 10;
     private static final int SECTION_INNER_PADDING = 10;
     private static final int HORIZONTAL_CONTENT_PADDING = 12;
+    private static final int FORM_LABEL_COLUMN_WIDTH = 220;
     private static final Color TEXT_PRIMARY = UIManager.getColor("Label.foreground") != null
             ? UIManager.getColor("Label.foreground")
             : new Color(45, 45, 50);
@@ -149,7 +150,7 @@ public class ProfitControlsPanel extends JPanel {
     }
 
     private JPanel createFieldsPanel() {
-        JPanel panel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        JPanel panel = new JPanel(new GridBagLayout());
         panel.setOpaque(false);
         return panel;
     }
@@ -187,8 +188,32 @@ public class ProfitControlsPanel extends JPanel {
         JLabel labelComp = new JLabel(label);
         labelComp.setForeground(TEXT_PRIMARY);
         labelComp.setLabelFor(component);
-        panel.add(labelComp);
-        panel.add(component);
+
+        Object rowProperty = panel.getClientProperty("neuralarc.formRow");
+        int row = rowProperty instanceof Integer ? (Integer) rowProperty : 0;
+
+        labelComp.setHorizontalAlignment(SwingConstants.LEFT);
+        labelComp.setPreferredSize(new Dimension(FORM_LABEL_COLUMN_WIDTH, labelComp.getPreferredSize().height));
+
+        GridBagConstraints labelGbc = new GridBagConstraints();
+        labelGbc.gridx = 0;
+        labelGbc.gridy = row;
+        labelGbc.weightx = 0;
+        labelGbc.fill = GridBagConstraints.NONE;
+        labelGbc.anchor = GridBagConstraints.NORTHWEST;
+        labelGbc.insets = new Insets(0, 0, FIELD_GAP, FIELD_GAP);
+
+        GridBagConstraints valueGbc = new GridBagConstraints();
+        valueGbc.gridx = 1;
+        valueGbc.gridy = row;
+        valueGbc.weightx = 1;
+        valueGbc.fill = GridBagConstraints.HORIZONTAL;
+        valueGbc.anchor = GridBagConstraints.NORTHWEST;
+        valueGbc.insets = new Insets(0, 0, FIELD_GAP, 0);
+
+        panel.add(labelComp, labelGbc);
+        panel.add(component, valueGbc);
+        panel.putClientProperty("neuralarc.formRow", row + 1);
     }
 
     private void styleInputs() {
