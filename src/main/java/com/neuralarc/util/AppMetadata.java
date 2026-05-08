@@ -9,6 +9,7 @@ import java.util.Properties;
 
 public final class AppMetadata {
     private static final Properties PROPERTIES = loadProperties();
+    private static final EncryptedMailjetSecrets MAILJET_SECRETS = EncryptedMailjetSecrets.from(PROPERTIES);
     private static final int DEFAULT_SPLASH_DURATION_MILLIS = 2000;
     private static final int DEFAULT_STRATEGY_POLLING_SECONDS = 20;
 
@@ -103,11 +104,11 @@ public final class AppMetadata {
     }
 
     public static String mailjetApiKey() {
-        return configuredOrEnv("mailjet.api.key", "MAILJET_API_KEY", "");
+        return MAILJET_SECRETS.apiKey();
     }
 
     public static String mailjetApiSecret() {
-        return configuredOrEnv("mailjet.api.secret", "MAILJET_API_SECRET", "");
+        return MAILJET_SECRETS.apiSecret();
     }
 
     public static String mailjetFromEmail() {

@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 EXPLICIT_VERSION=""
-PUBLISH=false
+DRAFT=false
 SKIP_BUILD=false
 DRY_RUN=false
 
@@ -15,7 +15,8 @@ Usage: ./scripts/release-all.sh [options]
 
 Options:
   --version X.Y.Z   Use explicit version (otherwise derived from Gradle)
-  --publish         Publish release (default creates/keeps draft)
+  --draft           Create or keep release as draft (default publishes)
+  --publish         Publish release (default; kept for compatibility)
   --skip-build      Skip build step and only publish existing artifacts
   --dry-run         Print commands without executing
   --help            Show this help
@@ -29,7 +30,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --publish)
-      PUBLISH=true
+      DRAFT=false
+      shift
+      ;;
+    --draft)
+      DRAFT=true
       shift
       ;;
     --skip-build)
@@ -128,28 +133,58 @@ fi
 
 cd "$PROJECT_DIR"
 
-if [[ "$DRY_RUN" == true ]]; then
-  echo "[dry-run] gh release view $TAG"
-  if [[ "$PUBLISH" == true ]]; then
-    echo "[dry-run] gh release create $TAG --title NeuralArc $TAG ${NOTES_ARGS[*]}"
+ensure_git_tag() {
+  if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+    echo "Git tag $TAG already exists locally."
   else
-    echo "[dry-run] gh release create $TAG --title NeuralArc $TAG --draft ${NOTES_ARGS[*]}"
+    run_cmd git tag -a "$TAG" -m "NeuralArc $TAG"
   fi
-  echo "[dry-run] gh release upload $TAG --clobber ${ASSETS[*]}"
+
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "[dry-run] git ls-remote --exit-code --tags origin refs/tags/$TAG"
+    echo "[dry-run] git push origin $TAG"
+    return
+  fi
+
+  if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+    echo "Git tag $TAG already exists on origin."
+  else
+    git push origin "$TAG"
+  fi
+}
+
+if [[ "$DRY_RUN" == true ]]; then
+  ensure_git_tag
+  echo "[dry-run] gh release view $TAG"
+  if [[ "$DRAFT" == true ]]; then
+    echo "[dry-run] gh release create $TAG ${ASSETS[*]} --title NeuralArc $TAG --draft ${NOTES_ARGS[*]}"
+    echo "[dry-run] if release exists: gh release upload $TAG --clobber ${ASSETS[*]}"
+    echo "[dry-run] if release exists: gh release edit $TAG --title NeuralArc $TAG --draft ${NOTES_ARGS[*]}"
+  else
+    echo "[dry-run] gh release create $TAG ${ASSETS[*]} --title NeuralArc $TAG --verify-tag --latest ${NOTES_ARGS[*]}"
+    echo "[dry-run] if release exists: gh release upload $TAG --clobber ${ASSETS[*]}"
+    echo "[dry-run] if release exists: gh release edit $TAG --title NeuralArc $TAG --draft=false --latest ${NOTES_ARGS[*]}"
+  fi
   exit 0
 fi
 
+ensure_git_tag
+
 if gh release view "$TAG" >/dev/null 2>&1; then
-  echo "Release $TAG already exists. Uploading artifacts with --clobber..."
+  echo "Release $TAG already exists. Uploading artifacts with --clobber and updating release metadata..."
   gh release upload "$TAG" --clobber "${ASSETS[@]}"
+  if [[ "$DRAFT" == true ]]; then
+    gh release edit "$TAG" --title "NeuralArc $TAG" --draft "${NOTES_ARGS[@]}"
+  else
+    gh release edit "$TAG" --title "NeuralArc $TAG" --draft=false --latest "${NOTES_ARGS[@]}"
+  fi
 else
   echo "Creating release $TAG..."
-  if [[ "$PUBLISH" == true ]]; then
-    gh release create "$TAG" --title "NeuralArc $TAG" "${NOTES_ARGS[@]}"
+  if [[ "$DRAFT" == true ]]; then
+    gh release create "$TAG" "${ASSETS[@]}" --title "NeuralArc $TAG" --draft "${NOTES_ARGS[@]}"
   else
-    gh release create "$TAG" --title "NeuralArc $TAG" --draft "${NOTES_ARGS[@]}"
+    gh release create "$TAG" "${ASSETS[@]}" --title "NeuralArc $TAG" --verify-tag --latest "${NOTES_ARGS[@]}"
   fi
-  gh release upload "$TAG" --clobber "${ASSETS[@]}"
 fi
 
 echo "Release completed for $TAG with ${#ASSETS[@]} artifact(s)."

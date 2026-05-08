@@ -54,6 +54,8 @@ public class SettingsDialog extends JDialog {
     private final JCheckBox autoPausePollingWhenMarketClosed = new JCheckBox("Auto pause polling when market is closed", AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED);
     private final JCheckBox extendedHoursTradingEnabled = new JCheckBox("Enable extended-hours trading", AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED);
     private final JCheckBox allowDuplicateSymbolStrategies = new JCheckBox("Allow multiple strategies for the same symbol", AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES);
+    private final JCheckBox emailOnBuyExpected = new JCheckBox("Buy order placed / waiting for fill", AppSettingsService.DEFAULT_EMAIL_ON_BUY_EXPECTED);
+    private final JCheckBox emailOnSellExecuted = new JCheckBox("Sell order executed", AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED);
     private final JCheckBox saveCredentials = new JCheckBox("Save credentials locally", false);
     private final JButton verifyConnectionButton = new JButton("Verify Connection");
     private final JButton exportStrategiesButton = new JButton("Export Strategies");
@@ -78,7 +80,9 @@ public class SettingsDialog extends JDialog {
             AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED,
             BrokerType.ALPACA,
             ApplicationMode.PAPER,
-            AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES
+            AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES,
+            AppSettingsService.DEFAULT_EMAIL_ON_BUY_EXPECTED,
+            AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED
     );
     private boolean savedDuringOpen;
 
@@ -95,10 +99,49 @@ public class SettingsDialog extends JDialog {
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, 0, OUTER_PADDING));
 
-        JPanel userPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        JPanel userPanel = new JPanel(new GridBagLayout());
         userPanel.setBorder(createSectionBorder("User Details"));
-        userPanel.add(new JLabel("User Email:"));
-        userPanel.add(emailField);
+        GridBagConstraints userGbc = new GridBagConstraints();
+        userGbc.gridx = 0;
+        userGbc.gridy = 0;
+        userGbc.weightx = 0.32;
+        userGbc.fill = GridBagConstraints.HORIZONTAL;
+        userGbc.anchor = GridBagConstraints.NORTHWEST;
+        userGbc.insets = new Insets(0, 0, FIELD_GAP, FIELD_GAP);
+        userPanel.add(new JLabel("User Email:"), userGbc);
+        userGbc.gridx = 1;
+        userGbc.weightx = 0.68;
+        userGbc.insets = new Insets(0, 0, FIELD_GAP, 0);
+        userPanel.add(emailField, userGbc);
+
+        JPanel emailPreferences = new JPanel();
+        emailPreferences.setLayout(new BoxLayout(emailPreferences, BoxLayout.Y_AXIS));
+        emailPreferences.setOpaque(false);
+        emailPreferences.setBorder(new EmptyBorder(2, 0, 2, 0));
+        JLabel emailPreferenceDescription = new JLabel("<html><div style='max-width:420px; width:420px; line-height:1.35;'>"
+                + "Choose which strategy emails should be sent to the user email above. "
+                + "Buy notifications are sent when a buy order is placed and waiting for fill. "
+                + "Sell notifications are sent when a sell order is filled."
+                + "</div></html>");
+        emailPreferenceDescription.setForeground(TEXT_MUTED);
+        emailPreferenceDescription.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        emailOnBuyExpected.setAlignmentX(Component.LEFT_ALIGNMENT);
+        emailOnSellExecuted.setAlignmentX(Component.LEFT_ALIGNMENT);
+        emailPreferenceDescription.setAlignmentX(Component.LEFT_ALIGNMENT);
+        emailPreferences.add(emailOnBuyExpected);
+        emailPreferences.add(Box.createVerticalStrut(6));
+        emailPreferences.add(emailOnSellExecuted);
+        emailPreferences.add(Box.createVerticalStrut(8));
+        emailPreferences.add(emailPreferenceDescription);
+        userGbc.gridx = 0;
+        userGbc.gridy = 1;
+        userGbc.weightx = 0.32;
+        userGbc.insets = new Insets(0, 0, 0, FIELD_GAP);
+        userPanel.add(new JLabel("Email Communications:"), userGbc);
+        userGbc.gridx = 1;
+        userGbc.weightx = 0.68;
+        userGbc.insets = new Insets(0, 0, 0, 0);
+        userPanel.add(emailPreferences, userGbc);
 
         JPanel apiPanel = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
         apiPanel.setBorder(createSectionBorder("Alpaca API Details"));
@@ -341,6 +384,8 @@ public class SettingsDialog extends JDialog {
     public boolean autoPausePollingWhenMarketClosed() { return autoPausePollingWhenMarketClosed.isSelected(); }
     public boolean extendedHoursTradingEnabled() { return extendedHoursTradingEnabled.isSelected(); }
     public boolean allowDuplicateSymbolStrategies() { return allowDuplicateSymbolStrategies.isSelected(); }
+    public boolean emailOnBuyExpected() { return emailOnBuyExpected.isSelected(); }
+    public boolean emailOnSellExecuted() { return emailOnSellExecuted.isSelected(); }
     public boolean saveCredentials() { return saveCredentials.isSelected(); }
     public BrokerType brokerType() { return (BrokerType) brokerBox.getSelectedItem(); }
     public ApplicationMode applicationMode() {
@@ -420,7 +465,9 @@ public class SettingsDialog extends JDialog {
                     extendedHoursTradingEnabled(),
                     brokerType() == null ? BrokerType.ALPACA : brokerType(),
                     applicationMode(),
-                    allowDuplicateSymbolStrategies()
+                    allowDuplicateSymbolStrategies(),
+                    emailOnBuyExpected(),
+                    emailOnSellExecuted()
             ));
             appSettingsService.saveEndpoint(getEndpoint());
             for (ApplicationMode mode : ApplicationMode.values()) {
@@ -455,6 +502,8 @@ public class SettingsDialog extends JDialog {
         autoPausePollingWhenMarketClosed.setSelected(appliedSettings.autoPausePollingWhenMarketClosed());
         extendedHoursTradingEnabled.setSelected(appliedSettings.extendedHoursTradingEnabled());
         allowDuplicateSymbolStrategies.setSelected(appliedSettings.allowDuplicateSymbolStrategies());
+        emailOnBuyExpected.setSelected(appliedSettings.emailOnBuyExpected());
+        emailOnSellExecuted.setSelected(appliedSettings.emailOnSellExecuted());
         saveCredentials.setSelected(true);
         brokerBox.setSelectedItem(appliedSettings.brokerType());
         appModeBox.setSelectedItem(appliedSettings.applicationMode());
@@ -562,7 +611,9 @@ public class SettingsDialog extends JDialog {
                     AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED,
                     BrokerType.ALPACA,
                     ApplicationMode.PAPER,
-                    AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES
+                    AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES,
+                    AppSettingsService.DEFAULT_EMAIL_ON_BUY_EXPECTED,
+                    AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED
             );
             appliedCredentialCache.clear();
             connectionStatus.setText("All local data deleted — reloading from Alpaca…");

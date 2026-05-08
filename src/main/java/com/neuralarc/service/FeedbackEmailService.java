@@ -7,6 +7,7 @@ import com.mailjet.client.MailjetResponse;
 import com.mailjet.client.errors.MailjetException;
 import com.mailjet.client.resource.Emailv31;
 import com.neuralarc.util.AppMetadata;
+import com.neuralarc.util.EncryptedMailjetSecrets;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -44,7 +45,8 @@ public class FeedbackEmailService {
     }
 
     public String missingConfigMessage() {
-        return "Missing Mailjet configuration. Set mailjet.* in app.properties or MAILJET_API_KEY, MAILJET_API_SECRET, MAILJET_FROM_EMAIL, MAILJET_TO_EMAIL.";
+        return "Missing Mailjet configuration. Set encrypted Mailjet key/secret values and provide the Mailjet decryption passphrase with "
+                + EncryptedMailjetSecrets.passphraseConfigurationHint() + ".";
     }
 
     public void sendSupportEmail(SupportEmailRequest supportEmailRequest) throws MailjetException {

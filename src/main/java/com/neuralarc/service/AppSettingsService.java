@@ -19,12 +19,16 @@ public class AppSettingsService {
     public static final boolean DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED = true;
     public static final boolean DEFAULT_EXTENDED_HOURS_TRADING_ENABLED = false;
     public static final boolean DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES = false;
+    public static final boolean DEFAULT_EMAIL_ON_BUY_EXPECTED = false;
+    public static final boolean DEFAULT_EMAIL_ON_SELL_EXECUTED = false;
 
     private static final String KEY_USER_EMAIL = "userEmail";
     private static final String KEY_TELEMETRY_ENABLED = "telemetryEnabled";
     private static final String KEY_AUTO_PAUSE = "autoPausePollingWhenMarketClosed";
     private static final String KEY_EXTENDED_HOURS = "extendedHoursTradingEnabled";
     private static final String KEY_ALLOW_DUPLICATE_SYMBOLS = "allowDuplicateSymbolStrategies";
+    private static final String KEY_EMAIL_ON_BUY_EXPECTED = "emailOnBuyExpected";
+    private static final String KEY_EMAIL_ON_SELL_EXECUTED = "emailOnSellExecuted";
     private static final String KEY_BROKER = "broker";
     private static final String KEY_APPLICATION_MODE = "applicationMode";
     private static final String KEY_ENDPOINT = "endpoint";
@@ -65,7 +69,9 @@ public class AppSettingsService {
                 parseBoolean(readSetting(KEY_EXTENDED_HOURS, false), DEFAULT_EXTENDED_HOURS_TRADING_ENABLED),
                 parseBroker(readSetting(KEY_BROKER, false)),
                 parseMode(readSetting(KEY_APPLICATION_MODE, false)),
-                parseBoolean(readSetting(KEY_ALLOW_DUPLICATE_SYMBOLS, false), DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES)
+                parseBoolean(readSetting(KEY_ALLOW_DUPLICATE_SYMBOLS, false), DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES),
+                parseBoolean(readSetting(KEY_EMAIL_ON_BUY_EXPECTED, false), DEFAULT_EMAIL_ON_BUY_EXPECTED),
+                parseBoolean(readSetting(KEY_EMAIL_ON_SELL_EXECUTED, false), DEFAULT_EMAIL_ON_SELL_EXECUTED)
         );
     }
 
@@ -76,6 +82,8 @@ public class AppSettingsService {
             writeSetting(KEY_AUTO_PAUSE, String.valueOf(settings.autoPausePollingWhenMarketClosed()), false);
             writeSetting(KEY_EXTENDED_HOURS, String.valueOf(settings.extendedHoursTradingEnabled()), false);
             writeSetting(KEY_ALLOW_DUPLICATE_SYMBOLS, String.valueOf(settings.allowDuplicateSymbolStrategies()), false);
+            writeSetting(KEY_EMAIL_ON_BUY_EXPECTED, String.valueOf(settings.emailOnBuyExpected()), false);
+            writeSetting(KEY_EMAIL_ON_SELL_EXECUTED, String.valueOf(settings.emailOnSellExecuted()), false);
             writeSetting(KEY_BROKER, (settings.brokerType() == null ? BrokerType.ALPACA : settings.brokerType()).name(), false);
             writeSetting(KEY_APPLICATION_MODE, (settings.applicationMode() == null ? ApplicationMode.PAPER : settings.applicationMode()).name(), false);
         } catch (SQLException ex) {
@@ -276,7 +284,30 @@ public class AppSettingsService {
             boolean extendedHoursTradingEnabled,
             BrokerType brokerType,
             ApplicationMode applicationMode,
-            boolean allowDuplicateSymbolStrategies
+            boolean allowDuplicateSymbolStrategies,
+            boolean emailOnBuyExpected,
+            boolean emailOnSellExecuted
     ) {
+        public AppSettings(
+                String userEmail,
+                boolean telemetryEnabled,
+                boolean autoPausePollingWhenMarketClosed,
+                boolean extendedHoursTradingEnabled,
+                BrokerType brokerType,
+                ApplicationMode applicationMode,
+                boolean allowDuplicateSymbolStrategies
+        ) {
+            this(
+                    userEmail,
+                    telemetryEnabled,
+                    autoPausePollingWhenMarketClosed,
+                    extendedHoursTradingEnabled,
+                    brokerType,
+                    applicationMode,
+                    allowDuplicateSymbolStrategies,
+                    DEFAULT_EMAIL_ON_BUY_EXPECTED,
+                    DEFAULT_EMAIL_ON_SELL_EXECUTED
+            );
+        }
     }
 }
