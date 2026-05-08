@@ -29,7 +29,9 @@ class AppSettingsServiceTest {
                 true,
                 BrokerType.ALPACA,
                 ApplicationMode.PAPER,
-                false
+                false,
+                true,
+                true
         );
 
         service.save(expected);
@@ -40,6 +42,8 @@ class AppSettingsServiceTest {
         assertTrue(loaded.extendedHoursTradingEnabled());
         assertEquals(BrokerType.ALPACA, loaded.brokerType());
         assertEquals(ApplicationMode.PAPER, loaded.applicationMode());
+        assertTrue(loaded.emailOnBuyExpected());
+        assertTrue(loaded.emailOnSellExecuted());
     }
 
     @Test
@@ -68,6 +72,8 @@ class AppSettingsServiceTest {
         AppSettingsService.AppSettings loaded = service.load();
 
         assertFalse(loaded.allowDuplicateSymbolStrategies());
+        assertFalse(loaded.emailOnBuyExpected());
+        assertFalse(loaded.emailOnSellExecuted());
     }
 
     @Test

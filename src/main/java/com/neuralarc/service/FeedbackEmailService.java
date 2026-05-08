@@ -50,6 +50,41 @@ public class FeedbackEmailService {
     }
 
     public void sendSupportEmail(SupportEmailRequest supportEmailRequest) throws MailjetException {
+        sendEmail(
+                toEmail,
+                "NeuralArc Support",
+                supportEmailRequest.customerEmail(),
+                supportEmailRequest.customerEmail(),
+                supportEmailRequest.subject(),
+                supportEmailRequest.textBody(),
+                supportEmailRequest.htmlBody(),
+                supportEmailRequest.attachments()
+        );
+    }
+
+    public void sendUserNotification(String recipientEmail, String subject, String textBody, String htmlBody) throws MailjetException {
+        sendEmail(
+                recipientEmail,
+                "NeuralArc User",
+                "",
+                "",
+                subject,
+                textBody,
+                htmlBody,
+                List.of()
+        );
+    }
+
+    private void sendEmail(
+            String recipientEmail,
+            String recipientName,
+            String ccEmail,
+            String replyToEmail,
+            String subject,
+            String textBody,
+            String htmlBody,
+            List<SupportEmailAttachment> attachments
+    ) throws MailjetException {
         MailjetClient client = new MailjetClient(ClientOptions.builder()
                 .apiKey(apiKey)
                 .apiSecretKey(apiSecret)
@@ -57,24 +92,26 @@ public class FeedbackEmailService {
 
         JSONObject message = new JSONObject()
                 .put("From", new JSONObject().put("Email", fromEmail).put("Name", fromName.isBlank() ? "NeuralArc Desktop" : fromName))
-                .put("To", new JSONArray().put(new JSONObject().put("Email", toEmail).put("Name", "NeuralArc Support")))
-                .put("Subject", supportEmailRequest.subject())
-                .put("TextPart", supportEmailRequest.textBody())
-                .put("HTMLPart", supportEmailRequest.htmlBody());
+                .put("To", new JSONArray().put(new JSONObject().put("Email", recipientEmail).put("Name", recipientName)))
+                .put("Subject", subject)
+                .put("TextPart", textBody)
+                .put("HTMLPart", htmlBody);
 
-        if (!supportEmailRequest.customerEmail().isBlank()) {
-            message.put("Cc", new JSONArray().put(new JSONObject().put("Email", supportEmailRequest.customerEmail())));
-            message.put("ReplyTo", new JSONObject().put("Email", supportEmailRequest.customerEmail()));
+        if (ccEmail != null && !ccEmail.isBlank()) {
+            message.put("Cc", new JSONArray().put(new JSONObject().put("Email", ccEmail)));
         }
-        if (!supportEmailRequest.attachments().isEmpty()) {
-            JSONArray attachments = new JSONArray();
-            for (SupportEmailAttachment attachment : supportEmailRequest.attachments()) {
-                attachments.put(new JSONObject()
+        if (replyToEmail != null && !replyToEmail.isBlank()) {
+            message.put("ReplyTo", new JSONObject().put("Email", replyToEmail));
+        }
+        if (attachments != null && !attachments.isEmpty()) {
+            JSONArray attachmentPayload = new JSONArray();
+            for (SupportEmailAttachment attachment : attachments) {
+                attachmentPayload.put(new JSONObject()
                         .put("ContentType", attachment.contentType())
                         .put("Filename", attachment.filename())
                         .put("Base64Content", attachment.base64Content()));
             }
-            message.put("Attachments", attachments);
+            message.put("Attachments", attachmentPayload);
         }
 
         MailjetRequest request = new MailjetRequest(Emailv31.resource)

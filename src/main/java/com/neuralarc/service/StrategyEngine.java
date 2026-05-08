@@ -27,6 +27,7 @@ public class StrategyEngine {
     private final AppSettingsService appSettingsService;
     private final MarketHoursService marketHoursService;
     private final StrategyProfitControlEvaluator profitControlEvaluator;
+    private final TradeEmailNotificationService emailNotificationService;
 
     public StrategyEngine(
             StrategyRepository strategyRepository,
@@ -45,12 +46,33 @@ public class StrategyEngine {
             AppSettingsService appSettingsService,
             MarketHoursService marketHoursService
     ) {
+        this(
+                strategyRepository,
+                orderRepository,
+                stateMachine,
+                alpacaClient,
+                appSettingsService,
+                marketHoursService,
+                new TradeEmailNotificationService(appSettingsService)
+        );
+    }
+
+    StrategyEngine(
+            StrategyRepository strategyRepository,
+            StrategyOrderRepository orderRepository,
+            StrategyStateMachine stateMachine,
+            AlpacaClient alpacaClient,
+            AppSettingsService appSettingsService,
+            MarketHoursService marketHoursService,
+            TradeEmailNotificationService emailNotificationService
+    ) {
         this.strategyRepository = strategyRepository;
         this.orderRepository = orderRepository;
         this.stateMachine = stateMachine;
         this.alpacaClient = alpacaClient;
         this.appSettingsService = appSettingsService;
         this.marketHoursService = marketHoursService;
+        this.emailNotificationService = emailNotificationService;
         this.profitControlEvaluator = new StrategyProfitControlEvaluator(
                 strategyRepository,
                 stateMachine,
@@ -428,6 +450,7 @@ public class StrategyEngine {
     }
 
     private StrategyOrderStatus applyOrderUpdate(Strategy strategy, StrategyOrder order, AlpacaOrderData data) {
+        StrategyOrderStatus previousStatus = order.status();
         StrategyOrderStatus status = StrategyService.mapOrderStatus(data.status());
         if (data.orderId() != null && !data.orderId().isBlank() && (order.alpacaOrderId() == null || order.alpacaOrderId().isBlank())) {
             order.setAlpacaOrderId(data.orderId());
@@ -442,6 +465,11 @@ public class StrategyEngine {
         orderRepository.save(order);
         Optional<Strategy> latest = strategyRepository.findById(strategy.id());
         Strategy target = latest.orElse(strategy);
+        if (order.side() == StrategyOrderSide.SELL
+                && status == StrategyOrderStatus.FILLED
+                && previousStatus != StrategyOrderStatus.FILLED) {
+            emailNotificationService.notifySellExecuted(target, order);
+        }
         target.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(data.status()));
         target.setLatestAlpacaOrderId(order.alpacaOrderId() == null ? "" : order.alpacaOrderId());
         if (target.status() != StrategyStatus.ACTIVE) {
@@ -560,6 +588,7 @@ public class StrategyEngine {
             return order;
         }
         orderRepository.save(order);
+        emailNotificationService.notifyBuyExpected(strategy, order);
         strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
         strategy.setLatestAlpacaOrderId(submitted.orderId());
         strategy.setLastTriggeredRuleType(mapStageToRuleName(stage));
