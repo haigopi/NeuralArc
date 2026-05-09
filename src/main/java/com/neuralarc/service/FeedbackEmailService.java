@@ -45,8 +45,8 @@ public class FeedbackEmailService {
     }
 
     public String missingConfigMessage() {
-        return "Missing Mailjet configuration. Set encrypted Mailjet key/secret values and provide the Mailjet decryption passphrase with "
-                + EncryptedMailjetSecrets.passphraseConfigurationHint() + ".";
+        return "Missing Mailjet configuration. Set encrypted Mailjet key/secret values and support email settings. "
+                + "Use " + EncryptedMailjetSecrets.passphraseConfigurationHint() + " only when overriding the bundled decryptor.";
     }
 
     public void sendSupportEmail(SupportEmailRequest supportEmailRequest) throws MailjetException {

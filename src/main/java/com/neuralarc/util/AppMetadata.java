@@ -5,11 +5,14 @@ import com.neuralarc.model.ApplicationMode;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.LocalTime;
 import java.util.Properties;
 
 public final class AppMetadata {
     private static final Properties PROPERTIES = loadProperties();
     private static final EncryptedMailjetSecrets MAILJET_SECRETS = EncryptedMailjetSecrets.from(PROPERTIES);
+    private static final EncryptedSpacesSecrets SPACES_SECRETS = EncryptedSpacesSecrets.from(PROPERTIES);
     private static final int DEFAULT_SPLASH_DURATION_MILLIS = 2000;
     private static final int DEFAULT_STRATEGY_POLLING_SECONDS = 20;
 
@@ -133,6 +136,68 @@ public final class AppMetadata {
         } catch (NumberFormatException ignored) {
             return DEFAULT_STRATEGY_POLLING_SECONDS;
         }
+    }
+
+    public static boolean logUploadEnabled() {
+        return Boolean.parseBoolean(configuredOrEnv("logs.upload.enabled", "NEURALARC_LOG_UPLOAD_ENABLED", "false"));
+    }
+
+    public static String logUploadSpacesEndpoint() {
+        return configuredOrEnv("logs.upload.spaces.endpoint", "NEURALARC_SPACES_ENDPOINT", "");
+    }
+
+    public static String logUploadSpacesRegion() {
+        return configuredOrEnv("logs.upload.spaces.region", "NEURALARC_SPACES_REGION", "nyc3");
+    }
+
+    public static String logUploadSpacesBucket() {
+        return configuredOrEnv("logs.upload.spaces.bucket", "NEURALARC_SPACES_BUCKET", "");
+    }
+
+    public static String logUploadSpacesAccessKey() {
+        String encryptedValue = SPACES_SECRETS.accessKey();
+        return encryptedValue.isBlank()
+                ? configuredOrEnv("logs.upload.spaces.accessKey", "NEURALARC_SPACES_ACCESS_KEY", "")
+                : encryptedValue;
+    }
+
+    public static String logUploadSpacesSecretKey() {
+        String encryptedValue = SPACES_SECRETS.secretKey();
+        return encryptedValue.isBlank()
+                ? configuredOrEnv("logs.upload.spaces.secretKey", "NEURALARC_SPACES_SECRET_KEY", "")
+                : encryptedValue;
+    }
+
+    public static LocalTime logUploadMarketCloseTime() {
+        String value = configuredOrEnv("logs.upload.marketCloseTime", "NEURALARC_LOG_UPLOAD_MARKET_CLOSE_TIME", "16:15");
+        try {
+            return LocalTime.parse(value);
+        } catch (Exception ignored) {
+            return LocalTime.of(16, 15);
+        }
+    }
+
+    public static int logUploadMaxRetryCount() {
+        String value = configuredOrEnv("logs.upload.maxRetryCount", "NEURALARC_LOG_UPLOAD_MAX_RETRY_COUNT", "5");
+        try {
+            return Math.max(0, Integer.parseInt(value));
+        } catch (Exception ignored) {
+            return 5;
+        }
+    }
+
+    public static Duration logUploadRetryBackoff() {
+        String value = configuredOrEnv("logs.upload.retryBackoff", "NEURALARC_LOG_UPLOAD_RETRY_BACKOFF", "PT30M");
+        try {
+            return Duration.parse(value);
+        } catch (Exception ignored) {
+            return Duration.ofMinutes(30);
+        }
+    }
+
+    public static Path logUploadArchiveDirectory() {
+        String value = configuredOrEnv("logs.upload.archiveDirectory", "NEURALARC_LOG_ARCHIVE_DIR", "");
+        return value.isBlank() ? appDataDirectory().resolve("log-archives") : Path.of(value);
     }
 
     public static Path appDataDirectory() {

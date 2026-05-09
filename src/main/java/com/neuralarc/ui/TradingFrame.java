@@ -16,9 +16,14 @@ import com.neuralarc.service.MarketHoursService;
 import com.neuralarc.service.OnboardingStateStore;
 import com.neuralarc.service.PersistentAggregatePnlStore;
 import com.neuralarc.service.AppSettingsService;
+import com.neuralarc.service.AsyncLogUploadService;
+import com.neuralarc.service.LogArchiveService;
+import com.neuralarc.service.LogUploadStatusStore;
 import com.neuralarc.service.StrategyPollingService;
 import com.neuralarc.service.StrategyService;
 import com.neuralarc.service.StrategyEngine;
+import com.neuralarc.service.RotatingLogWriter;
+import com.neuralarc.service.SpacesLogUploader;
 import com.neuralarc.service.TradeEmailNotificationService;
 import com.neuralarc.service.UserIdentityService;
 import com.neuralarc.util.AppMetadata;
@@ -65,7 +70,6 @@ import java.math.BigDecimal;
 import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -164,7 +168,7 @@ public class TradingFrame extends JFrame {
     private final ExecutorService uiPollingExecutor;
     private final AppSettingsService appSettingsService = new AppSettingsService();
     private final MarketHoursService marketHoursService = new MarketHoursService();
-    private final Path appLogFile = AppMetadata.appDataDirectory().resolve("app.log");
+    private final RotatingLogWriter rotatingLogWriter = new RotatingLogWriter(AppMetadata.appDataDirectory().resolve("logs"));
     private final LegalDisclosureController legalDisclosureController = new LegalDisclosureController();
     private boolean legalDisclosureAccepted;
     private final StringBuilder pendingLogWrites = new StringBuilder();
@@ -252,6 +256,7 @@ public class TradingFrame extends JFrame {
     private int streamReconnectAttempt;
     private LocalDate lastStreamBackoffResetDate;
     private final ConnectionLifecycleCoordinator connectionLifecycleCoordinator;
+    private AsyncLogUploadService asyncLogUploadService;
 
     public TradingFrame() {
         liveModeBlinkTimer = new Timer(500, ignored -> toggleLiveHeaderBlink());
@@ -515,7 +520,7 @@ public class TradingFrame extends JFrame {
 
             @Override
             public void log(String message) {
-                TradingFrame.this.log(message);
+                TradingFrame.this.tradeLog(message);
             }
 
             @Override
@@ -1104,39 +1109,21 @@ public class TradingFrame extends JFrame {
         GridBagConstraints leftGbc = new GridBagConstraints();
         leftGbc.gridy = 0;
         leftGbc.anchor = GridBagConstraints.CENTER;
-        leftGbc.insets = statusTextInsets();
+        leftGbc.insets = statusSegmentInsets();
         leftGbc.gridx = 0;
-        statusLeft.add(statusBar, leftGbc);
+        statusLeft.add(createStatusSegment(statusBar), leftGbc);
         leftGbc.gridx = 1;
-        leftGbc.insets = statusSeparatorInsets();
-        statusLeft.add(createStatusSeparator(), leftGbc);
+        statusLeft.add(createStatusSegment(marketStatus), leftGbc);
         leftGbc.gridx = 2;
-        leftGbc.insets = statusTextInsets();
-        statusLeft.add(statusStrategyCount, leftGbc);
+        statusLeft.add(createStatusSegment(statusStrategyCount), leftGbc);
         leftGbc.gridx = 3;
-        leftGbc.insets = statusSeparatorInsets();
-        statusLeft.add(createStatusSeparator(), leftGbc);
+        statusLeft.add(createStatusSegment(streamStatus), leftGbc);
         leftGbc.gridx = 4;
-        leftGbc.insets = statusTextInsets();
-        statusLeft.add(marketStatus, leftGbc);
+        statusLeft.add(createStatusSegment(marketValueStatus), leftGbc);
         leftGbc.gridx = 5;
-        leftGbc.insets = statusTextInsets();
-        statusLeft.add(streamStatus, leftGbc);
+        statusLeft.add(createCpuMemorySegment(), leftGbc);
         leftGbc.gridx = 6;
-        leftGbc.insets = statusSeparatorInsets();
-        statusLeft.add(createStatusSeparator(), leftGbc);
-        leftGbc.gridx = 7;
-        leftGbc.insets = statusTextInsets();
-        statusLeft.add(marketValueStatus, leftGbc);
-        leftGbc.gridx = 8;
-        leftGbc.insets = statusSeparatorInsets();
-        statusLeft.add(createStatusSeparator(), leftGbc);
-        leftGbc.gridx = 9;
-        leftGbc.insets = statusTextInsets();
-        statusLeft.add(cpuUsageStatus, leftGbc);
-        leftGbc.gridx = 10;
-        leftGbc.insets = statusTextInsets();
-        statusLeft.add(memoryUsageStatus, leftGbc);
+        statusLeft.add(createStatusSegment(pollingSummary), leftGbc);
 
         JPanel statusRight = new JPanel(new GridBagLayout());
         statusRight.setOpaque(false);
@@ -1156,7 +1143,7 @@ public class TradingFrame extends JFrame {
         statusBarPanel.setBackground(new Color(35, 35, 45));
         statusBarPanel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(200, 200, 210)),
-                new EmptyBorder(3, 4, 3, 4)
+                new EmptyBorder(4, 14, 4, 14)
         ));
         statusBarPanel.add(statusLeft, BorderLayout.WEST);
         statusBarPanel.add(statusRight, BorderLayout.EAST);
@@ -1721,7 +1708,34 @@ public class TradingFrame extends JFrame {
 
     private void initPersistenceAndRestore() {
         ensureAnalyticsPublisher();
+        startAsyncLogUploadService();
         restoreStrategies();
+    }
+
+    private void startAsyncLogUploadService() {
+        if (asyncLogUploadService != null || !AppMetadata.logUploadEnabled()) {
+            return;
+        }
+        SpacesLogUploader.LogUploadConfig config = new SpacesLogUploader.LogUploadConfig(
+                true,
+                AppMetadata.logUploadSpacesEndpoint(),
+                AppMetadata.logUploadSpacesRegion(),
+                AppMetadata.logUploadSpacesBucket(),
+                AppMetadata.logUploadSpacesAccessKey(),
+                AppMetadata.logUploadSpacesSecretKey()
+        );
+        asyncLogUploadService = new AsyncLogUploadService(
+                new LogArchiveService(rotatingLogWriter.logDirectory(), AppMetadata.logUploadArchiveDirectory()),
+                new LogUploadStatusStore(AppMetadata.appDataDirectory().resolve("log-upload-status.json")),
+                new SpacesLogUploader(config),
+                identityService.generateUserId(settingsDialog.getUserEmail()),
+                settingsDialog.getUserEmail(),
+                AppMetadata.logUploadMarketCloseTime(),
+                AppMetadata.logUploadMaxRetryCount(),
+                AppMetadata.logUploadRetryBackoff(),
+                this::log
+        );
+        asyncLogUploadService.start();
     }
 
     private void triggerPollingCycle() {
@@ -2982,20 +2996,38 @@ public class TradingFrame extends JFrame {
         };
     }
 
-    private java.awt.Insets statusTextInsets() {
-        return new java.awt.Insets(0, 4, 0, 4);
+    private java.awt.Insets statusSegmentInsets() {
+        return new java.awt.Insets(0, 0, 0, 14);
     }
 
-    private java.awt.Insets statusSeparatorInsets() {
-        return new java.awt.Insets(0, 2, 0, 2);
+    private JPanel createStatusSegment(JComponent component) {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setOpaque(false);
+        panel.setBorder(new EmptyBorder(2, 0, 2, 0));
+        panel.add(component, BorderLayout.CENTER);
+        return panel;
     }
 
-    private JLabel createStatusSeparator() {
+    private JPanel createCpuMemorySegment() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setOpaque(false);
+        panel.setBorder(new EmptyBorder(2, 0, 2, 0));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridy = 0;
+        gbc.anchor = GridBagConstraints.CENTER;
+        gbc.gridx = 0;
+        gbc.insets = new java.awt.Insets(0, 0, 0, 5);
+        panel.add(cpuUsageStatus, gbc);
+        gbc.gridx = 1;
+        gbc.insets = new java.awt.Insets(0, 0, 0, 5);
         JLabel separator = new JLabel("|");
         separator.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         separator.setForeground(new Color(95, 95, 110));
-        separator.setBorder(new EmptyBorder(0, 0, 0, 0));
-        return separator;
+        panel.add(separator, gbc);
+        gbc.gridx = 2;
+        gbc.insets = new java.awt.Insets(0, 0, 0, 0);
+        panel.add(memoryUsageStatus, gbc);
+        return panel;
     }
 
     private String formatMarketValueText() {
@@ -3041,6 +3073,10 @@ public class TradingFrame extends JFrame {
         uiPollingExecutor.shutdownNow();
         if (strategyPollingService != null) {
             strategyPollingService.shutdown();
+        }
+        if (asyncLogUploadService != null) {
+            asyncLogUploadService.close();
+            asyncLogUploadService = null;
         }
         flushLogsToFile();
         if (analyticsPublisher != null) {
@@ -3141,6 +3177,15 @@ public class TradingFrame extends JFrame {
         });
     }
 
+    private void tradeLog(String message) {
+        String timestamp = formatLogTimestamp();
+        SwingUtilities.invokeLater(() -> {
+            String logEntry = "[" + timestamp + "] " + message + System.lineSeparator();
+            appendLogEntry(logEntry);
+            rotatingLogWriter.append(RotatingLogWriter.LogType.TRADE, logEntry);
+        });
+    }
+
     private void logEmailStatus(String eventType, String symbol, String recipientEmail, String status, String error) {
         String maskedRecipient = identityService.maskEmail(recipientEmail);
         String detail = error == null || error.isBlank() ? "" : " | error=" + error;
@@ -3199,17 +3244,11 @@ public class TradingFrame extends JFrame {
     }
 
     private void flushLogsToFile() {
-        if (pendingLogWrites.isEmpty()) {
-            return;
-        }
         try {
-            Files.createDirectories(appLogFile.getParent());
-            Files.writeString(
-                    appLogFile,
-                    pendingLogWrites.toString(),
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.APPEND
-            );
+            if (!pendingLogWrites.isEmpty()) {
+                rotatingLogWriter.append(RotatingLogWriter.LogType.APP, pendingLogWrites.toString());
+            }
+            rotatingLogWriter.flush();
             pendingLogWrites.setLength(0);
         } catch (Exception e) {
             // Keep the in-memory buffer intact and continue running.
@@ -3693,7 +3732,7 @@ public class TradingFrame extends JFrame {
         }
         showStreamReconnectFailureDialog = true;
         updateStreamStatus("connecting", STATUS_WARN);
-        log("[STREAM] Manual reconnect requested from status bar.");
+        tradeLog("[STREAM] Manual reconnect requested from status bar.");
         cancelTradeStreamReconnectRetry();
         startTradingEventStreamIfConfigured(credentials.apiKey(), credentials.apiSecret());
     }
@@ -3711,7 +3750,7 @@ public class TradingFrame extends JFrame {
         streamReconnectRetryTimer = new Timer(delay, ignored -> attemptAutoTradeStreamReconnect());
         streamReconnectRetryTimer.setRepeats(false);
         streamReconnectRetryTimer.start();
-        log("[STREAM] Auto reconnect scheduled in " + (delay / 1000) + "s. attempt=" + streamReconnectAttempt);
+        tradeLog("[STREAM] Auto reconnect scheduled in " + (delay / 1000) + "s. attempt=" + streamReconnectAttempt);
     }
 
     private int nextTradeStreamReconnectDelayMillis() {
@@ -3728,12 +3767,12 @@ public class TradingFrame extends JFrame {
         }
         StreamCredentials credentials = streamCredentials();
         if (!credentials.isConfigured()) {
-            log("[STREAM] Auto reconnect skipped: saved Alpaca credentials are missing.");
+            tradeLog("[STREAM] Auto reconnect skipped: saved Alpaca credentials are missing.");
             scheduleTradeStreamReconnectRetry();
             return;
         }
         updateStreamStatus("connecting", STATUS_WARN);
-        log("[STREAM] Auto reconnect attempt " + streamReconnectAttempt + " started.");
+        tradeLog("[STREAM] Auto reconnect attempt " + streamReconnectAttempt + " started.");
         startTradingEventStreamIfConfigured(credentials.apiKey(), credentials.apiSecret());
     }
 
@@ -3758,7 +3797,7 @@ public class TradingFrame extends JFrame {
     private void resetTradeStreamReconnectBackoff(String reason) {
         cancelTradeStreamReconnectRetry();
         if (streamReconnectAttempt > 0) {
-            log("[STREAM] Auto reconnect backoff reset: " + reason + ".");
+            tradeLog("[STREAM] Auto reconnect backoff reset: " + reason + ".");
         }
         streamReconnectAttempt = 0;
     }

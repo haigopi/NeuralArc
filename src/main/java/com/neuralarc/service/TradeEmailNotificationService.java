@@ -2,6 +2,7 @@ package com.neuralarc.service;
 
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyOrder;
+import com.neuralarc.util.AppMetadata;
 
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -20,16 +21,27 @@ public class TradeEmailNotificationService {
     private final AppSettingsService appSettingsService;
     private final EmailSender emailSender;
     private final Executor executor;
+    private final String automatedRecipientEmail;
     private volatile EmailNotificationListener notificationListener = EmailNotificationListener.NOOP;
 
     public TradeEmailNotificationService(AppSettingsService appSettingsService) {
-        this(appSettingsService, new MailjetEmailSender(), DEFAULT_EXECUTOR);
+        this(appSettingsService, new MailjetEmailSender(), DEFAULT_EXECUTOR, AppMetadata.mailjetToEmail());
     }
 
     TradeEmailNotificationService(AppSettingsService appSettingsService, EmailSender emailSender, Executor executor) {
+        this(appSettingsService, emailSender, executor, AppMetadata.mailjetToEmail());
+    }
+
+    TradeEmailNotificationService(
+            AppSettingsService appSettingsService,
+            EmailSender emailSender,
+            Executor executor,
+            String automatedRecipientEmail
+    ) {
         this.appSettingsService = appSettingsService;
         this.emailSender = emailSender;
         this.executor = executor;
+        this.automatedRecipientEmail = automatedRecipientEmail == null ? "" : automatedRecipientEmail.trim();
     }
 
     public void notifyBuyExpected(Strategy strategy, StrategyOrder order) {
@@ -37,7 +49,7 @@ public class TradeEmailNotificationService {
         if (!settings.emailOnBuyExpected()) {
             return;
         }
-        sendAsync("BUY_EXPECTED", strategy.symbol(), settings.userEmail(), buySubject(strategy), buyText(strategy, order), buyHtml(strategy, order));
+        sendAsync("BUY_EXPECTED", strategy.symbol(), automatedRecipientEmail, buySubject(strategy), buyText(strategy, order), buyHtml(strategy, order));
     }
 
     public void notifySellExecuted(Strategy strategy, StrategyOrder order) {
@@ -45,7 +57,7 @@ public class TradeEmailNotificationService {
         if (!settings.emailOnSellExecuted()) {
             return;
         }
-        sendAsync("SELL_EXECUTED", strategy.symbol(), settings.userEmail(), sellSubject(strategy), sellText(strategy, order), sellHtml(strategy, order));
+        sendAsync("SELL_EXECUTED", strategy.symbol(), automatedRecipientEmail, sellSubject(strategy), sellText(strategy, order), sellHtml(strategy, order));
     }
 
     public void setNotificationListener(EmailNotificationListener notificationListener) {

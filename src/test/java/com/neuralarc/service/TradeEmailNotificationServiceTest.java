@@ -33,24 +33,34 @@ class TradeEmailNotificationServiceTest {
     void sendsBuyExpectedWhenPreferenceIsEnabled() throws Exception {
         AppSettingsService settings = settings(true, false);
         RecordingSender sender = new RecordingSender();
-        TradeEmailNotificationService service = new TradeEmailNotificationService(settings, sender, Runnable::run);
+        TradeEmailNotificationService service = new TradeEmailNotificationService(
+                settings,
+                sender,
+                Runnable::run,
+                "ops@example.com"
+        );
         RecordingEmailListener listener = new RecordingEmailListener();
         service.setNotificationListener(listener);
 
         service.notifyBuyExpected(strategy(), order(StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.SUBMITTED));
 
         assertEquals(1, sender.messages.size());
-        assertEquals("user@example.com", sender.messages.getFirst().recipient());
+        assertEquals("ops@example.com", sender.messages.getFirst().recipient());
         assertTrue(sender.messages.getFirst().subject().contains("buy order placed"));
         assertEquals(1, listener.sent.size());
-        assertTrue(listener.sent.getFirst().contains("BUY_EXPECTED:AAPL:user@example.com"));
+        assertTrue(listener.sent.getFirst().contains("BUY_EXPECTED:AAPL:ops@example.com"));
     }
 
     @Test
     void skipsBuyExpectedWhenPreferenceIsDisabled() throws Exception {
         AppSettingsService settings = settings(false, true);
         RecordingSender sender = new RecordingSender();
-        TradeEmailNotificationService service = new TradeEmailNotificationService(settings, sender, Runnable::run);
+        TradeEmailNotificationService service = new TradeEmailNotificationService(
+                settings,
+                sender,
+                Runnable::run,
+                "ops@example.com"
+        );
 
         service.notifyBuyExpected(strategy(), order(StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.SUBMITTED));
 
@@ -61,32 +71,63 @@ class TradeEmailNotificationServiceTest {
     void sendsSellExecutedWhenPreferenceIsEnabled() throws Exception {
         AppSettingsService settings = settings(false, true);
         RecordingSender sender = new RecordingSender();
-        TradeEmailNotificationService service = new TradeEmailNotificationService(settings, sender, Runnable::run);
+        TradeEmailNotificationService service = new TradeEmailNotificationService(
+                settings,
+                sender,
+                Runnable::run,
+                "ops@example.com"
+        );
 
         service.notifySellExecuted(strategy(), order(StrategyOrderSide.SELL, StrategyStage.TARGET_SELL, StrategyOrderStatus.FILLED));
 
         assertEquals(1, sender.messages.size());
-        assertEquals("user@example.com", sender.messages.getFirst().recipient());
+        assertEquals("ops@example.com", sender.messages.getFirst().recipient());
         assertTrue(sender.messages.getFirst().subject().contains("sell order executed"));
+    }
+
+    @Test
+    void automatedNotificationsUseConfiguredRecipientInsteadOfSettingsEmail() throws Exception {
+        AppSettingsService settings = settingsWithUserEmail("", true, false);
+        RecordingSender sender = new RecordingSender();
+        TradeEmailNotificationService service = new TradeEmailNotificationService(
+                settings,
+                sender,
+                Runnable::run,
+                "configured-to@example.com"
+        );
+
+        service.notifyBuyExpected(strategy(), order(StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.SUBMITTED));
+
+        assertEquals(1, sender.messages.size());
+        assertEquals("configured-to@example.com", sender.messages.getFirst().recipient());
     }
 
     @Test
     void reportsFailureWhenEmailSenderFails() throws Exception {
         AppSettingsService settings = settings(true, false);
-        TradeEmailNotificationService service = new TradeEmailNotificationService(settings, new FailingSender(), Runnable::run);
+        TradeEmailNotificationService service = new TradeEmailNotificationService(
+                settings,
+                new FailingSender(),
+                Runnable::run,
+                "ops@example.com"
+        );
         RecordingEmailListener listener = new RecordingEmailListener();
         service.setNotificationListener(listener);
 
         service.notifyBuyExpected(strategy(), order(StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.SUBMITTED));
 
         assertEquals(1, listener.failed.size());
-        assertTrue(listener.failed.getFirst().contains("BUY_EXPECTED:AAPL:user@example.com:boom"));
+        assertTrue(listener.failed.getFirst().contains("BUY_EXPECTED:AAPL:ops@example.com:boom"));
     }
 
     private AppSettingsService settings(boolean buyExpected, boolean sellExecuted) throws Exception {
+        return settingsWithUserEmail("user@example.com", buyExpected, sellExecuted);
+    }
+
+    private AppSettingsService settingsWithUserEmail(String userEmail, boolean buyExpected, boolean sellExecuted) throws Exception {
         AppSettingsService service = new AppSettingsService(tempDir.resolve("settings-" + buyExpected + "-" + sellExecuted + ".db"));
         service.save(new AppSettingsService.AppSettings(
-                "user@example.com",
+                userEmail,
                 true,
                 true,
                 false,
