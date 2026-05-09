@@ -336,7 +336,7 @@
     }
 
     .download-menu.is-open {
-      z-index: 120;
+      z-index: 1000;
     }
 
     .download-toggle {
@@ -361,7 +361,7 @@
       position: absolute;
       top: calc(100% + 10px);
       left: 0;
-      z-index: 121;
+      z-index: 1001;
       min-width: 240px;
       padding: 8px;
       border-radius: 16px;
@@ -671,6 +671,16 @@
       text-align: left;
     }
 
+    .panel--full-screen.get-started .card-grid {
+      position: relative;
+      z-index: 4;
+    }
+
+    .panel--full-screen.get-started .feature-card {
+      position: relative;
+      z-index: 2;
+    }
+
     .panel--full-screen .tech-card,
     .panel--full-screen .info-card {
       text-align: left;
@@ -876,13 +886,30 @@
       overflow: hidden;
       border-radius: 24px;
       border: 1px solid var(--line);
-      background: rgba(255, 255, 255, 0.035);
+      background:
+        linear-gradient(180deg, rgba(12, 28, 41, 0.92), rgba(8, 18, 29, 0.84)),
+        rgba(255, 255, 255, 0.035);
       box-shadow: var(--shadow);
     }
 
     .preview-visual {
+      position: relative;
       height: 220px;
-      background: #0d1d2b;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(124, 246, 196, 0.2), transparent 36%),
+        #0d1d2b;
+    }
+
+    .preview-visual::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(5, 12, 19, 0.02), rgba(5, 12, 19, 0.36)),
+        radial-gradient(circle at 78% 8%, rgba(143, 217, 255, 0.2), transparent 30%);
+      mix-blend-mode: screen;
+      opacity: .42;
     }
 
     .preview-visual img {
@@ -890,11 +917,21 @@
       height: 100%;
       display: block;
       object-fit: cover;
-      filter: saturate(1.04) brightness(0.92);
+      filter: saturate(0.88) brightness(0.86) contrast(1.08);
     }
 
     .preview-copy {
       padding: 16px 16px 18px;
+    }
+
+    .preview-copy h3 {
+      margin: 0 0 8px;
+      font-size: 1.02rem;
+      color: var(--text);
+    }
+
+    .preview-copy p {
+      margin: 0;
       color: var(--muted);
       line-height: 1.75;
       font-size: .92rem;
@@ -1146,21 +1183,52 @@ live: manual promotion only</pre>
           </div>
         </article>
 
-        <article class="panel" style="grid-column: 1 / -1;">
+        <article class="panel product-preview" style="grid-column: 1 / -1;">
           <span class="section-chip">Product Preview</span>
-          <h2>See how the workflow feels in practice.</h2>
+          <h2>Set the rules. Keep the machine running.</h2>
+          <p class="panel-intro panel-intro--wide">Connect Alpaca, tune the strategy, and let NeuralArc keep watching the market from your own desktop. It turns your setup into a disciplined, profit-focused operator console while you stay in control.</p>
           <div class="preview-grid">
             <article class="preview-card">
-              <div class="preview-visual"><img src="./images/preview-1.svg" alt="NeuralArc strategy controls preview"></div>
-              <div class="preview-copy">Strategy configuration and risk controls built for clear review before action.</div>
+              <div class="preview-visual"><img src="./images/workflow-dashboard.png" alt="NeuralArc current strategies dashboard"></div>
+              <div class="preview-copy">
+                <h3>Live Strategy Command</h3>
+                <p>Watch active strategies, status, price movement, and P&amp;L in one console. Your machine stays focused on the next rule instead of forcing you to chase every tick.</p>
+              </div>
             </article>
             <article class="preview-card">
-              <div class="preview-visual"><img src="./images/preview-2.svg" alt="NeuralArc auto analyze preview"></div>
-              <div class="preview-copy">Auto Analyze ranges and recommendation cards that move you from reading to setup faster.</div>
+              <div class="preview-visual"><img src="./images/workflow-strategy-dialog.png" alt="NeuralArc stock strategy setup dialog"></div>
+              <div class="preview-copy">
+                <h3>Rules Before Emotion</h3>
+                <p>Set buy, sell, risk, and repeat behavior before the trade starts. NeuralArc keeps the workflow disciplined when the market starts moving.</p>
+              </div>
             </article>
             <article class="preview-card">
-              <div class="preview-visual"><img src="./images/preview-3.svg" alt="NeuralArc local operator status preview"></div>
-              <div class="preview-copy">Local-first status, monitoring, and operator feedback designed for day-to-day control.</div>
+              <div class="preview-visual"><img src="./images/workflow-profit-controls.png" alt="NeuralArc automated profit control settings"></div>
+              <div class="preview-copy">
+                <h3>Profit Protection Modes</h3>
+                <p>Choose the automated profit strategy that fits the position. Trigger, stop, and trailing controls are built to protect upside without hiding manual control.</p>
+              </div>
+            </article>
+            <article class="preview-card">
+              <div class="preview-visual"><img src="./images/workflow-portfolio-actions.png" alt="NeuralArc portfolio actions controls"></div>
+              <div class="preview-copy">
+                <h3>Operator Actions Ready</h3>
+                <p>Refresh the portfolio, cancel pending buys, or promote strategies when the setup is ready. The app gives you action buttons for real operating moments.</p>
+              </div>
+            </article>
+            <article class="preview-card">
+              <div class="preview-visual"><img src="./images/workflow-current-strategies.png" alt="NeuralArc strategy grid status and actions"></div>
+              <div class="preview-copy">
+                <h3>Know What Is Waiting</h3>
+                <p>Each strategy shows the current state and what it is waiting on next. That keeps the desktop running like a trading operations station, not a spreadsheet.</p>
+              </div>
+            </article>
+            <article class="preview-card">
+              <div class="preview-visual"><img src="./images/workflow-settings.png" alt="NeuralArc settings and broker configuration"></div>
+              <div class="preview-copy">
+                <h3>Configured Once, Reused Daily</h3>
+                <p>Broker mode, notifications, and operating preferences live in one place. Set the machine up, review the safeguards, and let the routine work begin.</p>
+              </div>
             </article>
           </div>
         </article>
