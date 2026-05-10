@@ -3,6 +3,7 @@ package com.neuralarc.service;
 import com.neuralarc.model.MarketBar;
 import com.neuralarc.model.MarketMode;
 import com.neuralarc.model.RecommendationAction;
+import com.neuralarc.model.RecommendationType;
 import com.neuralarc.model.ShortTermMarketMode;
 import com.neuralarc.model.StrategyRecommendation;
 import org.junit.jupiter.api.Test;
@@ -99,6 +100,20 @@ class RecommendationEngineTest {
 
         assertEquals(new BigDecimal("0.0075"), recommendation.expectedDipPct());
         assertEquals(new BigDecimal("99.25"), recommendation.behaviorAdjustedBasePrice());
+    }
+
+    @Test
+    void highRiskShortTermUsesOnlyLatestTwoWeeksForBuyAndSellLevels() {
+        List<MarketBar> bars = highRiskTwoWeekOnlyBars();
+
+        StrategyRecommendation recommendation = engine.generateHighRiskShortTermRecommendation(
+                "AAPL", bars, new BigDecimal("113.00"), new BigDecimal("113.00"));
+
+        assertEquals(RecommendationType.HIGH_RISK_SHORT_TERM, recommendation.recommendationType());
+        assertEquals(new BigDecimal("104.00"), recommendation.twoWeekLow());
+        assertEquals(new BigDecimal("118.00"), recommendation.twoWeekHigh());
+        assertTrue(recommendation.baseBuyPrice().compareTo(new BigDecimal("100.00")) > 0);
+        assertTrue(recommendation.sellPrice().compareTo(new BigDecimal("118.00")) >= 0);
     }
 
     @Test
@@ -307,6 +322,19 @@ class RecommendationEngineTest {
             BigDecimal high = close.add(new BigDecimal("2.00"));
             BigDecimal volume = new BigDecimal("120.00");
             bars.add(bar(start.plusDays(i), open, high, low, close, volume));
+        }
+        return bars;
+    }
+
+    private List<MarketBar> highRiskTwoWeekOnlyBars() {
+        List<MarketBar> bars = new ArrayList<>();
+        LocalDate start = LocalDate.of(2026, 2, 1);
+        for (int i = 0; i < 30; i++) {
+            BigDecimal close = i < 16 ? new BigDecimal("80.00") : new BigDecimal("112.00");
+            BigDecimal open = close.subtract(BigDecimal.ONE);
+            BigDecimal low = i < 16 ? new BigDecimal("50.00") : new BigDecimal("104.00");
+            BigDecimal high = i < 16 ? new BigDecimal("90.00") : new BigDecimal("118.00");
+            bars.add(bar(start.plusDays(i), open, high, low, close, new BigDecimal("1000.00")));
         }
         return bars;
     }

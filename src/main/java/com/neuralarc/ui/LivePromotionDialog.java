@@ -181,8 +181,7 @@ final class LivePromotionDialog extends JDialog {
         add(actions, BorderLayout.SOUTH);
 
         setResizable(true);
-        setSize(560, 430);
-        setMinimumSize(new java.awt.Dimension(520, 380));
+        DialogSizing.packAndFit(this, 520, 380);
         setLocationRelativeTo(getOwner());
         updatePromoteButtonEnabled(preview);
     }

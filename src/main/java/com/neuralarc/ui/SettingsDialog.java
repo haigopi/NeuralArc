@@ -52,7 +52,7 @@ public class SettingsDialog extends JDialog {
     private final JLabel apiKeyLabel = new JLabel("API key:");
     private final JLabel apiSecretLabel = new JLabel("API secret:");
     private final JTextField endpointField = new JTextField(AppMetadata.analyticsEndpointDefault(), 25);
-    private final JCheckBox telemetryEnabled = new JCheckBox("Enable telemetry", true);
+    private final JCheckBox telemetryEnabled = new JCheckBox("Send daily diagnostic logs", true);
     private final JCheckBox autoPausePollingWhenMarketClosed = new JCheckBox("Auto pause polling when market is closed", AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED);
     private final JCheckBox extendedHoursTradingEnabled = new JCheckBox("Enable extended-hours trading", AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED);
     private final JCheckBox allowDuplicateSymbolStrategies = new JCheckBox("Allow multiple strategies for the same symbol", AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES);
@@ -142,51 +142,14 @@ public class SettingsDialog extends JDialog {
         connectionActions.add(verifyConnectionButton, BorderLayout.EAST);
         addFormRow(apiPanel, apiRow, "Connection:", connectionActions, false);
 
-        JPanel telemetryPanel = new JPanel(new GridBagLayout());
-        telemetryPanel.setOpaque(false);
-
-        boolean analyticsGloballyEnabled = AppMetadata.analyticsEnabled();
-        JLabel telemetryDescription = mutedDescription(
-                analyticsGloballyEnabled
-                        ? "Shares anonymized operational telemetry for diagnostics and reliability monitoring."
-                        : "Analytics is disabled globally in app.properties (app.analytics.enabled=false). "
-                        + "This checkbox has no effect until analytics is enabled."
+        JPanel diagnosticsPanel = new JPanel(new GridBagLayout());
+        diagnosticsPanel.setOpaque(false);
+        JLabel diagnosticsDescription = mutedDescription(
+                "Helps improve reliability by sending application performance and debug logs once daily when possible. "
+                        + "Trading credentials, API secrets, and personal brokerage details are not included."
         );
-        if (!analyticsGloballyEnabled) {
-            telemetryEnabled.setEnabled(false);
-            telemetryEnabled.setSelected(false);
-            telemetryEnabled.setToolTipText(TooltipStyler.text(
-                    "Analytics is disabled globally via app.analytics.enabled in app.properties"
-            ));
-        }
-
-        GridBagConstraints telemetryLabelConstraints = new GridBagConstraints();
-        telemetryLabelConstraints.gridx = 0;
-        telemetryLabelConstraints.gridy = 0;
-        telemetryLabelConstraints.weightx = 0.43;
-        telemetryLabelConstraints.fill = GridBagConstraints.HORIZONTAL;
-        telemetryLabelConstraints.anchor = GridBagConstraints.NORTHWEST;
-        telemetryLabelConstraints.insets = new Insets(0, 0, 0, FIELD_GAP);
-        telemetryPanel.add(new JLabel("Telemetry:"), telemetryLabelConstraints);
-
-        GridBagConstraints telemetryContentConstraints = new GridBagConstraints();
-        telemetryContentConstraints.gridx = 1;
-        telemetryContentConstraints.gridy = 0;
-        telemetryContentConstraints.weightx = 0.57;
-        telemetryContentConstraints.fill = GridBagConstraints.HORIZONTAL;
-        telemetryContentConstraints.anchor = GridBagConstraints.NORTHWEST;
-        telemetryContentConstraints.insets = new Insets(0, 0, 0, 0);
-
-        JPanel telemetryContent = new JPanel();
-        telemetryContent.setLayout(new BoxLayout(telemetryContent, BoxLayout.Y_AXIS));
-        telemetryContent.setOpaque(false);
-        telemetryContent.setBorder(new EmptyBorder(2, 0, 2, 0));
-        telemetryEnabled.setAlignmentX(Component.LEFT_ALIGNMENT);
-        telemetryDescription.setAlignmentX(Component.LEFT_ALIGNMENT);
-        telemetryContent.add(telemetryEnabled);
-        telemetryContent.add(Box.createVerticalStrut(10));
-        telemetryContent.add(telemetryDescription);
-        telemetryPanel.add(telemetryContent, telemetryContentConstraints);
+        addFormRow(diagnosticsPanel, 0, "Diagnostics:", telemetryEnabled, true);
+        addFormRow(diagnosticsPanel, 1, "", diagnosticsDescription, false);
 
         JPanel marketHoursPanel = new JPanel(new GridBagLayout());
         marketHoursPanel.setOpaque(false);
@@ -274,7 +237,7 @@ public class SettingsDialog extends JDialog {
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(apiPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
-        content.add(createCollapsibleSection("Telemetry", telemetryPanel, true));
+        content.add(createCollapsibleSection("Diagnostics Log Sharing", diagnosticsPanel, true));
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(createCollapsibleSection("Trading Hours", marketHoursPanel, true));
         content.add(Box.createVerticalStrut(SECTION_GAP));
@@ -287,7 +250,7 @@ public class SettingsDialog extends JDialog {
         contentScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         contentScroll.getVerticalScrollBar().setUnitIncrement(16);
         contentScroll.getViewport().setBackground(DIALOG_BG);
-        contentScroll.setPreferredSize(new Dimension(720, 680));
+        contentScroll.setPreferredSize(DialogSizing.preferredViewportSize(content, 680, 420, 1000, 680));
         add(contentScroll, BorderLayout.CENTER);
 
         JPanel actions = new JPanel(new BorderLayout());
@@ -312,14 +275,7 @@ public class SettingsDialog extends JDialog {
 
         loadAll();
         updateBrokerControlState();
-        pack();
-        Rectangle screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-        int minDialogWidth = 720;
-        int minDialogHeight = 680;
-        int w = Math.max(minDialogWidth, Math.min(getPreferredSize().width, screenBounds.width - 48));
-        int h = Math.max(minDialogHeight, Math.min(getPreferredSize().height, (int) (screenBounds.height * 0.92)));
-        setSize(new Dimension(w, h));
-        setMinimumSize(new Dimension(minDialogWidth, minDialogHeight));
+        DialogSizing.packAndFit(this, 760, 560);
         setResizable(true);
         setLocationRelativeTo(owner);
     }
@@ -342,6 +298,7 @@ public class SettingsDialog extends JDialog {
 
     public String getEndpoint() { return endpointField.getText().trim(); }
     public boolean telemetryEnabled() { return telemetryEnabled.isSelected(); }
+    public boolean diagnosticLogSharingEnabled() { return telemetryEnabled.isSelected(); }
     public boolean autoPausePollingWhenMarketClosed() { return autoPausePollingWhenMarketClosed.isSelected(); }
     public boolean extendedHoursTradingEnabled() { return extendedHoursTradingEnabled.isSelected(); }
     public boolean allowDuplicateSymbolStrategies() { return allowDuplicateSymbolStrategies.isSelected(); }
@@ -801,7 +758,7 @@ public class SettingsDialog extends JDialog {
             updateCollapsibleSectionButton(toggleButton, title, expanded);
             container.revalidate();
             container.repaint();
-            pack();
+            DialogSizing.packAndFit(this, 760, 560);
         });
 
         container.add(toggleButton, BorderLayout.NORTH);

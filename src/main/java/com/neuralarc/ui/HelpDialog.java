@@ -8,14 +8,11 @@ import javax.swing.border.TitledBorder;
 import javax.swing.plaf.basic.BasicTabbedPaneUI;
 import java.awt.BorderLayout;
 import java.awt.Color;
-import java.awt.Dimension;
 import java.awt.FontMetrics;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
-import java.awt.GraphicsEnvironment;
 import java.awt.Insets;
-import java.awt.Rectangle;
 
 public class HelpDialog extends JDialog {
     private static final Color TAB_CONTENT_BORDER = new Color(200, 206, 214);
@@ -34,9 +31,10 @@ public class HelpDialog extends JDialog {
         },
         {
             "Strategies - What is Auto Analyze?",
-            "Auto Analyze gives short-term and long-term recommendations using recent market data.\n\n" +
+            "Auto Analyze gives short-term, high-risk short-term, and long-term recommendations using recent market data.\n\n" +
             "- Today's Snapshot shows the latest available price, open, high, low, and close context.\n" +
             "- Short-Term Recommendation focuses on recent two-week behavior, expected dips, trend, volume, risk/reward, and confidence.\n" +
+            "- High Risk Short-Term Recommendation uses only the latest two weeks for faster buy and sell levels with more aggressive risk assumptions.\n" +
             "- Long-Term Recommendation uses broader ranges, moving averages, ATR, market mode, and behavior-adjusted entry pricing.\n\n" +
             "You can apply a recommendation to the Current Strategy tab, review every value, and then choose whether to save."
         },
@@ -295,7 +293,7 @@ public class HelpDialog extends JDialog {
         },
         {
             "Auto Analyze - Recommendation sections",
-            "Short-Term and Long-Term recommendations generate strategy values without saving them.\n\n" +
+            "Short-Term, High Risk Short-Term, and Long-Term recommendations generate strategy values without saving them.\n\n" +
             "- Base Buy Price: Suggested entry price.\n" +
             "- Buy Level 1 and Buy Level 2: Suggested staged entries when Loss Buy Levels are enabled.\n" +
             "- Stop Loss: Suggested risk boundary.\n" +
@@ -421,8 +419,6 @@ public class HelpDialog extends JDialog {
     public HelpDialog(JFrame owner) {
         super(owner, "Help & FAQ", true);
         setLayout(new BorderLayout(0, 0));
-        setMinimumSize(new Dimension(760, 600));
-
         JTabbedPane tabs = new JTabbedPane(JTabbedPane.TOP, JTabbedPane.WRAP_TAB_LAYOUT);
         tabs.setUI(new StandardTabbedPaneUI());
         tabs.setBorder(null);
@@ -442,11 +438,7 @@ public class HelpDialog extends JDialog {
         footer.add(close);
         add(footer, BorderLayout.SOUTH);
 
-        pack();
-        Rectangle screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-        int w = Math.max(760, Math.min(getPreferredSize().width, screenBounds.width - 48));
-        int h = Math.max(600, Math.min(getPreferredSize().height, (int) (screenBounds.height * 0.92)));
-        setSize(w, h);
+        DialogSizing.packAndFit(this, 760, 560);
         setLocationRelativeTo(owner);
     }
 

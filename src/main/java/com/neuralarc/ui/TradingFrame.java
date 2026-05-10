@@ -1713,7 +1713,8 @@ public class TradingFrame extends JFrame {
     }
 
     private void startAsyncLogUploadService() {
-        if (asyncLogUploadService != null || !AppMetadata.logUploadEnabled()) {
+        if (asyncLogUploadService != null || !AppMetadata.logUploadEnabled()
+                || !settingsDialog.diagnosticLogSharingEnabled()) {
             return;
         }
         SpacesLogUploader.LogUploadConfig config = new SpacesLogUploader.LogUploadConfig(
@@ -3044,7 +3045,7 @@ public class TradingFrame extends JFrame {
 
     private void ensureAnalyticsPublisher() {
         if (analyticsPublisher == null) {
-            boolean analyticsAllowed = AppMetadata.analyticsEnabled() && settingsDialog.telemetryEnabled();
+            boolean analyticsAllowed = AppMetadata.analyticsEnabled();
             TelemetryConfig telemetryConfig = new TelemetryConfig(
                     analyticsAllowed,
                     settingsDialog.getEndpoint(),

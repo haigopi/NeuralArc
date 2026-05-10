@@ -9,7 +9,6 @@ import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Desktop;
-import java.awt.Dimension;
 import java.awt.Font;
 import java.net.URI;
 
@@ -109,9 +108,8 @@ final class FirstRunOnboardingDialog extends JDialog {
         actions.add(right, BorderLayout.EAST);
         add(actions, BorderLayout.SOUTH);
 
-        setPreferredSize(new Dimension(610, 390));
-        pack();
-        setResizable(false);
+        DialogSizing.packAndFit(this, 560, 340);
+        setResizable(true);
         setLocationRelativeTo(getOwner());
         refreshStep();
     }

@@ -33,7 +33,6 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
-import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
@@ -56,12 +55,16 @@ public class StrategyDialog extends JDialog {
     private static final int FIELD_GAP = 10;
     private static final int SECTION_INNER_PADDING = 10;
     private static final int FORM_LABEL_COLUMN_WIDTH = 220;
+    private static final int RECOMMENDATION_LABEL_COLUMN_WIDTH = 210;
+    private static final int RECOMMENDATION_TEXT_WRAP_WIDTH = 260;
     private static final int RISK_CONTROLS_HORIZONTAL_PADDING = 12;
     private static final int MAX_MONTHS_BACK = 12;
-    private static final int DIALOG_TARGET_WIDTH = 860;
+    private static final int DIALOG_TARGET_WIDTH = 1120;
     private static final int DIALOG_TARGET_HEIGHT = 720;
     private static final double DIALOG_MAX_SCREEN_HEIGHT_RATIO = 0.88d;
     private static final int DIALOG_SCREEN_MARGIN = 48;
+    private static final int DIALOG_MIN_WIDTH = 760;
+    private static final int DIALOG_MIN_HEIGHT = 620;
     private static final DateTimeFormatter DISPLAY_FMT =
             DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm").withZone(ZoneId.systemDefault());
 
@@ -157,10 +160,12 @@ public class StrategyDialog extends JDialog {
     private final JLabel aaResultsLoadingLabel = new JLabel("Loading analysis data...");
     private final JProgressBar aaResultsProgressBar = new JProgressBar();
     private final RecommendationView shortTermRecommendationView = new RecommendationView("Short-Term Recommendation");
+    private final RecommendationView highRiskShortTermRecommendationView = new RecommendationView("High Risk Short-Term Recommendation");
     private final RecommendationView longTermRecommendationView = new RecommendationView("Long-Term Recommendation");
 
     private AutoAnalyzeResult lastAutoAnalyzeResult;
     private StrategyRecommendation lastShortTermRecommendation;
+    private StrategyRecommendation lastHighRiskShortTermRecommendation;
     private StrategyRecommendation lastLongTermRecommendation;
     private final AlpacaMarketDataApi marketDataApi;
     private final AutoAnalyzeResultStore resultStore;
@@ -371,7 +376,7 @@ public class StrategyDialog extends JDialog {
 
         // -- Analysis Parameters: fields + Run button docked to the right at the bottom --
         JPanel inputPanel = new JPanel(new BorderLayout(0, FIELD_GAP));
-        inputPanel.setBorder(createSectionBorder("Analysis Parameters"));
+        inputPanel.setBorder(createSubSectionBorder("Analysis Parameters"));
         inputPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         inputPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
 
@@ -419,6 +424,8 @@ public class StrategyDialog extends JDialog {
         resultsLoadingPanel.add(aaResultsLoadingLabel, BorderLayout.WEST);
         resultsLoadingPanel.add(aaResultsProgressBar, BorderLayout.CENTER);
 
+        resultsPanel.add(inputPanel);
+        resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
         resultsPanel.add(resultsLoadingPanel);
         resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
 
@@ -515,9 +522,7 @@ public class StrategyDialog extends JDialog {
 
         resultsPanel.add(todaySubPanel);
         resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
-        resultsPanel.add(buildRecommendationSection(shortTermRecommendationView, RecommendationTypeLabel.SHORT_TERM));
-        resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
-        resultsPanel.add(buildRecommendationSection(longTermRecommendationView, RecommendationTypeLabel.LONG_TERM));
+        resultsPanel.add(buildRecommendationTabs());
         resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
         resultsPanel.add(detailsSubPanel);
 
@@ -533,8 +538,6 @@ public class StrategyDialog extends JDialog {
         aaStatusLabel.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
         aaStatusLabel.setForeground(TEXT_MUTED);
 
-        content.add(inputPanel);
-        content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(resultsPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(disclaimerPanel);
@@ -559,25 +562,24 @@ public class StrategyDialog extends JDialog {
         scrollPane.setBorder(null);
         scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        scrollPane.setPreferredSize(new Dimension(DIALOG_TARGET_WIDTH - (OUTER_PADDING * 2), DIALOG_TARGET_HEIGHT - 180));
+        scrollPane.setPreferredSize(DialogSizing.preferredViewportSize(
+                content,
+                DIALOG_MIN_WIDTH - (OUTER_PADDING * 2),
+                360,
+                DIALOG_TARGET_WIDTH - (OUTER_PADDING * 2),
+                DIALOG_TARGET_HEIGHT - 180
+        ));
         return scrollPane;
     }
 
     private void fitDialogToScreen(JFrame owner) {
-        Rectangle screenBounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-        int maxWidth = Math.max(720, screenBounds.width - DIALOG_SCREEN_MARGIN);
-        int maxHeight = Math.max(560, Math.min(
-                screenBounds.height - DIALOG_SCREEN_MARGIN,
-                (int) Math.round(screenBounds.height * DIALOG_MAX_SCREEN_HEIGHT_RATIO)
-        ));
-
-        Dimension preferred = getPreferredSize();
-        int width = Math.min(Math.max(preferred.width, DIALOG_TARGET_WIDTH), maxWidth);
-        int height = Math.min(Math.max(preferred.height, DIALOG_TARGET_HEIGHT), maxHeight);
-
-        setPreferredSize(new Dimension(width, height));
-        setSize(width, height);
-        setMinimumSize(new Dimension(Math.min(width, 760), Math.min(height, 620)));
+        DialogSizing.packAndFit(
+                this,
+                DIALOG_MIN_WIDTH,
+                DIALOG_MIN_HEIGHT,
+                DIALOG_SCREEN_MARGIN,
+                DIALOG_MAX_SCREEN_HEIGHT_RATIO
+        );
         setResizable(true);
         setLocationRelativeTo(owner);
     }
@@ -1223,6 +1225,7 @@ public class StrategyDialog extends JDialog {
 
         aaRunButton.setEnabled(false);
         setRecommendationState(shortTermRecommendationView, null);
+        setRecommendationState(highRiskShortTermRecommendationView, null);
         setRecommendationState(longTermRecommendationView, null);
         updateResultsLoadingState(true, "Loading historical bars and computing metrics...");
         aaStatusLabel.setForeground(TEXT_MUTED);
@@ -1242,6 +1245,7 @@ public class StrategyDialog extends JDialog {
                     AutoAnalyzeResult r = bundle.result();
                     displayAutoAnalyzeResult(r);
                     setRecommendationState(shortTermRecommendationView, bundle.shortTermRecommendation());
+                    setRecommendationState(highRiskShortTermRecommendationView, bundle.highRiskShortTermRecommendation());
                     setRecommendationState(longTermRecommendationView, bundle.longTermRecommendation());
                     if (resultStore != null) {
                         resultStore.save(r);
@@ -1314,6 +1318,23 @@ public class StrategyDialog extends JDialog {
         return BigDecimal.ZERO;
     }
 
+    private JComponent buildRecommendationTabs() {
+        JTabbedPane recommendationTabs = new JTabbedPane(JTabbedPane.TOP);
+        recommendationTabs.setOpaque(false);
+        recommendationTabs.setAlignmentX(Component.CENTER_ALIGNMENT);
+        recommendationTabs.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        recommendationTabs.addTab("Short Term", buildRecommendationSection(shortTermRecommendationView, RecommendationTypeLabel.SHORT_TERM));
+        recommendationTabs.addTab("High Risk Short Term", buildRecommendationSection(highRiskShortTermRecommendationView, RecommendationTypeLabel.HIGH_RISK_SHORT_TERM));
+        recommendationTabs.addTab("Long Term", buildRecommendationSection(longTermRecommendationView, RecommendationTypeLabel.LONG_TERM));
+        for (int i = 0; i < recommendationTabs.getTabCount(); i++) {
+            JLabel tabLabel = new JLabel(recommendationTabs.getTitleAt(i), SwingConstants.CENTER);
+            tabLabel.setBorder(new EmptyBorder(4, 12, 4, 12));
+            tabLabel.setFont(FontLoader.ui(Font.BOLD, 11f));
+            recommendationTabs.setTabComponentAt(i, tabLabel);
+        }
+        return recommendationTabs;
+    }
+
     private JPanel buildRecommendationSection(RecommendationView view, RecommendationTypeLabel typeLabel) {
         JPanel panel = new JPanel(new BorderLayout(0, 10));
         panel.setOpaque(false);
@@ -1343,7 +1364,7 @@ public class StrategyDialog extends JDialog {
         view.applyButton.addActionListener(e -> applyRecommendationToCurrentStrategy(typeLabel));
         topRow.add(view.applyButton, BorderLayout.EAST);
 
-        JPanel grid = new JPanel(new GridLayout(0, 2, FIELD_GAP, FIELD_GAP));
+        JPanel grid = new JPanel(new GridBagLayout());
         grid.setOpaque(false);
         addRecommendationRow(grid, "Base Buy Price:", view.baseBuyValue);
         addRecommendationRow(grid, "Buy Level 1:", view.buy1Value);
@@ -1355,7 +1376,7 @@ public class StrategyDialog extends JDialog {
         addRecommendationRow(grid, "Trend Status:", view.trendStatusValue);
         addRecommendationRow(grid, "Volume Status:", view.volumeStatusValue);
         addRecommendationRow(grid, "Risk/Reward Ratio:", view.riskRewardValue);
-        if (typeLabel == RecommendationTypeLabel.SHORT_TERM) {
+        if (typeLabel == RecommendationTypeLabel.SHORT_TERM || typeLabel == RecommendationTypeLabel.HIGH_RISK_SHORT_TERM) {
             addRecommendationRow(grid, "Effective Market Price:", view.effectiveMarketPriceValue);
             addRecommendationRow(grid, "Last Close Price:", view.lastClosePriceValue);
             addRecommendationRow(grid, "Current Price:", view.currentPriceValue);
@@ -1364,7 +1385,9 @@ public class StrategyDialog extends JDialog {
             addRecommendationRow(grid, "Expected Dip %:", view.expectedDipPctValue);
             addRecommendationRow(grid, "Behavior Adjusted Base Price:", view.behaviorAdjustedBaseValue);
             addRecommendationRow(grid, "Final Base Buy Price:", view.adjustedBaseValue);
-            addRecommendationRow(grid, "Short-Term Market Mode:", view.marketModeValue);
+            addRecommendationRow(grid, typeLabel == RecommendationTypeLabel.HIGH_RISK_SHORT_TERM
+                    ? "High-Risk Market Mode:"
+                    : "Short-Term Market Mode:", view.marketModeValue);
             addRecommendationRow(grid, "Base Adjustment Reason:", view.baseAdjustmentReasonValue);
         }
         if (typeLabel == RecommendationTypeLabel.LONG_TERM) {
@@ -1381,6 +1404,7 @@ public class StrategyDialog extends JDialog {
 
         view.infoLabel.setFont(FontLoader.ui(Font.PLAIN, 10f));
         view.infoLabel.setForeground(INFO_TEXT);
+        view.infoLabel.setVerticalAlignment(SwingConstants.TOP);
         view.warningLabel.setFont(FontLoader.ui(Font.PLAIN, 10f));
         view.warningLabel.setForeground(WARNING_TEXT);
         view.warningLabel.setVerticalAlignment(SwingConstants.TOP);
@@ -1402,14 +1426,34 @@ public class StrategyDialog extends JDialog {
     private void addRecommendationRow(JPanel panel, String label, JLabel valueLabel) {
         JLabel rowLabel = new JLabel(label);
         rowLabel.setFont(FontLoader.ui(Font.PLAIN, 11f));
+        rowLabel.setPreferredSize(new Dimension(RECOMMENDATION_LABEL_COLUMN_WIDTH, rowLabel.getPreferredSize().height));
+        rowLabel.setMinimumSize(new Dimension(RECOMMENDATION_LABEL_COLUMN_WIDTH, rowLabel.getMinimumSize().height));
         valueLabel.setFont(FontLoader.ui(Font.BOLD, 11f));
-        panel.add(rowLabel);
-        panel.add(valueLabel);
+        valueLabel.setVerticalAlignment(SwingConstants.TOP);
+
+        int row = panel.getComponentCount() / 2;
+        GridBagConstraints labelGbc = new GridBagConstraints();
+        labelGbc.gridx = 0;
+        labelGbc.gridy = row;
+        labelGbc.anchor = GridBagConstraints.NORTHWEST;
+        labelGbc.insets = new Insets(0, 0, FIELD_GAP, FIELD_GAP);
+        panel.add(rowLabel, labelGbc);
+
+        GridBagConstraints valueGbc = new GridBagConstraints();
+        valueGbc.gridx = 1;
+        valueGbc.gridy = row;
+        valueGbc.weightx = 1.0;
+        valueGbc.fill = GridBagConstraints.HORIZONTAL;
+        valueGbc.anchor = GridBagConstraints.NORTHWEST;
+        valueGbc.insets = new Insets(0, 0, FIELD_GAP, 0);
+        panel.add(valueLabel, valueGbc);
     }
 
     private void setRecommendationState(RecommendationView view, StrategyRecommendation recommendation) {
         if (view == shortTermRecommendationView) {
             lastShortTermRecommendation = recommendation;
+        } else if (view == highRiskShortTermRecommendationView) {
+            lastHighRiskShortTermRecommendation = recommendation;
         } else if (view == longTermRecommendationView) {
             lastLongTermRecommendation = recommendation;
         }
@@ -1467,32 +1511,54 @@ public class StrategyDialog extends JDialog {
         view.twoWeekLowValue.setText(formatPriceOrDash(recommendation.twoWeekLow()));
         view.twoWeekHighValue.setText(formatPriceOrDash(recommendation.twoWeekHigh()));
         view.marketModeValue.setText(recommendation.recommendationType() == RecommendationType.SHORT_TERM
+                || recommendation.recommendationType() == RecommendationType.HIGH_RISK_SHORT_TERM
                 ? recommendation.shortTermMarketMode().name()
                 : recommendation.marketMode().name());
-        view.baseAdjustmentReasonValue.setText(formatWrappedTextOrDash(recommendation.baseAdjustmentReason(), 360));
+        view.baseAdjustmentReasonValue.setText(formatWrappedTextOrDash(
+                recommendation.baseAdjustmentReason(),
+                RECOMMENDATION_TEXT_WRAP_WIDTH
+        ));
         view.confidenceValue.setText(recommendation.confidenceScore() + "/100");
         if (recommendation.recommendationType() == RecommendationType.SHORT_TERM
                 && recommendation.baseBuyPrice().compareTo(recommendation.effectiveMarketPrice()) < 0) {
             view.infoLabel.setForeground(INFO_TEXT);
-            view.infoLabel.setText("Short-term base buy price reduced using two-week close-to-open and intraday dip behavior.");
+            view.infoLabel.setText(formatWrappedText(
+                    "Short-term base buy price reduced using two-week close-to-open and intraday dip behavior.",
+                    RECOMMENDATION_TEXT_WRAP_WIDTH * 2
+            ));
         } else if (recommendation.recommendationType() == RecommendationType.SHORT_TERM
                 && recommendation.shortTermMarketMode() == ShortTermMarketMode.SHORT_TERM_BREAKOUT) {
             view.infoLabel.setForeground(BREAKOUT_INFO_TEXT);
-            view.infoLabel.setText("Short-term breakout detected. Entry uses current market price because the stock broke above two-week resistance with volume confirmation.");
+            view.infoLabel.setText(formatWrappedText(
+                    "Short-term breakout detected. Entry uses current market price because the stock broke above two-week resistance with volume confirmation.",
+                    RECOMMENDATION_TEXT_WRAP_WIDTH * 2
+            ));
+        } else if (recommendation.recommendationType() == RecommendationType.HIGH_RISK_SHORT_TERM) {
+            view.infoLabel.setForeground(WARNING_TEXT);
+            view.infoLabel.setText(formatWrappedText(
+                    "High-risk short-term model uses only the latest two weeks for buy and sell levels.",
+                    RECOMMENDATION_TEXT_WRAP_WIDTH * 2
+            ));
         } else if (recommendation.recommendationType() == RecommendationType.LONG_TERM
                 && recommendation.adjustedBaseBuyPrice().compareTo(recommendation.effectiveMarketPrice()) < 0) {
             view.infoLabel.setForeground(INFO_TEXT);
-            view.infoLabel.setText("Base buy price reduced using two-week close-to-open and intraday dip behavior.");
+            view.infoLabel.setText(formatWrappedText(
+                    "Base buy price reduced using two-week close-to-open and intraday dip behavior.",
+                    RECOMMENDATION_TEXT_WRAP_WIDTH * 2
+            ));
         } else if (recommendation.recommendationType() == RecommendationType.LONG_TERM
                 && recommendation.marketMode() == MarketMode.BREAKOUT) {
             view.infoLabel.setForeground(BREAKOUT_INFO_TEXT);
-            view.infoLabel.setText("Breakout mode detected. Entry uses latest market price because the stock is trading above six-month resistance with trend and volume confirmation.");
+            view.infoLabel.setText(formatWrappedText(
+                    "Breakout mode detected. Entry uses latest market price because the stock is trading above six-month resistance with trend and volume confirmation.",
+                    RECOMMENDATION_TEXT_WRAP_WIDTH * 2
+            ));
         } else {
             view.infoLabel.setText(" ");
         }
         view.warningLabel.setText(recommendation.warningMessage().isBlank()
                 ? "Recommendation ready. Review values before applying."
-                : "<html>" + escapeHtml(recommendation.warningMessage()) + "</html>");
+                : formatWrappedText(recommendation.warningMessage(), RECOMMENDATION_TEXT_WRAP_WIDTH * 2));
         styleBadge(view.badge, recommendation.recommendationAction());
         view.badge.setText(recommendation.recommendationAction().name());
         view.applyButton.setEnabled(recommendation.isApplicable());
@@ -1521,9 +1587,11 @@ public class StrategyDialog extends JDialog {
     }
 
     private void applyRecommendationToCurrentStrategy(RecommendationTypeLabel typeLabel) {
-        StrategyRecommendation recommendation = typeLabel == RecommendationTypeLabel.SHORT_TERM
-                ? lastShortTermRecommendation
-                : lastLongTermRecommendation;
+        StrategyRecommendation recommendation = switch (typeLabel) {
+            case SHORT_TERM -> lastShortTermRecommendation;
+            case HIGH_RISK_SHORT_TERM -> lastHighRiskShortTermRecommendation;
+            case LONG_TERM -> lastLongTermRecommendation;
+        };
         if (recommendation == null || !recommendation.isApplicable()) {
             JOptionPane.showMessageDialog(this,
                     "This recommendation cannot be applied yet. Run Auto Analyze and make sure enough historical data is available.",
@@ -1585,7 +1653,11 @@ public class StrategyDialog extends JDialog {
         if (value == null || value.isBlank()) {
             return "—";
         }
-        return "<html><div style='width:" + widthPx + "px;'>" + escapeHtml(value) + "</div></html>";
+        return formatWrappedText(value, widthPx);
+    }
+
+    private String formatWrappedText(String value, int widthPx) {
+        return "<html><div style='width:" + widthPx + "px;'>" + escapeHtml(value == null ? "" : value) + "</div></html>";
     }
 
     private void updateResultsLoadingState(boolean loading, String message) {
@@ -1632,6 +1704,7 @@ public class StrategyDialog extends JDialog {
 
     private enum RecommendationTypeLabel {
         SHORT_TERM,
+        HIGH_RISK_SHORT_TERM,
         LONG_TERM
     }
 

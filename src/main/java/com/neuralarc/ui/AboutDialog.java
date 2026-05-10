@@ -5,7 +5,6 @@ import com.neuralarc.util.FontLoader;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
-import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Image;
 import java.net.URL;
@@ -101,8 +100,7 @@ public class AboutDialog extends JDialog {
     footer.add(actions, BorderLayout.EAST);
     add(footer, BorderLayout.SOUTH);
 
-    setPreferredSize(new Dimension(560, 400));
-    pack();
+    DialogSizing.packAndFit(this, 520, 360);
     setLocationRelativeTo(owner);
   }
 

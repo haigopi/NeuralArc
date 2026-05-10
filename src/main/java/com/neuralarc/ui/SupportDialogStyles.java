@@ -11,11 +11,8 @@ import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FlowLayout;
-import java.awt.GraphicsConfiguration;
 import java.awt.GridBagConstraints;
 import java.awt.Insets;
-import java.awt.Rectangle;
-import java.awt.Toolkit;
 
 final class SupportDialogStyles {
     static final Color DIALOG_BG = new Color(246, 248, 252);
@@ -170,14 +167,7 @@ final class SupportDialogStyles {
     }
 
     static void packAndFit(JDialog dialog, int minWidth, int minHeight) {
-        dialog.pack();
-        Dimension preferred = dialog.getPreferredSize();
-        Rectangle usableBounds = usableScreenBounds(dialog);
-        int width = Math.max(minWidth, preferred.width);
-        int height = Math.max(minHeight, preferred.height);
-        width = Math.min(width, usableBounds.width);
-        height = Math.min(height, usableBounds.height);
-        dialog.setSize(width, height);
+        DialogSizing.packAndFit(dialog, minWidth, minHeight);
     }
 
     static void applyDialogTheme(Container container) {
@@ -230,22 +220,5 @@ final class SupportDialogStyles {
                 BorderFactory.createLineBorder(INPUT_BORDER, 1, true),
                 new EmptyBorder(8, 10, 8, 10)
         ));
-    }
-
-    private static Rectangle usableScreenBounds(JDialog dialog) {
-        GraphicsConfiguration configuration = dialog.getGraphicsConfiguration();
-        if (configuration == null) {
-            configuration = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
-                    .getDefaultScreenDevice()
-                    .getDefaultConfiguration();
-        }
-        Rectangle bounds = configuration.getBounds();
-        Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(configuration);
-        return new Rectangle(
-                bounds.x + insets.left,
-                bounds.y + insets.top,
-                Math.max(320, bounds.width - insets.left - insets.right),
-                Math.max(320, bounds.height - insets.top - insets.bottom)
-        );
     }
 }

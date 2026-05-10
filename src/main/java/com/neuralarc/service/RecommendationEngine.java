@@ -225,6 +225,130 @@ public class RecommendationEngine {
         return generateShortTermRecommendation(symbol, prices, currentPrice, null);
     }
 
+    public StrategyRecommendation generateHighRiskShortTermRecommendation(
+            String symbol,
+            List<MarketBar> prices,
+            BigDecimal currentPrice,
+            BigDecimal lastClosePrice
+    ) {
+        if (currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return StrategyRecommendation.unavailable(symbol, RecommendationType.HIGH_RISK_SHORT_TERM, "Current price is missing.");
+        }
+        if (prices == null || prices.size() < 10) {
+            return StrategyRecommendation.unavailable(symbol, RecommendationType.HIGH_RISK_SHORT_TERM,
+                    "At least 10 daily bars are required for the high-risk short-term recommendation.");
+        }
+
+        List<MarketBar> twoWeekBars = tail(prices, Math.min(prices.size(), 14));
+        Optional<BigDecimal> twoWeekLow = indicators.calculateLow(twoWeekBars);
+        Optional<BigDecimal> twoWeekHigh = indicators.calculateHigh(twoWeekBars);
+        Optional<BigDecimal> avgVolume = indicators.calculateAverageVolume(twoWeekBars, Math.min(10, twoWeekBars.size()));
+        Optional<BigDecimal> sma = indicators.calculateSMA(twoWeekBars, Math.min(10, twoWeekBars.size()));
+        Optional<BigDecimal> atr = indicators.calculateATR(twoWeekBars, Math.min(10, Math.max(1, twoWeekBars.size() - 1)));
+        if (twoWeekLow.isEmpty() || twoWeekHigh.isEmpty() || avgVolume.isEmpty() || sma.isEmpty() || atr.isEmpty()) {
+            return StrategyRecommendation.unavailable(symbol, RecommendationType.HIGH_RISK_SHORT_TERM,
+                    "High-risk short-term recommendation needs enough recent two-week bars for range, ATR, SMA, and volume.");
+        }
+
+        BigDecimal effectiveMarketPrice = validPrice(lastClosePrice) ? lastClosePrice : currentPrice;
+        List<BigDecimal> gapPercentages = indicators.calculateGapPercentages(twoWeekBars);
+        BigDecimal avgGapPct = average(gapPercentages);
+        BigDecimal negativeGapPctAverage = indicators.calculateAverageNegativeGapPct(gapPercentages);
+        BigDecimal gapVolatility = indicators.calculateGapVolatility(gapPercentages);
+        BigDecimal averageIntradayDipPct = indicators.calculateAverageIntradayDipPct(twoWeekBars);
+        BigDecimal expectedDipPct = negativeGapPctAverage.abs()
+                .add(gapVolatility.multiply(new BigDecimal("0.35")))
+                .add(averageIntradayDipPct.abs().multiply(new BigDecimal("0.35")));
+        expectedDipPct = indicators.clamp(expectedDipPct, new BigDecimal("0.0010"), new BigDecimal("0.0150"));
+
+        BigDecimal behaviorAdjustedBasePrice = floorPrice(
+                Monetary.round(effectiveMarketPrice.multiply(BigDecimal.ONE.subtract(expectedDipPct))));
+        BigDecimal baseBuyPrice = behaviorAdjustedBasePrice.max(twoWeekLow.get());
+        boolean strongVolume = twoWeekBars.getLast().volume().compareTo(avgVolume.get().multiply(new BigDecimal("1.25"))) >= 0;
+        boolean aboveSma = currentPrice.compareTo(sma.get()) >= 0;
+        boolean breakout = currentPrice.compareTo(twoWeekHigh.get()) >= 0 && strongVolume && aboveSma;
+        ShortTermMarketMode mode = breakout ? ShortTermMarketMode.SHORT_TERM_BREAKOUT : ShortTermMarketMode.RANGE_ENTRY;
+        String warning = "High-risk model uses only the latest two weeks. Review sizing and risk before applying.";
+        String baseAdjustmentReason = "Aggressive two-week setup: buy and sell levels are calculated only from the latest 14 daily bars.";
+
+        if (breakout) {
+            baseBuyPrice = floorPrice(currentPrice);
+            baseAdjustmentReason = "High-risk breakout: using current price because price is at or above two-week resistance with volume confirmation.";
+        } else if (!aboveSma && currentPrice.compareTo(twoWeekLow.get()) < 0) {
+            mode = ShortTermMarketMode.BREAKDOWN;
+            baseBuyPrice = floorPrice(behaviorAdjustedBasePrice);
+            warning = "High-risk setup is in breakdown mode. Use caution before applying.";
+        } else if (currentPrice.compareTo(twoWeekHigh.get()) > 0 && !strongVolume) {
+            mode = ShortTermMarketMode.OVEREXTENDED;
+            baseBuyPrice = floorPrice(behaviorAdjustedBasePrice);
+            warning = "Price is above two-week resistance without volume confirmation. This remains high risk.";
+        }
+
+        BigDecimal buy1 = floorPrice(baseBuyPrice.subtract(atr.get().multiply(HALF)));
+        BigDecimal buy2 = floorPrice(baseBuyPrice.subtract(atr.get()));
+        BigDecimal stopLoss = floorPrice(buy2.subtract(atr.get().multiply(HALF)));
+        BigDecimal target1 = Monetary.round(baseBuyPrice.add(atr.get()));
+        BigDecimal target2 = Monetary.round(baseBuyPrice.add(atr.get().multiply(TWO)));
+        BigDecimal sellPrice = twoWeekHigh.get().max(target1);
+        if (sellPrice.compareTo(baseBuyPrice) <= 0) {
+            sellPrice = target2;
+        }
+
+        BigDecimal riskRewardRatio = riskRewardRatio(baseBuyPrice, stopLoss, sellPrice);
+        int confidence = 35;
+        if (aboveSma) confidence += 20;
+        if (strongVolume) confidence += 15;
+        if (breakout) confidence += 15;
+        if (riskRewardRatio.compareTo(new BigDecimal("1.25")) >= 0) confidence += 10;
+        if (mode == ShortTermMarketMode.BREAKDOWN) confidence -= 30;
+        if (mode == ShortTermMarketMode.OVEREXTENDED) confidence -= 15;
+        confidence = Math.max(0, Math.min(100, confidence));
+
+        RecommendationAction action = actionForShortTerm(confidence);
+        if (mode == ShortTermMarketMode.BREAKDOWN) {
+            action = RecommendationAction.AVOID;
+        }
+
+        return new StrategyRecommendation(
+                symbol,
+                RecommendationType.HIGH_RISK_SHORT_TERM,
+                baseBuyPrice,
+                BigDecimal.ZERO,
+                effectiveMarketPrice,
+                lastClosePrice == null ? BigDecimal.ZERO : lastClosePrice,
+                currentPrice,
+                twoWeekLow.get(),
+                twoWeekHigh.get(),
+                expectedDipPct,
+                behaviorAdjustedBasePrice,
+                baseBuyPrice,
+                MarketMode.BREAKOUT,
+                mode,
+                baseAdjustmentReason,
+                avgGapPct,
+                negativeGapPctAverage,
+                gapVolatility,
+                averageIntradayDipPct,
+                buy1,
+                buy2,
+                stopLoss,
+                sellPrice,
+                target1,
+                target2,
+                aboveSma ? "Aggressive Bullish" : "High Risk / Weak",
+                strongVolume ? "Strong" : "Normal / Weak",
+                riskRewardRatio,
+                confidence,
+                action,
+                warning,
+                mode == ShortTermMarketMode.BREAKDOWN
+        );
+    }
+
+    public StrategyRecommendation generateHighRiskShortTermRecommendation(String symbol, List<MarketBar> prices, BigDecimal currentPrice) {
+        return generateHighRiskShortTermRecommendation(symbol, prices, currentPrice, null);
+    }
+
     public StrategyRecommendation generateLongTermRecommendation(
             String symbol,
             List<MarketBar> prices,

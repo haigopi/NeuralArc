@@ -231,9 +231,11 @@ public class AutoAnalyzeService {
                 : currentPrice;
         StrategyRecommendation shortTerm = recommendationEngine.generateShortTermRecommendation(
                 result.symbol(), history, currentPrice, lastClosePrice);
+        StrategyRecommendation highRiskShortTerm = recommendationEngine.generateHighRiskShortTermRecommendation(
+                result.symbol(), history, currentPrice, lastClosePrice);
         StrategyRecommendation longTerm = recommendationEngine.generateLongTermRecommendation(
                 result.symbol(), history, currentPrice, lastClosePrice);
-        return new AutoAnalyzeBundle(result, shortTerm, longTerm);
+        return new AutoAnalyzeBundle(result, shortTerm, highRiskShortTerm, longTerm);
     }
 
     // -------------------------------------------------------------------------
