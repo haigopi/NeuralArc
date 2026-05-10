@@ -55,6 +55,7 @@ import java.awt.Component;
 import java.awt.Container;
 import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -64,6 +65,8 @@ import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
@@ -751,40 +754,20 @@ public class TradingFrame extends JFrame {
         headerTotalsSeparator.setBorder(new EmptyBorder(0, 2, 0, 2));
         liveUnrealizedSummary.setBorder(new EmptyBorder(0, 8, 0, 8));
 
-        JPanel headerInfoPanel = new JPanel(new GridBagLayout());
+        JPanel headerInfoPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         headerInfoPanel.setOpaque(false);
-        GridBagConstraints headerInfoGbc = new GridBagConstraints();
-        headerInfoGbc.gridy = 0;
-        headerInfoGbc.anchor = GridBagConstraints.CENTER;
-        headerInfoGbc.gridx = 0;
-        headerInfoPanel.add(headerStatus, headerInfoGbc);
-        headerInfoGbc.gridx = 1;
-        headerInfoPanel.add(paperUnrealizedSummary, headerInfoGbc);
-        headerInfoGbc.gridx = 2;
-        headerInfoPanel.add(headerTotalsSeparator, headerInfoGbc);
-        headerInfoGbc.gridx = 3;
-        headerInfoPanel.add(liveUnrealizedSummary, headerInfoGbc);
-        headerInfoGbc.gridx = 4;
-        headerInfoGbc.weightx = 1.0;
-        headerInfoGbc.fill = GridBagConstraints.HORIZONTAL;
-        headerInfoPanel.add(Box.createHorizontalGlue(), headerInfoGbc);
+        headerInfoPanel.add(headerStatus);
+        headerInfoPanel.add(paperUnrealizedSummary);
+        headerInfoPanel.add(headerTotalsSeparator);
+        headerInfoPanel.add(liveUnrealizedSummary);
 
-        JPanel rightControls = new JPanel(new GridBagLayout());
-        rightControls.setOpaque(false);
-        GridBagConstraints rightControlsGbc = new GridBagConstraints();
-        rightControlsGbc.gridy = 0;
-        rightControlsGbc.anchor = GridBagConstraints.CENTER;
-        rightControlsGbc.insets = new java.awt.Insets(0, 0, 0, 8);
-        rightControlsGbc.gridx = 0;
-        rightControls.add(addStrategyButton, rightControlsGbc);
-        rightControlsGbc.gridx = 1;
-        rightControls.add(luckyButton, rightControlsGbc);
-        rightControlsGbc.gridx = 2;
-        rightControls.add(refreshPortfolioButton, rightControlsGbc);
-        rightControlsGbc.gridx = 3;
-        rightControls.add(portfolioActionsButton, rightControlsGbc);
-        rightControlsGbc.gridx = 4;
-        rightControls.add(settingsButton, rightControlsGbc);
+        JPanel headerControlsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        headerControlsPanel.setOpaque(false);
+        headerControlsPanel.add(addStrategyButton);
+        headerControlsPanel.add(luckyButton);
+        headerControlsPanel.add(refreshPortfolioButton);
+        headerControlsPanel.add(portfolioActionsButton);
+        headerControlsPanel.add(settingsButton);
 
         JButton killSwitchButton = new JButton("KILL SWITCH");
         applyButtonIcon(killSwitchButton, "icons/kill-switch.svg", 15);
@@ -849,18 +832,27 @@ public class TradingFrame extends JFrame {
             }
         });
         killSwitchButton.addActionListener(e -> killAllStrategies());
-        rightControlsGbc.gridx = 5;
-        rightControlsGbc.insets = new java.awt.Insets(0, 0, 0, 0);
-        rightControls.add(killSwitchButton, rightControlsGbc);
-        JScrollPane rightControlsScroll = new JScrollPane(rightControls);
-        rightControlsScroll.setBorder(null);
-        rightControlsScroll.setOpaque(false);
-        rightControlsScroll.getViewport().setOpaque(false);
-        rightControlsScroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
-        rightControlsScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
-        rightControlsScroll.setPreferredSize(new Dimension(760, rightControls.getPreferredSize().height + 4));
-        headerPanel.add(headerInfoPanel, BorderLayout.CENTER);
-        headerPanel.add(rightControlsScroll, BorderLayout.EAST);
+        configureButtonShortcut(killSwitchButton, KeyEvent.VK_K,
+                KeyStroke.getKeyStroke(KeyEvent.VK_K, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                "killSwitch");
+        headerControlsPanel.add(killSwitchButton);
+
+        JPanel headerInfoWrapper = new JPanel(new GridBagLayout());
+        headerInfoWrapper.setOpaque(false);
+        GridBagConstraints infoWrapperGbc = new GridBagConstraints();
+        infoWrapperGbc.gridx = 0;
+        infoWrapperGbc.gridy = 0;
+        infoWrapperGbc.weightx = 1.0;
+        infoWrapperGbc.anchor = GridBagConstraints.WEST;
+        infoWrapperGbc.fill = GridBagConstraints.HORIZONTAL;
+        headerInfoWrapper.add(headerInfoPanel, infoWrapperGbc);
+
+        JPanel headerControlsWrapper = new JPanel(new GridBagLayout());
+        headerControlsWrapper.setOpaque(false);
+        headerControlsWrapper.add(headerControlsPanel);
+
+        headerPanel.add(headerInfoWrapper, BorderLayout.CENTER);
+        headerPanel.add(headerControlsWrapper, BorderLayout.EAST);
 
         strategyTable.setRowHeight(34);
         strategyTable.setFillsViewportHeight(true);
@@ -1062,6 +1054,9 @@ public class TradingFrame extends JFrame {
         applyButtonIcon(faqsButton, "icons/faqs.svg", 15);
         styleStatusActionButton(faqsButton);
         faqsButton.addActionListener(e -> runLoggedAction("Help & FAQ", () -> new HelpDialog(this).setVisible(true)));
+        configureButtonShortcut(faqsButton, KeyEvent.VK_F,
+                KeyStroke.getKeyStroke(KeyEvent.VK_F, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                "footerFaqs");
         JButton updatesButton = new JButton("Check Updates");
         applyButtonIcon(updatesButton, "icons/check-for-updates.svg", 15);
         styleStatusActionButton(updatesButton);
@@ -1109,6 +1104,9 @@ public class TradingFrame extends JFrame {
             moreMenu.show(moreButton, 0, moreButton.getHeight());
             userActionLog.completed("Actions Menu", "Menu opened.");
         });
+        configureButtonShortcut(moreButton, KeyEvent.VK_A,
+                KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                "footerActions");
 
         JLabel appLabel = new JLabel(AppMetadata.name() + "  " + AppMetadata.displayVersion() + " | Patent Pending™");
         appLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
@@ -1558,6 +1556,55 @@ public class TradingFrame extends JFrame {
         refreshPortfolioButton.addActionListener(e -> portfolioRefreshController.refresh(true));
         portfolioActionsButton.addActionListener(e -> portfolioActionsController.showMenu(portfolioActionsButton));
         settingsButton.addActionListener(e -> openSettingsDialog());
+        configureButtonShortcut(addStrategyButton, KeyEvent.VK_S,
+                KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                "addStockStrategy");
+        configureButtonShortcut(luckyButton, KeyEvent.VK_L,
+                KeyStroke.getKeyStroke(KeyEvent.VK_L, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                "feelingLucky");
+        configureButtonShortcut(refreshPortfolioButton, KeyEvent.VK_R,
+                KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                "refreshPortfolio");
+        configureButtonShortcut(portfolioActionsButton, KeyEvent.VK_P,
+                KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                "portfolioActions");
+        configureButtonShortcut(settingsButton, KeyEvent.VK_T,
+                KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                "settings");
+    }
+
+    private void configureButtonShortcut(JButton button, int mnemonic, KeyStroke accelerator, String actionKey) {
+        button.setMnemonic(mnemonic);
+        int mnemonicIndex = mnemonicIndex(button.getText(), mnemonic);
+        if (mnemonicIndex >= 0) {
+            button.setDisplayedMnemonicIndex(mnemonicIndex);
+        }
+        if (accelerator == null) {
+            return;
+        }
+        String key = "buttonShortcut." + actionKey;
+        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(accelerator, key);
+        getRootPane().getActionMap().put(key, new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                if (button.isEnabled()) {
+                    button.doClick();
+                }
+            }
+        });
+    }
+
+    private int mnemonicIndex(String text, int mnemonic) {
+        if (text == null || text.isBlank()) {
+            return -1;
+        }
+        char target = Character.toUpperCase((char) mnemonic);
+        for (int i = 0; i < text.length(); i++) {
+            if (Character.toUpperCase(text.charAt(i)) == target) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private void togglePauseResume(int viewRow) {
