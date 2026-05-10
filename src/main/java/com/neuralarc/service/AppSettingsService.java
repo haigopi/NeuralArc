@@ -1,6 +1,8 @@
 package com.neuralarc.service;
 
 import com.neuralarc.db.AppDatabase;
+import com.neuralarc.model.AiProviderType;
+import com.neuralarc.model.AiRecommendationSettings;
 import com.neuralarc.model.ApplicationMode;
 import com.neuralarc.model.BrokerType;
 import com.neuralarc.security.CredentialManager;
@@ -13,6 +15,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.Properties;
 
 public class AppSettingsService {
@@ -33,6 +36,15 @@ public class AppSettingsService {
     private static final String KEY_APPLICATION_MODE = "applicationMode";
     private static final String KEY_ENDPOINT = "endpoint";
     private static final String KEY_MIGRATION_V1 = "migration.legacyFilesToSqlite.v1";
+    private static final String KEY_AI_PROVIDER = "ai.provider";
+    private static final String KEY_AI_JETSON_HOST = "ai.jetson.host";
+    private static final String KEY_AI_JETSON_PORT = "ai.jetson.port";
+    private static final String KEY_AI_JETSON_PATH = "ai.jetson.path";
+    private static final String KEY_AI_JETSON_CONNECT_TIMEOUT = "ai.jetson.connectTimeout";
+    private static final String KEY_AI_JETSON_READ_TIMEOUT = "ai.jetson.readTimeout";
+    private static final String KEY_AI_OPENAI_API_KEY = "ai.openai.apiKey";
+    private static final String KEY_AI_OPENAI_MODEL = "ai.openai.model";
+    private static final String KEY_AI_OPENAI_TIMEOUT = "ai.openai.timeout";
 
     private final AppDatabase database;
     private final Connection connection;
@@ -123,6 +135,38 @@ public class AppSettingsService {
         return new String[]{key, secret};
     }
 
+    public AiRecommendationSettings loadAiRecommendationSettings() {
+        AiRecommendationSettings defaults = AiRecommendationSettings.defaults();
+        return new AiRecommendationSettings(
+                parseAiProvider(readSetting(KEY_AI_PROVIDER, false), defaults.providerType()),
+                fallback(readSetting(KEY_AI_JETSON_HOST, false), defaults.jetsonHost()),
+                parseInt(readSetting(KEY_AI_JETSON_PORT, false), defaults.jetsonPort()),
+                fallback(readSetting(KEY_AI_JETSON_PATH, false), defaults.jetsonApiPath()),
+                parseDuration(readSetting(KEY_AI_JETSON_CONNECT_TIMEOUT, false), defaults.jetsonConnectionTimeout()),
+                parseDuration(readSetting(KEY_AI_JETSON_READ_TIMEOUT, false), defaults.jetsonReadTimeout()),
+                readSetting(KEY_AI_OPENAI_API_KEY, true),
+                fallback(readSetting(KEY_AI_OPENAI_MODEL, false), defaults.openAiModel()),
+                parseDuration(readSetting(KEY_AI_OPENAI_TIMEOUT, false), defaults.openAiTimeout())
+        );
+    }
+
+    public void saveAiRecommendationSettings(AiRecommendationSettings settings) throws IOException {
+        AiRecommendationSettings safe = settings == null ? AiRecommendationSettings.defaults() : settings;
+        try {
+            writeSetting(KEY_AI_PROVIDER, safe.providerType().name(), false);
+            writeSetting(KEY_AI_JETSON_HOST, safe.jetsonHost(), false);
+            writeSetting(KEY_AI_JETSON_PORT, String.valueOf(safe.jetsonPort()), false);
+            writeSetting(KEY_AI_JETSON_PATH, safe.jetsonApiPath(), false);
+            writeSetting(KEY_AI_JETSON_CONNECT_TIMEOUT, safe.jetsonConnectionTimeout().toString(), false);
+            writeSetting(KEY_AI_JETSON_READ_TIMEOUT, safe.jetsonReadTimeout().toString(), false);
+            writeSetting(KEY_AI_OPENAI_API_KEY, safe.openAiApiKey(), true);
+            writeSetting(KEY_AI_OPENAI_MODEL, safe.openAiModel(), false);
+            writeSetting(KEY_AI_OPENAI_TIMEOUT, safe.openAiTimeout().toString(), false);
+        } catch (SQLException ex) {
+            throw new IOException("Failed to persist AI recommendation settings", ex);
+        }
+    }
+
     private boolean parseBoolean(String value, boolean fallback) {
         if (value == null || value.isBlank()) {
             return fallback;
@@ -144,6 +188,34 @@ public class AppSettingsService {
         } catch (Exception ignored) {
             return ApplicationMode.PAPER;
         }
+    }
+
+    private AiProviderType parseAiProvider(String value, AiProviderType fallback) {
+        try {
+            return AiProviderType.valueOf(value.trim());
+        } catch (Exception ignored) {
+            return fallback == null ? AiProviderType.JETSON_LOCAL : fallback;
+        }
+    }
+
+    private int parseInt(String value, int fallback) {
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private Duration parseDuration(String value, Duration fallback) {
+        try {
+            return Duration.parse(value.trim());
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private String fallback(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
     }
 
     private String readSetting(String key, boolean encrypted) {

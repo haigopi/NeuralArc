@@ -1,6 +1,8 @@
 package com.neuralarc.service;
 
 import com.neuralarc.model.ApplicationMode;
+import com.neuralarc.model.AiProviderType;
+import com.neuralarc.model.AiRecommendationSettings;
 import com.neuralarc.model.BrokerType;
 import com.neuralarc.security.CredentialManager;
 import org.junit.jupiter.api.Test;
@@ -10,6 +12,8 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -74,6 +78,46 @@ class AppSettingsServiceTest {
         assertFalse(loaded.allowDuplicateSymbolStrategies());
         assertFalse(loaded.emailOnBuyExpected());
         assertFalse(loaded.emailOnSellExecuted());
+    }
+
+    @Test
+    void persistsAiRecommendationSettingsAndEncryptsOpenAiKey() throws Exception {
+        Path dbPath = tempDir.resolve("settings-ai.db");
+        AppSettingsService service = new AppSettingsService(dbPath);
+        AiRecommendationSettings expected = new AiRecommendationSettings(
+                AiProviderType.OPENAI,
+                "192.168.1.77",
+                9090,
+                "api/analyze-stock",
+                Duration.ofSeconds(4),
+                Duration.ofSeconds(25),
+                "sk-test-secret",
+                "gpt-5",
+                Duration.ofSeconds(35)
+        );
+
+        service.saveAiRecommendationSettings(expected);
+        AiRecommendationSettings loaded = service.loadAiRecommendationSettings();
+
+        assertEquals(AiProviderType.OPENAI, loaded.providerType());
+        assertEquals("192.168.1.77", loaded.jetsonHost());
+        assertEquals(9090, loaded.jetsonPort());
+        assertEquals("/api/analyze-stock", loaded.jetsonApiPath());
+        assertEquals(Duration.ofSeconds(4), loaded.jetsonConnectionTimeout());
+        assertEquals(Duration.ofSeconds(25), loaded.jetsonReadTimeout());
+        assertEquals("sk-test-secret", loaded.openAiApiKey());
+        assertEquals("gpt-5", loaded.openAiModel());
+        assertEquals(Duration.ofSeconds(35), loaded.openAiTimeout());
+
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath.toAbsolutePath());
+             PreparedStatement ps = connection.prepareStatement("SELECT value, encrypted FROM app_settings WHERE key = ?")) {
+            ps.setString(1, "ai.openai.apiKey");
+            try (ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.next());
+                assertEquals(1, rs.getInt("encrypted"));
+                assertFalse("sk-test-secret".equals(rs.getString("value")));
+            }
+        }
     }
 
     @Test

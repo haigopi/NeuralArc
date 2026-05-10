@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.model.AiRecommendationSettings;
 import com.neuralarc.model.BrokerType;
 import com.neuralarc.model.ApplicationMode;
 import com.neuralarc.service.AppSettingsService;
@@ -65,6 +66,7 @@ public class SettingsDialog extends JDialog {
     private final JLabel connectionStatus = new JLabel("Connection not verified");
     private final JComboBox<BrokerType> brokerBox = new JComboBox<>(BrokerType.values());
     private final JComboBox<ApplicationMode> appModeBox = new JComboBox<>(ApplicationMode.values());
+    private final AiRecommendationSettingsPanel aiRecommendationSettingsPanel = new AiRecommendationSettingsPanel();
     private final AppSettingsService appSettingsService;
     private transient Function<ConnectionRequest, ConnectionResult> connectionVerifier;
     private transient Function<Path, StrategyTransferResult> strategyExportHandler;
@@ -214,9 +216,9 @@ public class SettingsDialog extends JDialog {
         deleteAllDataButton.setForeground(new Color(180, 30, 30));
         deleteAllDataButton.addActionListener(e -> deleteAllData());
 
-        JLabel dangerDescription = mutedDescription(
-                "Deletes local settings, credentials, strategies, and cached app data. This action cannot be undone."
-        );
+        JLabel dangerDescription = new JLabel("Deletes local settings, credentials, strategies, and cached app data. This action cannot be undone.");
+        dangerDescription.setForeground(TEXT_MUTED);
+        dangerDescription.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
         dangerZonePanel.add(deleteAllDataButton);
         dangerZonePanel.add(dangerDescription);
 
@@ -236,6 +238,8 @@ public class SettingsDialog extends JDialog {
         content.add(userPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(apiPanel);
+        content.add(Box.createVerticalStrut(SECTION_GAP));
+        content.add(aiRecommendationSettingsPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(createCollapsibleSection("Diagnostics Log Sharing", diagnosticsPanel, true));
         content.add(Box.createVerticalStrut(SECTION_GAP));
@@ -388,6 +392,7 @@ public class SettingsDialog extends JDialog {
                     emailOnSellExecuted()
             ));
             appSettingsService.saveEndpoint(getEndpoint());
+            appSettingsService.saveAiRecommendationSettings(aiRecommendationSettingsPanel.settings());
             for (ApplicationMode mode : ApplicationMode.values()) {
                 String[] creds = credentialCache.get(mode);
                 if (creds == null) {
@@ -422,6 +427,7 @@ public class SettingsDialog extends JDialog {
         allowDuplicateSymbolStrategies.setSelected(appliedSettings.allowDuplicateSymbolStrategies());
         emailOnBuyExpected.setSelected(appliedSettings.emailOnBuyExpected());
         emailOnSellExecuted.setSelected(appliedSettings.emailOnSellExecuted());
+        aiRecommendationSettingsPanel.populate(appSettingsService.loadAiRecommendationSettings());
         saveCredentials.setSelected(true);
         brokerBox.setSelectedItem(appliedSettings.brokerType());
         appModeBox.setSelectedItem(appliedSettings.applicationMode());
@@ -521,6 +527,7 @@ public class SettingsDialog extends JDialog {
             allowDuplicateSymbolStrategies.setSelected(AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES);
             emailOnBuyExpected.setSelected(AppSettingsService.DEFAULT_EMAIL_ON_BUY_EXPECTED);
             emailOnSellExecuted.setSelected(AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED);
+            aiRecommendationSettingsPanel.populate(AiRecommendationSettings.defaults());
             brokerBox.setSelectedItem(BrokerType.ALPACA);
             appModeBox.setSelectedItem(ApplicationMode.PAPER);
             displayedCredentialMode = ApplicationMode.PAPER;
@@ -592,6 +599,10 @@ public class SettingsDialog extends JDialog {
         }
         ConnectionResult result = connectionVerifier.apply(new ConnectionRequest(brokerType(), getApiKey(), getApiSecret()));
         markConnectionStatus(result.connected(), result.message());
+    }
+
+    public AiRecommendationSettings aiRecommendationSettings() {
+        return aiRecommendationSettingsPanel.settings();
     }
 
     private void exportStrategies() {

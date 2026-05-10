@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.api.AlpacaMarketDataApi;
+import com.neuralarc.model.AiRecommendationRequest;
 import com.neuralarc.model.AutoAnalyzeBundle;
 import com.neuralarc.model.AutoAnalyzeResult;
 import com.neuralarc.model.MarketMode;
@@ -57,6 +58,9 @@ public class StrategyDialog extends JDialog {
     private static final int FORM_LABEL_COLUMN_WIDTH = 220;
     private static final int RECOMMENDATION_LABEL_COLUMN_WIDTH = 210;
     private static final int RECOMMENDATION_TEXT_WRAP_WIDTH = 260;
+    private static final int AUTO_ANALYZE_OUTER_SECTION_WIDTH = 820;
+    private static final int AUTO_ANALYZE_SECTION_WIDTH = 760;
+    private static final int AUTO_ANALYZE_COMPACT_SECTION_WIDTH = 560;
     private static final int RISK_CONTROLS_HORIZONTAL_PADDING = 12;
     private static final int MAX_MONTHS_BACK = 12;
     private static final int DIALOG_TARGET_WIDTH = 1120;
@@ -162,6 +166,7 @@ public class StrategyDialog extends JDialog {
     private final RecommendationView shortTermRecommendationView = new RecommendationView("Short-Term Recommendation");
     private final RecommendationView highRiskShortTermRecommendationView = new RecommendationView("High Risk Short-Term Recommendation");
     private final RecommendationView longTermRecommendationView = new RecommendationView("Long-Term Recommendation");
+    private JTabbedPane recommendationTabs;
 
     private AutoAnalyzeResult lastAutoAnalyzeResult;
     private StrategyRecommendation lastShortTermRecommendation;
@@ -378,7 +383,7 @@ public class StrategyDialog extends JDialog {
         JPanel inputPanel = new JPanel(new BorderLayout(0, FIELD_GAP));
         inputPanel.setBorder(createSubSectionBorder("Analysis Parameters"));
         inputPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        inputPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        capWidth(inputPanel, AUTO_ANALYZE_SECTION_WIDTH);
 
         JPanel inputFields = new JPanel(new GridBagLayout());
         inputFields.setOpaque(false);
@@ -411,7 +416,7 @@ public class StrategyDialog extends JDialog {
         resultsPanel.setLayout(new BoxLayout(resultsPanel, BoxLayout.Y_AXIS));
         resultsPanel.setBorder(createSectionBorder("Results"));
         resultsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        resultsPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        capWidth(resultsPanel, AUTO_ANALYZE_OUTER_SECTION_WIDTH);
 
         JPanel resultsLoadingPanel = new JPanel(new BorderLayout(8, 0));
         resultsLoadingPanel.setOpaque(false);
@@ -434,7 +439,7 @@ public class StrategyDialog extends JDialog {
         avgSubPanel.setOpaque(false);
         avgSubPanel.setBorder(createSubSectionBorder("Price Averages"));
         avgSubPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        avgSubPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        capWidth(avgSubPanel, AUTO_ANALYZE_COMPACT_SECTION_WIDTH);
         avgSubPanel.add(new JLabel("Avg Open:"));
         avgSubPanel.add(aaAvgOpenLabel);
         avgSubPanel.add(new JLabel("Avg Close:"));
@@ -449,7 +454,7 @@ public class StrategyDialog extends JDialog {
         detailsSubPanel.setOpaque(false);
         detailsSubPanel.setBorder(createSubSectionBorder("Analysis Details"));
         detailsSubPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        detailsSubPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        capWidth(detailsSubPanel, AUTO_ANALYZE_COMPACT_SECTION_WIDTH);
         detailsSubPanel.add(new JLabel("Threshold Number:"));
         detailsSubPanel.add(aaThresholdLabel);
         detailsSubPanel.add(new JLabel("Daily bars processed:"));
@@ -459,6 +464,8 @@ public class StrategyDialog extends JDialog {
         detailsSubPanel.add(new JLabel("Analysed at:"));
         detailsSubPanel.add(aaAnalyzedAtLabel);
 
+        resultsPanel.add(detailsSubPanel);
+        resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
         resultsPanel.add(avgSubPanel);
         resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
 
@@ -467,7 +474,7 @@ public class StrategyDialog extends JDialog {
         rangesSubPanel.setOpaque(false);
         rangesSubPanel.setBorder(createSubSectionBorder("Price Ranges"));
         rangesSubPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        rangesSubPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        capWidth(rangesSubPanel, AUTO_ANALYZE_SECTION_WIDTH);
         rangesSubPanel.add(new JLabel("1-Week Low:"));
         rangesSubPanel.add(aaOneWeekLowLabel);
         rangesSubPanel.add(new JLabel("1-Week High:"));
@@ -508,7 +515,7 @@ public class StrategyDialog extends JDialog {
         todaySubPanel.setOpaque(false);
         todaySubPanel.setBorder(createSubSectionBorder("Today's Snapshot"));
         todaySubPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        todaySubPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        capWidth(todaySubPanel, AUTO_ANALYZE_COMPACT_SECTION_WIDTH);
         todaySubPanel.add(new JLabel("Stock Price:"));
         todaySubPanel.add(aaTodayStockPriceLabel);
         todaySubPanel.add(new JLabel("Open:"));
@@ -521,15 +528,24 @@ public class StrategyDialog extends JDialog {
         todaySubPanel.add(aaTodayCloseLabel);
 
         resultsPanel.add(todaySubPanel);
-        resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
-        resultsPanel.add(buildRecommendationTabs());
-        resultsPanel.add(Box.createVerticalStrut(SECTION_GAP));
-        resultsPanel.add(detailsSubPanel);
+
+        JPanel termsPanel = new JPanel(new BorderLayout());
+        termsPanel.setOpaque(false);
+        termsPanel.setBorder(createSectionBorder("Term Recommendations"));
+        termsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        capWidth(termsPanel, AUTO_ANALYZE_OUTER_SECTION_WIDTH);
+        termsPanel.add(buildRecommendationTabs(), BorderLayout.CENTER);
+
+        JPanel aiPanel = new JPanel(new BorderLayout());
+        aiPanel.setOpaque(false);
+        aiPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        capWidth(aiPanel, AUTO_ANALYZE_OUTER_SECTION_WIDTH);
+        aiPanel.add(new AiRecommendationPanel(this, this::buildAiRecommendationRequest), BorderLayout.CENTER);
 
         JPanel disclaimerPanel = new JPanel(new BorderLayout());
         disclaimerPanel.setBorder(createSectionBorder("Disclaimer"));
         disclaimerPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        disclaimerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        capWidth(disclaimerPanel, AUTO_ANALYZE_OUTER_SECTION_WIDTH);
         JLabel disclaimerLabel = new JLabel("<html>Auto Analyze is a decision-support tool. It does not guarantee profit. Review all values before saving or trading.</html>");
         disclaimerLabel.setForeground(TEXT_MUTED);
         disclaimerLabel.setFont(FontLoader.ui(java.awt.Font.PLAIN, 10f));
@@ -539,6 +555,10 @@ public class StrategyDialog extends JDialog {
         aaStatusLabel.setForeground(TEXT_MUTED);
 
         content.add(resultsPanel);
+        content.add(Box.createVerticalStrut(SECTION_GAP));
+        content.add(termsPanel);
+        content.add(Box.createVerticalStrut(SECTION_GAP));
+        content.add(aiPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(disclaimerPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
@@ -686,6 +706,10 @@ public class StrategyDialog extends JDialog {
         }
         panel.add(rowLabel);
         panel.add(component);
+    }
+
+    private void capWidth(JComponent component, int width) {
+        component.setMaximumSize(new Dimension(width, Short.MAX_VALUE));
     }
 
     private void prepareSection(JPanel panel) {
@@ -1319,10 +1343,10 @@ public class StrategyDialog extends JDialog {
     }
 
     private JComponent buildRecommendationTabs() {
-        JTabbedPane recommendationTabs = new JTabbedPane(JTabbedPane.TOP);
+        recommendationTabs = new JTabbedPane(JTabbedPane.TOP);
         recommendationTabs.setOpaque(false);
-        recommendationTabs.setAlignmentX(Component.CENTER_ALIGNMENT);
-        recommendationTabs.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        recommendationTabs.setAlignmentX(Component.LEFT_ALIGNMENT);
+        capWidth(recommendationTabs, AUTO_ANALYZE_SECTION_WIDTH);
         recommendationTabs.addTab("Short Term", buildRecommendationSection(shortTermRecommendationView, RecommendationTypeLabel.SHORT_TERM));
         recommendationTabs.addTab("High Risk Short Term", buildRecommendationSection(highRiskShortTermRecommendationView, RecommendationTypeLabel.HIGH_RISK_SHORT_TERM));
         recommendationTabs.addTab("Long Term", buildRecommendationSection(longTermRecommendationView, RecommendationTypeLabel.LONG_TERM));
@@ -1335,12 +1359,83 @@ public class StrategyDialog extends JDialog {
         return recommendationTabs;
     }
 
+    private AiRecommendationRequest buildAiRecommendationRequest() {
+        if (lastAutoAnalyzeResult == null) {
+            return null;
+        }
+        StrategyRecommendation recommendation = selectedRecommendationForAi();
+        if (recommendation == null) {
+            recommendation = lastShortTermRecommendation;
+        }
+        if (recommendation == null) {
+            return null;
+        }
+        BigDecimal currentPrice = firstPositive(
+                recommendation.currentPrice(),
+                lastAutoAnalyzeResult.todayStockPrice(),
+                lastAutoAnalyzeResult.todayClose(),
+                lastAutoAnalyzeResult.averageDailyClose()
+        );
+        BigDecimal support = firstPositive(recommendation.twoWeekLow(), lastAutoAnalyzeResult.twoWeekLow());
+        BigDecimal resistance = firstPositive(recommendation.twoWeekHigh(), recommendation.sellPrice(), lastAutoAnalyzeResult.twoWeekHigh());
+        String type = recommendation.recommendationType() == null
+                ? "Current Strategy"
+                : recommendation.recommendationType().name().replace('_', ' ');
+        String technicalSummary = "Action: " + recommendation.recommendationAction()
+                + ". Trend: " + recommendation.trendStatus()
+                + ". Volume: " + recommendation.volumeStatus()
+                + ". Risk/reward: " + recommendation.riskRewardRatio()
+                + ". Base buy: " + recommendation.adjustedBaseBuyPrice()
+                + ". Sell target: " + recommendation.sellPrice() + ".";
+        String riskLevel = riskLevelFor(recommendation);
+        return new AiRecommendationRequest(
+                lastAutoAnalyzeResult.symbol(),
+                currentPrice,
+                lastAutoAnalyzeResult.analyzedAt(),
+                type + " Strategy",
+                new AiRecommendationRequest.CurrentAnalysis(
+                        technicalSummary,
+                        support,
+                        resistance,
+                        recommendation.volumeStatus(),
+                        riskLevel,
+                        "User requested AI decision support after Auto Analyze. AI output must not place trades automatically."
+                ),
+                AiRecommendationRequest.DEFAULT_INSTRUCTION
+        );
+    }
+
+    private StrategyRecommendation selectedRecommendationForAi() {
+        if (recommendationTabs == null) {
+            return lastShortTermRecommendation;
+        }
+        return switch (recommendationTabs.getSelectedIndex()) {
+            case 1 -> lastHighRiskShortTermRecommendation;
+            case 2 -> lastLongTermRecommendation;
+            default -> lastShortTermRecommendation;
+        };
+    }
+
+    private String riskLevelFor(StrategyRecommendation recommendation) {
+        int confidence = recommendation.confidenceScore();
+        if (recommendation.warningMessage() != null && !recommendation.warningMessage().isBlank()) {
+            return "HIGH";
+        }
+        if (confidence >= 75) {
+            return "LOW";
+        }
+        if (confidence >= 50) {
+            return "MEDIUM";
+        }
+        return "HIGH";
+    }
+
     private JPanel buildRecommendationSection(RecommendationView view, RecommendationTypeLabel typeLabel) {
         JPanel panel = new JPanel(new BorderLayout(0, 10));
         panel.setOpaque(false);
         panel.setBorder(createSubSectionBorder(view.title));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        capWidth(panel, AUTO_ANALYZE_SECTION_WIDTH);
 
         JPanel topRow = new JPanel(new BorderLayout(10, 0));
         topRow.setOpaque(false);
