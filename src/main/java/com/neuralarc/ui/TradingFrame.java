@@ -22,6 +22,8 @@ import com.neuralarc.service.LogUploadStatusStore;
 import com.neuralarc.service.StrategyPollingService;
 import com.neuralarc.service.StrategyService;
 import com.neuralarc.service.StrategyEngine;
+import com.neuralarc.service.TrendingStocksService;
+import com.neuralarc.service.HttpAlpacaScreenerClient;
 import com.neuralarc.service.RotatingLogWriter;
 import com.neuralarc.service.SpacesLogUploader;
 import com.neuralarc.service.TradeEmailNotificationService;
@@ -157,6 +159,7 @@ public class TradingFrame extends JFrame {
     private static final Color HEADER_STATUS_LIVE_ACTIVE_DIM = Color.WHITE;
     private final JTextPane eventLog = new JTextPane();
     private final JButton addStrategyButton = new JButton("Add New Stock Strategy");
+    private final JButton luckyButton = new JButton("I Am Feeling Lucky");
     private final JButton portfolioActionsButton = new JButton("Portfolio Actions");
     private final JButton settingsButton = new JButton("Settings");
     private final JButton legalDisclosureButton = new JButton("Legal Disclosure");
@@ -775,10 +778,12 @@ public class TradingFrame extends JFrame {
         rightControlsGbc.gridx = 0;
         rightControls.add(addStrategyButton, rightControlsGbc);
         rightControlsGbc.gridx = 1;
-        rightControls.add(refreshPortfolioButton, rightControlsGbc);
+        rightControls.add(luckyButton, rightControlsGbc);
         rightControlsGbc.gridx = 2;
-        rightControls.add(portfolioActionsButton, rightControlsGbc);
+        rightControls.add(refreshPortfolioButton, rightControlsGbc);
         rightControlsGbc.gridx = 3;
+        rightControls.add(portfolioActionsButton, rightControlsGbc);
+        rightControlsGbc.gridx = 4;
         rightControls.add(settingsButton, rightControlsGbc);
 
         JButton killSwitchButton = new JButton("KILL SWITCH");
@@ -844,11 +849,18 @@ public class TradingFrame extends JFrame {
             }
         });
         killSwitchButton.addActionListener(e -> killAllStrategies());
-        rightControlsGbc.gridx = 4;
+        rightControlsGbc.gridx = 5;
         rightControlsGbc.insets = new java.awt.Insets(0, 0, 0, 0);
         rightControls.add(killSwitchButton, rightControlsGbc);
+        JScrollPane rightControlsScroll = new JScrollPane(rightControls);
+        rightControlsScroll.setBorder(null);
+        rightControlsScroll.setOpaque(false);
+        rightControlsScroll.getViewport().setOpaque(false);
+        rightControlsScroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
+        rightControlsScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        rightControlsScroll.setPreferredSize(new Dimension(760, rightControls.getPreferredSize().height + 4));
         headerPanel.add(headerInfoPanel, BorderLayout.CENTER);
-        headerPanel.add(rightControls, BorderLayout.EAST);
+        headerPanel.add(rightControlsScroll, BorderLayout.EAST);
 
         strategyTable.setRowHeight(34);
         strategyTable.setFillsViewportHeight(true);
@@ -1246,10 +1258,12 @@ public class TradingFrame extends JFrame {
         applyFontRecursively(this);
 
         styleHeaderButton(addStrategyButton);
+        styleHeaderButton(luckyButton);
         styleHeaderButton(refreshPortfolioButton);
         styleHeaderButton(portfolioActionsButton);
         styleHeaderButton(settingsButton);
         applyButtonIcon(addStrategyButton, "icons/add-stock-strategy.svg", 16);
+        applyButtonIcon(luckyButton, "icons/actions.svg", 16);
         applyButtonIcon(refreshPortfolioButton, "icons/actions.svg", 16);
         applyButtonIcon(portfolioActionsButton, "icons/actions.svg", 16);
         applyButtonIcon(settingsButton, "icons/settings.svg", 16);
@@ -1257,6 +1271,11 @@ public class TradingFrame extends JFrame {
                 "Refetches Alpaca positions and updates matching Current Strategies with broker-side position data.",
                 320
         ));
+        luckyButton.setToolTipText(TooltipStyler.text(
+                "Find today's top trending Alpaca stocks, auto-analyze them, and add reviewed picks as local paper simulations.",
+                320
+        ));
+        luckyButton.setEnabled(false);
     }
 
     private void applyDataViewFonts() {
@@ -1535,6 +1554,7 @@ public class TradingFrame extends JFrame {
 
     private void wireEvents() {
         addStrategyButton.addActionListener(e -> addStrategy());
+        luckyButton.addActionListener(e -> openLuckyTrendingStocksDialog());
         refreshPortfolioButton.addActionListener(e -> portfolioRefreshController.refresh(true));
         portfolioActionsButton.addActionListener(e -> portfolioActionsController.showMenu(portfolioActionsButton));
         settingsButton.addActionListener(e -> openSettingsDialog());
@@ -2053,6 +2073,63 @@ public class TradingFrame extends JFrame {
         SwingUtilities.invokeLater(() -> selectAndRevealStrategy(strategy.id()));
         updateSelectedStrategy();
         refreshPanels();
+    }
+
+    private void openLuckyTrendingStocksDialog() {
+        userActionLog.started("I Am Feeling Lucky");
+        log("[I Am Feeling Lucky] Button clicked.");
+        ApplicationMode mode = settingsDialog.appliedApplicationMode();
+        String apiKey = runtimeApiKey.isBlank() ? settingsDialog.savedApiKey(mode) : runtimeApiKey;
+        String apiSecret = runtimeApiSecret.isBlank() ? settingsDialog.savedApiSecret(mode) : runtimeApiSecret;
+        if (apiKey.isBlank() || apiSecret.isBlank()) {
+            userActionLog.failed("I Am Feeling Lucky", "Alpaca credentials are required.");
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Please complete Settings with Alpaca credentials before using I Am Feeling Lucky.",
+                    "Alpaca Credentials Required",
+                    JOptionPane.WARNING_MESSAGE
+            );
+            return;
+        }
+        HttpAlpacaMarketDataApi marketDataApi = new HttpAlpacaMarketDataApi(apiKey, apiSecret);
+        LuckyTrendingStocksDialog dialog = new LuckyTrendingStocksDialog(
+                this,
+                new TrendingStocksService(new HttpAlpacaScreenerClient(apiKey, apiSecret)),
+                marketDataApi,
+                this::placeLuckySimulationStrategies,
+                this::log
+        );
+        dialog.setVisible(true);
+    }
+
+    private void placeLuckySimulationStrategies(List<LuckySimulationSelection> selections) {
+        LuckySimulationPlacementController controller = new LuckySimulationPlacementController(new LuckySimulationPlacementController.Gateway() {
+            @Override public com.neuralarc.service.StrategyRepository repository() { return strategyRepository; }
+            @Override public StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy) {
+                return strategyServiceForMode(StrategyMode.PAPER).createAndActivate(strategy);
+            }
+            @Override public int confirmDuplicate(String symbol) {
+                return JOptionPane.showConfirmDialog(
+                        TradingFrame.this,
+                        "A simulation strategy already exists for " + symbol
+                                + ". Replace it?\n\nYes = replace/update\nNo = skip\nCancel = stop placement",
+                        "Duplicate Simulation Strategy",
+                        JOptionPane.YES_NO_CANCEL_OPTION,
+                        JOptionPane.WARNING_MESSAGE
+                );
+            }
+            @Override public void afterPlacement() {
+                syncStrategiesFromRepository();
+                refreshStrategyTableData();
+                updateStatusBar();
+                refreshPanels();
+            }
+            @Override public void log(String message) { TradingFrame.this.log(message); }
+        });
+        LuckySimulationPlacementController.PlacementResult result = controller.place(selections);
+        String message = controller.summaryMessage(result);
+        JOptionPane.showMessageDialog(this, message, "I Am Feeling Lucky", JOptionPane.INFORMATION_MESSAGE);
+        userActionLog.completed("I Am Feeling Lucky", message.replace('\n', ' '));
     }
 
     private void editStrategy(int viewRow) {
@@ -2984,6 +3061,7 @@ public class TradingFrame extends JFrame {
             memoryUsageStatus.setText(statusBarViewModel.memoryText());
             statusBar.setText(statusBarViewModel.brokerText());
             statusBar.setForeground(statusToneColor(statusBarViewModel.brokerTone()));
+            luckyButton.setEnabled(settingsDialog.hasRequiredSettings());
         });
     }
 

@@ -138,6 +138,18 @@ public class RecommendationEngine {
             baseBuyPrice = lowerClamp;
             warning = appendWarning(warning, "Base buy price was too far below two-week support and was clamped.");
         }
+        BasePriceGuardResult guardedBase = guardBasePriceAgainstCurrentAndTwoWeekLow(
+                baseBuyPrice,
+                currentPrice,
+                twoWeekLow.get(),
+                expectedDipPct,
+                shortTermMarketMode == ShortTermMarketMode.SHORT_TERM_BREAKOUT
+        );
+        if (guardedBase.adjusted()) {
+            baseBuyPrice = guardedBase.price();
+            baseAdjustmentReason += " Final adjustment applied because current price and two-week support are below the calculated base.";
+            warning = appendWarning(warning, "Base buy price adjusted below current price after current/two-week support validation.");
+        }
 
         baseBuyPrice = floorPrice(baseBuyPrice);
         behaviorAdjustedBasePrice = floorPrice(behaviorAdjustedBasePrice);
@@ -282,6 +294,18 @@ public class RecommendationEngine {
             mode = ShortTermMarketMode.OVEREXTENDED;
             baseBuyPrice = floorPrice(behaviorAdjustedBasePrice);
             warning = "Price is above two-week resistance without volume confirmation. This remains high risk.";
+        }
+        BasePriceGuardResult guardedBase = guardBasePriceAgainstCurrentAndTwoWeekLow(
+                baseBuyPrice,
+                currentPrice,
+                twoWeekLow.get(),
+                expectedDipPct,
+                mode == ShortTermMarketMode.SHORT_TERM_BREAKOUT
+        );
+        if (guardedBase.adjusted()) {
+            baseBuyPrice = floorPrice(guardedBase.price());
+            baseAdjustmentReason += " Current/two-week support guard adjusted the base below current price.";
+            warning = appendWarning(warning, "Base buy price adjusted because current price and two-week support are below the calculated base.");
         }
 
         BigDecimal buy1 = floorPrice(baseBuyPrice.subtract(atr.get().multiply(HALF)));
@@ -458,6 +482,21 @@ public class RecommendationEngine {
             adjustedBaseBuyPrice = lowerClamp;
             warningMessage = appendWarning(warningMessage, "Adjusted base price was too far below six-month support and was clamped.");
         }
+        Optional<BigDecimal> twoWeekLow = indicators.calculateLow(twoWeekBars);
+        if (twoWeekLow.isPresent()) {
+            BasePriceGuardResult guardedBase = guardBasePriceAgainstCurrentAndTwoWeekLow(
+                    adjustedBaseBuyPrice,
+                    currentPrice,
+                    twoWeekLow.get(),
+                    expectedDipPct,
+                    marketMode == MarketMode.BREAKOUT
+            );
+            if (guardedBase.adjusted()) {
+                adjustedBaseBuyPrice = guardedBase.price();
+                baseAdjustmentReason += " Current/two-week support guard adjusted the base below current price.";
+                warningMessage = appendWarning(warningMessage, "Adjusted base buy price was lowered because current price and two-week support are below the calculated base.");
+            }
+        }
 
         adjustedBaseBuyPrice = floorPrice(adjustedBaseBuyPrice);
         behaviorAdjustedBasePrice = floorPrice(behaviorAdjustedBasePrice);
@@ -578,6 +617,27 @@ public class RecommendationEngine {
         return reward.divide(risk, 2, RoundingMode.HALF_UP);
     }
 
+    private BasePriceGuardResult guardBasePriceAgainstCurrentAndTwoWeekLow(
+            BigDecimal basePrice,
+            BigDecimal currentPrice,
+            BigDecimal twoWeekLow,
+            BigDecimal expectedDipPct,
+            boolean allowCurrentPriceEntry
+    ) {
+        if (allowCurrentPriceEntry
+                || !validPrice(basePrice)
+                || !validPrice(currentPrice)
+                || !validPrice(twoWeekLow)) {
+            return new BasePriceGuardResult(basePrice, false);
+        }
+        if (currentPrice.compareTo(basePrice) < 0 && twoWeekLow.compareTo(basePrice) < 0) {
+            BigDecimal dip = expectedDipPct == null ? BigDecimal.ZERO : expectedDipPct.max(BigDecimal.ZERO);
+            BigDecimal guarded = Monetary.round(currentPrice.multiply(BigDecimal.ONE.subtract(dip)));
+            return new BasePriceGuardResult(validPrice(guarded) ? guarded : currentPrice, true);
+        }
+        return new BasePriceGuardResult(basePrice, false);
+    }
+
     private RecommendationAction actionForShortTerm(int confidence) {
         if (confidence >= 75) {
             return RecommendationAction.BUY;
@@ -602,6 +662,8 @@ public class RecommendationEngine {
     private boolean validPrice(BigDecimal value) {
         return value != null && value.compareTo(BigDecimal.ZERO) > 0;
     }
+
+    private record BasePriceGuardResult(BigDecimal price, boolean adjusted) {}
 
     private BigDecimal average(List<BigDecimal> values) {
         if (values == null || values.isEmpty()) {

@@ -1,0 +1,195 @@
+package com.neuralarc.ui;
+
+import com.neuralarc.model.AutoAnalyzeBundle;
+import com.neuralarc.model.AutoAnalyzeResult;
+import com.neuralarc.model.LuckySimulationSelection;
+import com.neuralarc.model.MarketMode;
+import com.neuralarc.model.RecommendationAction;
+import com.neuralarc.model.RecommendationType;
+import com.neuralarc.model.ShortTermMarketMode;
+import com.neuralarc.model.Strategy;
+import com.neuralarc.model.StrategyMode;
+import com.neuralarc.model.StrategyRecommendation;
+import com.neuralarc.model.StrategyStatus;
+import com.neuralarc.model.TrendingStock;
+import com.neuralarc.service.StrategyRepository;
+import com.neuralarc.service.StrategyService;
+import org.junit.jupiter.api.Test;
+
+import javax.swing.JOptionPane;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class LuckySimulationPlacementControllerTest {
+    @Test
+    void startsPaperMonitoringThroughPaperCreationPath() {
+        InMemoryRepository repository = new InMemoryRepository();
+        LuckySimulationPlacementController controller = controller(repository, JOptionPane.YES_OPTION);
+
+        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
+
+        assertEquals(1, result.created());
+        Strategy saved = repository.findAll().getFirst();
+        assertEquals("NVDA", saved.symbol());
+        assertEquals(StrategyMode.PAPER, saved.mode());
+        assertEquals(StrategyStatus.CREATED, saved.status());
+        assertEquals("PAPER_PENDING", saved.latestOrderStatus());
+        assertTrue(saved.name().startsWith("I_AM_FEELING_LUCKY:"));
+        assertTrue(saved.lastEvent().contains("Alpaca Paper mode"));
+    }
+
+    @Test
+    void duplicateCanBeSkippedWithoutCreatingAnotherStrategy() {
+        InMemoryRepository repository = new InMemoryRepository();
+        LuckySimulationPlacementController controller = controller(repository, JOptionPane.YES_OPTION);
+        controller.place(List.of(selection("NVDA")));
+
+        LuckySimulationPlacementController skipController = controller(repository, JOptionPane.NO_OPTION);
+        LuckySimulationPlacementController.PlacementResult result = skipController.place(List.of(selection("NVDA")));
+
+        assertEquals(0, result.created());
+        assertEquals(1, result.skipped());
+        assertEquals(1, repository.findAll().size());
+    }
+
+    private LuckySimulationPlacementController controller(InMemoryRepository repository, int duplicateChoice) {
+        return new LuckySimulationPlacementController(new LuckySimulationPlacementController.Gateway() {
+            @Override public StrategyRepository repository() { return repository; }
+            @Override public StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy) {
+                repository.save(strategy);
+                return StrategyService.StrategyCreationResult.success(strategy.id(), "order-row", "alpaca-paper-order", "client-order");
+            }
+            @Override public int confirmDuplicate(String symbol) { return duplicateChoice; }
+            @Override public void afterPlacement() {}
+            @Override public void log(String message) {}
+        });
+    }
+
+    private LuckySimulationSelection selection(String symbol) {
+        StrategyRecommendation recommendation = recommendation(symbol, RecommendationType.SHORT_TERM, new BigDecimal("125.00"));
+        AutoAnalyzeBundle bundle = new AutoAnalyzeBundle(
+                result(symbol),
+                recommendation,
+                recommendation(symbol, RecommendationType.HIGH_RISK_SHORT_TERM, new BigDecimal("126.00")),
+                recommendation(symbol, RecommendationType.LONG_TERM, new BigDecimal("120.00"))
+        );
+        return new LuckySimulationSelection(
+                new TrendingStock(symbol, "", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "", BigDecimal.TEN),
+                bundle,
+                RecommendationType.SHORT_TERM
+        );
+    }
+
+    private AutoAnalyzeResult result(String symbol) {
+        return new AutoAnalyzeResult(
+                symbol,
+                LocalDate.now().minusMonths(12),
+                LocalDate.now(),
+                15,
+                BigDecimal.ONE,
+                BigDecimal.ONE,
+                BigDecimal.ONE,
+                BigDecimal.ONE,
+                BigDecimal.ONE,
+                BigDecimal.TEN,
+                BigDecimal.ONE,
+                BigDecimal.TEN,
+                BigDecimal.ONE,
+                BigDecimal.TEN,
+                BigDecimal.ONE,
+                BigDecimal.TEN,
+                BigDecimal.ONE,
+                BigDecimal.TEN,
+                BigDecimal.ONE,
+                BigDecimal.TEN,
+                BigDecimal.ONE,
+                BigDecimal.TEN,
+                BigDecimal.ONE,
+                BigDecimal.TEN,
+                BigDecimal.TEN,
+                BigDecimal.TEN,
+                BigDecimal.TEN,
+                BigDecimal.TEN,
+                true,
+                BigDecimal.TEN,
+                BigDecimal.TEN,
+                20,
+                200,
+                Instant.now()
+        );
+    }
+
+    private StrategyRecommendation recommendation(String symbol, RecommendationType type, BigDecimal basePrice) {
+        return new StrategyRecommendation(
+                symbol,
+                type,
+                basePrice,
+                basePrice,
+                basePrice,
+                basePrice,
+                basePrice,
+                basePrice.subtract(BigDecimal.ONE),
+                basePrice.add(BigDecimal.ONE),
+                BigDecimal.ONE,
+                basePrice,
+                basePrice,
+                MarketMode.ACCUMULATION,
+                ShortTermMarketMode.RANGE_ENTRY,
+                "Test recommendation",
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                basePrice.subtract(BigDecimal.ONE),
+                basePrice.subtract(new BigDecimal("2")),
+                basePrice.subtract(new BigDecimal("3")),
+                basePrice.add(new BigDecimal("5")),
+                basePrice.add(new BigDecimal("2")),
+                basePrice.add(new BigDecimal("5")),
+                "UP",
+                "HIGH",
+                BigDecimal.ONE,
+                80,
+                RecommendationAction.BUY,
+                "",
+                false
+        );
+    }
+
+    private static final class InMemoryRepository implements StrategyRepository {
+        private final List<Strategy> strategies = new ArrayList<>();
+
+        @Override
+        public void save(Strategy strategy) {
+            deleteById(strategy.id());
+            strategies.add(strategy);
+        }
+
+        @Override
+        public Optional<Strategy> findById(String id) {
+            return strategies.stream().filter(strategy -> strategy.id().equals(id)).findFirst();
+        }
+
+        @Override
+        public List<Strategy> findAll() {
+            return new ArrayList<>(strategies);
+        }
+
+        @Override
+        public List<Strategy> findActive() {
+            return strategies.stream().filter(strategy -> strategy.status() == StrategyStatus.ACTIVE).toList();
+        }
+
+        @Override
+        public void deleteById(String id) {
+            strategies.removeIf(strategy -> strategy.id().equals(id));
+        }
+    }
+}

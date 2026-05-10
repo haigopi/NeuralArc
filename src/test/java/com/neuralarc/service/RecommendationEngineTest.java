@@ -117,6 +117,31 @@ class RecommendationEngineTest {
     }
 
     @Test
+    void highRiskShortTermDoesNotRecommendBaseAboveCurrentAndTwoWeekLow() {
+        List<MarketBar> bars = highRiskTwoWeekOnlyBars();
+
+        StrategyRecommendation recommendation = engine.generateHighRiskShortTermRecommendation(
+                "AAPL", bars, new BigDecimal("100.00"), new BigDecimal("113.00"));
+
+        assertTrue(recommendation.baseBuyPrice().compareTo(new BigDecimal("100.00")) < 0);
+        assertFalse(recommendation.twoWeekLow().compareTo(recommendation.baseBuyPrice()) < 0
+                && new BigDecimal("100.00").compareTo(recommendation.baseBuyPrice()) < 0);
+        assertTrue(recommendation.warningMessage().contains("current price and two-week support"));
+    }
+
+    @Test
+    void shortTermDoesNotRecommendBaseAboveCurrentAndTwoWeekLowWhenCloseIsStale() {
+        List<MarketBar> bars = shortTermWeakAvoidBars();
+
+        StrategyRecommendation recommendation = engine.generateShortTermRecommendation(
+                "AAPL", bars, new BigDecimal("202.00"), new BigDecimal("209.00"));
+
+        assertTrue(recommendation.baseBuyPrice().compareTo(new BigDecimal("202.00")) < 0);
+        assertFalse(recommendation.twoWeekLow().compareTo(recommendation.baseBuyPrice()) < 0
+                && new BigDecimal("202.00").compareTo(recommendation.baseBuyPrice()) < 0);
+    }
+
+    @Test
     void closingPriceDiscountScenarioUsesBehaviorAdjustedDiscount() {
         List<MarketBar> bars = dipModelBars(new BigDecimal("209.00"));
 
@@ -126,6 +151,17 @@ class RecommendationEngineTest {
         assertEquals(new BigDecimal("0.0110"), recommendation.expectedDipPct());
         assertEquals(new BigDecimal("206.70"), recommendation.behaviorAdjustedBasePrice());
         assertTrue(recommendation.adjustedBaseBuyPrice().compareTo(new BigDecimal("209.00")) < 0);
+    }
+
+    @Test
+    void longTermDoesNotRecommendBaseAboveCurrentAndRecentTwoWeekLowWhenCloseIsStale() {
+        List<MarketBar> bars = dipModelBars(new BigDecimal("209.00"));
+
+        StrategyRecommendation recommendation = engine.generateLongTermRecommendation(
+                "AAPL", bars, new BigDecimal("205.00"), new BigDecimal("209.00"));
+
+        assertTrue(recommendation.adjustedBaseBuyPrice().compareTo(new BigDecimal("205.00")) < 0);
+        assertTrue(recommendation.warningMessage().contains("current price and two-week support"));
     }
 
     @Test
