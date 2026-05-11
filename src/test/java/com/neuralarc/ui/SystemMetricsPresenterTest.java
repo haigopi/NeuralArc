@@ -27,6 +27,16 @@ class SystemMetricsPresenterTest {
         assertEquals("Market Value: 200.00", text);
     }
 
+    @Test
+    void investedValueExcludesCompletedStrategies() {
+        ManagedStrategy active = managed("AAPL", StrategyStatus.ACTIVE, 2, new BigDecimal("100.00"));
+        ManagedStrategy completed = managed("MSFT", StrategyStatus.COMPLETED, 3, new BigDecimal("200.00"));
+
+        String text = new SystemMetricsPresenter().formatInvestedValueText(List.of(active, completed));
+
+        assertEquals("Invested Value: 200.00", text);
+    }
+
     private static ManagedStrategy managed(String symbol, StrategyStatus status, int shares, BigDecimal price) {
         ManagedStrategy managed = new ManagedStrategy(strategy(symbol, status));
         Position position = new Position(symbol);

@@ -26,6 +26,21 @@ public final class SystemMetricsPresenter {
         return "Market Value: " + Monetary.round(total).toPlainString();
     }
 
+    public String formatInvestedValueText(List<ManagedStrategy> strategies) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (ManagedStrategy strategy : strategies) {
+            if (strategy == null || strategy.strategy == null || strategy.strategy.status() == StrategyStatus.COMPLETED) {
+                continue;
+            }
+            Position position = strategy.cachedPosition();
+            if (position.getTotalShares() <= 0) {
+                continue;
+            }
+            total = total.add(position.totalInvested());
+        }
+        return "Invested Value: " + Monetary.round(total).toPlainString();
+    }
+
     public String formatCpuUsageText() {
         try {
             com.sun.management.OperatingSystemMXBean osBean =

@@ -114,6 +114,7 @@ public class TradingFrame extends JFrame {
     private final JLabel marketStatus = new JLabel("Market: Unknown");
     private final JLabel streamStatus = new JLabel("Trade Stream: idle");
     private final JLabel marketValueStatus = new JLabel("Market Value: -");
+    private final JLabel investedValueStatus = new JLabel("Invested Value: -");
     private final JLabel cpuUsageStatus = new JLabel("CPU: -");
     private final JLabel memoryUsageStatus = new JLabel("Memory: -");
     private final JLabel headerStatus = new JLabel("Status: waiting for settings");
@@ -231,6 +232,7 @@ public class TradingFrame extends JFrame {
     };
     private final JTable filledOrdersTable = new JTable(filledOrdersTableModel);
     private final JTabbedPane strategyTabs = new JTabbedPane();
+    private javax.swing.border.TitledBorder strategyGridTitle;
 
     private TradingApi tradingApi;
     private AnalyticsPublisher analyticsPublisher;
@@ -958,6 +960,23 @@ public class TradingFrame extends JFrame {
 
         // Make table sortable — click column headers to sort
         TableRowSorter<StrategyGridTableModel> sorter = new TableRowSorter<>(strategyTableModel);
+        sorter.setComparator(3, (left, right) -> compareNumericCells(left, right));
+        sorter.setComparator(4, (left, right) -> compareNumericCells(left, right));
+        sorter.setComparator(5, (left, right) -> compareNumericCells(left, right));
+        sorter.setComparator(6, (left, right) -> {
+            BigDecimal leftValue = sortableNumericValue(left);
+            BigDecimal rightValue = sortableNumericValue(right);
+            if (leftValue == null && rightValue == null) {
+                return 0;
+            }
+            if (leftValue == null) {
+                return 1;
+            }
+            if (rightValue == null) {
+                return -1;
+            }
+            return leftValue.compareTo(rightValue);
+        });
         sorter.setSortable(7, false); // Polling countdown bar column — not sortable
         sorter.setSortable(9, false); // Actions button column — not sortable
         sorter.setRowFilter(new RowFilter<>() {
@@ -977,9 +996,9 @@ public class TradingFrame extends JFrame {
         strategyGrid.setBackground(new Color(0, 0, 0, 0));
         strategyGrid.getViewport().setOpaque(false);
         strategyGrid.getViewport().setBackground(new Color(0, 0, 0, 0));
-        javax.swing.border.TitledBorder strategyGridTitle = BorderFactory.createTitledBorder(
+        strategyGridTitle = BorderFactory.createTitledBorder(
                 BorderFactory.createLineBorder(new Color(208, 214, 222), 1, true),
-                "Stock Strategies"
+                currentStrategiesHeadingText()
         );
         strategyGridTitle.setTitleFont(FontLoader.ui(Font.BOLD, 10f));
         strategyGridTitle.setTitleColor(new Color(78, 84, 94));
@@ -1002,6 +1021,9 @@ public class TradingFrame extends JFrame {
         filledOrdersTable.setDefaultRenderer(Object.class, new HistoryRowRenderer());
         filledOrdersTable.setDefaultRenderer(Number.class, new HistoryRowRenderer());
         TableRowSorter<HistoryGridTableModel> filledSorter = new TableRowSorter<>(filledOrdersTableModel);
+        filledSorter.setComparator(6, (left, right) -> compareHistoryNumericCells(left, right));
+        filledSorter.setComparator(7, (left, right) -> compareHistoryNumericCells(left, right));
+        filledSorter.setComparator(8, (left, right) -> compareHistoryNumericCells(left, right));
         filledOrdersTable.setRowSorter(filledSorter);
 
         JScrollPane filledOrdersGrid = new JScrollPane(filledOrdersTable);
@@ -1057,6 +1079,10 @@ public class TradingFrame extends JFrame {
         marketValueStatus.setForeground(BOTTOM_STATUS_MARKET_VALUE);
         marketValueStatus.setVerticalAlignment(SwingConstants.CENTER);
         marketValueStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
+        investedValueStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        investedValueStatus.setForeground(BOTTOM_STATUS_MARKET_VALUE);
+        investedValueStatus.setVerticalAlignment(SwingConstants.CENTER);
+        investedValueStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
         cpuUsageStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         cpuUsageStatus.setForeground(BOTTOM_STATUS_ACCENT);
         cpuUsageStatus.setVerticalAlignment(SwingConstants.CENTER);
@@ -1147,8 +1173,10 @@ public class TradingFrame extends JFrame {
         leftGbc.gridx = 4;
         statusLeft.add(createStatusSegment(marketValueStatus), leftGbc);
         leftGbc.gridx = 5;
-        statusLeft.add(createCpuMemorySegment(), leftGbc);
+        statusLeft.add(createStatusSegment(investedValueStatus), leftGbc);
         leftGbc.gridx = 6;
+        statusLeft.add(createCpuMemorySegment(), leftGbc);
+        leftGbc.gridx = 7;
         statusLeft.add(createStatusSegment(pollingSummary), leftGbc);
 
         JPanel statusRight = new JPanel(new GridBagLayout());
@@ -3247,6 +3275,7 @@ public class TradingFrame extends JFrame {
         String cpuText = formatCpuUsageText();
         String memoryText = formatMemoryUsageText();
         String marketValueText = formatMarketValueText();
+        String investedValueText = formatInvestedValueText();
         StrategyPollingService.PollCycleSnapshot pollSnapshot = strategyPollingService == null
                 ? null
                 : strategyPollingService.lastPollCycleSnapshot();
@@ -3270,6 +3299,7 @@ public class TradingFrame extends JFrame {
                 )
         );
         SwingUtilities.invokeLater(() -> {
+            refreshCurrentStrategiesHeading();
             statusStrategyCount.setText(statusBarViewModel.strategyCountText());
             pollingSummary.setText(statusBarViewModel.pollingText());
             pollingSummary.setForeground(statusToneColor(statusBarViewModel.pollingTone()));
@@ -3277,12 +3307,27 @@ public class TradingFrame extends JFrame {
             marketStatus.setForeground(statusToneColor(statusBarViewModel.marketTone()));
             marketStatus.setToolTipText(TooltipStyler.text(statusBarViewModel.marketTooltip()));
             marketValueStatus.setText(statusBarViewModel.marketValueText());
+            investedValueStatus.setText(investedValueText);
             cpuUsageStatus.setText(statusBarViewModel.cpuText());
             memoryUsageStatus.setText(statusBarViewModel.memoryText());
             statusBar.setText(statusBarViewModel.brokerText());
             statusBar.setForeground(statusToneColor(statusBarViewModel.brokerTone()));
             luckyButton.setEnabled(settingsDialog.hasRequiredSettings());
         });
+    }
+
+    private void refreshCurrentStrategiesHeading() {
+        if (strategyGridTitle == null) {
+            return;
+        }
+        strategyGridTitle.setTitle(currentStrategiesHeadingText());
+        strategyTable.getTableHeader().repaint();
+        strategyTable.repaint();
+    }
+
+    private String currentStrategiesHeadingText() {
+        long currentCount = strategies.stream().filter(this::includeInCurrentStrategiesTab).count();
+        return "Current Strategies (" + currentCount + ")";
     }
 
     private Color statusToneColor(StatusBarPresenter.Tone tone) {
@@ -3331,6 +3376,25 @@ public class TradingFrame extends JFrame {
 
     private String formatMarketValueText() {
         return systemMetricsPresenter.formatMarketValueText(strategies);
+    }
+
+    private String formatInvestedValueText() {
+        return systemMetricsPresenter.formatInvestedValueText(strategies);
+    }
+
+    private int compareNumericCells(Object left, Object right) {
+        BigDecimal leftValue = sortableNumericValue(left);
+        BigDecimal rightValue = sortableNumericValue(right);
+        if (leftValue == null && rightValue == null) {
+            return 0;
+        }
+        if (leftValue == null) {
+            return 1;
+        }
+        if (rightValue == null) {
+            return -1;
+        }
+        return leftValue.compareTo(rightValue);
     }
 
     private String formatCpuUsageText() {
@@ -3872,6 +3936,63 @@ public class TradingFrame extends JFrame {
             return TABLE_SELECTION_BG;
         }
         return row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD;
+    }
+
+    private BigDecimal sortableNumericValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof BigDecimal number) {
+            return number;
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isBlank() || "-".equals(text)) {
+            return null;
+        }
+        text = text.replace(",", "");
+        try {
+            return new BigDecimal(text);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private int compareHistoryNumericCells(Object left, Object right) {
+        BigDecimal leftValue = sortableHistoryNumericValue(left);
+        BigDecimal rightValue = sortableHistoryNumericValue(right);
+        if (leftValue == null && rightValue == null) {
+            return 0;
+        }
+        if (leftValue == null) {
+            return 1;
+        }
+        if (rightValue == null) {
+            return -1;
+        }
+        return leftValue.compareTo(rightValue);
+    }
+
+    private BigDecimal sortableHistoryNumericValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof BigDecimal number) {
+            return number;
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isBlank() || "-".equals(text)) {
+            return null;
+        }
+        // History total/subtotal rows can include suffix text, e.g.:
+        // "100.00 (+ve: 200.00 / -ve: -100.00)". Sort by the leading total.
+        int firstSpace = text.indexOf(' ');
+        String numericPart = firstSpace > 0 ? text.substring(0, firstSpace) : text;
+        numericPart = numericPart.replace(",", "");
+        try {
+            return new BigDecimal(numericPart);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
 
