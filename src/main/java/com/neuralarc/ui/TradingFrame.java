@@ -2220,16 +2220,19 @@ public class TradingFrame extends JFrame {
             @Override public StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy) {
                 return strategyServiceForMode(StrategyMode.PAPER).createAndActivate(strategy);
             }
-            @Override public int confirmDuplicate(String symbol) {
-                return JOptionPane.showConfirmDialog(
+            @Override public boolean confirmReplaceWaitingPaperStrategy(String symbol) {
+                int choice = JOptionPane.showConfirmDialog(
                         TradingFrame.this,
-                        "A simulation strategy already exists for " + symbol
-                                + ". Replace it?\n\nYes = replace/update\nNo = skip\nCancel = stop placement",
-                        "Duplicate Simulation Strategy",
-                        JOptionPane.YES_NO_CANCEL_OPTION,
+                        "A paper strategy already exists for " + symbol
+                                + " with a limit buy waiting to fill.\n\nReplace it with the new one?",
+                        "Paper Strategy Exists",
+                        JOptionPane.YES_NO_OPTION,
                         JOptionPane.WARNING_MESSAGE
                 );
+                return choice == JOptionPane.YES_OPTION;
             }
+            @Override public boolean allowDuplicateSymbols() { return settingsDialog.appliedAllowDuplicateSymbolStrategies(); }
+            @Override public void cancelAndDeletePaperStrategy(String strategyId) { strategyServiceForMode(StrategyMode.PAPER).delete(strategyId); }
             @Override public void afterPlacement() {
                 syncStrategiesFromRepository();
                 refreshStrategyTableData();
@@ -2239,6 +2242,9 @@ public class TradingFrame extends JFrame {
             @Override public void log(String message) { TradingFrame.this.log(message); }
         });
         LuckySimulationPlacementController.PlacementResult result = controller.place(selections);
+        if (result.canceled()) {
+            return;
+        }
         String message = controller.summaryMessage(result);
         JOptionPane.showMessageDialog(this, message, "I Am Feeling Lucky", JOptionPane.INFORMATION_MESSAGE);
         userActionLog.completed("I Am Feeling Lucky", message.replace('\n', ' '));
@@ -3329,7 +3335,7 @@ public class TradingFrame extends JFrame {
                     analyticsAllowed,
                     settingsDialog.getEndpoint(),
                     null,
-                    "1.0.0"
+                    AppMetadata.displayVersion()
             );
             analyticsPublisher = new HttpAnalyticsPublisher(telemetryConfig,
                     new AnalyticsQueue(AppMetadata.appDataDirectory().resolve("analytics-queue.log")));

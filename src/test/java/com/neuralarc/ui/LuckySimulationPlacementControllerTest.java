@@ -8,6 +8,8 @@ import com.neuralarc.model.RecommendationAction;
 import com.neuralarc.model.RecommendationType;
 import com.neuralarc.model.ShortTermMarketMode;
 import com.neuralarc.model.Strategy;
+import com.neuralarc.model.StrategyConfig;
+import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyRecommendation;
 import com.neuralarc.model.StrategyStatus;
@@ -31,7 +33,7 @@ class LuckySimulationPlacementControllerTest {
     @Test
     void startsPaperMonitoringThroughPaperCreationPath() {
         InMemoryRepository repository = new InMemoryRepository();
-        LuckySimulationPlacementController controller = controller(repository, JOptionPane.YES_OPTION);
+        LuckySimulationPlacementController controller = controller(repository, true, false);
 
         LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
 
@@ -39,7 +41,7 @@ class LuckySimulationPlacementControllerTest {
         Strategy saved = repository.findAll().getFirst();
         assertEquals("NVDA", saved.symbol());
         assertEquals(StrategyMode.PAPER, saved.mode());
-        assertEquals(StrategyStatus.CREATED, saved.status());
+        assertEquals(StrategyStatus.ACTIVE, saved.status());
         assertEquals(10, saved.baseBuyQuantity());
         assertEquals("PAPER_PENDING", saved.latestOrderStatus());
         assertTrue(saved.name().startsWith("I_AM_FEELING_LUCKY:"));
@@ -49,7 +51,7 @@ class LuckySimulationPlacementControllerTest {
     @Test
     void usesPerSelectionQuantityWhenCreatingStrategy() {
         InMemoryRepository repository = new InMemoryRepository();
-        LuckySimulationPlacementController controller = controller(repository, JOptionPane.YES_OPTION);
+        LuckySimulationPlacementController controller = controller(repository, true, false);
 
         LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA", 25)));
 
@@ -61,30 +63,96 @@ class LuckySimulationPlacementControllerTest {
     }
 
     @Test
-    void duplicateCanBeSkippedWithoutCreatingAnotherStrategy() {
+    void duplicateWaitingForFillNoStopsPlacementWithoutChanges() {
         InMemoryRepository repository = new InMemoryRepository();
-        LuckySimulationPlacementController controller = controller(repository, JOptionPane.YES_OPTION);
+        repository.save(waitingPaperStrategy("NVDA", "existing-waiting"));
+
+        LuckySimulationPlacementController controller = controller(repository, false, false);
+        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
+
+        assertTrue(result.canceled());
+        assertEquals(0, result.created());
+        assertEquals(0, result.replaced());
+        assertEquals(1, repository.findAll().size());
+        assertEquals("existing-waiting", repository.findAll().getFirst().id());
+    }
+
+    @Test
+    void duplicateWaitingForFillYesReplacesExistingStrategy() {
+        InMemoryRepository repository = new InMemoryRepository();
+        repository.save(waitingPaperStrategy("NVDA", "existing-waiting"));
+
+        LuckySimulationPlacementController controller = controller(repository, true, false);
+        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
+
+        assertEquals(0, result.created());
+        assertEquals(1, result.replaced());
+        assertEquals(1, repository.findAll().size());
+        assertTrue(repository.findAll().stream().noneMatch(strategy -> "existing-waiting".equals(strategy.id())));
+    }
+
+    @Test
+    void nonWaitingDuplicateFollowsDuplicatePolicyWhenNotAllowed() {
+        InMemoryRepository repository = new InMemoryRepository();
+        LuckySimulationPlacementController controller = controller(repository, true, false);
         controller.place(List.of(selection("NVDA")));
 
-        LuckySimulationPlacementController skipController = controller(repository, JOptionPane.NO_OPTION);
-        LuckySimulationPlacementController.PlacementResult result = skipController.place(List.of(selection("NVDA")));
+        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
 
         assertEquals(0, result.created());
         assertEquals(1, result.skipped());
         assertEquals(1, repository.findAll().size());
     }
 
-    private LuckySimulationPlacementController controller(InMemoryRepository repository, int duplicateChoice) {
+    @Test
+    void nonWaitingDuplicateAllowsSecondStrategyWhenPolicyAllows() {
+        InMemoryRepository repository = new InMemoryRepository();
+        LuckySimulationPlacementController controller = controller(repository, true, true);
+        controller.place(List.of(selection("NVDA")));
+
+        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
+
+        assertEquals(1, result.created());
+        assertEquals(0, result.skipped());
+        assertEquals(2, repository.findAll().size());
+    }
+
+    private LuckySimulationPlacementController controller(InMemoryRepository repository, boolean replaceChoice, boolean allowDuplicates) {
         return new LuckySimulationPlacementController(new LuckySimulationPlacementController.Gateway() {
             @Override public StrategyRepository repository() { return repository; }
             @Override public StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy) {
+                strategy.setStatus(StrategyStatus.ACTIVE);
                 repository.save(strategy);
                 return StrategyService.StrategyCreationResult.success(strategy.id(), "order-row", "alpaca-paper-order", "client-order");
             }
-            @Override public int confirmDuplicate(String symbol) { return duplicateChoice; }
+            @Override public boolean confirmReplaceWaitingPaperStrategy(String symbol) { return replaceChoice; }
+            @Override public boolean allowDuplicateSymbols() { return allowDuplicates; }
+            @Override public void cancelAndDeletePaperStrategy(String strategyId) { repository.deleteById(strategyId); }
             @Override public void afterPlacement() {}
             @Override public void log(String message) {}
         });
+    }
+
+    private Strategy waitingPaperStrategy(String symbol, String id) {
+        StrategyConfig config = new StrategyConfig(
+                symbol,
+                new BigDecimal("125.00"),
+                10,
+                new BigDecimal("120.00"),
+                new BigDecimal("130.00"),
+                new BigDecimal("119.00"),
+                10,
+                new BigDecimal("118.00"),
+                10,
+                60,
+                true,
+                false
+        );
+        Strategy strategy = Strategy.fromConfig(id, "existing paper", config, StrategyMode.PAPER);
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
+        strategy.setLatestOrderStatus("accepted");
+        return strategy;
     }
 
     private LuckySimulationSelection selection(String symbol) {

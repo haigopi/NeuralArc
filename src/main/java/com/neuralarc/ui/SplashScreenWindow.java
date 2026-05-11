@@ -13,9 +13,7 @@ import java.awt.GradientPaint;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Image;
-import java.awt.RadialGradientPaint;
 import java.awt.RenderingHints;
-import java.awt.geom.Point2D;
 import java.net.URL;
 
 public class SplashScreenWindow extends JWindow {
@@ -30,10 +28,9 @@ public class SplashScreenWindow extends JWindow {
     public SplashScreenWindow() {
         setBackground(BACKDROP);
 
-        JPanel root = new ShadowBackdropPanel();
-        root.setLayout(new BorderLayout());
+        JPanel root = new JPanel(new BorderLayout());
         root.setOpaque(false);
-        root.setBorder(new EmptyBorder(18, 18, 18, 18));
+        root.setBorder(new EmptyBorder(22, 22, 22, 22));
 
         JPanel content = new RoundedGradientPanel();
         content.setLayout(new BorderLayout(0, 0));
@@ -105,8 +102,12 @@ public class SplashScreenWindow extends JWindow {
             int width = getWidth();
             int height = getHeight();
 
-            g2.setColor(new Color(0, 0, 0, 56));
-            g2.fillRoundRect(4, 10, width - 8, height - 8, 34, 34);
+            // Soft multi-layer shadow to avoid a hard border-like outline.
+            for (int i = 14; i >= 1; i--) {
+                int alpha = 5 + (i * 2);
+                g2.setColor(new Color(0, 0, 0, alpha));
+                g2.fillRoundRect(i, i + 6, width - (i * 2), height - (i * 2), 30 + i, 30 + i);
+            }
 
             g2.setPaint(new GradientPaint(0, 0, CARD_TOP, 0, height, CARD_BOTTOM));
             g2.fillRoundRect(0, 0, width - 1, height - 1, 30, 30);
@@ -117,25 +118,6 @@ public class SplashScreenWindow extends JWindow {
             g2.setColor(BORDER);
             g2.drawRoundRect(0, 0, width - 1, height - 1, 30, 30);
 
-            g2.dispose();
-        }
-    }
-
-    private static final class ShadowBackdropPanel extends JPanel {
-        @Override
-        protected void paintComponent(Graphics graphics) {
-            Graphics2D g2 = (Graphics2D) graphics.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            float radius = Math.max(getWidth(), getHeight()) * 0.82f;
-            Point2D center = new Point2D.Float(getWidth() / 2f, getHeight() / 2f);
-            RadialGradientPaint paint = new RadialGradientPaint(
-                    center,
-                    radius,
-                    new float[]{0f, 0.65f, 1f},
-                    new Color[]{new Color(0, 0, 0, 105), new Color(0, 0, 0, 52), new Color(0, 0, 0, 0)}
-            );
-            g2.setPaint(paint);
-            g2.fillRect(0, 0, getWidth(), getHeight());
             g2.dispose();
         }
     }

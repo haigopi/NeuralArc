@@ -243,8 +243,6 @@ public final class AppMetadata {
         if (version == null || version.isBlank()) {
             return "dev";
         }
-        String trimmed = version.trim();
-        String normalized = trimmed.replaceFirst("(?i)-SNAPSHOT$", "");
-        return normalized.isBlank() ? trimmed : normalized;
+        return version.trim();
     }
 }

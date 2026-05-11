@@ -136,6 +136,56 @@ next_release_version() {
   printf '%s\n' "$candidate"
 }
 
+previous_release_tag() {
+  local current_version="$1"
+  local previous=""
+  while IFS= read -r candidate; do
+    [[ -z "$candidate" ]] && continue
+    if [[ "$candidate" == "$current_version" ]]; then
+      break
+    fi
+    previous="$candidate"
+  done < <(
+    {
+      git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | sed -E 's/^v//'
+      printf '%s\n' "$current_version"
+    } | awk 'NF' | sort -V -u
+  )
+  if [[ -n "$previous" ]]; then
+    printf 'v%s\n' "$previous"
+  fi
+}
+
+generate_release_notes() {
+  local version="$1"
+  local tag="$2"
+  local notes_file="$PROJECT_DIR/build/release-notes-$version.md"
+  local previous_tag
+  local range
+  local commits
+
+  mkdir -p "$PROJECT_DIR/build"
+  previous_tag="$(previous_release_tag "$version" || true)"
+  if [[ -n "$previous_tag" ]]; then
+    range="$previous_tag..HEAD"
+  else
+    range="HEAD"
+  fi
+
+  commits="$(git --no-pager log --pretty=format:'- %s (%h)' $range || true)"
+  if [[ -z "$commits" ]]; then
+    commits="- No commit messages found for this release range."
+  fi
+
+  cat > "$notes_file" <<EOF
+# NeuralArc $tag
+
+## Changes
+$commits
+EOF
+  printf '%s\n' "$notes_file"
+}
+
 verify_download_links_point_to_latest_release() {
   local index_file="$PROJECT_DIR/docs/index.html"
   if [[ ! -f "$index_file" ]]; then
@@ -175,6 +225,7 @@ WIN_EXE="$PROJECT_DIR/artifacts/windows/NeuralArc-$VERSION.exe"
 LINUX_DEB="$PROJECT_DIR/artifacts/linux/NeuralArc-$VERSION.deb"
 MAC_README="$PROJECT_DIR/artifacts/macos/README-$VERSION.md"
 WIN_README="$PROJECT_DIR/artifacts/windows/README-$VERSION.md"
+LINUX_README="$PROJECT_DIR/artifacts/linux/README-$VERSION.md"
 
 ASSETS=()
 MISSING_ASSETS=()
@@ -202,12 +253,82 @@ if [[ ${#MISSING_ASSETS[@]} -gt 0 ]]; then
   done
 fi
 
-NOTES_ARGS=(--notes "Release $TAG")
-if [[ -f "$MAC_README" ]]; then
-  NOTES_ARGS=(--notes-file "$MAC_README")
-elif [[ -f "$WIN_README" ]]; then
-  NOTES_ARGS=(--notes-file "$WIN_README")
+RELEASE_NOTES_FILE="$(generate_release_notes "$VERSION" "$TAG")"
+NOTES_ARGS=(--notes-file "$RELEASE_NOTES_FILE")
+
+COMMIT_LINES="$(sed -n '/^## Changes$/,$p' "$RELEASE_NOTES_FILE" | tail -n +2)"
+if [[ -z "$COMMIT_LINES" ]]; then
+  COMMIT_LINES="- No commit messages found for this release range."
 fi
+
+mkdir -p "$PROJECT_DIR/artifacts/macos" "$PROJECT_DIR/artifacts/windows" "$PROJECT_DIR/artifacts/linux"
+
+cat > "$MAC_README" <<EOF
+# NeuralArc macOS Release $VERSION
+
+## Artifact
+- File: `NeuralArc-$VERSION.dmg`
+- Path: `artifacts/macos/NeuralArc-$VERSION.dmg`
+
+## Install
+1. Open the DMG file.
+2. Drag `NeuralArc.app` to `Applications`.
+3. Launch from Applications.
+
+## Verify checksum (optional)
+```zsh
+cd $PROJECT_DIR
+shasum -a 256 artifacts/macos/NeuralArc-$VERSION.dmg
+```
+
+## Changes
+$COMMIT_LINES
+
+EOF
+
+cat > "$WIN_README" <<EOF
+# NeuralArc Windows Release $VERSION
+
+## Artifact
+- File: `NeuralArc-$VERSION.exe`
+- Path: `artifacts/windows/NeuralArc-$VERSION.exe`
+
+## Install
+1. Run the EXE installer.
+2. Follow installer prompts.
+3. Launch `NeuralArc` from Start Menu.
+
+## Verify checksum (optional, PowerShell)
+```powershell
+Get-FileHash "C:\\path\\to\\NeuralArc-$VERSION.exe" -Algorithm SHA256
+```
+
+## Changes
+$COMMIT_LINES
+
+EOF
+
+cat > "$LINUX_README" <<EOF
+# NeuralArc Linux Release $VERSION
+
+## Artifact
+- File: `NeuralArc-$VERSION.deb`
+- Path: `artifacts/linux/NeuralArc-$VERSION.deb`
+
+## Install
+1. Install the DEB package (for Debian/Ubuntu-based distributions).
+2. Launch `NeuralArc` from applications menu.
+
+## Verify checksum (optional)
+```zsh
+cd $PROJECT_DIR
+sha256sum artifacts/linux/NeuralArc-$VERSION.deb
+```
+
+## Changes
+$COMMIT_LINES
+
+EOF
 
 cd "$PROJECT_DIR"
 
