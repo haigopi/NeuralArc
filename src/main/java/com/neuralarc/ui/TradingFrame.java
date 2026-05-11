@@ -120,11 +120,12 @@ public class TradingFrame extends JFrame {
     private static final Color STATUS_OK = new Color(34, 139, 34);
     private static final Color STATUS_WARN = new Color(180, 100, 0);
     private static final Color STATUS_ERR = new Color(180, 30, 30);
-    private static final Color TABLE_SELECTION_BG     = new Color(255, 242, 80);   // yellow row highlight
-    private static final Color TABLE_SELECTION_FG     = new Color(25,  20,  5);    // near-black text on yellow
-    private static final Color TABLE_SELECTION_BAR_BG = new Color(230, 208, 30);   // progress-bar unfilled on yellow row
-    private static final Color TABLE_ROW_BG_EVEN      = new Color(245, 247, 250);  // light blue-white for even rows
-    private static final Color TABLE_ROW_BG_ODD       = new Color(255, 255, 255);  // white for odd rows
+    private static final Color TABLE_SELECTION_BG       = new Color(201, 220, 252); // blue row highlight
+    private static final Color TABLE_SELECTION_FG       = new Color(10,  35, 100); // dark navy text on blue
+    private static final Color TABLE_SELECTION_BORDER   = new Color(66, 133, 244); // left accent stripe on selected row
+    private static final Color TABLE_SELECTION_BAR_BG   = new Color(170, 198, 245); // progress-bar unfilled on blue row
+    private static final Color TABLE_ROW_BG_EVEN        = new Color(245, 247, 250); // light blue-white for even rows
+    private static final Color TABLE_ROW_BG_ODD         = new Color(255, 255, 255); // white for odd rows
     private static final Color PNL_POSITIVE_FG        = PnlCellStyleSupport.POSITIVE;
     private static final Color PNL_NEGATIVE_FG        = PnlCellStyleSupport.NEGATIVE;
     private static final Color STATUS_TEXT_RUNNING = new Color(46, 125, 50);
@@ -209,9 +210,21 @@ public class TradingFrame extends JFrame {
             Component c = super.prepareRenderer(renderer, row, column);
             // Force the custom selection colour even on macOS Aqua LAF, which otherwise
             // paints its own system-accent stripe and ignores the renderer's background.
-            if (isCellSelected(row, column)) {
+            boolean rowSelected = isRowSelected(row);
+            if (rowSelected) {
                 c.setBackground(TABLE_SELECTION_BG);
                 c.setForeground(TABLE_SELECTION_FG);
+            }
+            // Left accent stripe: a 3-px blue bar on column 0 of selected rows.
+            if (c instanceof JComponent jc) {
+                if (rowSelected && column == 0) {
+                    jc.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createMatteBorder(0, 3, 0, 0, TABLE_SELECTION_BORDER),
+                            BorderFactory.createEmptyBorder(0, 7, 0, 10)
+                    ));
+                } else if (rowSelected) {
+                    jc.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
+                }
             }
             return c;
         }
@@ -3621,6 +3634,7 @@ public class TradingFrame extends JFrame {
         public Component getTableCellRendererComponent(
                 JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
             super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            setOpaque(true);
             int modelRow = table.convertRowIndexToModel(row);
             if (modelRow >= 0 && modelRow < strategies.size()) {
                 boolean paused = strategies.get(modelRow).isPaused();
@@ -3628,7 +3642,6 @@ public class TradingFrame extends JFrame {
                     setBackground(TABLE_SELECTION_BG);
                     setForeground(TABLE_SELECTION_FG);
                 } else {
-                    // Apply alternating row background colors
                     setBackground(row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD);
                     if (column == 1) {
                         if (strategies.get(modelRow).strategy.status() == StrategyStatus.ARCHIVED) {
@@ -3645,9 +3658,12 @@ public class TradingFrame extends JFrame {
                     }
                 }
             }
-            setOpaque(true);
             setHorizontalAlignment(alignmentForColumn(column));
-            setBorder(new EmptyBorder(0, 10, 0, 10));
+            // Border is managed by prepareRenderer for selected rows (accent stripe on col 0);
+            // for unselected rows set the standard inset border here.
+            if (!isSelected) {
+                setBorder(new EmptyBorder(0, 10, 0, 10));
+            }
             return this;
         }
 
@@ -3664,19 +3680,16 @@ public class TradingFrame extends JFrame {
         public Component getTableCellRendererComponent(
                 JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
             super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-
+            setOpaque(true);
             if (isSelected) {
                 setBackground(TABLE_SELECTION_BG);
                 setForeground(TABLE_SELECTION_FG);
             } else {
-                // Apply alternating row background colors
                 setBackground(row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD);
                 setForeground(PnlCellStyleSupport.foregroundFor(value, table.getForeground()));
+                setBorder(new EmptyBorder(0, 10, 0, 10));
             }
-
-            setOpaque(true);
             setHorizontalAlignment(SwingConstants.LEFT);
-            setBorder(new EmptyBorder(0, 10, 0, 10));
             return this;
         }
     }
@@ -3852,16 +3865,9 @@ public class TradingFrame extends JFrame {
         if (selected) {
             return TABLE_SELECTION_BG;
         }
-        // Return alternating row colors based on row index
         return row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD;
     }
 
-    private Color selectionAwareRowColor(boolean selected, JTable table) {
-        if (selected) {
-            return TABLE_SELECTION_BG;
-        }
-        return table.getBackground();
-    }
 
     private void styleActionButton(JButton button, Color background) {
         button.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
