@@ -588,7 +588,7 @@ class StrategyPollingServiceTest {
     }
 
     @Test
-    void autoPauseWhenMarketClosed() {
+    void marketCloseSuppressionDoesNotPersistentlyAutoPauseActiveStrategies() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
         f.marketHoursService.open = false;
@@ -596,8 +596,8 @@ class StrategyPollingServiceTest {
         f.service.pollDueStrategies();
 
         Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
-        assertEquals(StrategyStatus.PAUSED, updated.status());
-        assertEquals(PauseReason.AUTO_MARKET_CLOSED, updated.pauseReason());
+        assertEquals(StrategyStatus.ACTIVE, updated.status());
+        assertEquals(PauseReason.NONE, updated.pauseReason());
         assertEquals(0, f.alpaca.positionCalls);
         assertEquals(0, f.alpaca.priceCalls);
         assertEquals(0, f.alpaca.openOrderCalls);
@@ -607,6 +607,7 @@ class StrategyPollingServiceTest {
     void autoResumeWhenMarketOpens() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
+        f.marketHoursService.open = true;
         strategy.setStatus(StrategyStatus.PAUSED);
         strategy.setCurrentState(StrategyLifecycleState.PAUSED);
         strategy.setPauseReason(PauseReason.AUTO_MARKET_CLOSED);
@@ -617,6 +618,10 @@ class StrategyPollingServiceTest {
         Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
         assertEquals(StrategyStatus.ACTIVE, updated.status());
         assertEquals(PauseReason.NONE, updated.pauseReason());
+
+        StrategyPollingService.MarketClosedAutoRepairSummary summary = f.service.drainMarketClosedAutoRepairedStrategyIds();
+        assertEquals(List.of(strategy.id()), summary.strategyIds());
+        assertTrue(f.service.drainMarketClosedAutoRepairedStrategyIds().isEmpty());
     }
 
     @Test
@@ -647,6 +652,57 @@ class StrategyPollingServiceTest {
         assertEquals(0, f.alpaca.positionCalls);
         assertEquals(0, f.alpaca.priceCalls);
         assertEquals(0, f.alpaca.openOrderCalls);
+    }
+
+    @Test
+    void overnightEligibleSymbolCanPollWhenGlobalSessionIsClosed() throws Exception {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setLastPolledAt(Instant.now().minusSeconds(60));
+        f.strategies.save(strategy);
+        f.settingsService.save(new AppSettingsService.AppSettings(
+                "test@example.com",
+                true,
+                true,
+                true,
+                BrokerType.ALPACA,
+                ApplicationMode.PAPER,
+                false
+        ));
+        f.marketHoursService.open = false;
+        f.alpaca.overnightEligibleBySymbol.put(strategy.symbol().toUpperCase(Locale.ROOT), true);
+
+        int due = f.service.pollDueStrategies();
+
+        assertEquals(1, due);
+    }
+
+    @Test
+    void staleManualMarketClosedOverrideIsClearedWhenOvernightSessionIsOpen() throws Exception {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setPauseReason(PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE);
+        strategy.setLastPolledAt(Instant.now().minusSeconds(60));
+        f.strategies.save(strategy);
+        f.settingsService.save(new AppSettingsService.AppSettings(
+                "test@example.com",
+                true,
+                true,
+                true,
+                BrokerType.ALPACA,
+                ApplicationMode.PAPER,
+                false
+        ));
+        f.marketHoursService.open = false;
+        f.alpaca.overnightEligibleBySymbol.put(strategy.symbol().toUpperCase(Locale.ROOT), true);
+
+        f.service.pollDueStrategies();
+
+        Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(PauseReason.NONE, updated.pauseReason());
+
+        StrategyPollingService.MarketClosedAutoRepairSummary summary = f.service.drainMarketClosedAutoRepairedStrategyIds();
+        assertEquals(List.of(strategy.id()), summary.strategyIds());
     }
 
     private static final class Fixture {
@@ -732,6 +788,7 @@ class StrategyPollingServiceTest {
         BigDecimal latestPrice = new BigDecimal("8.00");
         Optional<AlpacaPositionData> position = Optional.empty();
         final Map<String, AlpacaOrderData> orderById = new HashMap<>();
+        final Map<String, Boolean> overnightEligibleBySymbol = new HashMap<>();
         int orderCounter;
         int positionCalls;
         int priceCalls;
@@ -814,6 +871,14 @@ class StrategyPollingServiceTest {
             return latestPrice;
         }
 
+        @Override
+        public boolean supportsOvernightSession(String symbol) {
+            if (symbol == null) {
+                return false;
+            }
+            return overnightEligibleBySymbol.getOrDefault(symbol.trim().toUpperCase(Locale.ROOT), false);
+        }
+
         void blockNextOpenOrdersCall() {
             openOrdersEnteredLatch = new CountDownLatch(1);
             openOrdersReleaseLatch = new CountDownLatch(1);
@@ -860,6 +925,11 @@ class StrategyPollingServiceTest {
         @Override
         public boolean isTradingSessionOpen(Instant instant, boolean extendedHoursEnabled) {
             return open;
+        }
+
+        @Override
+        public boolean isTradingSessionOpen(Instant instant, boolean extendedHoursEnabled, boolean overnightHoursEnabled) {
+            return open || (extendedHoursEnabled && overnightHoursEnabled);
         }
 
         @Override

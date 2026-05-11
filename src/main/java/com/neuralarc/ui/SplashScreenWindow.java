@@ -9,12 +9,13 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
-import java.awt.Font;
 import java.awt.GradientPaint;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Image;
+import java.awt.RadialGradientPaint;
 import java.awt.RenderingHints;
+import java.awt.geom.Point2D;
 import java.net.URL;
 
 public class SplashScreenWindow extends JWindow {
@@ -29,7 +30,8 @@ public class SplashScreenWindow extends JWindow {
     public SplashScreenWindow() {
         setBackground(BACKDROP);
 
-        JPanel root = new JPanel(new BorderLayout());
+        JPanel root = new ShadowBackdropPanel();
+        root.setLayout(new BorderLayout());
         root.setOpaque(false);
         root.setBorder(new EmptyBorder(18, 18, 18, 18));
 
@@ -115,6 +117,25 @@ public class SplashScreenWindow extends JWindow {
             g2.setColor(BORDER);
             g2.drawRoundRect(0, 0, width - 1, height - 1, 30, 30);
 
+            g2.dispose();
+        }
+    }
+
+    private static final class ShadowBackdropPanel extends JPanel {
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            Graphics2D g2 = (Graphics2D) graphics.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            float radius = Math.max(getWidth(), getHeight()) * 0.82f;
+            Point2D center = new Point2D.Float(getWidth() / 2f, getHeight() / 2f);
+            RadialGradientPaint paint = new RadialGradientPaint(
+                    center,
+                    radius,
+                    new float[]{0f, 0.65f, 1f},
+                    new Color[]{new Color(0, 0, 0, 105), new Color(0, 0, 0, 52), new Color(0, 0, 0, 0)}
+            );
+            g2.setPaint(paint);
+            g2.fillRect(0, 0, getWidth(), getHeight());
             g2.dispose();
         }
     }

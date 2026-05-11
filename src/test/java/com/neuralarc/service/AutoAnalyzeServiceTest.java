@@ -51,6 +51,39 @@ class AutoAnalyzeServiceTest {
         assertEquals(new BigDecimal("0.00"), result.todayClose());
     }
 
+    @Test
+    void todaysSnapshotFallsBackToMostRecentAnalyzedDailyBarWhenSnapshotFetchIsEmpty() throws Exception {
+        LocalDate today = LocalDate.now();
+        List<MarketBar> analysisDaily = List.of(
+                barOnDate("AAPL", today.minusDays(2), "100.00", "104.00", "99.00", "103.00"),
+                barOnDate("AAPL", today.minusDays(1), "103.50", "106.00", "102.00", "105.25")
+        );
+
+        AlpacaMarketDataApi api = new AlpacaMarketDataApi() {
+            @Override
+            public List<MarketBar> getDailyBars(String symbol, LocalDate startDate, LocalDate endDate) {
+                if (startDate.equals(today.minusDays(7)) && endDate.equals(today.plusDays(1))) {
+                    return Collections.emptyList();
+                }
+                return analysisDaily;
+            }
+
+            @Override
+            public List<MarketBar> getIntradayBars(String symbol, LocalDate startDate, LocalDate endDate, int intervalMinutes) {
+                return Collections.emptyList();
+            }
+        };
+
+        AutoAnalyzeResult result = new AutoAnalyzeService(api).analyze("AAPL", 6, 15);
+
+        assertEquals(new BigDecimal("105.25"), result.todayStockPrice());
+        assertEquals(new BigDecimal("103.50"), result.todayOpen());
+        assertEquals(new BigDecimal("106.00"), result.todayHighSoFar());
+        assertEquals(new BigDecimal("102.00"), result.todayLowSoFar());
+        assertTrue(result.todayCloseAvailable());
+        assertEquals(new BigDecimal("105.25"), result.todayClose());
+    }
+
     // -------------------------------------------------------------------------
     // Windowed low/high ranges
     // -------------------------------------------------------------------------
@@ -319,6 +352,13 @@ class AutoAnalyzeServiceTest {
     /** Creates a bar with the given prices; symbol is set to the given symbol. */
     private MarketBar bar(String symbol, String open, String high, String low, String close) {
         return new MarketBar(symbol, "2025-01-01T10:00:00Z",
+                new BigDecimal(open), new BigDecimal(high),
+                new BigDecimal(low), new BigDecimal(close),
+                BigDecimal.ZERO);
+    }
+
+    private MarketBar barOnDate(String symbol, LocalDate date, String open, String high, String low, String close) {
+        return new MarketBar(symbol, date + "T20:00:00Z",
                 new BigDecimal(open), new BigDecimal(high),
                 new BigDecimal(low), new BigDecimal(close),
                 BigDecimal.ZERO);

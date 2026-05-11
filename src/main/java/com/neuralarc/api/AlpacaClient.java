@@ -52,4 +52,12 @@ public interface AlpacaClient {
         }
         return result;
     }
+
+    /**
+     * Returns whether the symbol is eligible for Alpaca overnight (24x5) session trading.
+     * Default is false so existing test fakes and alternative implementations remain compatible.
+     */
+    default boolean supportsOvernightSession(String symbol) {
+        return false;
+    }
 }

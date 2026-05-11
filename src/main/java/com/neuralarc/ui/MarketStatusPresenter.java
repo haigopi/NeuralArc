@@ -33,7 +33,7 @@ public final class MarketStatusPresenter {
                 : "Market session is currently closed.";
         String tooltip = state
                 + " Regular: 9:30 AM-4:00 PM ET."
-                + " Extended (if enabled): 4:00 AM-8:00 PM ET."
+                + " Extended (if enabled): 4:00 AM-8:00 PM ET and overnight 8:00 PM-4:00 AM ET (Sun-Thu nights)."
                 + " Now (ET): " + nowEastern.format(ET_TOOLTIP_FORMAT) + "."
                 + " Next open (ET): " + nextOpenEastern.format(ET_TOOLTIP_FORMAT) + ".";
 

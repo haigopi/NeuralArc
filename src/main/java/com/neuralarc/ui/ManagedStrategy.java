@@ -25,6 +25,7 @@ final class ManagedStrategy {
     volatile long nextPollDueAtMillis;
     volatile boolean countdownActive;
     volatile boolean pollInFlight;
+    private volatile Boolean overnightEligible;
     private volatile boolean pauseResumeBusy;
     private volatile String pauseResumeBusyText = "";
 
@@ -81,6 +82,14 @@ final class ManagedStrategy {
 
     void setPauseResumeBusyText(String pauseResumeBusyText) {
         this.pauseResumeBusyText = pauseResumeBusyText == null ? "" : pauseResumeBusyText;
+    }
+
+    Boolean overnightEligible() {
+        return overnightEligible;
+    }
+
+    void setOvernightEligible(Boolean overnightEligible) {
+        this.overnightEligible = overnightEligible;
     }
 
     StrategyConfig toConfig() {

@@ -14,10 +14,14 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -37,11 +41,14 @@ public class StrategyPollingService {
     private final AppSettingsService appSettingsService;
     private final MarketHoursService marketHoursService;
     private final AlpacaClient alpacaClient;
+    private final TradingSessionPolicy tradingSessionPolicy;
     private final ExecutorService pollExecutor;
     private volatile Instant lastStreamingEventAt;
     private volatile Boolean lastTradingSessionOpen;
     private volatile PollListener pollListener = PollListener.NOOP;
     private volatile PollCycleSnapshot lastPollCycleSnapshot = new PollCycleSnapshot(false, false, 0, 0, 0, 0);
+    private final Set<String> pendingMarketClosedAutoRepairedStrategyIds = Collections.synchronizedSet(new LinkedHashSet<>());
+    private final Map<String, RepairCategory> strategyIdToRepairCategory = Collections.synchronizedMap(new LinkedHashMap<>());
 
     public StrategyPollingService(
             StrategyRepository strategyRepository,
@@ -72,6 +79,7 @@ public class StrategyPollingService {
         this.appSettingsService = appSettingsService;
         this.marketHoursService = marketHoursService;
         this.alpacaClient = alpacaClient;
+        this.tradingSessionPolicy = new TradingSessionPolicy(marketHoursService, alpacaClient);
         StrategyEventBus eventBus = new StrategyEventBus();
         StrategyStateMachine stateMachine = new StrategyStateMachine(eventRepository, eventBus);
         this.strategyEngine = new StrategyEngine(
@@ -104,19 +112,14 @@ public class StrategyPollingService {
     public int pollDueStrategies() {
         Instant now = Instant.now();
         AppSettingsService.AppSettings settings = appSettingsService.load();
+        boolean autoPauseForMarketClose = settings.autoPausePollingWhenMarketClosed();
         int totalStrategies = 0;
         int eligibleStrategies = 0;
         int skippedNotDue = 0;
-        if (settings.autoPausePollingWhenMarketClosed()) {
+        boolean suppressedForSession = false;
+        if (autoPauseForMarketClose) {
             boolean marketOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
             handleMarketSessionTransition(marketOpen, settings.extendedHoursTradingEnabled(), now);
-            if (!marketOpen) {
-                lastPollCycleSnapshot = new PollCycleSnapshot(true, true, 0, 0, 0, 0);
-                if (LOGGER.isLoggable(Level.FINE)) {
-                    LOGGER.fine("[POLL][CYCLE] marketOpen=false autoPause=true scanned=0 eligible=0 due=0 skippedNotDue=0");
-                }
-                return 0;
-            }
         } else {
             lastTradingSessionOpen = null;
         }
@@ -126,7 +129,31 @@ public class StrategyPollingService {
         List<Strategy> due = new ArrayList<>();
         for (Strategy strategy : strategyRepository.findAll()) {
             totalStrategies++;
+            boolean sessionOpenForStrategy = !autoPauseForMarketClose
+                    || tradingSessionPolicy.isTradingSessionOpen(strategy, settings, now);
+
+            if (autoPauseForMarketClose
+                    && strategy.status() == StrategyStatus.PAUSED
+                    && strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED
+                    && sessionOpenForStrategy) {
+                strategyService.autoResumeFromMarketClose(strategy.id(), "Strategy auto-resumed because market is open");
+                recordMarketClosedAutoRepair(strategy.id(), RepairCategory.AUTO_MARKET_CLOSED);
+                strategy = strategyRepository.findById(strategy.id()).orElse(strategy);
+            }
+            if (autoPauseForMarketClose
+                    && strategy.status() == StrategyStatus.ACTIVE
+                    && strategy.pauseReason() == PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE
+                    && sessionOpenForStrategy) {
+                strategy.setPauseReason(PauseReason.NONE);
+                strategyRepository.save(strategy);
+                recordMarketClosedAutoRepair(strategy.id(), RepairCategory.MANUAL_MARKET_CLOSED_OVERRIDE);
+            }
             if (!isPollEligible(strategy)) {
+                continue;
+            }
+            if (autoPauseForMarketClose && !sessionOpenForStrategy) {
+                skippedNotDue++;
+                suppressedForSession = true;
                 continue;
             }
             eligibleStrategies++;
@@ -179,7 +206,8 @@ public class StrategyPollingService {
             }
         }
         if (LOGGER.isLoggable(Level.FINE)) {
-            LOGGER.fine("[POLL][CYCLE] marketOpen=true autoPause=" + settings.autoPausePollingWhenMarketClosed()
+            LOGGER.fine("[POLL][CYCLE] autoPause=" + autoPauseForMarketClose
+                    + " marketSuppressed=" + suppressedForSession
                     + " scanned=" + totalStrategies
                     + " eligible=" + eligibleStrategies
                     + " due=" + dueStrategies
@@ -187,7 +215,7 @@ public class StrategyPollingService {
         }
         lastPollCycleSnapshot = new PollCycleSnapshot(
                 true,
-                false,
+                suppressedForSession,
                 totalStrategies,
                 eligibleStrategies,
                 dueStrategies,
@@ -198,6 +226,28 @@ public class StrategyPollingService {
 
     public PollCycleSnapshot lastPollCycleSnapshot() {
         return lastPollCycleSnapshot;
+    }
+
+    /**
+     * Returns and clears the current pending list of market-close auto-repaired strategy IDs
+     * with category counts. Intended for one-time startup audit logging at the UI layer.
+     */
+    public MarketClosedAutoRepairSummary drainMarketClosedAutoRepairedStrategyIds() {
+        synchronized (pendingMarketClosedAutoRepairedStrategyIds) {
+            if (pendingMarketClosedAutoRepairedStrategyIds.isEmpty()) {
+                return new MarketClosedAutoRepairSummary(List.of(), Map.of());
+            }
+            List<String> snapshot = new ArrayList<>(pendingMarketClosedAutoRepairedStrategyIds);
+            Map<RepairCategory, Integer> categoryCounts = new LinkedHashMap<>();
+            for (String id : snapshot) {
+                RepairCategory category = strategyIdToRepairCategory.getOrDefault(id, RepairCategory.AUTO_MARKET_CLOSED);
+                categoryCounts.put(category, categoryCounts.getOrDefault(category, 0) + 1);
+            }
+            snapshot.sort(String::compareTo);
+            pendingMarketClosedAutoRepairedStrategyIds.clear();
+            strategyIdToRepairCategory.clear();
+            return new MarketClosedAutoRepairSummary(snapshot, categoryCounts);
+        }
     }
 
     public void pollActiveStrategies() {
@@ -334,7 +384,7 @@ public class StrategyPollingService {
                 LOGGER.info(() -> "Market session open. Auto-resuming eligible strategies."
                         + " Extended hours enabled=" + extendedHoursEnabled);
             } else {
-                LOGGER.info(() -> "Market session closed. Auto-pausing eligible strategies until "
+                LOGGER.info(() -> "Market session closed. Poll cycles will be suppressed until "
                         + marketHoursService.nextMarketOpen(now, extendedHoursEnabled)
                         + ". Extended hours enabled=" + extendedHoursEnabled);
             }
@@ -342,15 +392,6 @@ public class StrategyPollingService {
         if (marketOpen) {
             LOGGER.fine("[POLL][SCHEDULER] Market-open transition: evaluating auto-resume candidates");
             resumeAutoPausedStrategies();
-        } else {
-            LOGGER.fine("[POLL][SCHEDULER] Market-closed transition: evaluating auto-pause candidates");
-            autoPauseActiveStrategiesForMarketClose();
-        }
-    }
-
-    private void autoPauseActiveStrategiesForMarketClose() {
-        for (Strategy strategy : strategyRepository.findActive()) {
-            strategyService.autoPauseForMarketClose(strategy.id(), "Strategy auto-paused because market is closed");
         }
     }
 
@@ -366,7 +407,16 @@ public class StrategyPollingService {
                 continue;
             }
             strategyService.autoResumeFromMarketClose(strategy.id(), "Strategy auto-resumed because market is open");
+            recordMarketClosedAutoRepair(strategy.id(), RepairCategory.AUTO_MARKET_CLOSED);
         }
+    }
+
+    private void recordMarketClosedAutoRepair(String strategyId, RepairCategory category) {
+        if (strategyId == null || strategyId.isBlank()) {
+            return;
+        }
+        pendingMarketClosedAutoRepairedStrategyIds.add(strategyId);
+        strategyIdToRepairCategory.put(strategyId, category);
     }
 
     private StrategyExecutionEvent event(String strategyId, StrategyEventType type, String message, String metadataJson) {
@@ -389,6 +439,47 @@ public class StrategyPollingService {
          * @param outcomes   ordered list of rule evaluation results from this cycle
          */
         default void onRulesAnalyzed(String strategyId, String symbol, List<StrategyEngine.RuleOutcome> outcomes) {}
+    }
+
+    public enum RepairCategory {
+        AUTO_MARKET_CLOSED("AUTO_MARKET_CLOSED→ACTIVE"),
+        MANUAL_MARKET_CLOSED_OVERRIDE("MANUAL_OVERRIDE→NONE");
+
+        private final String label;
+
+        RepairCategory(String label) {
+            this.label = label;
+        }
+
+        public String label() {
+            return label;
+        }
+    }
+
+    public record MarketClosedAutoRepairSummary(
+            List<String> strategyIds,
+            Map<RepairCategory, Integer> categoryCounts
+    ) {
+        public boolean isEmpty() {
+            return strategyIds.isEmpty();
+        }
+
+        public String formatSummary() {
+            if (strategyIds.isEmpty()) {
+                return "";
+            }
+            StringBuilder sb = new StringBuilder();
+            boolean first = true;
+            for (RepairCategory category : RepairCategory.values()) {
+                Integer count = categoryCounts.get(category);
+                if (count != null && count > 0) {
+                    if (!first) sb.append(", ");
+                    sb.append(category.label()).append(" (").append(count).append(")");
+                    first = false;
+                }
+            }
+            return sb.toString();
+        }
     }
 
     public record PollCycleSnapshot(

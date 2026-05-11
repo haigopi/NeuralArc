@@ -40,9 +40,24 @@ class LuckySimulationPlacementControllerTest {
         assertEquals("NVDA", saved.symbol());
         assertEquals(StrategyMode.PAPER, saved.mode());
         assertEquals(StrategyStatus.CREATED, saved.status());
+        assertEquals(10, saved.baseBuyQuantity());
         assertEquals("PAPER_PENDING", saved.latestOrderStatus());
         assertTrue(saved.name().startsWith("I_AM_FEELING_LUCKY:"));
         assertTrue(saved.lastEvent().contains("Alpaca Paper mode"));
+    }
+
+    @Test
+    void usesPerSelectionQuantityWhenCreatingStrategy() {
+        InMemoryRepository repository = new InMemoryRepository();
+        LuckySimulationPlacementController controller = controller(repository, JOptionPane.YES_OPTION);
+
+        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA", 25)));
+
+        assertEquals(1, result.created());
+        Strategy saved = repository.findAll().getFirst();
+        assertEquals(25, saved.baseBuyQuantity());
+        assertEquals(25, saved.buyLimit1Quantity());
+        assertEquals(25, saved.buyLimit2Quantity());
     }
 
     @Test
@@ -73,6 +88,10 @@ class LuckySimulationPlacementControllerTest {
     }
 
     private LuckySimulationSelection selection(String symbol) {
+        return selection(symbol, 10);
+    }
+
+    private LuckySimulationSelection selection(String symbol, int quantity) {
         StrategyRecommendation recommendation = recommendation(symbol, RecommendationType.SHORT_TERM, new BigDecimal("125.00"));
         AutoAnalyzeBundle bundle = new AutoAnalyzeBundle(
                 result(symbol),
@@ -83,7 +102,8 @@ class LuckySimulationPlacementControllerTest {
         return new LuckySimulationSelection(
                 new TrendingStock(symbol, "", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "", BigDecimal.TEN),
                 bundle,
-                RecommendationType.SHORT_TERM
+                RecommendationType.SHORT_TERM,
+                quantity
         );
     }
 

@@ -1311,10 +1311,10 @@ public class StrategyDialog extends JDialog {
         aaEightMonthHighLabel.setText("$" + r.eightMonthHigh().toPlainString());
         aaOneYearLowLabel.setText("$" + r.oneYearLow().toPlainString());
         aaOneYearHighLabel.setText("$" + r.oneYearHigh().toPlainString());
-        BigDecimal snapshotPrice = firstPositive(r.todayStockPrice(), r.todayClose(), r.averageDailyClose());
-        BigDecimal snapshotOpen = firstPositive(r.todayOpen(), snapshotPrice, r.averageDailyOpen());
+        BigDecimal snapshotPrice = firstPositive(r.todayStockPrice(), r.todayClose());
+        BigDecimal snapshotOpen = firstPositive(r.todayOpen(), snapshotPrice);
         BigDecimal snapshotHigh = firstPositive(r.todayHighSoFar(), r.todayClose(), snapshotPrice, snapshotOpen);
-        BigDecimal snapshotLow = firstPositive(r.todayLowSoFar(), snapshotOpen, snapshotPrice, r.averageDailyLow());
+        BigDecimal snapshotLow = firstPositive(r.todayLowSoFar(), snapshotOpen, snapshotPrice);
         BigDecimal snapshotClose = firstPositive(r.todayClose(), snapshotPrice);
 
         aaTodayStockPriceLabel.setText(formatPriceOrDash(snapshotPrice));

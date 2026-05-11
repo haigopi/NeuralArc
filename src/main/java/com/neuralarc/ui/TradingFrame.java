@@ -151,6 +151,7 @@ public class TradingFrame extends JFrame {
     private static final Color LOG_LINE_EVEN = new Color(63, 72, 82);
     private static final Color LOG_LINE_ODD = new Color(110, 118, 128);
     private static final int MAX_EVENT_LOG_LINES = 1500;
+    private static final long CLOSED_MARKET_RECONCILE_POLL_INTERVAL_MILLIS = 60L * 1000L;
     private static final long CLOSED_MARKET_POLL_INTERVAL_MILLIS = 10L * 60L * 1000L;
     private static final int STREAM_RECONNECT_BASE_DELAY_MILLIS = 2 * 60 * 1000;
     private static final int STREAM_RECONNECT_MAX_DELAY_MILLIS = 30 * 60 * 1000;
@@ -248,6 +249,7 @@ public class TradingFrame extends JFrame {
     private volatile boolean batchGridPriceRefreshRequestedFromStream;
     private volatile long lastLoggedSnapshotIntervalMillis = -1L;
     private volatile long lastClosedMarketPollingCycleAtMillis;
+    private volatile boolean startupMarketClosedRepairAuditLogged;
     private final AutoAnalyzeResultStore autoAnalyzeResultStore = new AutoAnalyzeResultStore();
     private final OnboardingStateStore onboardingStateStore = new OnboardingStateStore();
     private final TradingRuntimeSupport tradingRuntimeSupport;
@@ -1834,10 +1836,14 @@ public class TradingFrame extends JFrame {
         if (strategyPollingService == null || !shouldRunPollingCycleNow() || !pollingCycleInFlight.compareAndSet(false, true)) {
             return;
         }
-        uiPollingExecutor.submit(() -> {
+         uiPollingExecutor.submit(() -> {
             try {
                 int dueStrategies = strategyPollingService.pollDueStrategies();
+                StrategyPollingService.MarketClosedAutoRepairSummary startupAutoRepairSummary = startupMarketClosedRepairAuditLogged
+                        ? new StrategyPollingService.MarketClosedAutoRepairSummary(List.of(), Map.of())
+                        : strategyPollingService.drainMarketClosedAutoRepairedStrategyIds();
                 List<Strategy> stored = strategyRepository.findAll();
+                Map<String, Boolean> overnightEligibility = loadOvernightEligibilityForStrategies(stored);
                 boolean refreshBrokerSnapshots = shouldRunBatchGridPriceRefresh(stored) && hasStrategiesNeedingBrokerSnapshots(stored);
                 Map<String, Position> positionSnapshots = refreshBrokerSnapshots
                         ? loadPositionSnapshotsForStrategies(stored)
@@ -1845,11 +1851,13 @@ public class TradingFrame extends JFrame {
                 SwingUtilities.invokeLater(() -> {
                     try {
                         syncStrategies(stored);
+                        applyOvernightEligibilitySnapshots(overnightEligibility);
                         applyPositionSnapshots(positionSnapshots);
                         if ((dueStrategies > 0 || !positionSnapshots.isEmpty()) && shouldRunBrokerBackedUiRefresh()) {
                             refreshStrategyTableContent();
                             refreshPanels();
                         }
+                        logStartupMarketClosedRepairAudit(startupAutoRepairSummary);
                         updateStatusBar();
                     } finally {
                         pollingCycleInFlight.set(false);
@@ -1865,14 +1873,47 @@ public class TradingFrame extends JFrame {
         });
     }
 
+    private void logStartupMarketClosedRepairAudit(StrategyPollingService.MarketClosedAutoRepairSummary summary) {
+        if (startupMarketClosedRepairAuditLogged) {
+            return;
+        }
+        startupMarketClosedRepairAuditLogged = true;
+        if (summary == null || summary.isEmpty()) {
+            return;
+        }
+        String categorySummary = summary.formatSummary();
+        String idList = String.join(", ", summary.strategyIds());
+        log("[STARTUP][MARKET_CLOSE_REPAIR] " + categorySummary + " | IDs: " + idList);
+    }
+
     private boolean shouldRunPollingCycleNow() {
         if (!shouldSuppressBrokerBackedRefreshForClosedMarket()) {
             return true;
         }
         long now = System.currentTimeMillis();
-        if (now - lastClosedMarketPollingCycleAtMillis >= CLOSED_MARKET_POLL_INTERVAL_MILLIS) {
+        long closedMarketInterval = hasMarketClosedStateToReconcile()
+                ? CLOSED_MARKET_RECONCILE_POLL_INTERVAL_MILLIS
+                : CLOSED_MARKET_POLL_INTERVAL_MILLIS;
+        if (now - lastClosedMarketPollingCycleAtMillis >= closedMarketInterval) {
             lastClosedMarketPollingCycleAtMillis = now;
             return true;
+        }
+        return false;
+    }
+
+    private boolean hasMarketClosedStateToReconcile() {
+        for (ManagedStrategy entry : strategies) {
+            if (entry == null || entry.strategy == null) {
+                continue;
+            }
+            if (entry.strategy.status() == StrategyStatus.PAUSED
+                    && entry.strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED) {
+                return true;
+            }
+            if (entry.strategy.status() == StrategyStatus.ACTIVE
+                    && entry.strategy.pauseReason() == PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE) {
+                return true;
+            }
         }
         return false;
     }
@@ -2398,7 +2439,7 @@ public class TradingFrame extends JFrame {
     private String displayStatusLabel(Strategy strategy) {
         return strategyTablePresenter.displayStatusLabel(
                 strategy,
-                shouldSuppressBrokerBackedRefreshForClosedMarket(),
+                strategy != null && isStrategySessionSuppressed(strategy),
                 strategy != null && isWaitingForFill(strategy),
                 strategy != null && strategy.status() == StrategyStatus.FAILED && isQueueableSessionError(strategy.lastError())
         );
@@ -3028,16 +3069,105 @@ public class TradingFrame extends JFrame {
         if (!settings.autoPausePollingWhenMarketClosed()) {
             return false;
         }
+        Instant now = Instant.now();
+        if (!strategies.isEmpty()) {
+            for (ManagedStrategy entry : strategies) {
+                Strategy strategy = entry == null ? null : entry.strategy;
+                if (strategy == null || strategy.status() != StrategyStatus.ACTIVE) {
+                    continue;
+                }
+                if (isStrategySessionOpen(strategy, settings, now)) {
+                    return false;
+                }
+            }
+        }
         return !marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
     }
 
     private boolean isAutoPausedForClosedMarket(ManagedStrategy entry) {
-        return entry != null
-                && shouldSuppressBrokerBackedRefreshForClosedMarket()
-                && ((entry.strategy.status() == StrategyStatus.PAUSED
-                    && entry.strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED)
-                    || (entry.strategy.status() == StrategyStatus.ACTIVE
-                    && entry.strategy.pauseReason() == PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE));
+        if (entry == null || !isStrategySessionSuppressed(entry.strategy)) {
+            return false;
+        }
+        if (entry.strategy.status() == StrategyStatus.ACTIVE) {
+            return true;
+        }
+        return entry.strategy.status() == StrategyStatus.PAUSED
+                && entry.strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED;
+    }
+
+    private boolean isStrategySessionSuppressed(Strategy strategy) {
+        if (strategy == null || tradingApi == null || currentBrokerType != BrokerType.ALPACA) {
+            return false;
+        }
+        AppSettingsService.AppSettings settings = appSettingsService.load();
+        if (!settings.autoPausePollingWhenMarketClosed()) {
+            return false;
+        }
+        return !isStrategySessionOpen(strategy, settings, Instant.now());
+    }
+
+    private boolean isStrategySessionOpen(Strategy strategy, AppSettingsService.AppSettings settings, Instant now) {
+        if (strategy == null) {
+            return false;
+        }
+        boolean extendedEnabled = settings != null && settings.extendedHoursTradingEnabled();
+        if (!extendedEnabled) {
+            return marketHoursService.isTradingSessionOpen(now, false);
+        }
+        boolean overnightEligible = isOvernightEligibleCached(strategy);
+        return marketHoursService.isTradingSessionOpen(now, true, overnightEligible);
+    }
+
+    private Map<String, Boolean> loadOvernightEligibilityForStrategies(List<Strategy> stored) {
+        if (stored == null || stored.isEmpty() || currentBrokerType != BrokerType.ALPACA) {
+            return Map.of();
+        }
+        AppSettingsService.AppSettings settings = appSettingsService.load();
+        if (!settings.autoPausePollingWhenMarketClosed() || !settings.extendedHoursTradingEnabled()) {
+            return Map.of();
+        }
+        Map<String, Boolean> byId = new LinkedHashMap<>();
+        for (Strategy strategy : stored) {
+            if (strategy == null || strategy.id() == null || strategy.id().isBlank()) {
+                continue;
+            }
+            HttpAlpacaClient client = alpacaClientForStrategyMode(strategy.mode());
+            boolean overnightEligible = client != null && client.supportsOvernightSession(strategy.symbol());
+            byId.put(strategy.id(), overnightEligible);
+        }
+        return byId;
+    }
+
+    private void applyOvernightEligibilitySnapshots(Map<String, Boolean> overnightEligibilityByStrategyId) {
+        for (ManagedStrategy entry : strategies) {
+            if (entry == null || entry.strategy == null) {
+                continue;
+            }
+            if (overnightEligibilityByStrategyId != null && overnightEligibilityByStrategyId.containsKey(entry.strategy.id())) {
+                entry.setOvernightEligible(overnightEligibilityByStrategyId.get(entry.strategy.id()));
+            } else {
+                entry.setOvernightEligible(null);
+            }
+        }
+    }
+
+    private boolean isOvernightEligibleCached(Strategy strategy) {
+        if (strategy == null || strategy.id() == null) {
+            return false;
+        }
+        ManagedStrategy managed = findStrategyById(strategy.id());
+        return managed != null && Boolean.TRUE.equals(managed.overnightEligible());
+    }
+
+    private String appendSessionHint(String tooltip, ManagedStrategy strategy) {
+        String base = tooltip == null || tooltip.isBlank() ? "Polling status" : tooltip;
+        if (strategy == null) {
+            return base;
+        }
+        String overnightHint = strategy.overnightEligible() == null
+                ? "Overnight eligible: checking"
+                : strategy.overnightEligible() ? "Overnight eligible: yes" : "Overnight eligible: no";
+        return base + "\n" + overnightHint;
     }
 
     private void setStatus(String message, Color color) {
@@ -3612,7 +3742,7 @@ public class TradingFrame extends JFrame {
                             strategy.pauseLabel(),
                             strategy.pauseTooltip(),
                             strategy.pollInFlight,
-                            isAutoPausedForClosedMarket(strategy) && shouldSuppressBrokerBackedRefreshForClosedMarket(),
+                            isAutoPausedForClosedMarket(strategy),
                             strategy.pollIntervalMillis,
                             strategy.nextPollDueAtMillis,
                             strategy.strategy.pollingIntervalSeconds(),
@@ -3644,7 +3774,7 @@ public class TradingFrame extends JFrame {
             progressBar.setForeground(viewModel.progressForeground());
             countdownLabel.setForeground(viewModel.labelForeground());
             countdownLabel.setText(viewModel.labelText());
-            String tooltipText = TooltipStyler.text(viewModel.tooltip());
+            String tooltipText = TooltipStyler.text(appendSessionHint(viewModel.tooltip(), strategy));
             setToolTipText(tooltipText);
             progressBar.setToolTipText(tooltipText);
             countdownLabel.setToolTipText(tooltipText);

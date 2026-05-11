@@ -4,7 +4,6 @@ import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.Month;
 import java.time.ZoneId;
@@ -48,14 +47,21 @@ public class MarketHoursService {
     }
 
     public boolean isTradingSessionOpen(Instant instant, boolean extendedHoursEnabled) {
+        return isTradingSessionOpen(instant, extendedHoursEnabled, false);
+    }
+
+    public boolean isTradingSessionOpen(Instant instant, boolean extendedHoursEnabled, boolean overnightHoursEnabled) {
         ZonedDateTime eastern = instant.atZone(US_EASTERN);
+        if (extendedHoursEnabled && overnightHoursEnabled) {
+            return isExtendedOrOvernightSessionOpen(eastern);
+        }
+        if (extendedHoursEnabled) {
+            return isExtendedSessionOpen(eastern);
+        }
         if (isClosedDay(eastern.toLocalDate())) {
             return false;
         }
         LocalTime time = eastern.toLocalTime();
-        if (extendedHoursEnabled) {
-            return !time.isBefore(EXTENDED_OPEN) && time.isBefore(EXTENDED_CLOSE);
-        }
         return !time.isBefore(REGULAR_OPEN) && time.isBefore(REGULAR_CLOSE);
     }
 
@@ -64,9 +70,23 @@ public class MarketHoursService {
     }
 
     public Instant nextMarketOpen(Instant instant, boolean extendedHoursEnabled) {
+        return nextMarketOpen(instant, extendedHoursEnabled, false);
+    }
+
+    public Instant nextMarketOpen(Instant instant, boolean extendedHoursEnabled, boolean overnightHoursEnabled) {
+        if (isTradingSessionOpen(instant, extendedHoursEnabled, overnightHoursEnabled)) {
+            return instant;
+        }
+        if (extendedHoursEnabled && overnightHoursEnabled) {
+            return nextExtendedSessionOpen(instant);
+        }
+        if (extendedHoursEnabled) {
+            return nextStandardExtendedOpen(instant);
+        }
+
         ZonedDateTime eastern = instant.atZone(US_EASTERN);
         LocalDate date = eastern.toLocalDate();
-        LocalTime openTime = extendedHoursEnabled ? EXTENDED_OPEN : REGULAR_OPEN;
+        LocalTime openTime = REGULAR_OPEN;
 
         if (!isClosedDay(date) && eastern.toLocalTime().isBefore(openTime)) {
             return ZonedDateTime.of(date, openTime, US_EASTERN).toInstant();
@@ -86,6 +106,79 @@ public class MarketHoursService {
     private boolean isWeekend(LocalDate date) {
         DayOfWeek day = date.getDayOfWeek();
         return day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY;
+    }
+
+    private boolean isExtendedSessionOpen(ZonedDateTime eastern) {
+        LocalDate date = eastern.toLocalDate();
+        if (isClosedDay(date)) {
+            return false;
+        }
+        LocalTime time = eastern.toLocalTime();
+        return !time.isBefore(EXTENDED_OPEN) && time.isBefore(EXTENDED_CLOSE);
+    }
+
+    private boolean isExtendedOrOvernightSessionOpen(ZonedDateTime eastern) {
+        LocalDate date = eastern.toLocalDate();
+        LocalTime time = eastern.toLocalTime();
+        if (!time.isBefore(EXTENDED_OPEN) && time.isBefore(EXTENDED_CLOSE)) {
+            return !isClosedDay(date);
+        }
+        if (!time.isBefore(EXTENDED_CLOSE)) {
+            LocalDate nextDate = date.plusDays(1);
+            return !isClosedDay(nextDate);
+        }
+        return !isClosedDay(date);
+    }
+
+    private Instant nextStandardExtendedOpen(Instant instant) {
+        ZonedDateTime eastern = instant.atZone(US_EASTERN);
+        LocalDate date = eastern.toLocalDate();
+
+        if (!isClosedDay(date) && eastern.toLocalTime().isBefore(EXTENDED_OPEN)) {
+            return ZonedDateTime.of(date, EXTENDED_OPEN, US_EASTERN).toInstant();
+        }
+
+        LocalDate candidate = date.plusDays(1);
+        while (isClosedDay(candidate)) {
+            candidate = candidate.plusDays(1);
+        }
+        return ZonedDateTime.of(candidate, EXTENDED_OPEN, US_EASTERN).toInstant();
+    }
+
+    private Instant nextExtendedSessionOpen(Instant instant) {
+        ZonedDateTime eastern = instant.atZone(US_EASTERN);
+        Instant best = null;
+        for (int i = 0; i < 14; i++) {
+            LocalDate date = eastern.toLocalDate().plusDays(i);
+            if (!isClosedDay(date)) {
+                Instant dayStart = ZonedDateTime.of(date, EXTENDED_OPEN, US_EASTERN).toInstant();
+                if (dayStart.isAfter(instant)) {
+                    best = minInstant(best, dayStart);
+                }
+            }
+            LocalDate nextDate = date.plusDays(1);
+            if (!isClosedDay(nextDate)) {
+                Instant overnightStart = ZonedDateTime.of(date, EXTENDED_CLOSE, US_EASTERN).toInstant();
+                if (overnightStart.isAfter(instant)) {
+                    best = minInstant(best, overnightStart);
+                }
+            }
+        }
+        if (best != null) {
+            return best;
+        }
+        LocalDate fallback = eastern.toLocalDate().plusDays(1);
+        while (isClosedDay(fallback)) {
+            fallback = fallback.plusDays(1);
+        }
+        return ZonedDateTime.of(fallback, EXTENDED_OPEN, US_EASTERN).toInstant();
+    }
+
+    private Instant minInstant(Instant current, Instant candidate) {
+        if (current == null) {
+            return candidate;
+        }
+        return candidate.isBefore(current) ? candidate : current;
     }
 
     private Set<LocalDate> marketHolidays(int year) {

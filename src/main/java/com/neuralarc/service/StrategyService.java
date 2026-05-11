@@ -257,7 +257,7 @@ public class StrategyService {
             boolean manualCancelResume = strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED;
             strategy.setStatus(StrategyStatus.ACTIVE);
             restoreResumeStateAfterPause(strategy);
-            boolean marketClosed = shouldSuppressPollingForMarketClose();
+            boolean marketClosed = shouldSuppressPollingForMarketClose(strategy);
             strategy.setPauseReason(marketClosed ? PauseReason.MANUAL_MARKET_CLOSED_OVERRIDE : PauseReason.NONE);
             strategy.clearLastError();
             strategyRepository.save(strategy);
@@ -827,10 +827,17 @@ public class StrategyService {
         }
     }
 
-    private boolean shouldSuppressPollingForMarketClose() {
+    private boolean shouldSuppressPollingForMarketClose(Strategy strategy) {
         AppSettingsService.AppSettings settings = appSettingsService.load();
-        return settings.autoPausePollingWhenMarketClosed()
-                && !marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
+        if (!settings.autoPausePollingWhenMarketClosed()) {
+            return false;
+        }
+        boolean extendedEnabled = settings.extendedHoursTradingEnabled();
+        if (!extendedEnabled) {
+            return !marketHoursService.isTradingSessionOpen(false);
+        }
+        boolean overnightEligible = strategy != null && alpacaClient.supportsOvernightSession(strategy.symbol());
+        return !marketHoursService.isTradingSessionOpen(Instant.now(), true, overnightEligible);
     }
 
     private StrategyOrder buildRemoteOrder(Strategy strategy, com.neuralarc.api.AlpacaOrderData remoteOrder) {

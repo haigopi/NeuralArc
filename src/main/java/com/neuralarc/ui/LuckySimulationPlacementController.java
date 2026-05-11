@@ -80,6 +80,7 @@ public class LuckySimulationPlacementController {
             if (existing == null) created++; else replaced++;
             gateway.log("[I Am Feeling Lucky] Started paper monitoring for " + strategy.symbol()
                     + " at base limit $" + strategy.baseBuyLimitPrice().toPlainString()
+                    + " qty=" + strategy.baseBuyQuantity()
                     + ". Alpaca paper order id=" + creationResult.alpacaOrderId());
         }
         gateway.afterPlacement();
@@ -115,15 +116,15 @@ public class LuckySimulationPlacementController {
         return new StrategyConfig(
                 selection.stock().symbol(),
                 values.buyRulePrice(),
-                1,
+                Math.max(1, selection.buyQuantity()),
                 true,
                 values.stopLossPrice(),
                 true,
                 values.sellRulePrice(),
                 values.lossBuy1Price(),
-                1,
+                Math.max(1, selection.buyQuantity()),
                 values.lossBuy2Price(),
-                1,
+                Math.max(1, selection.buyQuantity()),
                 false,
                 false,
                 BigDecimal.ZERO,

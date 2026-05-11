@@ -20,12 +20,14 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class HttpAlpacaClient implements AlpacaClient {
     private static final Logger LOGGER = Logger.getLogger(HttpAlpacaClient.class.getName());
     private static final String REQUEST_ID_HEADER = "X-Request-ID";
+    private static final Duration ASSET_METADATA_TTL = Duration.ofHours(6);
 
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private final ApiRequestIdStore requestIdStore = new ApiRequestIdStore();
@@ -34,6 +36,7 @@ public class HttpAlpacaClient implements AlpacaClient {
     private final String tradingBaseUrl;
     private final String dataBaseUrl;
     private final boolean extendedHoursEnabled;
+    private final Map<String, CachedOvernightEligibility> overnightEligibilityCache = new ConcurrentHashMap<>();
 
     public HttpAlpacaClient(String apiKey, String secretKey, String tradingBaseUrl, String dataBaseUrl) {
         this(apiKey, secretKey, tradingBaseUrl, dataBaseUrl, false);
@@ -255,6 +258,47 @@ public class HttpAlpacaClient implements AlpacaClient {
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Failed to parse batch latest prices", ex);
             return Map.of();
+        }
+    }
+
+    @Override
+    public boolean supportsOvernightSession(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return false;
+        }
+        String upperSymbol = symbol.trim().toUpperCase();
+        CachedOvernightEligibility cached = overnightEligibilityCache.get(upperSymbol);
+        Instant now = Instant.now();
+        if (cached != null && now.isBefore(cached.expiresAt())) {
+            return cached.eligible();
+        }
+
+        String endpoint = tradingBaseUrl + "/v2/assets/" + URLEncoder.encode(upperSymbol, StandardCharsets.UTF_8);
+        HttpRequest request = baseRequest(endpoint).GET().build();
+        Optional<String> body = executeBody(request);
+        if (body.isEmpty()) {
+            return cacheAndReturnOvernightEligibility(upperSymbol, false, now);
+        }
+        try {
+            JSONObject json = new JSONObject(body.get());
+            boolean tradable = json.optBoolean("tradable", false);
+            String status = json.optString("status", "");
+            JSONArray attributes = json.optJSONArray("attributes");
+            boolean has24x5 = false;
+            if (attributes != null) {
+                for (int i = 0; i < attributes.length(); i++) {
+                    String attribute = attributes.optString(i, "");
+                    if ("24_5".equalsIgnoreCase(attribute)) {
+                        has24x5 = true;
+                        break;
+                    }
+                }
+            }
+            boolean eligible = tradable && has24x5 && (status.isBlank() || "active".equalsIgnoreCase(status));
+            return cacheAndReturnOvernightEligibility(upperSymbol, eligible, now);
+        } catch (Exception ex) {
+            LOGGER.log(Level.FINE, "Failed parsing asset metadata for overnight eligibility: " + upperSymbol, ex);
+            return cacheAndReturnOvernightEligibility(upperSymbol, false, now);
         }
     }
 
@@ -482,5 +526,13 @@ public class HttpAlpacaClient implements AlpacaClient {
             return url.substring(0, url.length() - 1);
         }
         return url;
+    }
+
+    private boolean cacheAndReturnOvernightEligibility(String symbol, boolean eligible, Instant now) {
+        overnightEligibilityCache.put(symbol, new CachedOvernightEligibility(eligible, now.plus(ASSET_METADATA_TTL)));
+        return eligible;
+    }
+
+    private record CachedOvernightEligibility(boolean eligible, Instant expiresAt) {
     }
 }

@@ -144,7 +144,7 @@ public class AutoAnalyzeService {
         PriceRange eightMonthRange = rangeForWindow(oneYearBars, endDate.minusMonths(8), fallbackLow, fallbackHigh);
         PriceRange oneYearRange = rangeForWindow(oneYearBars, endDate.minusYears(1), fallbackLow, fallbackHigh);
 
-        // --- Today's snapshot ---
+        // --- Today's snapshot (prefer latest intraday; fallback to most recent daily close) ---
         BigDecimal todayStockPrice = BigDecimal.ZERO;
         BigDecimal todayOpen = BigDecimal.ZERO;
         BigDecimal todayHighSoFar = BigDecimal.ZERO;
@@ -152,27 +152,39 @@ public class AutoAnalyzeService {
         boolean todayCloseAvailable = false;
         BigDecimal todayClose = BigDecimal.ZERO;
         try {
-            List<MarketBar> todayDailyBars = marketDataApi.getDailyBars(upperSymbol, endDate, endDate);
-            if (!todayDailyBars.isEmpty()) {
-                MarketBar todayBar = todayDailyBars.get(todayDailyBars.size() - 1);
-                todayOpen = todayBar.open();
-                todayHighSoFar = todayBar.high();
-                todayLowSoFar = todayBar.low();
-                todayClose = todayBar.close();
+            LocalDate snapshotStart = endDate.minusDays(7);
+            LocalDate snapshotEnd = endDate.plusDays(1);
+
+            List<MarketBar> recentDailyBars = marketDataApi.getDailyBars(upperSymbol, snapshotStart, snapshotEnd);
+            MarketBar latestDailyBar = latestBarOnOrBefore(recentDailyBars, endDate);
+            if (latestDailyBar == null) {
+                latestDailyBar = latestBarOnOrBefore(dailyBars, endDate);
+            }
+            if (latestDailyBar != null) {
+                todayOpen = latestDailyBar.open();
+                todayHighSoFar = latestDailyBar.high();
+                todayLowSoFar = latestDailyBar.low();
+                todayClose = latestDailyBar.close();
                 todayCloseAvailable = todayClose.compareTo(BigDecimal.ZERO) > 0;
             }
 
-            List<MarketBar> todayIntradayBars = marketDataApi.getIntradayBars(upperSymbol, endDate, endDate, 1);
-            if (!todayIntradayBars.isEmpty()) {
-                todayStockPrice = todayIntradayBars.get(todayIntradayBars.size() - 1).close();
-                if (todayHighSoFar.compareTo(BigDecimal.ZERO) <= 0) {
-                    todayHighSoFar = maxOf(todayIntradayBars, "high");
-                }
-                if (todayLowSoFar.compareTo(BigDecimal.ZERO) <= 0) {
-                    todayLowSoFar = minOf(todayIntradayBars, "low");
-                }
-                if (todayOpen.compareTo(BigDecimal.ZERO) <= 0) {
-                    todayOpen = todayIntradayBars.get(0).open();
+            List<MarketBar> recentIntradayBars = marketDataApi.getIntradayBars(upperSymbol, snapshotStart, snapshotEnd, 1);
+            MarketBar latestIntradayBar = latestBarOnOrBefore(recentIntradayBars, endDate);
+            if (latestIntradayBar != null) {
+                todayStockPrice = latestIntradayBar.close();
+
+                LocalDate latestSessionDate = toBarDate(latestIntradayBar);
+                List<MarketBar> latestSessionBars = barsOnDate(recentIntradayBars, latestSessionDate);
+                if (!latestSessionBars.isEmpty()) {
+                    if (todayHighSoFar.compareTo(BigDecimal.ZERO) <= 0) {
+                        todayHighSoFar = maxOf(latestSessionBars, "high");
+                    }
+                    if (todayLowSoFar.compareTo(BigDecimal.ZERO) <= 0) {
+                        todayLowSoFar = minOf(latestSessionBars, "low");
+                    }
+                    if (todayOpen.compareTo(BigDecimal.ZERO) <= 0) {
+                        todayOpen = latestSessionBars.get(0).open();
+                    }
                 }
             } else if (todayCloseAvailable) {
                 todayStockPrice = todayClose;
@@ -293,6 +305,34 @@ public class AutoAnalyzeService {
             }
         }
         return filtered;
+    }
+
+    private List<MarketBar> barsOnDate(List<MarketBar> bars, LocalDate date) {
+        if (bars == null || bars.isEmpty() || date == null) {
+            return List.of();
+        }
+        List<MarketBar> filtered = new ArrayList<>();
+        for (MarketBar bar : bars) {
+            LocalDate barDate = toBarDate(bar);
+            if (date.equals(barDate)) {
+                filtered.add(bar);
+            }
+        }
+        return filtered;
+    }
+
+    private MarketBar latestBarOnOrBefore(List<MarketBar> bars, LocalDate maxDateInclusive) {
+        if (bars == null || bars.isEmpty()) {
+            return null;
+        }
+        MarketBar latest = null;
+        for (MarketBar bar : bars) {
+            LocalDate barDate = toBarDate(bar);
+            if (barDate != null && !barDate.isAfter(maxDateInclusive)) {
+                latest = bar;
+            }
+        }
+        return latest != null ? latest : bars.get(bars.size() - 1);
     }
 
     private LocalDate toBarDate(MarketBar bar) {

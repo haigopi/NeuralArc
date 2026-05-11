@@ -23,9 +23,10 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
-import javax.swing.SwingConstants;
+import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.border.EmptyBorder;
@@ -38,7 +39,12 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridLayout;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.Duration;
+import java.time.LocalTime;
+import java.time.DayOfWeek;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -54,10 +60,20 @@ public class LuckyTrendingStocksDialog extends JDialog {
     private static final Logger LOGGER = Logger.getLogger(LuckyTrendingStocksDialog.class.getName());
     private static final DateTimeFormatter DISPLAY_FMT =
             DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm").withZone(ZoneId.systemDefault());
+    private static final DateTimeFormatter STATUS_TIME_FMT = DateTimeFormatter.ofPattern("MMM d, HH:mm")
+            .withZone(ZoneId.systemDefault());
     private static final Color TEXT_MUTED = new Color(130, 130, 130);
     private static final Color INPUT_BORDER = new Color(190, 190, 200);
     private static final int SECTION_WIDTH = 860;
     private static final int CARD_WIDTH = 820;
+    private static final ZoneId MARKET_TIME_ZONE = ZoneId.of("America/New_York");
+    private static final LocalTime MARKET_OPEN_TIME = LocalTime.of(9, 30);
+    private static final LocalTime MARKET_CLOSE_TIME = LocalTime.of(16, 0);
+    private static final Duration TREND_CACHE_TTL = Duration.ofHours(24);
+    private static final Object DAILY_TREND_CACHE_LOCK = new Object();
+
+    private static LoadResult cachedTrendResult;
+    private static Instant cachedTrendLoadedAt;
 
     private final TrendingStocksService trendingStocksService;
     private final AlpacaMarketDataApi marketDataApi;
@@ -66,8 +82,10 @@ public class LuckyTrendingStocksDialog extends JDialog {
     private final JPanel cardsPanel = new JPanel();
     private final JLabel statusLabel = new JLabel("Loading trending stocks...");
     private final JProgressBar progressBar = new JProgressBar();
+    private final JButton refreshButton = new JButton("Refresh");
     private final JButton placeButton = new JButton("Start Monitoring in Paper Mode");
     private final List<StockCard> cards = new ArrayList<>();
+    private volatile boolean loadInFlight;
 
     public LuckyTrendingStocksDialog(
             JFrame owner,
@@ -82,7 +100,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
         this.placementHandler = Objects.requireNonNull(placementHandler);
         this.logSink = logSink == null ? ignored -> {} : logSink;
         buildUi();
-        loadAsync();
+        initializeTrendsOnOpen();
     }
 
     private void buildUi() {
@@ -93,7 +111,12 @@ public class LuckyTrendingStocksDialog extends JDialog {
         JLabel description = new JLabel("<html>Review today's top gainers and losers, remove unwanted picks, then start the remaining choices as Alpaca Paper strategies.</html>");
         description.setForeground(TEXT_MUTED);
         description.setFont(FontLoader.ui(Font.PLAIN, 11f));
-        progressBar.setIndeterminate(true);
+        progressBar.setMinimum(0);
+        progressBar.setMaximum(100);
+        progressBar.setValue(0);
+        progressBar.setStringPainted(true);
+        progressBar.setString("Idle");
+        progressBar.setVisible(false);
         top.add(description, BorderLayout.NORTH);
         top.add(progressBar, BorderLayout.SOUTH);
         add(top, BorderLayout.NORTH);
@@ -107,14 +130,18 @@ public class LuckyTrendingStocksDialog extends JDialog {
         add(scrollPane, BorderLayout.CENTER);
 
         JPanel bottom = new JPanel(new BorderLayout(12, 0));
+        statusLabel.setText("Click Refresh to load today's trending stocks.");
         statusLabel.setForeground(TEXT_MUTED);
+        DialogButtonStyles.apply(refreshButton, "icons/refresh.svg");
+        refreshButton.addActionListener(ignored -> loadAsync(true));
         placeButton.setEnabled(false);
         DialogButtonStyles.apply(placeButton, "icons/apply.svg");
-        placeButton.addActionListener(e -> placeReviewedStocks());
+        placeButton.addActionListener(ignored -> placeReviewedStocks());
         JButton closeButton = new JButton("Close");
         DialogButtonStyles.apply(closeButton, "icons/close.svg");
-        closeButton.addActionListener(e -> dispose());
+        closeButton.addActionListener(ignored -> dispose());
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        buttons.add(refreshButton);
         buttons.add(placeButton);
         buttons.add(closeButton);
         bottom.add(statusLabel, BorderLayout.CENTER);
@@ -126,13 +153,31 @@ public class LuckyTrendingStocksDialog extends JDialog {
         setLocationRelativeTo(getOwner());
     }
 
-    private void loadAsync() {
-        log("I Am Feeling Lucky clicked. Loading trending stocks.");
+    private void initializeTrendsOnOpen() {
+        CachedDailyTrends cached = readCachedTrendsWithinTtl();
+        if (cached != null && cached.result() != null) {
+            render(cached.result());
+            statusLabel.setText("Showing cached trends from " + STATUS_TIME_FMT.format(cached.loadedAt())
+                    + ". Refresh to force reload.");
+        }
+        if (cached == null || shouldAutoRefreshAfterMarketOpen(cached.loadedAt())) {
+            loadAsync(false);
+        }
+    }
+
+    private void loadAsync(boolean forceRefresh) {
+        if (loadInFlight) {
+            return;
+        }
+        loadInFlight = true;
+        log((forceRefresh ? "Force refresh" : "Auto load") + " started for trending stocks.");
         SwingWorker<LoadResult, Void> worker = new SwingWorker<>() {
             @Override
             protected LoadResult doInBackground() throws Exception {
+                setProgress(5);
                 TrendingStockGroups groups = trendingStocksService.topGainersAndLosers(10);
                 if (groups.empty()) {
+                    setProgress(100);
                     return new LoadResult(List.of(), List.of());
                 }
                 List<TrendingStock> stocks = new ArrayList<>();
@@ -153,13 +198,20 @@ public class LuckyTrendingStocksDialog extends JDialog {
                             .<Callable<LuckyStockAnalysis>>map(stock -> () -> analyze(stock))
                             .toList();
                     List<LuckyStockAnalysis> gainers = new ArrayList<>();
+                    int total = gainerTasks.size() + loserTasks.size();
+                    int completed = 0;
                     for (var future : executor.invokeAll(gainerTasks)) {
                         gainers.add(future.get());
+                        completed++;
+                        setProgress(percent(completed, total));
                     }
                     List<LuckyStockAnalysis> losers = new ArrayList<>();
                     for (var future : executor.invokeAll(loserTasks)) {
                         losers.add(future.get());
+                        completed++;
+                        setProgress(percent(completed, total));
                     }
+                    setProgress(100);
                     return new LoadResult(gainers, losers);
                 } finally {
                     executor.shutdownNow();
@@ -168,9 +220,13 @@ public class LuckyTrendingStocksDialog extends JDialog {
 
             @Override
             protected void done() {
-                progressBar.setIndeterminate(false);
+                loadInFlight = false;
+                refreshButton.setEnabled(true);
+                progressBar.setVisible(false);
                 try {
-                    render(get());
+                    LoadResult result = get();
+                    cacheResult(result);
+                    render(result);
                 } catch (Exception ex) {
                     LOGGER.log(Level.WARNING, "I Am Feeling Lucky failed", ex);
                     statusLabel.setText("Failed to load trending stocks: " + message(ex));
@@ -183,6 +239,18 @@ public class LuckyTrendingStocksDialog extends JDialog {
                 }
             }
         };
+        progressBar.setVisible(true);
+        progressBar.setString("Loading trending stocks...");
+        progressBar.setValue(0);
+        refreshButton.setEnabled(false);
+        placeButton.setEnabled(false);
+        statusLabel.setText(forceRefresh ? "Refreshing trending stocks..." : "Loading trending stocks...");
+        worker.addPropertyChangeListener(event -> {
+            if ("progress".equals(event.getPropertyName())) {
+                int progress = (Integer) event.getNewValue();
+                progressBar.setValue(Math.max(0, Math.min(100, progress)));
+            }
+        });
         worker.execute();
     }
 
@@ -211,10 +279,24 @@ public class LuckyTrendingStocksDialog extends JDialog {
         addGroup("Top 10 Gainers", result.gainers());
         cardsPanel.add(Box.createVerticalStrut(12));
         addGroup("Top 10 Losers", result.losers());
-        statusLabel.setText("Review " + cards.size() + " stock(s), remove unwanted picks, then start paper monitoring.");
+        statusLabel.setText("Review " + cards.size() + " stock(s), choose quantity/term for each, then start paper monitoring.");
         placeButton.setEnabled(cards.stream().anyMatch(StockCard::placeable));
         revalidate();
         repaint();
+    }
+
+    private void addToCurrentStrategy(StockCard card) {
+        if (card == null || !card.placeable()) {
+            JOptionPane.showMessageDialog(this,
+                    "This stock does not currently have a valid base limit buy price.",
+                    "Cannot Add",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        LuckySimulationSelection selection = card.selection();
+        placementHandler.accept(List.of(selection));
+        log("Added " + selection.stock().symbol() + " to paper strategy placement with "
+                + selection.selectedRecommendationType().name() + " qty=" + selection.buyQuantity() + ".");
     }
 
     private void addGroup(String title, List<LuckyStockAnalysis> analyses) {
@@ -272,6 +354,58 @@ public class LuckyTrendingStocksDialog extends JDialog {
         return cause.getMessage() == null ? "Unexpected error" : cause.getMessage();
     }
 
+    private CachedDailyTrends readCachedTrendsWithinTtl() {
+        synchronized (DAILY_TREND_CACHE_LOCK) {
+            if (cachedTrendResult == null || cachedTrendLoadedAt == null) {
+                return null;
+            }
+            if (Duration.between(cachedTrendLoadedAt, Instant.now()).compareTo(TREND_CACHE_TTL) > 0) {
+                cachedTrendResult = null;
+                cachedTrendLoadedAt = null;
+                return null;
+            }
+            return new CachedDailyTrends(cachedTrendResult, cachedTrendLoadedAt);
+        }
+    }
+
+    private void cacheResult(LoadResult result) {
+        if (result == null) {
+            return;
+        }
+        synchronized (DAILY_TREND_CACHE_LOCK) {
+            cachedTrendResult = result;
+            cachedTrendLoadedAt = Instant.now();
+        }
+    }
+
+    private static boolean isBeforeMarketClose() {
+        return ZonedDateTime.now(MARKET_TIME_ZONE).toLocalTime().isBefore(MARKET_CLOSE_TIME);
+    }
+
+    private boolean shouldAutoRefreshAfterMarketOpen(Instant loadedAt) {
+        if (loadedAt == null || !isWeekdayMarketDay()) {
+            return false;
+        }
+        ZonedDateTime nowEt = ZonedDateTime.now(MARKET_TIME_ZONE);
+        if (nowEt.toLocalTime().isBefore(MARKET_OPEN_TIME)) {
+            return false;
+        }
+        ZonedDateTime todayOpenEt = nowEt.toLocalDate().atTime(MARKET_OPEN_TIME).atZone(MARKET_TIME_ZONE);
+        return loadedAt.isBefore(todayOpenEt.toInstant()) && isBeforeMarketClose();
+    }
+
+    private boolean isWeekdayMarketDay() {
+        DayOfWeek day = ZonedDateTime.now(MARKET_TIME_ZONE).getDayOfWeek();
+        return day != DayOfWeek.SATURDAY && day != DayOfWeek.SUNDAY;
+    }
+
+    private static int percent(int completed, int total) {
+        if (total <= 0) {
+            return 100;
+        }
+        return (int) Math.round((completed * 100.0d) / total);
+    }
+
     private void log(String message) {
         LOGGER.info(message);
         SwingUtilities.invokeLater(() -> logSink.accept("[I Am Feeling Lucky] " + message));
@@ -280,6 +414,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
     private final class StockCard extends JPanel {
         private final LuckyStockAnalysis analysis;
         private final JTabbedPane tabs = new JTabbedPane();
+        private final JSpinner quantitySpinner = new JSpinner(new SpinnerNumberModel(10, 1, 100000, 1));
 
         private StockCard(LuckyStockAnalysis analysis) {
             super(new BorderLayout(0, 10));
@@ -318,12 +453,31 @@ public class LuckyTrendingStocksDialog extends JDialog {
                     + "\nReason: " + stock.reason());
             JButton removeButton = new JButton("Remove");
             DialogButtonStyles.apply(removeButton, "icons/delete.svg");
-            removeButton.addActionListener(e -> removeCard(this));
+            removeButton.addActionListener(ignored -> removeCard(this));
+            JButton addToCurrentButton = new JButton("Add to Current Strategy");
+            DialogButtonStyles.apply(addToCurrentButton, "icons/add-stock-strategy.svg");
+            addToCurrentButton.addActionListener(ignored -> addToCurrentStrategy(this));
+
+            JPanel qtyPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+            qtyPanel.setOpaque(false);
+            JLabel qtyLabel = new JLabel("Qty:");
+            qtyLabel.setFont(FontLoader.ui(Font.PLAIN, 11f));
+            quantitySpinner.setFont(FontLoader.ui(Font.PLAIN, 11f));
+            quantitySpinner.setPreferredSize(new Dimension(84, 26));
+            qtyPanel.add(qtyLabel);
+            qtyPanel.add(quantitySpinner);
+
+            JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+            actions.setOpaque(false);
+            actions.add(qtyPanel);
+            actions.add(addToCurrentButton);
+            actions.add(removeButton);
+
             JPanel left = new JPanel(new BorderLayout(0, 4));
             left.setOpaque(false);
             left.add(details, BorderLayout.CENTER);
             panel.add(left, BorderLayout.CENTER);
-            panel.add(removeButton, BorderLayout.EAST);
+            panel.add(actions, BorderLayout.EAST);
             return panel;
         }
 
@@ -359,7 +513,15 @@ public class LuckyTrendingStocksDialog extends JDialog {
         }
 
         private LuckySimulationSelection selection() {
-            return new LuckySimulationSelection(analysis.stock(), analysis.analysis(), selectedType());
+            return new LuckySimulationSelection(analysis.stock(), analysis.analysis(), selectedType(), selectedQuantity());
+        }
+
+        private int selectedQuantity() {
+            Object value = quantitySpinner.getValue();
+            if (value instanceof Number number) {
+                return Math.max(1, number.intValue());
+            }
+            return 10;
         }
 
         private StrategyRecommendation selectedRecommendation() {
@@ -410,4 +572,6 @@ public class LuckyTrendingStocksDialog extends JDialog {
     }
 
     private record LoadResult(List<LuckyStockAnalysis> gainers, List<LuckyStockAnalysis> losers) {}
+
+    private record CachedDailyTrends(LoadResult result, Instant loadedAt) {}
 }
