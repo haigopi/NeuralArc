@@ -267,19 +267,18 @@ cat > "$MAC_README" <<EOF
 # NeuralArc macOS Release $VERSION
 
 ## Artifact
-- File: `NeuralArc-$VERSION.dmg`
-- Path: `artifacts/macos/NeuralArc-$VERSION.dmg`
+- File: NeuralArc-$VERSION.dmg
+- Path: artifacts/macos/NeuralArc-$VERSION.dmg
 
 ## Install
 1. Open the DMG file.
-2. Drag `NeuralArc.app` to `Applications`.
+2. Drag NeuralArc.app to Applications.
 3. Launch from Applications.
 
 ## Verify checksum (optional)
-```zsh
-cd $PROJECT_DIR
-shasum -a 256 artifacts/macos/NeuralArc-$VERSION.dmg
-```
+zsh:
+  cd $PROJECT_DIR
+  shasum -a 256 artifacts/macos/NeuralArc-$VERSION.dmg
 
 ## Changes
 $COMMIT_LINES
@@ -290,18 +289,17 @@ cat > "$WIN_README" <<EOF
 # NeuralArc Windows Release $VERSION
 
 ## Artifact
-- File: `NeuralArc-$VERSION.exe`
-- Path: `artifacts/windows/NeuralArc-$VERSION.exe`
+- File: NeuralArc-$VERSION.exe
+- Path: artifacts/windows/NeuralArc-$VERSION.exe
 
 ## Install
 1. Run the EXE installer.
 2. Follow installer prompts.
-3. Launch `NeuralArc` from Start Menu.
+3. Launch NeuralArc from Start Menu.
 
 ## Verify checksum (optional, PowerShell)
-```powershell
-Get-FileHash "C:\\path\\to\\NeuralArc-$VERSION.exe" -Algorithm SHA256
-```
+powershell:
+  Get-FileHash "C:\\path\\to\\NeuralArc-$VERSION.exe" -Algorithm SHA256
 
 ## Changes
 $COMMIT_LINES
@@ -312,18 +310,17 @@ cat > "$LINUX_README" <<EOF
 # NeuralArc Linux Release $VERSION
 
 ## Artifact
-- File: `NeuralArc-$VERSION.deb`
-- Path: `artifacts/linux/NeuralArc-$VERSION.deb`
+- File: NeuralArc-$VERSION.deb
+- Path: artifacts/linux/NeuralArc-$VERSION.deb
 
 ## Install
 1. Install the DEB package (for Debian/Ubuntu-based distributions).
-2. Launch `NeuralArc` from applications menu.
+2. Launch NeuralArc from applications menu.
 
 ## Verify checksum (optional)
-```zsh
-cd $PROJECT_DIR
-sha256sum artifacts/linux/NeuralArc-$VERSION.deb
-```
+zsh:
+  cd $PROJECT_DIR
+  sha256sum artifacts/linux/NeuralArc-$VERSION.deb
 
 ## Changes
 $COMMIT_LINES
