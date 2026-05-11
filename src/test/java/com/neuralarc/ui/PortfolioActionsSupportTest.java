@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.ProfitHoldType;
+import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.Position;
 import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
@@ -169,6 +170,23 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
+    void removeInactiveListTargetsCompletedAndCanceledStrategies() {
+        ManagedStrategy completed = managed("AAPL", StrategyStatus.COMPLETED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy canceledByUser = managed("MSFT", StrategyStatus.PAUSED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        canceledByUser.strategy.setPauseReason(PauseReason.USER_PAUSED);
+        ManagedStrategy manualCanceled = managed("NVDA", StrategyStatus.PAUSED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        manualCanceled.strategy.setPauseReason(PauseReason.MANUAL_LIMIT_BUY_CANCELED);
+        ManagedStrategy active = managed("TSLA", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(completed, canceledByUser, manualCanceled, active),
+                PortfolioActionsSupport.BulkAction.REMOVE_INACTIVE_LIST
+        );
+
+        assertEquals(List.of("AAPL", "MSFT", "NVDA"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
     void bulkActionConfirmationUsesSpecificDescription() {
         String message = support.buildConfirmationMessage(
                 PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_BUYS,
@@ -187,6 +205,16 @@ class PortfolioActionsSupportTest {
         );
 
         assertTrue(message.contains("Succeeded: 1"));
+    }
+
+    @Test
+    void removeInactiveListResultMessageUsesArchivedLabel() {
+        String message = support.buildResultMessage(
+                PortfolioActionsSupport.BulkAction.REMOVE_INACTIVE_LIST,
+                new PortfolioActionsSupport.BatchResult(List.of("AAPL", "MSFT"), List.of())
+        );
+
+        assertTrue(message.contains("Archived: 2"));
     }
 
     @Test

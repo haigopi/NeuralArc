@@ -20,6 +20,7 @@ final class PortfolioActionsController {
         List<ManagedStrategy> strategies();
         StrategyService strategyService();
         StrategyService strategyServiceForMode(StrategyMode mode);
+        StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason);
         StrategyService.StrategyCreationResult sellPosition(Strategy strategy);
         JMenuItem createMenuItem(String text, String iconPath, Runnable action);
         int confirm(Object message, String title, int optionType, int messageType);
@@ -60,6 +61,8 @@ final class PortfolioActionsController {
         menu.addSeparator();
         menu.add(gateway.createMenuItem("Cancel All Pending Limit Buys", "icons/close.svg",
                 this::handleCancelAllPendingLimitBuys));
+        menu.add(gateway.createMenuItem("Remove Inactive List", "icons/delete.svg",
+                this::handleRemoveInactiveList));
         menu.add(gateway.createMenuItem("Promote All to Live", "icons/add-stock-strategy.svg",
                 this::handlePromoteAllToLive));
         menu.show(anchor, 0, anchor.getHeight());
@@ -137,6 +140,39 @@ final class PortfolioActionsController {
                         continue;
                     }
                     StrategyService.LivePromotionResult result = gateway.strategyService().promotePaperStrategyToLive(entry.strategy.id());
+                    if (result.success()) {
+                        successes.add(entry.strategy.symbol());
+                    } else {
+                        failures.add(entry.strategy.symbol() + ": " + result.error());
+                    }
+                }
+                return new PortfolioActionsSupport.BatchResult(successes, failures);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    private void handleRemoveInactiveList() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.REMOVE_INACTIVE_LIST;
+        List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), action);
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                List<String> successes = new ArrayList<>();
+                List<String> failures = new ArrayList<>();
+                for (ManagedStrategy entry : targets) {
+                    StrategyService.ArchiveResult result = gateway.archiveStrategy(
+                            entry.strategy.id(),
+                            "Archived by Remove Inactive List portfolio action"
+                    );
                     if (result.success()) {
                         successes.add(entry.strategy.symbol());
                     } else {

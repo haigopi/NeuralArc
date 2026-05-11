@@ -347,6 +347,12 @@ public class TradingFrame extends JFrame {
             @Override public List<ManagedStrategy> strategies() { return strategies; }
             @Override public StrategyService strategyService() { return strategyService; }
             @Override public StrategyService strategyServiceForMode(StrategyMode mode) { return TradingFrame.this.strategyServiceForMode(mode); }
+            @Override public StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason) {
+                if (strategyService == null) {
+                    return StrategyService.ArchiveResult.failed("strategy service is not configured");
+                }
+                return strategyService.archiveStrategy(strategyId, reason);
+            }
             @Override public StrategyService.StrategyCreationResult sellPosition(Strategy strategy) { return TradingFrame.this.sellPosition(strategy); }
             @Override public JMenuItem createMenuItem(String text, String iconPath, Runnable action) { return TradingFrame.this.createStatusMenuItem(text, iconPath, action); }
             @Override public int confirm(Object message, String title, int optionType, int messageType) {
@@ -3922,9 +3928,17 @@ public class TradingFrame extends JFrame {
             styleCompactActionButton(sellButton, actionsViewModel.sellColor());
             promoteButton.setEnabled(actionsViewModel.promoteEnabled());
             styleActionButton(promoteButton, actionsViewModel.promoteColor());
+            editButton.setToolTipText(TooltipStyler.text("Edit strategy rules, limits, and settings."));
+            toggleButton.setToolTipText(actionsViewModel.toggleEnabled()
+                    ? TooltipStyler.text("Run the shown action for this strategy: " + actionsViewModel.toggleText() + ".")
+                    : TooltipStyler.text("This action is currently unavailable for this strategy state."));
             sellButton.setToolTipText(actionsViewModel.sellEnabled()
                     ? TooltipStyler.text("Sell the open position for this strategy.")
                     : TooltipStyler.text("Sell is available only when Alpaca shows an open position for this strategy."));
+            promoteButton.setToolTipText(actionsViewModel.promoteEnabled()
+                    ? TooltipStyler.text("Promote this PAPER strategy to LIVE.")
+                    : TooltipStyler.text("Promote is available only for eligible PAPER strategies during market hours."));
+            deleteButton.setToolTipText(TooltipStyler.text("Delete this strategy from Current Strategies."));
             setBackground(selectionAwareRowColor(isSelected, row));
             return this;
         }

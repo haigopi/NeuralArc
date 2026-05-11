@@ -896,6 +896,34 @@ public class StrategyService {
         }
     }
 
+    public ArchiveResult archiveStrategy(String strategyId, String reason) {
+        if (strategyId == null || strategyId.isBlank()) {
+            return ArchiveResult.failed("Strategy id is missing");
+        }
+        Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
+        if (maybeStrategy.isEmpty()) {
+            return ArchiveResult.failed("Strategy not found");
+        }
+        Strategy strategy = maybeStrategy.get();
+        strategy.setStatus(StrategyStatus.ARCHIVED);
+        strategy.setCurrentState(StrategyLifecycleState.STOPPED);
+        strategy.setPauseReason(PauseReason.NONE);
+        strategy.setResumeStateBeforePause(StrategyLifecycleState.STOPPED);
+        strategy.setLastEvent((reason == null || reason.isBlank())
+                ? "Archived by portfolio action"
+                : reason);
+        strategy.clearLastError();
+        strategyRepository.save(strategy);
+        stateMachine.transition(
+                strategy,
+                StrategyLifecycleState.STOPPED,
+                StrategyEventType.STRATEGY_ARCHIVED,
+                strategy.lastEvent(),
+                "{}"
+        );
+        return ArchiveResult.success(strategy.id());
+    }
+
     public record StrategyCreationResult(boolean success, String strategyId, String strategyOrderId, String alpacaOrderId, String clientOrderId, String error) {
         public static StrategyCreationResult success(String strategyId, String strategyOrderId, String alpacaOrderId, String clientOrderId) {
             return new StrategyCreationResult(true, strategyId, strategyOrderId, alpacaOrderId, clientOrderId, null);
@@ -903,6 +931,16 @@ public class StrategyService {
 
         public static StrategyCreationResult failed(String error) {
             return new StrategyCreationResult(false, null, null, null, null, error == null ? "Unknown error" : error);
+        }
+    }
+
+    public record ArchiveResult(boolean success, String strategyId, String error) {
+        public static ArchiveResult success(String strategyId) {
+            return new ArchiveResult(true, strategyId, null);
+        }
+
+        public static ArchiveResult failed(String error) {
+            return new ArchiveResult(false, null, error == null ? "Unknown error" : error);
         }
     }
 

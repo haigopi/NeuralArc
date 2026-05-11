@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.Position;
+import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
@@ -22,6 +23,22 @@ final class PortfolioActionsSupport {
                 || state == StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED
                 || state == StrategyLifecycleState.BUY_LIMIT_2_PLACED
                 || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED;
+    }
+
+    private static boolean isRemovableInactive(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return false;
+        }
+        StrategyStatus status = entry.strategy.status();
+        if (status == StrategyStatus.COMPLETED) {
+            return true;
+        }
+        if (status == StrategyStatus.PAUSED) {
+            PauseReason pauseReason = entry.strategy.pauseReason();
+            return pauseReason == PauseReason.MANUAL_LIMIT_BUY_CANCELED
+                    || pauseReason == PauseReason.USER_PAUSED;
+        }
+        return false;
     }
 
     private static boolean isEligibleForManualSell(ManagedStrategy entry) {
@@ -94,7 +111,7 @@ final class PortfolioActionsSupport {
     }
 
     String buildResultMessage(BulkAction action, BatchResult result) {
-        return buildResultMessage(action.menuLabel(), "Succeeded", result);
+        return buildResultMessage(action.menuLabel(), action.resultSuccessLabel(), result);
     }
 
     private String buildResultMessage(String label, String successLabel, BatchResult result) {
@@ -231,6 +248,33 @@ final class PortfolioActionsSupport {
                 return "There are no strategies with cancelable pending limit buy orders.";
             }
         },
+        REMOVE_INACTIVE_LIST("Remove Inactive List") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return isRemovableInactive(entry);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Remove " + count + " completed/canceled strategy(ies) from Current Strategies?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Matching strategies will be archived and removed from the Current Strategies tab."
+                        + "<br>They remain available in repository/history records.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no completed or canceled strategies to remove from Current Strategies.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Archived";
+            }
+        },
         PROMOTE_ALL_TO_LIVE("Promote All to Live") {
             @Override
             boolean matches(ManagedStrategy entry) {
@@ -270,6 +314,10 @@ final class PortfolioActionsSupport {
         abstract String confirmDetail();
 
         abstract String emptyMessage();
+
+        String resultSuccessLabel() {
+            return "Succeeded";
+        }
 
         String menuLabel() {
             return menuLabel;
