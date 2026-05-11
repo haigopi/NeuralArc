@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.Position;
+import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
 
@@ -10,6 +11,38 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 final class PortfolioActionsSupport {
+    private static boolean hasCancelablePendingLimitBuy(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null || entry.strategy.status() != StrategyStatus.ACTIVE) {
+            return false;
+        }
+        StrategyLifecycleState state = entry.strategy.currentState();
+        return state == StrategyLifecycleState.BASE_BUY_PLACED
+                || state == StrategyLifecycleState.BASE_BUY_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED;
+    }
+
+    private static boolean isEligibleForManualSell(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return false;
+        }
+        StrategyStatus status = entry.strategy.status();
+        if (status == StrategyStatus.COMPLETED
+                || status == StrategyStatus.FAILED
+                || status == StrategyStatus.STOPPED
+                || status == StrategyStatus.ARCHIVED) {
+            return false;
+        }
+        StrategyLifecycleState state = entry.strategy.currentState();
+        return state != StrategyLifecycleState.COMPLETED
+                && state != StrategyLifecycleState.FAILED
+                && state != StrategyLifecycleState.STOPPED
+                && state != StrategyLifecycleState.SELL_PLACED
+                && state != StrategyLifecycleState.SELL_PARTIALLY_FILLED;
+    }
+
     List<ManagedStrategy> filterTargets(List<ManagedStrategy> strategies, Scope scope) {
         List<ManagedStrategy> targets = new ArrayList<>();
         for (ManagedStrategy entry : strategies) {
@@ -71,6 +104,9 @@ final class PortfolioActionsSupport {
         if (!result.successes().isEmpty()) {
             sb.append("<br>").append(String.join(", ", result.successes()));
         }
+        if (!result.skipped().isEmpty()) {
+            sb.append("<br><br><b>Skipped:</b><br>").append(String.join("<br>", result.skipped()));
+        }
         if (!result.failures().isEmpty()) {
             sb.append("<br><br><b>Failed:</b><br>").append(String.join("<br>", result.failures()));
         }
@@ -78,7 +114,16 @@ final class PortfolioActionsSupport {
         return sb.toString();
     }
 
-    record BatchResult(List<String> successes, List<String> failures) {
+    record BatchResult(List<String> successes, List<String> failures, List<String> skipped) {
+        BatchResult(List<String> successes, List<String> failures) {
+            this(successes, failures, List.of());
+        }
+
+        BatchResult {
+            successes = successes == null ? List.of() : List.copyOf(successes);
+            failures = failures == null ? List.of() : List.copyOf(failures);
+            skipped = skipped == null ? List.of() : List.copyOf(skipped);
+        }
     }
 
     enum Scope {
@@ -86,7 +131,9 @@ final class PortfolioActionsSupport {
             @Override
             boolean matches(ManagedStrategy entry) {
                 Position position = entry.cachedPosition();
-                return position.getTotalShares() > 0 && position.unrealizedPnl().compareTo(BigDecimal.ZERO) > 0;
+                return isEligibleForManualSell(entry)
+                        && position.getTotalShares() > 0
+                        && position.unrealizedPnl().compareTo(BigDecimal.ZERO) > 0;
             }
 
             @Override
@@ -102,7 +149,8 @@ final class PortfolioActionsSupport {
         ALL_OPEN("Sell All Open Positions") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return entry.cachedPosition().getTotalShares() > 0;
+                return isEligibleForManualSell(entry)
+                        && entry.cachedPosition().getTotalShares() > 0;
             }
 
             @Override
@@ -119,7 +167,9 @@ final class PortfolioActionsSupport {
             @Override
             boolean matches(ManagedStrategy entry) {
                 Position position = entry.cachedPosition();
-                return position.getTotalShares() > 0 && position.unrealizedPnl().compareTo(BigDecimal.ZERO) < 0;
+                return isEligibleForManualSell(entry)
+                        && position.getTotalShares() > 0
+                        && position.unrealizedPnl().compareTo(BigDecimal.ZERO) < 0;
             }
 
             @Override
@@ -162,14 +212,12 @@ final class PortfolioActionsSupport {
         CANCEL_PENDING_LIMIT_BUYS("Cancel All Pending Limit Buys") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return entry != null
-                        && entry.strategy != null
-                        && entry.strategy.status() == StrategyStatus.ACTIVE;
+                return hasCancelablePendingLimitBuy(entry);
             }
 
             @Override
             String confirmHeading(int count) {
-                return "Cancel pending limit buy orders for " + count + " active strategy(ies)?";
+                return "Cancel pending limit buy orders for " + count + " cancelable strategy(ies)?";
             }
 
             @Override
@@ -180,7 +228,7 @@ final class PortfolioActionsSupport {
 
             @Override
             String emptyMessage() {
-                return "There are no active strategies available for pending limit buy cancellation.";
+                return "There are no strategies with cancelable pending limit buy orders.";
             }
         },
         PROMOTE_ALL_TO_LIVE("Promote All to Live") {

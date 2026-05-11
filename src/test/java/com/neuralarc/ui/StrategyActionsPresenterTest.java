@@ -70,8 +70,18 @@ class StrategyActionsPresenterTest {
         );
 
         assertEquals("Completed", viewModel.toggleText());
+        assertEquals("icons/verify.svg", viewModel.toggleIconPath());
         assertFalse(viewModel.toggleEnabled());
         assertFalse(viewModel.promoteEnabled());
+    }
+
+    @Test
+    void activeStatusKeepsPauseIconForCancelAction() {
+        StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
+                new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.ACTIVE, false, false, "", true, true, true)
+        );
+
+        assertEquals("icons/pause.svg", viewModel.toggleIconPath());
     }
 
     @Test

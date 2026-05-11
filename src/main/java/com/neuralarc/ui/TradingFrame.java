@@ -3846,6 +3846,12 @@ public class TradingFrame extends JFrame {
                     )
             );
             toggleButton.setText(actionsViewModel.toggleText());
+            String toggleIconPath = actionsViewModel.toggleIconPath();
+            String currentToggleIconPath = (String) toggleButton.getClientProperty("toggleIconPath");
+            if (currentToggleIconPath == null || !currentToggleIconPath.equals(toggleIconPath)) {
+                applyButtonIcon(toggleButton, toggleIconPath, 13);
+                toggleButton.putClientProperty("toggleIconPath", toggleIconPath);
+            }
             styleActionButton(toggleButton, actionsViewModel.toggleColor());
             toggleButton.setEnabled(actionsViewModel.toggleEnabled());
             sellButton.setEnabled(actionsViewModel.sellEnabled());

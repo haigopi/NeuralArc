@@ -50,11 +50,13 @@ public final class StrategyActionsPresenter {
                 : paused
                 ? RESUME
                 : CANCEL;
+        String toggleIconPath = toggleIconPath(status, paused, busy, state.manuallyCanceled(), state.hasPosition());
         Color sellColor = canSell ? SELL : DISABLED;
         Color promoteColor = canPromote ? PROMOTE_ENABLED : DISABLED;
 
         return new StrategyActionsViewModel(
                 toggleText,
+                toggleIconPath,
                 toggleColor,
                 canToggle,
                 canSell,
@@ -62,6 +64,28 @@ public final class StrategyActionsPresenter {
                 canPromote,
                 promoteColor
         );
+    }
+
+    private String toggleIconPath(
+            StrategyStatus status,
+            boolean paused,
+            boolean busy,
+            boolean manuallyCanceled,
+            boolean hasPosition
+    ) {
+        if (busy) {
+            return "icons/pause.svg";
+        }
+        if (status == StrategyStatus.COMPLETED) {
+            return "icons/verify.svg";
+        }
+        if (status == StrategyStatus.ARCHIVED || status == StrategyStatus.STOPPED || status == StrategyStatus.FAILED) {
+            return "icons/actions.svg";
+        }
+        if (paused) {
+            return (!hasPosition || manuallyCanceled) ? "icons/submit.svg" : "icons/pause.svg";
+        }
+        return "icons/pause.svg";
     }
 
     private String failedStatusText(String latestOrderStatus) {
@@ -99,6 +123,7 @@ public final class StrategyActionsPresenter {
 
     public record StrategyActionsViewModel(
             String toggleText,
+            String toggleIconPath,
             Color toggleColor,
             boolean toggleEnabled,
             boolean sellEnabled,

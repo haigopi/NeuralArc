@@ -62,6 +62,17 @@ class PortfolioActionsFlowTest {
         assertTrue(targets.isEmpty());
     }
 
+    @Test
+    void allOpenScopeExcludesStrategiesAlreadyInSellPlacedState() {
+        ManagedStrategy sellPlaced = managed("AAPL", 5, new BigDecimal("100"), new BigDecimal("95"));
+        sellPlaced.strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(sellPlaced), PortfolioActionsSupport.Scope.ALL_OPEN);
+
+        assertTrue(targets.isEmpty());
+    }
+
     // ---- LOSS_ONLY scope filtering ----
 
     @Test

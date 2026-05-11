@@ -78,6 +78,7 @@ final class PortfolioActionsController {
             protected PortfolioActionsSupport.BatchResult doInBackground() {
                 List<String> successes = new ArrayList<>();
                 List<String> failures = new ArrayList<>();
+                List<String> skipped = new ArrayList<>();
                 if (gateway.strategyService() == null) {
                     for (ManagedStrategy entry : targets) {
                         failures.add(entry.strategy.symbol() + ": strategy service is not configured");
@@ -92,12 +93,16 @@ final class PortfolioActionsController {
                     }
                     StrategyService.LimitBuyCancelResult result = modeAwareService.cancelPendingLimitBuys(entry.strategy.id());
                     if (result.success()) {
-                        successes.add(entry.strategy.symbol() + " (" + result.canceledCount() + ")");
+                        if (result.canceledCount() > 0) {
+                            successes.add(entry.strategy.symbol() + " (" + result.canceledCount() + ")");
+                        } else {
+                            skipped.add(entry.strategy.symbol() + ": no pending limit buy orders were cancelable");
+                        }
                     } else {
                         failures.add(entry.strategy.symbol() + ": " + result.error());
                     }
                 }
-                return new PortfolioActionsSupport.BatchResult(successes, failures);
+                return new PortfolioActionsSupport.BatchResult(successes, failures, skipped);
             }
 
             @Override

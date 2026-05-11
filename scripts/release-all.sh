@@ -8,6 +8,11 @@ EXPLICIT_VERSION=""
 DRAFT=false
 SKIP_BUILD=false
 DRY_RUN=false
+SUBMIT_MACOS_SCAN=false
+
+if [[ "${MALWARE_SCAN_AUTO_SUBMIT:-false}" == "true" ]]; then
+  SUBMIT_MACOS_SCAN=true
+fi
 
 usage() {
   cat <<'USAGE'
@@ -18,6 +23,8 @@ Options:
   --draft           Create or keep release as draft (default publishes)
   --publish         Publish release (default; kept for compatibility)
   --skip-build      Skip build step and only publish existing artifacts
+  --submit-macos-scan  Submit latest macOS artifact for malware scanning before release publish
+  --skip-macos-scan    Skip malware scan submission even when MALWARE_SCAN_AUTO_SUBMIT=true
   --dry-run         Print commands without executing
   --help            Show this help
 USAGE
@@ -39,6 +46,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-build)
       SKIP_BUILD=true
+      shift
+      ;;
+    --submit-macos-scan)
+      SUBMIT_MACOS_SCAN=true
+      shift
+      ;;
+    --skip-macos-scan)
+      SUBMIT_MACOS_SCAN=false
       shift
       ;;
     --dry-run)
@@ -63,6 +78,105 @@ run_cmd() {
   else
     "$@"
   fi
+}
+
+file_mtime_epoch() {
+  local file="$1"
+  if stat -f "%m" "$file" >/dev/null 2>&1; then
+    stat -f "%m" "$file"
+  else
+    stat -c "%Y" "$file"
+  fi
+}
+
+resolve_latest_macos_artifact_for_version() {
+  local version="$1"
+  local latest=""
+  local latest_mtime=0
+  local candidate=""
+  local mtime=0
+
+  shopt -s nullglob
+  for candidate in "$PROJECT_DIR"/artifacts/macos/NeuralArc-"$version"*.dmg; do
+    [[ -f "$candidate" ]] || continue
+    mtime="$(file_mtime_epoch "$candidate")"
+    if [[ -z "$latest" || "$mtime" -gt "$latest_mtime" ]]; then
+      latest="$candidate"
+      latest_mtime="$mtime"
+    fi
+  done
+  shopt -u nullglob
+
+  if [[ -n "$latest" ]]; then
+    printf '%s\n' "$latest"
+  fi
+}
+
+submit_macos_artifact_for_malware_scan() {
+  local artifact="$1"
+  local version="$2"
+  local tag="$3"
+  local api_url="${MALWARE_SCAN_API_URL:-}"
+  local auth_header_name="${MALWARE_SCAN_AUTH_HEADER_NAME:-Authorization}"
+  local auth_header_value="${MALWARE_SCAN_AUTH_HEADER_VALUE:-}"
+  local token="${MALWARE_SCAN_API_TOKEN:-}"
+  local profile_id="${MALWARE_SCAN_PROFILE_ID:-}"
+  local response_file="$PROJECT_DIR/build/malware-scan-submission-$version.json"
+  local artifact_name
+  artifact_name="$(basename "$artifact")"
+
+  if [[ ! -f "$artifact" ]]; then
+    echo "macOS artifact not found for malware scan submission: $artifact" >&2
+    exit 1
+  fi
+  if [[ -z "$api_url" ]]; then
+    echo "MALWARE_SCAN_API_URL is required when --submit-macos-scan is enabled." >&2
+    exit 1
+  fi
+  if [[ -z "$auth_header_value" ]]; then
+    if [[ -z "$token" ]]; then
+      echo "Set MALWARE_SCAN_API_TOKEN or MALWARE_SCAN_AUTH_HEADER_VALUE when --submit-macos-scan is enabled." >&2
+      exit 1
+    fi
+    auth_header_value="Bearer $token"
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "curl is required for malware scan submission." >&2
+    exit 1
+  fi
+
+  mkdir -p "$PROJECT_DIR/build"
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "[dry-run] submit macOS malware scan for $artifact_name to $api_url"
+    echo "[dry-run] curl --fail --silent --show-error -X POST \"$api_url\" -H \"$auth_header_name: [REDACTED]\" -F \"file=@$artifact\" -F \"artifactName=$artifact_name\" -F \"version=$version\" -F \"tag=$tag\" -o \"$response_file\""
+    if [[ -n "$profile_id" ]]; then
+      echo "[dry-run] additional form field: profileId=$profile_id"
+    fi
+    return
+  fi
+
+  echo "Submitting macOS artifact for malware scan: $artifact_name"
+  if [[ -n "$profile_id" ]]; then
+    curl --fail --silent --show-error \
+      -X POST "$api_url" \
+      -H "$auth_header_name: $auth_header_value" \
+      -F "file=@$artifact" \
+      -F "artifactName=$artifact_name" \
+      -F "version=$version" \
+      -F "tag=$tag" \
+      -F "profileId=$profile_id" \
+      -o "$response_file"
+  else
+    curl --fail --silent --show-error \
+      -X POST "$api_url" \
+      -H "$auth_header_name: $auth_header_value" \
+      -F "file=@$artifact" \
+      -F "artifactName=$artifact_name" \
+      -F "version=$version" \
+      -F "tag=$tag" \
+      -o "$response_file"
+  fi
+  echo "Malware scan submission response saved to: $response_file"
 }
 
 if ! command -v gh >/dev/null 2>&1; then
@@ -220,12 +334,16 @@ if [[ "$SKIP_BUILD" == false ]]; then
   run_cmd "$SCRIPT_DIR/build-all.sh" --version "$VERSION"
 fi
 
-MAC_DMG="$PROJECT_DIR/artifacts/macos/NeuralArc-$VERSION.dmg"
+MAC_DMG="$(resolve_latest_macos_artifact_for_version "$VERSION")"
+if [[ -z "$MAC_DMG" ]]; then
+  MAC_DMG="$PROJECT_DIR/artifacts/macos/NeuralArc-$VERSION.dmg"
+fi
 WIN_EXE="$PROJECT_DIR/artifacts/windows/NeuralArc-$VERSION.exe"
 LINUX_DEB="$PROJECT_DIR/artifacts/linux/NeuralArc-$VERSION.deb"
 MAC_README="$PROJECT_DIR/artifacts/macos/README-$VERSION.md"
 WIN_README="$PROJECT_DIR/artifacts/windows/README-$VERSION.md"
 LINUX_README="$PROJECT_DIR/artifacts/linux/README-$VERSION.md"
+MAC_ARTIFACT_NAME="$(basename "$MAC_DMG")"
 
 ASSETS=()
 MISSING_ASSETS=()
@@ -253,6 +371,14 @@ if [[ ${#MISSING_ASSETS[@]} -gt 0 ]]; then
   done
 fi
 
+if [[ "$SUBMIT_MACOS_SCAN" == true ]]; then
+  if [[ ! -f "$MAC_DMG" ]]; then
+    echo "--submit-macos-scan is enabled but macOS artifact is missing: $MAC_DMG" >&2
+    exit 1
+  fi
+  submit_macos_artifact_for_malware_scan "$MAC_DMG" "$VERSION" "$TAG"
+fi
+
 RELEASE_NOTES_FILE="$(generate_release_notes "$VERSION" "$TAG")"
 NOTES_ARGS=(--notes-file "$RELEASE_NOTES_FILE")
 
@@ -267,8 +393,8 @@ cat > "$MAC_README" <<EOF
 # NeuralArc macOS Release $VERSION
 
 ## Artifact
-- File: NeuralArc-$VERSION.dmg
-- Path: artifacts/macos/NeuralArc-$VERSION.dmg
+- File: $MAC_ARTIFACT_NAME
+- Path: artifacts/macos/$MAC_ARTIFACT_NAME
 
 ## Install
 1. Open the DMG file.
@@ -278,7 +404,7 @@ cat > "$MAC_README" <<EOF
 ## Verify checksum (optional)
 zsh:
   cd $PROJECT_DIR
-  shasum -a 256 artifacts/macos/NeuralArc-$VERSION.dmg
+  shasum -a 256 artifacts/macos/$MAC_ARTIFACT_NAME
 
 ## Changes
 $COMMIT_LINES

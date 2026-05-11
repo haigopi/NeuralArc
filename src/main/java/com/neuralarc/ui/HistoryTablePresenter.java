@@ -142,7 +142,11 @@ public final class HistoryTablePresenter {
         List<HistoryRow> withSubtotals = new ArrayList<>();
         String currentGroupKey = null;
         BigDecimal groupPnl = BigDecimal.ZERO;
+        BigDecimal allSubtotals = BigDecimal.ZERO;
+        BigDecimal positiveSubtotals = BigDecimal.ZERO;
+        BigDecimal negativeSubtotals = BigDecimal.ZERO;
         boolean groupHasNumericPnl = false;
+        boolean hasAnySubtotal = false;
         List<HistoryRow> currentGroupRows = new ArrayList<>();
 
         for (HistoryRow row : rows) {
@@ -150,7 +154,15 @@ public final class HistoryTablePresenter {
                 if (currentGroupKey != null) {
                     withSubtotals.addAll(currentGroupRows);
                     if (groupHasNumericPnl) {
-                        withSubtotals.add(buildSubtotalRow(currentGroupKey, groupPnl));
+                        BigDecimal roundedGroupPnl = Monetary.round(groupPnl);
+                        withSubtotals.add(buildSubtotalRow(currentGroupKey, roundedGroupPnl));
+                        allSubtotals = allSubtotals.add(roundedGroupPnl);
+                        if (roundedGroupPnl.compareTo(BigDecimal.ZERO) > 0) {
+                            positiveSubtotals = positiveSubtotals.add(roundedGroupPnl);
+                        } else if (roundedGroupPnl.compareTo(BigDecimal.ZERO) < 0) {
+                            negativeSubtotals = negativeSubtotals.add(roundedGroupPnl);
+                        }
+                        hasAnySubtotal = true;
                     }
                 }
                 currentGroupKey = row.groupKey();
@@ -174,8 +186,20 @@ public final class HistoryTablePresenter {
         if (currentGroupKey != null) {
             withSubtotals.addAll(currentGroupRows);
             if (groupHasNumericPnl) {
-                withSubtotals.add(buildSubtotalRow(currentGroupKey, groupPnl));
+                BigDecimal roundedGroupPnl = Monetary.round(groupPnl);
+                withSubtotals.add(buildSubtotalRow(currentGroupKey, roundedGroupPnl));
+                allSubtotals = allSubtotals.add(roundedGroupPnl);
+                if (roundedGroupPnl.compareTo(BigDecimal.ZERO) > 0) {
+                    positiveSubtotals = positiveSubtotals.add(roundedGroupPnl);
+                } else if (roundedGroupPnl.compareTo(BigDecimal.ZERO) < 0) {
+                    negativeSubtotals = negativeSubtotals.add(roundedGroupPnl);
+                }
+                hasAnySubtotal = true;
             }
+        }
+
+        if (hasAnySubtotal) {
+            withSubtotals.add(buildTotalValueRow(allSubtotals, positiveSubtotals, negativeSubtotals));
         }
 
         return withSubtotals;
@@ -217,6 +241,34 @@ public final class HistoryTablePresenter {
                 "",
                 null,
                 3,
+                HistoryRowStyle.SUBTOTAL
+        );
+    }
+
+    private HistoryRow buildTotalValueRow(BigDecimal total, BigDecimal positiveTotal, BigDecimal negativeTotal) {
+        BigDecimal roundedTotal = Monetary.round(total);
+        BigDecimal roundedPositive = Monetary.round(positiveTotal);
+        BigDecimal roundedNegative = Monetary.round(negativeTotal);
+        String realizedDisplay = roundedTotal.toPlainString()
+                + " ("
+                + "+ve: " + roundedPositive.toPlainString()
+                + " / "
+                + "-ve: " + roundedNegative.toPlainString()
+                + ")";
+        return new HistoryRow(
+                "TOTAL",
+                "TOTAL",
+                "",
+                "",
+                "Total Value",
+                "",
+                "",
+                "",
+                "",
+                realizedDisplay,
+                "",
+                null,
+                4,
                 HistoryRowStyle.SUBTOTAL
         );
     }

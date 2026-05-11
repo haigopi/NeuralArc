@@ -104,6 +104,97 @@ class HistoryTablePresenterTest {
     }
 
     @Test
+    void multipleSymbolSubtotalsProduceBottomTotalValueRow() {
+        HistoryTablePresenter.HistorySource aapl = new HistoryTablePresenter.HistorySource(
+                "AAPL",
+                "Paper",
+                "Completed",
+                "Completed",
+                "",
+                Instant.now(),
+                StrategyStatus.COMPLETED,
+                List.of(
+                        filledOrder("AAPL", StrategyStage.BASE_BUY, StrategyOrderSide.BUY, "10", "100.00", "100.00"),
+                        filledOrder("AAPL", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL, "10", "110.00", "110.00")
+                )
+        );
+        HistoryTablePresenter.HistorySource msft = new HistoryTablePresenter.HistorySource(
+                "MSFT",
+                "Paper",
+                "Completed",
+                "Completed",
+                "",
+                Instant.now(),
+                StrategyStatus.COMPLETED,
+                List.of(
+                        filledOrder("MSFT", StrategyStage.BASE_BUY, StrategyOrderSide.BUY, "5", "200.00", "200.00"),
+                        filledOrder("MSFT", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL, "5", "220.00", "220.00")
+                )
+        );
+
+        List<HistoryTablePresenter.HistoryRow> rows = presenter.buildRows(List.of(aapl, msft), instant -> "t");
+
+        HistoryTablePresenter.HistoryRow lastRow = rows.getLast();
+        assertEquals(HistoryTablePresenter.HistoryRowStyle.SUBTOTAL, lastRow.style());
+        assertEquals("Total Value", lastRow.stage());
+        assertEquals("200.00 (+ve: 200.00 / -ve: 0.00)", lastRow.realizedPnl());
+    }
+
+    @Test
+    void totalValueRowShowsPositiveAndNegativeBreakdownInBrackets() {
+        HistoryTablePresenter.HistorySource gain = new HistoryTablePresenter.HistorySource(
+                "GAIN",
+                "Paper",
+                "Completed",
+                "Completed",
+                "",
+                Instant.now(),
+                StrategyStatus.COMPLETED,
+                List.of(
+                        filledOrder("GAIN", StrategyStage.BASE_BUY, StrategyOrderSide.BUY, "10", "100.00", "100.00"),
+                        filledOrder("GAIN", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL, "10", "120.00", "120.00")
+                )
+        );
+        HistoryTablePresenter.HistorySource loss = new HistoryTablePresenter.HistorySource(
+                "LOSS",
+                "Paper",
+                "Completed",
+                "Completed",
+                "",
+                Instant.now(),
+                StrategyStatus.COMPLETED,
+                List.of(
+                        filledOrder("LOSS", StrategyStage.BASE_BUY, StrategyOrderSide.BUY, "10", "100.00", "100.00"),
+                        filledOrder("LOSS", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL, "10", "90.00", "90.00")
+                )
+        );
+
+        List<HistoryTablePresenter.HistoryRow> rows = presenter.buildRows(List.of(gain, loss), instant -> "t");
+
+        HistoryTablePresenter.HistoryRow lastRow = rows.getLast();
+        assertEquals("Total Value", lastRow.stage());
+        assertEquals("100.00 (+ve: 200.00 / -ve: -100.00)", lastRow.realizedPnl());
+    }
+
+    @Test
+    void noTradeHistoryRowsMeansNoTotalValueRow() {
+        HistoryTablePresenter.HistorySource source = new HistoryTablePresenter.HistorySource(
+                "AAPL",
+                "Paper",
+                "Completed",
+                "Completed",
+                "",
+                Instant.now(),
+                StrategyStatus.COMPLETED,
+                List.of()
+        );
+
+        List<HistoryTablePresenter.HistoryRow> rows = presenter.buildRows(List.of(source), instant -> "t");
+
+        assertTrue(rows.stream().noneMatch(row -> "Total Value".equals(row.stage())));
+    }
+
+    @Test
     void filledOrdersUseRequestedQuantityWhenBrokerFilledQuantityIsZero() {
         HistoryTablePresenter.HistorySource source = new HistoryTablePresenter.HistorySource(
                 "AAPL",
