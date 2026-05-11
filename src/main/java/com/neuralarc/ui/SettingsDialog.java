@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -72,6 +73,7 @@ public class SettingsDialog extends JDialog {
     private transient Function<Path, StrategyTransferResult> strategyExportHandler;
     private transient Function<Path, StrategyTransferResult> strategyImportHandler;
     private transient Runnable deleteAllDataHandler;
+    private transient Runnable alpacaAccountChangedHandler;
     private final Map<ApplicationMode, String[]> credentialCache = new EnumMap<>(ApplicationMode.class);
     private final Map<ApplicationMode, String[]> appliedCredentialCache = new EnumMap<>(ApplicationMode.class);
     private ApplicationMode displayedCredentialMode = ApplicationMode.PAPER;
@@ -300,6 +302,10 @@ public class SettingsDialog extends JDialog {
         this.deleteAllDataHandler = deleteAllDataHandler;
     }
 
+    public void setAlpacaAccountChangedHandler(Runnable alpacaAccountChangedHandler) {
+        this.alpacaAccountChangedHandler = alpacaAccountChangedHandler;
+    }
+
     public String getEndpoint() { return endpointField.getText().trim(); }
     public boolean telemetryEnabled() { return telemetryEnabled.isSelected(); }
     public boolean diagnosticLogSharingEnabled() { return telemetryEnabled.isSelected(); }
@@ -379,6 +385,17 @@ public class SettingsDialog extends JDialog {
             return false;
         }
 
+        List<AlpacaCredentialChangeSupport.ApiKeyChange> apiKeyChanges =
+                AlpacaCredentialChangeSupport.changedApiKeys(appliedCredentialCache, credentialCache);
+        boolean resetTradingDataAfterSave = false;
+        if (!apiKeyChanges.isEmpty()) {
+            ApiKeyChangeDecision decision = promptForApiKeyChangeDecision(apiKeyChanges);
+            if (decision == ApiKeyChangeDecision.CANCEL) {
+                return false;
+            }
+            resetTradingDataAfterSave = decision == ApiKeyChangeDecision.DIFFERENT_ACCOUNT;
+        }
+
         try {
             appSettingsService.save(new AppSettingsService.AppSettings(
                     email,
@@ -408,12 +425,48 @@ public class SettingsDialog extends JDialog {
             appliedSettings = appSettingsService.load();
             syncAppliedCredentialCache();
             savedDuringOpen = true;
+            if (resetTradingDataAfterSave && alpacaAccountChangedHandler != null) {
+                alpacaAccountChangedHandler.run();
+            }
             JOptionPane.showMessageDialog(this, "Settings saved successfully.", "Saved", JOptionPane.INFORMATION_MESSAGE);
             return true;
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Failed to save settings.", "Error", JOptionPane.ERROR_MESSAGE);
             return false;
         }
+    }
+
+    private ApiKeyChangeDecision promptForApiKeyChangeDecision(List<AlpacaCredentialChangeSupport.ApiKeyChange> changes) {
+        String changedModes = changes.stream()
+                .map(change -> change.mode().name())
+                .reduce((left, right) -> left + ", " + right)
+                .orElse("ALPACA");
+        String message = "<html><body style='width:390px'>"
+                + "<b>Alpaca API key changed for " + changedModes + ".</b><br><br>"
+                + "If you rotated keys for the same Alpaca account, no strategy action is needed.<br><br>"
+                + "If this is a different Alpaca account, local strategies and trade history will be cleared, "
+                + "then the new account data will sync after reconnect."
+                + "</body></html>";
+        Object[] options = {
+                "Keys Rotated - Keep Strategies",
+                "Different Account - Reset Strategies",
+                "Cancel"
+        };
+        int choice = JOptionPane.showOptionDialog(
+                this,
+                message,
+                "Alpaca API Key Changed",
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.WARNING_MESSAGE,
+                null,
+                options,
+                options[0]
+        );
+        return switch (choice) {
+            case 0 -> ApiKeyChangeDecision.KEY_ROTATION;
+            case 1 -> ApiKeyChangeDecision.DIFFERENT_ACCOUNT;
+            default -> ApiKeyChangeDecision.CANCEL;
+        };
     }
 
     private void loadAll() {
@@ -677,6 +730,12 @@ public class SettingsDialog extends JDialog {
     public record ConnectionResult(boolean connected, String message) {}
 
     public record StrategyTransferResult(boolean success, String message) {}
+
+    private enum ApiKeyChangeDecision {
+        KEY_ROTATION,
+        DIFFERENT_ACCOUNT,
+        CANCEL
+    }
 
     private JPanel createFormPanel(String title) {
         JPanel panel = new JPanel(new GridBagLayout());

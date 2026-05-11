@@ -1707,11 +1707,17 @@ public class StrategyDialog extends JDialog {
         symbolField.setText(recommendation.symbol());
         tabs.setSelectedIndex(TAB_CURRENT_STRATEGY);
         JOptionPane.showMessageDialog(this,
-                typeLabel == RecommendationTypeLabel.SHORT_TERM
-                        ? "Short-term recommendation applied using behavior-adjusted base price. Please review and save strategy."
-                        : "Long-term recommendation applied using behavior-adjusted discounted base price. Please review and save strategy.",
+                appliedRecommendationMessage(typeLabel),
                 "Recommendation Applied",
                 JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private String appliedRecommendationMessage(RecommendationTypeLabel typeLabel) {
+        return switch (typeLabel) {
+            case SHORT_TERM -> "Short-term recommendation applied. Review and save.";
+            case HIGH_RISK_SHORT_TERM -> "High-risk short-term recommendation applied. Review and save.";
+            case LONG_TERM -> "Long-term recommendation applied. Review and save.";
+        };
     }
 
     private void loadCachedAutoAnalyzeResult(String symbol) {

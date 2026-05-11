@@ -733,6 +733,7 @@ public class TradingFrame extends JFrame {
         );
         settingsDialog.setStrategyExportHandler(this::exportStrategiesToFile);
         settingsDialog.setStrategyImportHandler(this::importStrategiesFromFile);
+        settingsDialog.setAlpacaAccountChangedHandler(this::resetLocalTradingDataForAlpacaAccountChange);
         strategyPollingTimer = new Timer(1000, e -> {
             triggerPollingCycle();
         });
@@ -1261,9 +1262,9 @@ public class TradingFrame extends JFrame {
         styleHeaderButton(portfolioActionsButton);
         styleHeaderButton(settingsButton);
         applyButtonIcon(addStrategyButton, "icons/add-stock-strategy.svg", 16);
-        applyButtonIcon(luckyButton, "icons/actions.svg", 16);
-        applyButtonIcon(refreshPortfolioButton, "icons/actions.svg", 16);
-        applyButtonIcon(portfolioActionsButton, "icons/actions.svg", 16);
+        applyButtonIcon(luckyButton, "icons/lucky.svg", 16);
+        applyButtonIcon(refreshPortfolioButton, "icons/refresh.svg", 16);
+        applyButtonIcon(portfolioActionsButton, "icons/portfolio.svg", 16);
         applyButtonIcon(settingsButton, "icons/settings.svg", 16);
         refreshPortfolioButton.setToolTipText(TooltipStyler.text(
                 "Refetches Alpaca positions and updates matching Current Strategies with broker-side position data.",
@@ -1683,6 +1684,29 @@ public class TradingFrame extends JFrame {
         } else {
             userActionLog.completed("Settings", "Closed without saving.");
         }
+    }
+
+    private void resetLocalTradingDataForAlpacaAccountChange() {
+        log("[SETTINGS] Different Alpaca account selected. Clearing local strategy data before reconnect.");
+        if (strategyPollingService != null) {
+            strategyPollingService.shutdown();
+        }
+        for (Strategy strategy : strategyRepository.findAll()) {
+            strategyOrderRepository.deleteByStrategyId(strategy.id());
+            strategyEventRepository.deleteByStrategyId(strategy.id());
+            strategyRepository.deleteById(strategy.id());
+        }
+        strategyRepository.invalidateCache();
+        strategyOrderRepository.invalidateCache();
+        strategyEventRepository.invalidateCache();
+        aggregatePnlStore.reset();
+        strategies.clear();
+        filledOrderRows.clear();
+        strategyTableModel.fireTableDataChanged();
+        filledOrdersTableModel.fireTableDataChanged();
+        refreshPanels();
+        updateStatusBar();
+        log("[SETTINGS] Local strategy data cleared. New Alpaca account data will sync after reconnect.");
     }
 
     private boolean autoInitializeConnection() {
