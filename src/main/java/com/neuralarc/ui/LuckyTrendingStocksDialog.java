@@ -80,16 +80,18 @@ public class LuckyTrendingStocksDialog extends JDialog {
     private static final Color TEXT_PRIMARY = UIManager.getColor("Label.foreground") != null
             ? UIManager.getColor("Label.foreground")
             : new Color(45, 45, 50);
-    private static final Color SECTION_GAINERS_BG = new Color(26, 46, 34);
-    private static final Color SECTION_GAINERS_BORDER = new Color(65, 138, 88);
-    private static final Color SECTION_LOSERS_BG = new Color(58, 40, 21);
-    private static final Color SECTION_LOSERS_BORDER = new Color(196, 135, 46);
+    private static final Color SECTION_HEADER_TEXT = Color.WHITE;
+    private static final Color SECTION_GAINERS_BG = new Color(232, 247, 236);
+    private static final Color SECTION_GAINERS_BORDER = new Color(150, 202, 164);
+    private static final Color SECTION_LOSERS_BG = new Color(255, 242, 228);
+    private static final Color SECTION_LOSERS_BORDER = new Color(228, 189, 142);
     private static final Color INPUT_BORDER = new Color(190, 190, 200);
     private static final Color TAB_BORDER = new Color(204, 214, 225);
     private static final Color TAB_SELECTED_BG = new Color(235, 244, 252);
     private static final Color TAB_UNSELECTED_BG = new Color(246, 248, 250);
     private static final Color TAB_SELECTED_TEXT = new Color(11, 84, 132);
     private static final Color TAB_UNSELECTED_TEXT = new Color(75, 85, 99);
+    private static final int SECTION_MAX_WIDTH = 840;
     private static final ZoneId MARKET_TIME_ZONE = ZoneId.of("America/New_York");
     private static final LocalTime MARKET_OPEN_TIME = LocalTime.of(9, 30);
     private static final LocalTime MARKET_CLOSE_TIME = LocalTime.of(16, 0);
@@ -341,8 +343,8 @@ public class LuckyTrendingStocksDialog extends JDialog {
         JPanel group = new JPanel(new BorderLayout(0, 10));
         group.setOpaque(true);
         group.setBackground(sectionBackground);
-        group.setAlignmentX(Component.LEFT_ALIGNMENT);
-        group.setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
+        group.setAlignmentX(Component.CENTER_ALIGNMENT);
+        group.setMaximumSize(new Dimension(SECTION_MAX_WIDTH, Short.MAX_VALUE));
         group.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(sectionBorder, 1, true),
                 new EmptyBorder(12, 12, 12, 12)
@@ -350,8 +352,10 @@ public class LuckyTrendingStocksDialog extends JDialog {
 
         JLabel heading = new JLabel(title);
         heading.setFont(FontLoader.ui(Font.BOLD, 14f));
-        heading.setForeground(TEXT_PRIMARY);
-        heading.setBorder(new EmptyBorder(0, 2, 4, 2));
+        heading.setForeground(SECTION_HEADER_TEXT);
+        heading.setOpaque(true);
+        heading.setBackground(sectionBorder.darker());
+        heading.setBorder(new EmptyBorder(6, 10, 6, 10));
         group.add(heading, BorderLayout.NORTH);
 
         JPanel body = new JPanel();

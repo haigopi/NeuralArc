@@ -15,6 +15,7 @@ zsh:
   shasum -a 256 artifacts/macos/NeuralArc-1.0.6.dmg
 
 ## Changes
+- Add v1.0.6 artifact READMEs; update release script (b522db1)
 - Add release notes and paper-strategy handling (d481e31)
 - Adding Overnight Eligible Options and showing in UI. (29d837b)
 - Handle Alpaca API key changes and add UI icons (ba778ac)
