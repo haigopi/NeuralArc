@@ -55,6 +55,15 @@ public class LuckySimulationPlacementController {
                 gateway.log("[I Am Feeling Lucky] Skipped " + selection.stock().symbol() + ": missing valid base limit buy price.");
                 continue;
             }
+            if (recommendation.currentPrice() != null
+                    && recommendation.currentPrice().compareTo(BigDecimal.ZERO) > 0
+                    && recommendation.baseBuyPrice().compareTo(recommendation.currentPrice()) > 0) {
+                skipped++;
+                skippedReasons.add(selection.stock().symbol() + ": recommended base buy price is above current price");
+                gateway.log("[I Am Feeling Lucky] Skipped " + selection.stock().symbol()
+                        + ": recommended base buy price is above current price.");
+                continue;
+            }
             Strategy existing = findExistingPaperStrategy(selection.stock().symbol()).orElse(null);
             Strategy existingForReplace = null;
             if (existing != null && isWaitingForFill(existing)) {

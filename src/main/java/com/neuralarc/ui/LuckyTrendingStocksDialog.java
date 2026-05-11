@@ -25,7 +25,6 @@ import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
-import javax.swing.JTextArea;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
@@ -82,16 +81,16 @@ public class LuckyTrendingStocksDialog extends JDialog {
             : new Color(45, 45, 50);
     private static final Color SECTION_HEADER_TEXT = Color.WHITE;
     private static final Color SECTION_GAINERS_BG = new Color(232, 247, 236);
-    private static final Color SECTION_GAINERS_BORDER = new Color(150, 202, 164);
+    private static final Color SECTION_GAINERS_BORDER = new Color(195, 220, 200);
     private static final Color SECTION_LOSERS_BG = new Color(255, 242, 228);
-    private static final Color SECTION_LOSERS_BORDER = new Color(228, 189, 142);
-    private static final Color INPUT_BORDER = new Color(190, 190, 200);
+    private static final Color SECTION_LOSERS_BORDER = new Color(235, 210, 170);
+    private static final Color INPUT_BORDER = new Color(210, 210, 220);
     private static final Color TAB_BORDER = new Color(204, 214, 225);
     private static final Color TAB_SELECTED_BG = new Color(235, 244, 252);
     private static final Color TAB_UNSELECTED_BG = new Color(246, 248, 250);
     private static final Color TAB_SELECTED_TEXT = new Color(11, 84, 132);
     private static final Color TAB_UNSELECTED_TEXT = new Color(75, 85, 99);
-    private static final int SECTION_MAX_WIDTH = 840;
+    private static final int SECTION_MAX_WIDTH = 660;
     private static final ZoneId MARKET_TIME_ZONE = ZoneId.of("America/New_York");
     private static final LocalTime MARKET_OPEN_TIME = LocalTime.of(9, 30);
     private static final LocalTime MARKET_CLOSE_TIME = LocalTime.of(16, 0);
@@ -130,11 +129,11 @@ public class LuckyTrendingStocksDialog extends JDialog {
     }
 
     private void buildUi() {
-        setLayout(new BorderLayout(12, 12));
-        ((JPanel) getContentPane()).setBorder(new EmptyBorder(14, 14, 14, 14));
+        setLayout(new BorderLayout(8, 8));
+        ((JPanel) getContentPane()).setBorder(new EmptyBorder(8, 6, 8, 6));
         ((JPanel) getContentPane()).setBackground(DIALOG_BG);
 
-        JPanel top = new JPanel(new BorderLayout(10, 6));
+        JPanel top = new JPanel(new BorderLayout(8, 6));
         top.setOpaque(false);
         JLabel description = new JLabel("<html>Review today's top gainers and losers, remove unwanted picks, then start the remaining choices as Alpaca Paper strategies.</html>");
         description.setForeground(TEXT_MUTED);
@@ -151,20 +150,22 @@ public class LuckyTrendingStocksDialog extends JDialog {
 
         cardsPanel.setLayout(new BoxLayout(cardsPanel, BoxLayout.Y_AXIS));
         cardsPanel.setOpaque(false);
-        cardsPanel.setBorder(new EmptyBorder(6, 0, 6, 0));
+        cardsPanel.setBorder(new EmptyBorder(0, 0, 0, 0));
         JScrollPane scrollPane = new JScrollPane(cardsPanel);
         scrollPane.setBorder(null);
         scrollPane.setOpaque(false);
         scrollPane.getViewport().setOpaque(false);
         scrollPane.getViewport().setBackground(DIALOG_BG);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        scrollPane.setPreferredSize(new Dimension(920, 660));
+        scrollPane.setPreferredSize(new Dimension(700, 660));
         add(scrollPane, BorderLayout.CENTER);
 
-        JPanel bottom = new JPanel(new BorderLayout(12, 0));
+        JPanel bottom = new JPanel(new BorderLayout(8, 0));
         bottom.setOpaque(false);
         statusLabel.setText("Click Refresh to load today's trending stocks.");
         statusLabel.setForeground(TEXT_MUTED);
+        statusLabel.setFont(FontLoader.ui(Font.PLAIN, 10f));
         DialogButtonStyles.apply(refreshButton, "icons/refresh.svg");
         refreshButton.addActionListener(ignored -> loadAsync(true, false));
         placeButton.setEnabled(false);
@@ -173,7 +174,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
         JButton closeButton = new JButton("Close");
         DialogButtonStyles.apply(closeButton, "icons/close.svg");
         closeButton.addActionListener(ignored -> dispose());
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
         buttons.setOpaque(false);
         buttons.add(refreshButton);
         buttons.add(placeButton);
@@ -183,7 +184,8 @@ public class LuckyTrendingStocksDialog extends JDialog {
         add(bottom, BorderLayout.SOUTH);
 
         pack();
-        setMinimumSize(new Dimension(820, 560));
+        setMinimumSize(new Dimension(700, 560));
+        setSize(700, 720);
         setLocationRelativeTo(getOwner());
     }
 
@@ -317,7 +319,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
             return;
         }
         addGroup("Top 10 Gainers", result.gainers(), SECTION_GAINERS_BG, SECTION_GAINERS_BORDER);
-        cardsPanel.add(Box.createVerticalStrut(12));
+        cardsPanel.add(Box.createVerticalStrut(6));
         addGroup("Top 10 Losers", result.losers(), SECTION_LOSERS_BG, SECTION_LOSERS_BORDER);
         statusLabel.setText("Review " + cards.size() + " stock(s), choose quantity/term for each, then start paper monitoring.");
         placeButton.setEnabled(cards.stream().anyMatch(StockCard::placeable));
@@ -340,22 +342,22 @@ public class LuckyTrendingStocksDialog extends JDialog {
     }
 
     private void addGroup(String title, List<LuckyStockAnalysis> analyses, Color sectionBackground, Color sectionBorder) {
-        JPanel group = new JPanel(new BorderLayout(0, 10));
+        JPanel group = new JPanel(new BorderLayout(0, 4));
         group.setOpaque(true);
         group.setBackground(sectionBackground);
-        group.setAlignmentX(Component.CENTER_ALIGNMENT);
+        group.setAlignmentX(Component.LEFT_ALIGNMENT);
         group.setMaximumSize(new Dimension(SECTION_MAX_WIDTH, Short.MAX_VALUE));
         group.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(sectionBorder, 1, true),
-                new EmptyBorder(12, 12, 12, 12)
+                new EmptyBorder(8, 8, 8, 8)
         ));
 
         JLabel heading = new JLabel(title);
-        heading.setFont(FontLoader.ui(Font.BOLD, 14f));
+        heading.setFont(FontLoader.ui(Font.BOLD, 13f));
         heading.setForeground(SECTION_HEADER_TEXT);
         heading.setOpaque(true);
-        heading.setBackground(sectionBorder.darker());
-        heading.setBorder(new EmptyBorder(6, 10, 6, 10));
+        heading.setBackground(sectionHeaderBackground(sectionBorder));
+        heading.setBorder(new EmptyBorder(3, 6, 3, 6));
         group.add(heading, BorderLayout.NORTH);
 
         JPanel body = new JPanel();
@@ -371,7 +373,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
             StockCard card = new StockCard(analysis);
             cards.add(card);
             body.add(card);
-            body.add(Box.createVerticalStrut(10));
+            body.add(Box.createVerticalStrut(4));
         }
         group.add(body, BorderLayout.CENTER);
         cardsPanel.add(group);
@@ -474,7 +476,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
         private final JSpinner quantitySpinner = new JSpinner(new SpinnerNumberModel(10, 1, 100000, 1));
 
         private StockCard(LuckyStockAnalysis analysis) {
-            super(new BorderLayout(0, 10));
+            super(new BorderLayout(0, 6));
             this.analysis = analysis;
             setOpaque(true);
             setBackground(INPUT_BG);
@@ -507,14 +509,14 @@ public class LuckyTrendingStocksDialog extends JDialog {
             tabPane.setFont(FontLoader.ui(Font.BOLD, 11f));
             tabPane.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(TAB_BORDER, 1, true),
-                    new EmptyBorder(2, 2, 2, 2)
+                    new EmptyBorder(1, 1, 1, 1)
             ));
             tabPane.setUI(new BasicTabbedPaneUI() {
                 @Override
                 protected void installDefaults() {
                     super.installDefaults();
                     selectedTabPadInsets = new Insets(0, 0, 0, 0);
-                    tabInsets = new Insets(6, 12, 6, 12);
+                    tabInsets = new Insets(5, 10, 5, 10);
                     contentBorderInsets = new Insets(1, 0, 0, 0);
                 }
 
@@ -557,48 +559,54 @@ public class LuckyTrendingStocksDialog extends JDialog {
 
         private JPanel header() {
             TrendingStock stock = analysis.stock();
-            JPanel panel = new JPanel(new BorderLayout(12, 6));
+            JPanel panel = new JPanel(new BorderLayout(0, 6));
             panel.setOpaque(false);
-            JTextArea details = textArea((stock.companyName().isBlank() ? "" : stock.companyName() + "\n")
-                    + "Price: $" + stock.latestPrice().toPlainString()
-                    + "    Change: " + stock.dailyChangePercent().toPlainString() + "%"
-                    + "    Volume: " + stock.volume().toPlainString()
-                    + "    Trades: " + stock.tradeCount().toPlainString()
-                    + "\nReason: " + stock.reason());
+            JLabel metrics = new JLabel("Price: $" + stock.latestPrice().toPlainString()
+                    + "  Change: " + stock.dailyChangePercent().toPlainString() + "%"
+                    + "  Vol: " + stock.volume().toPlainString());
+            metrics.setFont(FontLoader.ui(Font.BOLD, 11f));
+            metrics.setForeground(TEXT_PRIMARY);
+
             JButton removeButton = new JButton("Remove");
             DialogButtonStyles.apply(removeButton, "icons/delete.svg");
             removeButton.addActionListener(ignored -> removeCard(this));
-            JButton addToCurrentButton = new JButton("Add to Current Strategy");
+            JButton addToCurrentButton = new JButton("Review New Stock Strategy");
             DialogButtonStyles.apply(addToCurrentButton, "icons/add-stock-strategy.svg");
             addToCurrentButton.addActionListener(ignored -> addToCurrentStrategy(this));
+            addToCurrentButton.setToolTipText("Review and add to current strategy");
 
-            JPanel qtyPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+            JPanel qtyPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
             qtyPanel.setOpaque(false);
             JLabel qtyLabel = new JLabel("Qty:");
-            qtyLabel.setFont(FontLoader.ui(Font.PLAIN, 11f));
-            quantitySpinner.setFont(FontLoader.ui(Font.PLAIN, 11f));
-            quantitySpinner.setPreferredSize(new Dimension(84, 26));
+            qtyLabel.setFont(FontLoader.ui(Font.PLAIN, 10f));
+            quantitySpinner.setFont(FontLoader.ui(Font.PLAIN, 10f));
+            quantitySpinner.setPreferredSize(new Dimension(72, 24));
             qtyPanel.add(qtyLabel);
             qtyPanel.add(quantitySpinner);
 
-            JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+            JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
             actions.setOpaque(false);
             actions.add(qtyPanel);
             actions.add(addToCurrentButton);
             actions.add(removeButton);
 
-            JPanel left = new JPanel(new BorderLayout(0, 4));
-            left.setOpaque(false);
-            left.add(details, BorderLayout.CENTER);
-            panel.add(left, BorderLayout.CENTER);
-            panel.add(actions, BorderLayout.EAST);
+            JPanel topRow = new JPanel(new BorderLayout(0, 2));
+            topRow.setOpaque(false);
+
+            JPanel bottomRow = new JPanel(new BorderLayout(8, 0));
+            bottomRow.setOpaque(false);
+            bottomRow.add(metrics, BorderLayout.CENTER);
+            bottomRow.add(actions, BorderLayout.EAST);
+
+            panel.add(topRow, BorderLayout.NORTH);
+            panel.add(bottomRow, BorderLayout.SOUTH);
             return panel;
         }
 
         private JPanel recommendationPanel(StrategyRecommendation recommendation) {
-            JPanel panel = new JPanel(new GridLayout(0, 2, 10, 8));
+            JPanel panel = new JPanel(new GridLayout(0, 2, 8, 6));
             panel.setOpaque(false);
-            panel.setBorder(new EmptyBorder(8, 8, 8, 8));
+            panel.setBorder(new EmptyBorder(6, 6, 6, 6));
             addPair(panel, "Recommendation:", recommendation.recommendationAction().name());
             addPair(panel, "Confidence:", recommendation.confidenceScore() + "%");
             addPair(panel, "Base limit buy:", money(recommendation.baseBuyPrice()));
@@ -662,7 +670,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
         TitledBorder border = BorderFactory.createTitledBorder(
                 BorderFactory.createCompoundBorder(
                         BorderFactory.createLineBorder(INPUT_BORDER, 1, true),
-                        new EmptyBorder(10, 10, 10, 10)
+                        new EmptyBorder(6, 6, 6, 6)
                 ),
                 title
         );
@@ -671,16 +679,13 @@ public class LuckyTrendingStocksDialog extends JDialog {
         return border;
     }
 
-    private static JTextArea textArea(String text) {
-        JTextArea area = new JTextArea(text);
-        area.setEditable(false);
-        area.setOpaque(false);
-        area.setLineWrap(true);
-        area.setWrapStyleWord(true);
-        area.setFont(FontLoader.ui(Font.PLAIN, 11f));
-        area.setForeground(TEXT_PRIMARY);
-        return area;
+    private static Color sectionHeaderBackground(Color sectionBorder) {
+        int red = Math.max(0, sectionBorder.getRed() - 55);
+        int green = Math.max(0, sectionBorder.getGreen() - 55);
+        int blue = Math.max(0, sectionBorder.getBlue() - 55);
+        return new Color(red, green, blue);
     }
+
 
     private static String money(BigDecimal value) {
         return value == null ? "-" : "$" + value.toPlainString();

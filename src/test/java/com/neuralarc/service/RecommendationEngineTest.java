@@ -142,6 +142,16 @@ class RecommendationEngineTest {
     }
 
     @Test
+    void shortTermBaseBuyPriceIsCappedAtCurrentPriceWhenCloseIsStaleAndCurrentFallsBelowRange() {
+        List<MarketBar> bars = shortTermRangeBars();
+
+        StrategyRecommendation recommendation = engine.generateShortTermRecommendation(
+                "AAPL", bars, new BigDecimal("200.00"), new BigDecimal("209.00"));
+
+        assertTrue(recommendation.baseBuyPrice().compareTo(new BigDecimal("200.00")) <= 0);
+    }
+
+    @Test
     void closingPriceDiscountScenarioUsesBehaviorAdjustedDiscount() {
         List<MarketBar> bars = dipModelBars(new BigDecimal("209.00"));
 
@@ -162,6 +172,26 @@ class RecommendationEngineTest {
 
         assertTrue(recommendation.adjustedBaseBuyPrice().compareTo(new BigDecimal("205.00")) < 0);
         assertTrue(recommendation.warningMessage().contains("current price and two-week support"));
+    }
+
+    @Test
+    void highRiskShortTermBaseBuyPriceIsCappedAtCurrentPriceWhenCurrentIsBelowTwoWeekLow() {
+        List<MarketBar> bars = highRiskTwoWeekOnlyBars();
+
+        StrategyRecommendation recommendation = engine.generateHighRiskShortTermRecommendation(
+                "AAPL", bars, new BigDecimal("100.00"), new BigDecimal("104.00"));
+
+        assertTrue(recommendation.baseBuyPrice().compareTo(new BigDecimal("100.00")) <= 0);
+    }
+
+    @Test
+    void longTermBaseBuyPriceIsCappedAtCurrentPriceWhenCurrentFallsBelowRecentSupport() {
+        List<MarketBar> bars = accumulationBars();
+
+        StrategyRecommendation recommendation = engine.generateLongTermRecommendation(
+                "AAPL", bars, new BigDecimal("140.00"), new BigDecimal("156.00"));
+
+        assertTrue(recommendation.adjustedBaseBuyPrice().compareTo(new BigDecimal("140.00")) <= 0);
     }
 
     @Test

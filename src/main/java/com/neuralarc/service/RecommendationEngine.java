@@ -150,6 +150,12 @@ public class RecommendationEngine {
             baseAdjustmentReason += " Final adjustment applied because current price and two-week support are below the calculated base.";
             warning = appendWarning(warning, "Base buy price adjusted below current price after current/two-week support validation.");
         }
+        BasePriceGuardResult cappedAtCurrent = capBasePriceAtCurrent(baseBuyPrice, currentPrice);
+        if (cappedAtCurrent.adjusted()) {
+            baseBuyPrice = cappedAtCurrent.price();
+            baseAdjustmentReason += " Final adjustment applied to keep base buy price at or below current price.";
+            warning = appendWarning(warning, "Base buy price was capped at current price.");
+        }
 
         baseBuyPrice = floorPrice(baseBuyPrice);
         behaviorAdjustedBasePrice = floorPrice(behaviorAdjustedBasePrice);
@@ -306,6 +312,12 @@ public class RecommendationEngine {
             baseBuyPrice = floorPrice(guardedBase.price());
             baseAdjustmentReason += " Current/two-week support guard adjusted the base below current price.";
             warning = appendWarning(warning, "Base buy price adjusted because current price and two-week support are below the calculated base.");
+        }
+        BasePriceGuardResult cappedAtCurrent = capBasePriceAtCurrent(baseBuyPrice, currentPrice);
+        if (cappedAtCurrent.adjusted()) {
+            baseBuyPrice = floorPrice(cappedAtCurrent.price());
+            baseAdjustmentReason += " Final adjustment applied to keep base buy price at or below current price.";
+            warning = appendWarning(warning, "Base buy price was capped at current price.");
         }
 
         BigDecimal buy1 = floorPrice(baseBuyPrice.subtract(atr.get().multiply(HALF)));
@@ -497,6 +509,12 @@ public class RecommendationEngine {
                 warningMessage = appendWarning(warningMessage, "Adjusted base buy price was lowered because current price and two-week support are below the calculated base.");
             }
         }
+        BasePriceGuardResult cappedAtCurrent = capBasePriceAtCurrent(adjustedBaseBuyPrice, currentPrice);
+        if (cappedAtCurrent.adjusted()) {
+            adjustedBaseBuyPrice = cappedAtCurrent.price();
+            baseAdjustmentReason += " Final adjustment applied to keep base buy price at or below current price.";
+            warningMessage = appendWarning(warningMessage, "Adjusted base buy price was capped at current price.");
+        }
 
         adjustedBaseBuyPrice = floorPrice(adjustedBaseBuyPrice);
         behaviorAdjustedBasePrice = floorPrice(behaviorAdjustedBasePrice);
@@ -636,6 +654,13 @@ public class RecommendationEngine {
             return new BasePriceGuardResult(validPrice(guarded) ? guarded : currentPrice, true);
         }
         return new BasePriceGuardResult(basePrice, false);
+    }
+
+    private BasePriceGuardResult capBasePriceAtCurrent(BigDecimal basePrice, BigDecimal currentPrice) {
+        if (!validPrice(basePrice) || !validPrice(currentPrice) || basePrice.compareTo(currentPrice) <= 0) {
+            return new BasePriceGuardResult(basePrice, false);
+        }
+        return new BasePriceGuardResult(Monetary.round(currentPrice), true);
     }
 
     private RecommendationAction actionForShortTerm(int confidence) {
