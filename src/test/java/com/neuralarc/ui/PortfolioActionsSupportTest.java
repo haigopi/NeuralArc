@@ -218,6 +218,34 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
+    void cleanAllExpiredTargetsOnlyFailedExpiredStrategies() {
+        ManagedStrategy expired = managed("AAPL", StrategyStatus.FAILED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        expired.strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        expired.strategy.setLatestOrderStatus("expired");
+        ManagedStrategy failedRejected = managed("MSFT", StrategyStatus.FAILED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        failedRejected.strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        failedRejected.strategy.setLatestOrderStatus("rejected");
+        ManagedStrategy active = managed("TSLA", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(expired, failedRejected, active),
+                PortfolioActionsSupport.BulkAction.CLEAN_ALL_EXPIRED
+        );
+
+        assertEquals(List.of("AAPL"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
+    void repositionExpiredUsesRepositionedResultLabel() {
+        String message = support.buildResultMessage(
+                PortfolioActionsSupport.BulkAction.REPOSITION_EXPIRED,
+                new PortfolioActionsSupport.BatchResult(List.of("AAPL"), List.of())
+        );
+
+        assertTrue(message.contains("Repositioned: 1"));
+    }
+
+    @Test
     void resultMessageIncludesSkippedSectionWhenPresent() {
         String message = support.buildResultMessage(
                 PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_BUYS,

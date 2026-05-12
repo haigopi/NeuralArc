@@ -43,6 +43,18 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void failedExpiredShowsExpiredStatus() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLatestOrderStatus("expired");
+
+        String label = presenter.displayStatusLabel(strategy, false, false, false);
+
+        assertEquals("Expired", label);
+    }
+
+    @Test
     void valueAtUsesLastSellPriceAndRealizedPnlForClosedPosition() {
         Position position = new Position("AAPL");
 

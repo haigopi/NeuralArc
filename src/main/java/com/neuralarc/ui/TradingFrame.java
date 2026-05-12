@@ -19,6 +19,7 @@ import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.service.AsyncLogUploadService;
 import com.neuralarc.service.LogArchiveService;
 import com.neuralarc.service.LogUploadStatusStore;
+import com.neuralarc.service.StrategyApplyService;
 import com.neuralarc.service.StrategyPollingService;
 import com.neuralarc.service.StrategyService;
 import com.neuralarc.service.StrategyEngine;
@@ -91,6 +92,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class TradingFrame extends JFrame {
@@ -2178,7 +2180,15 @@ public class TradingFrame extends JFrame {
 
         HttpAlpacaMarketDataApi marketDataApi = connectionOk && !runtimeApiKey.isBlank()
                 ? new HttpAlpacaMarketDataApi(runtimeApiKey, runtimeApiSecret) : null;
-        StrategyDialog dialog = new StrategyDialog(this, null, marketDataApi, autoAnalyzeResultStore);
+        StrategyDialog dialog = new StrategyDialog(
+                this,
+                null,
+                marketDataApi,
+                autoAnalyzeResultStore,
+                settingsDialog.appliedDefaultStrategyPollingSeconds(),
+                settingsDialog.appliedDefaultRepeatCycleAfterProfitExitEnabled(),
+                settingsDialog.appliedDefaultResubmitOnExpiryEnabled()
+        );
         StrategyConfig config = dialog.showDialog();
         if (config == null) {
             userActionLog.canceled("Add New Stock Strategy");
@@ -2251,6 +2261,103 @@ public class TradingFrame extends JFrame {
             return;
         }
         HttpAlpacaMarketDataApi marketDataApi = new HttpAlpacaMarketDataApi(apiKey, apiSecret);
+        Consumer<LuckySimulationSelection> reviewHandler = selection -> {
+            StrategyRecommendation recommendation = switch (selection.selectedRecommendationType()) {
+                case HIGH_RISK_SHORT_TERM -> selection.analysis().highRiskShortTermRecommendation();
+                case LONG_TERM -> selection.analysis().longTermRecommendation();
+                default -> selection.analysis().shortTermRecommendation();
+            };
+            if (recommendation == null || !recommendation.isApplicable()) {
+                JOptionPane.showMessageDialog(TradingFrame.this,
+                        "The selected recommendation is not ready. Run Auto Analyze with a valid symbol first.",
+                        "Recommendation Not Ready",
+                        JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            StrategyApplyService applyService = new StrategyApplyService();
+            StrategyApplyService.AppliedStrategyValues values =
+                    applyService.applyRecommendationToCurrentStrategy(recommendation);
+            int pollingSeconds = settingsDialog.appliedDefaultStrategyPollingSeconds();
+            boolean repeatCycle = settingsDialog.appliedDefaultRepeatCycleAfterProfitExitEnabled();
+            boolean resubmit = settingsDialog.appliedDefaultResubmitOnExpiryEnabled();
+            StrategyConfig prefilledConfig = new StrategyConfig(
+                    selection.stock().symbol(),
+                    values.buyRulePrice(),
+                    Math.max(1, selection.buyQuantity()),
+                    true,
+                    values.stopLossPrice(),
+                    true,
+                    values.sellRulePrice(),
+                    values.lossBuy1Price(),
+                    Math.max(1, selection.buyQuantity()),
+                    values.lossBuy2Price(),
+                    Math.max(1, selection.buyQuantity()),
+                    values.enableLossBuyLevels(),
+                    false,
+                    BigDecimal.ZERO,
+                    pollingSeconds,
+                    true,
+                    false,
+                    false,
+                    ProfitHoldType.PERCENT_TRAILING,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    repeatCycle,
+                    ProfitControlMode.SELL_TRIGGER,
+                    ThresholdType.FIXED_AMOUNT,
+                    BigDecimal.ZERO,
+                    TrailingType.PERCENTAGE,
+                    BigDecimal.ZERO,
+                    resubmit
+            );
+            StrategyDialog strategyDialog = new StrategyDialog(
+                    TradingFrame.this,
+                    prefilledConfig,
+                    marketDataApi,
+                    autoAnalyzeResultStore,
+                    pollingSeconds,
+                    repeatCycle,
+                    resubmit
+            );
+            StrategyConfig config = strategyDialog.showDialog();
+            if (config == null) {
+                return;
+            }
+            boolean allowDuplicates = settingsDialog.appliedAllowDuplicateSymbolStrategies();
+            if (DuplicateSymbolPolicy.wouldBeDuplicate(
+                    config.symbol(), StrategyMode.PAPER, strategyRepository.findAll(), allowDuplicates)) {
+                JOptionPane.showMessageDialog(TradingFrame.this,
+                        "An active or paused strategy for this symbol already exists.",
+                        "Duplicate Symbol",
+                        JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            Strategy strategy = Strategy.fromConfig(
+                    UUID.randomUUID().toString(),
+                    config.symbol() + " Strategy",
+                    config,
+                    StrategyMode.PAPER
+            );
+            StrategyService.StrategyCreationResult creationResult =
+                    strategyServiceForMode(StrategyMode.PAPER).createAndActivate(strategy);
+            if (!creationResult.success()) {
+                JOptionPane.showMessageDialog(TradingFrame.this,
+                        "Failed to start strategy: " + creationResult.error(),
+                        "Strategy Activation Failed",
+                        JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            log("[I Am Feeling Lucky] " + config.symbol() + " paper strategy created from review dialog.");
+            userActionLog.completed("I Am Feeling Lucky Review", config.symbol() + " paper strategy added.");
+            syncStrategiesFromRepository();
+            refreshStrategyTableData();
+            updateStatusBar();
+            refreshPanels();
+            JOptionPane.showMessageDialog(TradingFrame.this,
+                    config.symbol() + " paper strategy created successfully.",
+                    "Strategy Added",
+                    JOptionPane.INFORMATION_MESSAGE);
+        };
         LuckyTrendingStocksDialog dialog = new LuckyTrendingStocksDialog(
                 this,
                 new TrendingStocksService(new HttpAlpacaScreenerClient(apiKey, apiSecret)),
@@ -2258,6 +2365,7 @@ public class TradingFrame extends JFrame {
                 this::placeLuckySimulationStrategies,
                 this::log
         );
+        dialog.setReviewHandler(reviewHandler);
         dialog.setVisible(true);
     }
 
@@ -2279,6 +2387,9 @@ public class TradingFrame extends JFrame {
                 return choice == JOptionPane.YES_OPTION;
             }
             @Override public boolean allowDuplicateSymbols() { return settingsDialog.appliedAllowDuplicateSymbolStrategies(); }
+            @Override public int defaultStrategyPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
+            @Override public boolean defaultRepeatCycleAfterProfitExitEnabled() { return settingsDialog.appliedDefaultRepeatCycleAfterProfitExitEnabled(); }
+            @Override public boolean defaultResubmitOnExpiryEnabled() { return settingsDialog.appliedDefaultResubmitOnExpiryEnabled(); }
             @Override public void cancelAndDeletePaperStrategy(String strategyId) { strategyServiceForMode(StrategyMode.PAPER).delete(strategyId); }
             @Override public void afterPlacement() {
                 syncStrategiesFromRepository();
@@ -2870,11 +2981,14 @@ public class TradingFrame extends JFrame {
         if (entry == null || entry.strategy == null) {
             return false;
         }
+        if (entry.strategy.status() == StrategyStatus.FAILED) {
+            return false;
+        }
         if (entry.strategy.status() == StrategyStatus.ARCHIVED || entry.strategy.status() == StrategyStatus.STOPPED) {
             return false;
         }
         if (entry.strategy.status() == StrategyStatus.COMPLETED) {
-            return !entry.strategy.restartAfterExitEnabled() || entry.cachedPosition().getTotalShares() > 0;
+            return !entry.strategy.restartAfterExitEnabled();
         }
         if (entry.strategy.status() == StrategyStatus.PAUSED
                 && (entry.strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED
@@ -2889,8 +3003,7 @@ public class TradingFrame extends JFrame {
         }
         // Keep showing rows that still have live exposure on the broker side.
         return entry.strategy.status() == StrategyStatus.ACTIVE
-                || isWaitingForFill(entry.strategy)
-                || entry.cachedPosition().getTotalShares() > 0;
+                || isWaitingForFill(entry.strategy);
     }
 
     private boolean includeInBrokerSnapshotRefresh(Strategy strategy) {

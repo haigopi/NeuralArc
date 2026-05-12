@@ -924,6 +924,55 @@ public class StrategyService {
         return ArchiveResult.success(strategy.id());
     }
 
+    public StrategyCreationResult repositionExpiredStrategy(String strategyId) {
+        if (strategyId == null || strategyId.isBlank()) {
+            return StrategyCreationResult.failed("Strategy id is missing");
+        }
+        Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
+        if (maybeStrategy.isEmpty()) {
+            return StrategyCreationResult.failed("Strategy not found");
+        }
+        Strategy strategy = maybeStrategy.get();
+        boolean expired = strategy.status() == StrategyStatus.FAILED
+                && "expired".equals(BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus()));
+        if (!expired) {
+            return StrategyCreationResult.failed("Strategy is not in an expired state");
+        }
+        if (!strategyEngine.canAutoRetryFailed(strategy)) {
+            return StrategyCreationResult.failed("Open orders or positions still exist for this symbol");
+        }
+
+        cancelPendingLocalOrders(strategy);
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.CREATED);
+        strategy.setPauseReason(PauseReason.NONE);
+        strategy.setLatestOrderStatus("");
+        strategy.setLatestAlpacaOrderId("");
+        strategy.clearLastError();
+        strategyRepository.save(strategy);
+        stateMachine.transition(
+                strategy,
+                StrategyLifecycleState.CREATED,
+                StrategyEventType.STRATEGY_RESUMED,
+                "Expired strategy reposition requested",
+                "{}"
+        );
+
+        StrategyOrder order = strategyEngine.submitBaseBuy(strategy, false);
+        if (order == null || order.alpacaOrderId() == null || order.alpacaOrderId().isBlank()) {
+            strategy.setStatus(StrategyStatus.FAILED);
+            strategy.setCurrentState(StrategyLifecycleState.FAILED);
+            String error = strategy.lastError() == null || strategy.lastError().isBlank()
+                    ? "Failed to submit base buy order"
+                    : strategy.lastError();
+            strategy.setLastError(error);
+            strategyRepository.save(strategy);
+            stateMachine.transition(strategy, StrategyLifecycleState.FAILED, StrategyEventType.STRATEGY_FAILED, error, "{}");
+            return StrategyCreationResult.failed(error);
+        }
+        return StrategyCreationResult.success(strategy.id(), order.id(), order.alpacaOrderId(), order.clientOrderId());
+    }
+
     public record StrategyCreationResult(boolean success, String strategyId, String strategyOrderId, String alpacaOrderId, String clientOrderId, String error) {
         public static StrategyCreationResult success(String strategyId, String strategyOrderId, String alpacaOrderId, String clientOrderId) {
             return new StrategyCreationResult(true, strategyId, strategyOrderId, alpacaOrderId, clientOrderId, null);

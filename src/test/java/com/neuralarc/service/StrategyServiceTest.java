@@ -543,6 +543,52 @@ class StrategyServiceTest {
     }
 
     @Test
+    void repositionExpiredStrategyStartsNewBaseBuyCycle() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        strategy.setLatestAlpacaOrderId("expired-order");
+        strategies.save(strategy);
+
+        StrategyService.StrategyCreationResult result = service.repositionExpiredStrategy(strategy.id());
+
+        assertTrue(result.success());
+        Strategy persisted = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, persisted.status());
+        assertEquals(StrategyLifecycleState.BASE_BUY_PLACED, persisted.currentState());
+        assertEquals("new", persisted.latestOrderStatus());
+        assertEquals(1, alpaca.submittedOrders.size());
+    }
+
+    @Test
+    void repositionExpiredStrategyFailsWhenStrategyIsNotExpired() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLatestOrderStatus("rejected");
+        strategies.save(strategy);
+
+        StrategyService.StrategyCreationResult result = service.repositionExpiredStrategy(strategy.id());
+
+        assertFalse(result.success());
+        assertTrue(result.error().contains("not in an expired state"));
+        assertTrue(alpaca.submittedOrders.isEmpty());
+    }
+
+    @Test
     void updateFailedPositionClosedStrategyStartsNewBaseBuyCycleEvenWithoutBrokerStatus() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

@@ -14,10 +14,10 @@ import com.neuralarc.model.StrategyConfig;
 import com.neuralarc.model.StrategyRecommendation;
 import com.neuralarc.model.ThresholdType;
 import com.neuralarc.model.TrailingType;
+import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.AutoAnalyzeService;
 import com.neuralarc.service.StrategyApplyService;
-import com.neuralarc.util.AppMetadata;
 import com.neuralarc.util.FontLoader;
 
 import javax.swing.*;
@@ -103,6 +103,10 @@ public class StrategyDialog extends JDialog {
     private static final String DEFAULT_CONFIG_RESOURCE = "defaults-config.properties";
     private static final DialogDefaults DEFAULTS = loadDefaults();
 
+    private final int defaultPollingSeconds;
+    private final boolean defaultRepeatCycleAfterProfitExitEnabled;
+    private final boolean defaultResubmitOnExpiryEnabled;
+
     private final JTextField symbolField = new JTextField(25);
     private final JCheckBox paperMode = new JCheckBox("Paper trading mode", true);
     private final JTextField basePriceField = new JTextField(25);
@@ -178,14 +182,42 @@ public class StrategyDialog extends JDialog {
 
     /** Backward-compatible constructor – Auto Analyze tab is visible but requires connection. */
     public StrategyDialog(JFrame owner, StrategyConfig initialConfig) {
-        this(owner, initialConfig, null, null);
+        this(
+                owner,
+                initialConfig,
+                null,
+                null,
+                AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS,
+                AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
+                AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
+        );
     }
 
     public StrategyDialog(JFrame owner, StrategyConfig initialConfig,
                           AlpacaMarketDataApi marketDataApi, AutoAnalyzeResultStore resultStore) {
+        this(
+                owner,
+                initialConfig,
+                marketDataApi,
+                resultStore,
+                AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS,
+                AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
+                AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
+        );
+    }
+
+    public StrategyDialog(JFrame owner, StrategyConfig initialConfig,
+                          AlpacaMarketDataApi marketDataApi,
+                          AutoAnalyzeResultStore resultStore,
+                          int defaultPollingSeconds,
+                          boolean defaultRepeatCycleAfterProfitExitEnabled,
+                          boolean defaultResubmitOnExpiryEnabled) {
         super(owner, initialConfig == null ? "Add Stock Strategy" : "Edit Stock Strategy", true);
         this.marketDataApi = marketDataApi;
         this.resultStore = resultStore;
+        this.defaultPollingSeconds = Math.max(1, defaultPollingSeconds);
+        this.defaultRepeatCycleAfterProfitExitEnabled = defaultRepeatCycleAfterProfitExitEnabled;
+        this.defaultResubmitOnExpiryEnabled = defaultResubmitOnExpiryEnabled;
         setLayout(new BorderLayout(SECTION_GAP, SECTION_GAP));
 
         applyDialogDefaults();
@@ -909,6 +941,7 @@ public class StrategyDialog extends JDialog {
     }
 
     private void applyDialogDefaults() {
+        String pollingDefault = String.valueOf(defaultPollingSeconds);
         symbolField.setText(DEFAULTS.symbol());
         paperMode.setSelected(DEFAULTS.paperTrading());
         basePriceField.setText(DEFAULTS.baseBuyPrice());
@@ -920,9 +953,9 @@ public class StrategyDialog extends JDialog {
         loss1QtyField.setText(DEFAULTS.lossBuyLevel1Qty());
         loss2PriceField.setText(DEFAULTS.lossBuyLevel2Price());
         loss2QtyField.setText(DEFAULTS.lossBuyLevel2Qty());
-        pollingField.setText(DEFAULTS.pollingSeconds());
-        repeatCycleAfterProfitExitEnabled.setSelected(DEFAULTS.repeatCycleAfterProfitExitEnabled());
-        resubmitOnExpiryEnabled.setSelected(DEFAULTS.resubmitOnExpiryEnabled());
+        pollingField.setText(pollingDefault);
+        repeatCycleAfterProfitExitEnabled.setSelected(defaultRepeatCycleAfterProfitExitEnabled);
+        resubmitOnExpiryEnabled.setSelected(defaultResubmitOnExpiryEnabled);
         profitControlsPanel.applyConfig(new StrategyConfig(  // Apply defaults to profit controls panel
                 DEFAULTS.symbol(),
                 new BigDecimal(DEFAULTS.baseBuyPrice()),
@@ -938,20 +971,20 @@ public class StrategyDialog extends JDialog {
                 true,
                 false,
                 BigDecimal.ZERO,
-                Integer.parseInt(DEFAULTS.pollingSeconds()),
+                defaultPollingSeconds,
                 DEFAULTS.paperTrading(),
                 false,
                 DEFAULTS.profitHoldEnabled(),
                 DEFAULTS.profitHoldType(),
                 new BigDecimal(DEFAULTS.profitHoldPercent()),
                 new BigDecimal(DEFAULTS.profitHoldAmount()),
-                DEFAULTS.repeatCycleAfterProfitExitEnabled(),
+                defaultRepeatCycleAfterProfitExitEnabled,
                 ProfitControlMode.NONE,
                 ThresholdType.FIXED_AMOUNT,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
                 BigDecimal.ZERO,
-                DEFAULTS.resubmitOnExpiryEnabled()
+                defaultResubmitOnExpiryEnabled
         ));
         updateStopLossFieldState();
         updateLossBuyFieldState();
@@ -1189,14 +1222,11 @@ public class StrategyDialog extends JDialog {
                 property(properties, "lossBuyLevel1Qty", "5"),
                 property(properties, "lossBuyLevel2Price", "4.45"),
                 property(properties, "lossBuyLevel2Qty", "5"),
-                String.valueOf(AppMetadata.defaultStrategyPollingSeconds()),
                 parseBoolean(properties, "alpacaTrailingStopEnabled", false),
                 parseBoolean(properties, "holdAtTenPercentProfit", false),
                 parseProfitHoldType(properties, "profitHoldType", ProfitHoldType.PERCENT_TRAILING),
                 property(properties, "profitHoldPercent", "10"),
-                property(properties, "profitHoldAmount", "0.50"),
-                parseBoolean(properties, "repeatCycleAfterProfitExitEnabled", false),
-                parseBoolean(properties, "resubmitOnExpiryEnabled", false)
+                property(properties, "profitHoldAmount", "0.50")
         );
     }
 
@@ -1767,6 +1797,10 @@ public class StrategyDialog extends JDialog {
         }
         aaResultsLoadingLabel.setVisible(loading);
         aaResultsProgressBar.setVisible(loading);
+        if (aaResultsLoadingLabel.getParent() != null) {
+            aaResultsLoadingLabel.getParent().revalidate();
+            aaResultsLoadingLabel.getParent().repaint();
+        }
     }
 
     private static final class RecommendationView {
@@ -1822,13 +1856,10 @@ public class StrategyDialog extends JDialog {
             String lossBuyLevel1Qty,
             String lossBuyLevel2Price,
             String lossBuyLevel2Qty,
-            String pollingSeconds,
             boolean alpacaTrailingStopEnabled,
             boolean profitHoldEnabled,
             ProfitHoldType profitHoldType,
             String profitHoldPercent,
-            String profitHoldAmount,
-            boolean repeatCycleAfterProfitExitEnabled,
-            boolean resubmitOnExpiryEnabled
+            String profitHoldAmount
     ) {}
 }

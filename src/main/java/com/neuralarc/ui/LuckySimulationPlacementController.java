@@ -11,6 +11,7 @@ import com.neuralarc.model.StrategyRecommendation;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.model.ThresholdType;
 import com.neuralarc.model.TrailingType;
+import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.service.StrategyApplyService;
 import com.neuralarc.service.StrategyRepository;
 import com.neuralarc.service.StrategyService;
@@ -147,6 +148,7 @@ public class LuckySimulationPlacementController {
 
     private StrategyConfig luckySimulationConfig(LuckySimulationSelection selection, StrategyRecommendation recommendation) {
         StrategyApplyService.AppliedStrategyValues values = applyService.applyRecommendationToCurrentStrategy(recommendation);
+        int defaultPollingSeconds = Math.max(1, gateway.defaultStrategyPollingSeconds());
         return new StrategyConfig(
                 selection.stock().symbol(),
                 values.buyRulePrice(),
@@ -162,20 +164,20 @@ public class LuckySimulationPlacementController {
                 false,
                 false,
                 BigDecimal.ZERO,
-                60,
+                defaultPollingSeconds,
                 true,
                 false,
                 false,
                 ProfitHoldType.PERCENT_TRAILING,
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,
-                false,
+                gateway.defaultRepeatCycleAfterProfitExitEnabled(),
                 ProfitControlMode.SELL_TRIGGER,
                 ThresholdType.FIXED_AMOUNT,
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
                 BigDecimal.ZERO,
-                false
+                gateway.defaultResubmitOnExpiryEnabled()
         );
     }
 
@@ -214,6 +216,18 @@ public class LuckySimulationPlacementController {
         boolean confirmReplaceWaitingPaperStrategy(String symbol);
 
         boolean allowDuplicateSymbols();
+
+        default int defaultStrategyPollingSeconds() {
+            return AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS;
+        }
+
+        default boolean defaultRepeatCycleAfterProfitExitEnabled() {
+            return AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED;
+        }
+
+        default boolean defaultResubmitOnExpiryEnabled() {
+            return AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED;
+        }
 
         void cancelAndDeletePaperStrategy(String strategyId);
 

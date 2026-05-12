@@ -104,6 +104,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
     private final AlpacaMarketDataApi marketDataApi;
     private final Consumer<List<LuckySimulationSelection>> placementHandler;
     private final Consumer<String> logSink;
+    private transient Consumer<LuckySimulationSelection> reviewHandler;
     private final JPanel cardsPanel = new JPanel();
     private final JLabel statusLabel = new JLabel("Loading trending stocks...");
     private final JProgressBar progressBar = new JProgressBar();
@@ -126,6 +127,10 @@ public class LuckyTrendingStocksDialog extends JDialog {
         this.logSink = logSink == null ? ignored -> {} : logSink;
         buildUi();
         initializeTrendsOnOpen();
+    }
+
+    public void setReviewHandler(Consumer<LuckySimulationSelection> reviewHandler) {
+        this.reviewHandler = reviewHandler;
     }
 
     private void buildUi() {
@@ -336,9 +341,13 @@ public class LuckyTrendingStocksDialog extends JDialog {
             return;
         }
         LuckySimulationSelection selection = card.selection();
-        placementHandler.accept(List.of(selection));
-        log("Added " + selection.stock().symbol() + " to paper strategy placement with "
-                + selection.selectedRecommendationType().name() + " qty=" + selection.buyQuantity() + ".");
+        if (reviewHandler != null) {
+            reviewHandler.accept(selection);
+        } else {
+            placementHandler.accept(List.of(selection));
+            log("Added " + selection.stock().symbol() + " to paper strategy placement with "
+                    + selection.selectedRecommendationType().name() + " qty=" + selection.buyQuantity() + ".");
+        }
     }
 
     private void addGroup(String title, List<LuckyStockAnalysis> analyses, Color sectionBackground, Color sectionBorder) {
@@ -498,7 +507,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
             tabs.addTab("Short-Term", recommendationPanel(analysis.analysis().shortTermRecommendation()));
             tabs.addTab("Long-Term", recommendationPanel(analysis.analysis().longTermRecommendation()));
             styleTabs(tabs);
-            tabs.setSelectedIndex(1);
+            tabs.setSelectedIndex(0);
             add(tabs, BorderLayout.CENTER);
         }
 

@@ -24,6 +24,9 @@ public class AppSettingsService {
     public static final boolean DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES = false;
     public static final boolean DEFAULT_EMAIL_ON_BUY_EXPECTED = false;
     public static final boolean DEFAULT_EMAIL_ON_SELL_EXECUTED = false;
+    public static final int DEFAULT_STRATEGY_POLLING_SECONDS = 60;
+    public static final boolean DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED = true;
+    public static final boolean DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED = true;
 
     private static final String KEY_USER_EMAIL = "userEmail";
     private static final String KEY_TELEMETRY_ENABLED = "telemetryEnabled";
@@ -32,6 +35,9 @@ public class AppSettingsService {
     private static final String KEY_ALLOW_DUPLICATE_SYMBOLS = "allowDuplicateSymbolStrategies";
     private static final String KEY_EMAIL_ON_BUY_EXPECTED = "emailOnBuyExpected";
     private static final String KEY_EMAIL_ON_SELL_EXECUTED = "emailOnSellExecuted";
+    private static final String KEY_STRATEGY_DEFAULT_POLLING_SECONDS = "strategyDefaultPollingSeconds";
+    private static final String KEY_STRATEGY_DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT = "strategyDefaultRepeatCycleAfterProfitExit";
+    private static final String KEY_STRATEGY_DEFAULT_RESUBMIT_ON_EXPIRY = "strategyDefaultResubmitOnExpiry";
     private static final String KEY_BROKER = "broker";
     private static final String KEY_APPLICATION_MODE = "applicationMode";
     private static final String KEY_ENDPOINT = "endpoint";
@@ -83,7 +89,10 @@ public class AppSettingsService {
                 parseMode(readSetting(KEY_APPLICATION_MODE, false)),
                 parseBoolean(readSetting(KEY_ALLOW_DUPLICATE_SYMBOLS, false), DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES),
                 parseBoolean(readSetting(KEY_EMAIL_ON_BUY_EXPECTED, false), DEFAULT_EMAIL_ON_BUY_EXPECTED),
-                parseBoolean(readSetting(KEY_EMAIL_ON_SELL_EXECUTED, false), DEFAULT_EMAIL_ON_SELL_EXECUTED)
+                parseBoolean(readSetting(KEY_EMAIL_ON_SELL_EXECUTED, false), DEFAULT_EMAIL_ON_SELL_EXECUTED),
+                parsePositiveInt(readSetting(KEY_STRATEGY_DEFAULT_POLLING_SECONDS, false), DEFAULT_STRATEGY_POLLING_SECONDS),
+                parseBoolean(readSetting(KEY_STRATEGY_DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT, false), DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED),
+                parseBoolean(readSetting(KEY_STRATEGY_DEFAULT_RESUBMIT_ON_EXPIRY, false), DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED)
         );
     }
 
@@ -96,6 +105,9 @@ public class AppSettingsService {
             writeSetting(KEY_ALLOW_DUPLICATE_SYMBOLS, String.valueOf(settings.allowDuplicateSymbolStrategies()), false);
             writeSetting(KEY_EMAIL_ON_BUY_EXPECTED, String.valueOf(settings.emailOnBuyExpected()), false);
             writeSetting(KEY_EMAIL_ON_SELL_EXECUTED, String.valueOf(settings.emailOnSellExecuted()), false);
+            writeSetting(KEY_STRATEGY_DEFAULT_POLLING_SECONDS, String.valueOf(Math.max(1, settings.defaultStrategyPollingSeconds())), false);
+            writeSetting(KEY_STRATEGY_DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT, String.valueOf(settings.defaultRepeatCycleAfterProfitExitEnabled()), false);
+            writeSetting(KEY_STRATEGY_DEFAULT_RESUBMIT_ON_EXPIRY, String.valueOf(settings.defaultResubmitOnExpiryEnabled()), false);
             writeSetting(KEY_BROKER, (settings.brokerType() == null ? BrokerType.ALPACA : settings.brokerType()).name(), false);
             writeSetting(KEY_APPLICATION_MODE, (settings.applicationMode() == null ? ApplicationMode.PAPER : settings.applicationMode()).name(), false);
         } catch (SQLException ex) {
@@ -204,6 +216,10 @@ public class AppSettingsService {
         } catch (Exception ignored) {
             return fallback;
         }
+    }
+
+    private int parsePositiveInt(String value, int fallback) {
+        return Math.max(1, parseInt(value, fallback));
     }
 
     private Duration parseDuration(String value, Duration fallback) {
@@ -358,8 +374,42 @@ public class AppSettingsService {
             ApplicationMode applicationMode,
             boolean allowDuplicateSymbolStrategies,
             boolean emailOnBuyExpected,
-            boolean emailOnSellExecuted
+            boolean emailOnSellExecuted,
+            int defaultStrategyPollingSeconds,
+            boolean defaultRepeatCycleAfterProfitExitEnabled,
+            boolean defaultResubmitOnExpiryEnabled
     ) {
+        public AppSettings {
+            defaultStrategyPollingSeconds = Math.max(1, defaultStrategyPollingSeconds);
+        }
+
+        public AppSettings(
+                String userEmail,
+                boolean telemetryEnabled,
+                boolean autoPausePollingWhenMarketClosed,
+                boolean extendedHoursTradingEnabled,
+                BrokerType brokerType,
+                ApplicationMode applicationMode,
+                boolean allowDuplicateSymbolStrategies,
+                boolean emailOnBuyExpected,
+                boolean emailOnSellExecuted
+        ) {
+            this(
+                    userEmail,
+                    telemetryEnabled,
+                    autoPausePollingWhenMarketClosed,
+                    extendedHoursTradingEnabled,
+                    brokerType,
+                    applicationMode,
+                    allowDuplicateSymbolStrategies,
+                    emailOnBuyExpected,
+                    emailOnSellExecuted,
+                    DEFAULT_STRATEGY_POLLING_SECONDS,
+                    DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
+                    DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
+            );
+        }
+
         public AppSettings(
                 String userEmail,
                 boolean telemetryEnabled,
@@ -378,7 +428,10 @@ public class AppSettingsService {
                     applicationMode,
                     allowDuplicateSymbolStrategies,
                     DEFAULT_EMAIL_ON_BUY_EXPECTED,
-                    DEFAULT_EMAIL_ON_SELL_EXECUTED
+                    DEFAULT_EMAIL_ON_SELL_EXECUTED,
+                    DEFAULT_STRATEGY_POLLING_SECONDS,
+                    DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
+                    DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
             );
         }
     }

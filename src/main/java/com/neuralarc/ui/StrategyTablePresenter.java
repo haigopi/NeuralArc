@@ -76,6 +76,12 @@ public final class StrategyTablePresenter {
         if (strategy.status() == StrategyStatus.FAILED && queueableSessionError) {
             return "Queued For Open";
         }
+        if (strategy.status() == StrategyStatus.FAILED) {
+            String normalized = BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus());
+            if ("expired".equals(normalized)) {
+                return "Expired";
+            }
+        }
         String lifecycle = formatLifecycleStateForDisplay(strategy.currentState());
         if (strategy.status() == StrategyStatus.ACTIVE
                 && waitingForFill

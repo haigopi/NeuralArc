@@ -35,7 +35,10 @@ class AppSettingsServiceTest {
                 ApplicationMode.PAPER,
                 false,
                 true,
-                true
+                true,
+                75,
+                false,
+                false
         );
 
         service.save(expected);
@@ -48,6 +51,9 @@ class AppSettingsServiceTest {
         assertEquals(ApplicationMode.PAPER, loaded.applicationMode());
         assertTrue(loaded.emailOnBuyExpected());
         assertTrue(loaded.emailOnSellExecuted());
+        assertEquals(75, loaded.defaultStrategyPollingSeconds());
+        assertFalse(loaded.defaultRepeatCycleAfterProfitExitEnabled());
+        assertFalse(loaded.defaultResubmitOnExpiryEnabled());
     }
 
     @Test
@@ -78,6 +84,9 @@ class AppSettingsServiceTest {
         assertFalse(loaded.allowDuplicateSymbolStrategies());
         assertFalse(loaded.emailOnBuyExpected());
         assertFalse(loaded.emailOnSellExecuted());
+        assertEquals(AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS, loaded.defaultStrategyPollingSeconds());
+        assertTrue(loaded.defaultRepeatCycleAfterProfitExitEnabled());
+        assertTrue(loaded.defaultResubmitOnExpiryEnabled());
     }
 
     @Test

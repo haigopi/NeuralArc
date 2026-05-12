@@ -130,7 +130,32 @@ class LuckySimulationPlacementControllerTest {
         assertTrue(result.skippedReasons().getFirst().contains("above current price"));
     }
 
+    @Test
+    void appliesGatewayDefaultsForPollingAndCycleBehavior() {
+        InMemoryRepository repository = new InMemoryRepository();
+        LuckySimulationPlacementController controller = controller(repository, true, false, 90, true, true);
+
+        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
+
+        assertEquals(1, result.created());
+        Strategy saved = repository.findAll().getFirst();
+        assertEquals(90, saved.pollingIntervalSeconds());
+        assertTrue(saved.restartAfterExitEnabled());
+        assertTrue(saved.resubmitOnExpiryEnabled());
+    }
+
     private LuckySimulationPlacementController controller(InMemoryRepository repository, boolean replaceChoice, boolean allowDuplicates) {
+        return controller(repository, replaceChoice, allowDuplicates, 60, true, true);
+    }
+
+    private LuckySimulationPlacementController controller(
+            InMemoryRepository repository,
+            boolean replaceChoice,
+            boolean allowDuplicates,
+            int defaultPollingSeconds,
+            boolean defaultRepeatCycleAfterProfitExit,
+            boolean defaultResubmitOnExpiry
+    ) {
         return new LuckySimulationPlacementController(new LuckySimulationPlacementController.Gateway() {
             @Override public StrategyRepository repository() { return repository; }
             @Override public StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy) {
@@ -140,6 +165,9 @@ class LuckySimulationPlacementControllerTest {
             }
             @Override public boolean confirmReplaceWaitingPaperStrategy(String symbol) { return replaceChoice; }
             @Override public boolean allowDuplicateSymbols() { return allowDuplicates; }
+            @Override public int defaultStrategyPollingSeconds() { return defaultPollingSeconds; }
+            @Override public boolean defaultRepeatCycleAfterProfitExitEnabled() { return defaultRepeatCycleAfterProfitExit; }
+            @Override public boolean defaultResubmitOnExpiryEnabled() { return defaultResubmitOnExpiry; }
             @Override public void cancelAndDeletePaperStrategy(String strategyId) { repository.deleteById(strategyId); }
             @Override public void afterPlacement() {}
             @Override public void log(String message) {}

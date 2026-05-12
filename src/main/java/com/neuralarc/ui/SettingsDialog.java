@@ -58,6 +58,15 @@ public class SettingsDialog extends JDialog {
     private final JCheckBox autoPausePollingWhenMarketClosed = new JCheckBox("Auto pause polling when market is closed", AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED);
     private final JCheckBox extendedHoursTradingEnabled = new JCheckBox("Enable extended-hours trading", AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED);
     private final JCheckBox allowDuplicateSymbolStrategies = new JCheckBox("Allow multiple strategies for the same symbol", AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES);
+    private final JTextField defaultStrategyPollingSecondsField = new JTextField(String.valueOf(AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS), 25);
+    private final JCheckBox defaultRepeatCycleAfterProfitExitEnabled = new JCheckBox(
+            "Repeat cycle after profitable exit",
+            AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED
+    );
+    private final JCheckBox defaultResubmitOnExpiryEnabled = new JCheckBox(
+            "Resubmit strategy on expiry",
+            AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
+    );
     private final JCheckBox emailOnBuyExpected = new JCheckBox("Buy order placed / waiting for fill", AppSettingsService.DEFAULT_EMAIL_ON_BUY_EXPECTED);
     private final JCheckBox emailOnSellExecuted = new JCheckBox("Sell order executed", AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED);
     private final JCheckBox saveCredentials = new JCheckBox("Save credentials locally", false);
@@ -88,7 +97,10 @@ public class SettingsDialog extends JDialog {
             ApplicationMode.PAPER,
             AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES,
             AppSettingsService.DEFAULT_EMAIL_ON_BUY_EXPECTED,
-            AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED
+            AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED,
+            AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS,
+            AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
+            AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
     );
     private boolean savedDuringOpen;
 
@@ -203,6 +215,27 @@ public class SettingsDialog extends JDialog {
         marketHoursContent.add(Box.createVerticalStrut(6));
         marketHoursContent.add(allowDuplicateSymbolsDescription);
 
+        JPanel strategyDefaultsPanel = new JPanel(new GridBagLayout());
+        strategyDefaultsPanel.setOpaque(false);
+        JLabel strategyDefaultsDescription = mutedDescription(
+                "Default values used when adding a new strategy or creating strategies from I Am Feeling Lucky. "
+                        + "You can still change values in each strategy dialog before saving."
+        );
+        JPanel strategyDefaultsContent = new JPanel();
+        strategyDefaultsContent.setLayout(new BoxLayout(strategyDefaultsContent, BoxLayout.Y_AXIS));
+        strategyDefaultsContent.setOpaque(false);
+        strategyDefaultsContent.setBorder(new EmptyBorder(2, 0, 2, 0));
+        defaultRepeatCycleAfterProfitExitEnabled.setAlignmentX(Component.LEFT_ALIGNMENT);
+        defaultResubmitOnExpiryEnabled.setAlignmentX(Component.LEFT_ALIGNMENT);
+        strategyDefaultsDescription.setAlignmentX(Component.LEFT_ALIGNMENT);
+        strategyDefaultsContent.add(defaultRepeatCycleAfterProfitExitEnabled);
+        strategyDefaultsContent.add(Box.createVerticalStrut(6));
+        strategyDefaultsContent.add(defaultResubmitOnExpiryEnabled);
+        strategyDefaultsContent.add(Box.createVerticalStrut(8));
+        strategyDefaultsContent.add(strategyDefaultsDescription);
+        addFormRow(strategyDefaultsPanel, 0, "Default polling interval seconds:", defaultStrategyPollingSecondsField, true);
+        addFormRow(strategyDefaultsPanel, 1, "Default cycle behavior:", strategyDefaultsContent, false);
+
         GridBagConstraints marketHoursContentConstraints = new GridBagConstraints();
         marketHoursContentConstraints.gridx = 1;
         marketHoursContentConstraints.gridy = 0;
@@ -246,6 +279,8 @@ public class SettingsDialog extends JDialog {
         content.add(createCollapsibleSection("Diagnostics Log Sharing", diagnosticsPanel, true));
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(createCollapsibleSection("Trading Hours", marketHoursPanel, true));
+        content.add(Box.createVerticalStrut(SECTION_GAP));
+        content.add(createCollapsibleSection("Strategy Defaults", strategyDefaultsPanel, true));
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(strategyTransferPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
@@ -312,6 +347,9 @@ public class SettingsDialog extends JDialog {
     public boolean autoPausePollingWhenMarketClosed() { return autoPausePollingWhenMarketClosed.isSelected(); }
     public boolean extendedHoursTradingEnabled() { return extendedHoursTradingEnabled.isSelected(); }
     public boolean allowDuplicateSymbolStrategies() { return allowDuplicateSymbolStrategies.isSelected(); }
+    public int defaultStrategyPollingSeconds() { return parsePollingSecondsOrDefault(defaultStrategyPollingSecondsField.getText()); }
+    public boolean defaultRepeatCycleAfterProfitExitEnabled() { return defaultRepeatCycleAfterProfitExitEnabled.isSelected(); }
+    public boolean defaultResubmitOnExpiryEnabled() { return defaultResubmitOnExpiryEnabled.isSelected(); }
     public boolean emailOnBuyExpected() { return emailOnBuyExpected.isSelected(); }
     public boolean emailOnSellExecuted() { return emailOnSellExecuted.isSelected(); }
     public boolean saveCredentials() { return saveCredentials.isSelected(); }
@@ -325,6 +363,9 @@ public class SettingsDialog extends JDialog {
     public boolean appliedExtendedHoursTradingEnabled() { return appliedSettings.extendedHoursTradingEnabled(); }
     public boolean appliedAutoPausePollingWhenMarketClosed() { return appliedSettings.autoPausePollingWhenMarketClosed(); }
     public boolean appliedAllowDuplicateSymbolStrategies() { return appliedSettings.allowDuplicateSymbolStrategies(); }
+    public int appliedDefaultStrategyPollingSeconds() { return appliedSettings.defaultStrategyPollingSeconds(); }
+    public boolean appliedDefaultRepeatCycleAfterProfitExitEnabled() { return appliedSettings.defaultRepeatCycleAfterProfitExitEnabled(); }
+    public boolean appliedDefaultResubmitOnExpiryEnabled() { return appliedSettings.defaultResubmitOnExpiryEnabled(); }
     public String getUserEmail() { return emailField.getText().trim(); }
     public String getApiKey() { return apiKeyField.getText().trim(); }
     public String getApiSecret() { return new String(apiSecretField.getPassword()); }
@@ -375,6 +416,14 @@ public class SettingsDialog extends JDialog {
         }
 
         cacheCurrentModeCredentials();
+        int pollingSeconds = parsePollingSecondsForSave(defaultStrategyPollingSecondsField.getText());
+        if (pollingSeconds < 1) {
+            JOptionPane.showMessageDialog(this,
+                    "Default polling interval must be greater than zero seconds.",
+                    "Invalid Polling Interval",
+                    JOptionPane.WARNING_MESSAGE);
+            return false;
+        }
         String paperKey = apiKeyForMode(ApplicationMode.PAPER, email);
         String liveKey = apiKeyForMode(ApplicationMode.LIVE, email);
         if (!paperKey.isBlank() && !liveKey.isBlank() && paperKey.equals(liveKey)) {
@@ -406,7 +455,10 @@ public class SettingsDialog extends JDialog {
                     applicationMode(),
                     allowDuplicateSymbolStrategies(),
                     emailOnBuyExpected(),
-                    emailOnSellExecuted()
+                    emailOnSellExecuted(),
+                    pollingSeconds,
+                    defaultRepeatCycleAfterProfitExitEnabled(),
+                    defaultResubmitOnExpiryEnabled()
             ));
             appSettingsService.saveEndpoint(getEndpoint());
             appSettingsService.saveAiRecommendationSettings(aiRecommendationSettingsPanel.settings());
@@ -478,6 +530,9 @@ public class SettingsDialog extends JDialog {
         autoPausePollingWhenMarketClosed.setSelected(appliedSettings.autoPausePollingWhenMarketClosed());
         extendedHoursTradingEnabled.setSelected(appliedSettings.extendedHoursTradingEnabled());
         allowDuplicateSymbolStrategies.setSelected(appliedSettings.allowDuplicateSymbolStrategies());
+        defaultStrategyPollingSecondsField.setText(String.valueOf(appliedSettings.defaultStrategyPollingSeconds()));
+        defaultRepeatCycleAfterProfitExitEnabled.setSelected(appliedSettings.defaultRepeatCycleAfterProfitExitEnabled());
+        defaultResubmitOnExpiryEnabled.setSelected(appliedSettings.defaultResubmitOnExpiryEnabled());
         emailOnBuyExpected.setSelected(appliedSettings.emailOnBuyExpected());
         emailOnSellExecuted.setSelected(appliedSettings.emailOnSellExecuted());
         aiRecommendationSettingsPanel.populate(appSettingsService.loadAiRecommendationSettings());
@@ -578,6 +633,9 @@ public class SettingsDialog extends JDialog {
             autoPausePollingWhenMarketClosed.setSelected(AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED);
             extendedHoursTradingEnabled.setSelected(AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED);
             allowDuplicateSymbolStrategies.setSelected(AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES);
+            defaultStrategyPollingSecondsField.setText(String.valueOf(AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS));
+            defaultRepeatCycleAfterProfitExitEnabled.setSelected(AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED);
+            defaultResubmitOnExpiryEnabled.setSelected(AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED);
             emailOnBuyExpected.setSelected(AppSettingsService.DEFAULT_EMAIL_ON_BUY_EXPECTED);
             emailOnSellExecuted.setSelected(AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED);
             aiRecommendationSettingsPanel.populate(AiRecommendationSettings.defaults());
@@ -593,7 +651,10 @@ public class SettingsDialog extends JDialog {
                     ApplicationMode.PAPER,
                     AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES,
                     AppSettingsService.DEFAULT_EMAIL_ON_BUY_EXPECTED,
-                    AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED
+                    AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED,
+                    AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS,
+                    AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
+                    AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
             );
             appliedCredentialCache.clear();
             connectionStatus.setText("All local data deleted — reloading from Alpaca…");
@@ -930,6 +991,22 @@ public class SettingsDialog extends JDialog {
                 BorderFactory.createLineBorder(enabled ? INPUT_BORDER : INPUT_DISABLED_BORDER, 1, true),
                 new EmptyBorder(4, 8, 4, 8)
         ));
+    }
+
+    private int parsePollingSecondsForSave(String value) {
+        try {
+            return Integer.parseInt(value == null ? "" : value.trim());
+        } catch (NumberFormatException ex) {
+            return -1;
+        }
+    }
+
+    private int parsePollingSecondsOrDefault(String value) {
+        int parsed = parsePollingSecondsForSave(value);
+        if (parsed < 1) {
+            return AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS;
+        }
+        return parsed;
     }
 
     private static Border withInnerPadding(Border border) {

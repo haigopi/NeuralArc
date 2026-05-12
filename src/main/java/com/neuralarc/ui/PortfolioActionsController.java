@@ -61,6 +61,10 @@ final class PortfolioActionsController {
         menu.addSeparator();
         menu.add(gateway.createMenuItem("Cancel All Pending Limit Buys", "icons/close.svg",
                 this::handleCancelAllPendingLimitBuys));
+        menu.add(gateway.createMenuItem("Clean All Expired", "icons/delete.svg",
+                this::handleCleanAllExpired));
+        menu.add(gateway.createMenuItem("Reposition Expired", "icons/submit.svg",
+                this::handleRepositionExpired));
         menu.add(gateway.createMenuItem("Remove Inactive List", "icons/delete.svg",
                 this::handleRemoveInactiveList));
         menu.add(gateway.createMenuItem("Promote All to Live", "icons/add-stock-strategy.svg",
@@ -173,6 +177,74 @@ final class PortfolioActionsController {
                             entry.strategy.id(),
                             "Archived by Remove Inactive List portfolio action"
                     );
+                    if (result.success()) {
+                        successes.add(entry.strategy.symbol());
+                    } else {
+                        failures.add(entry.strategy.symbol() + ": " + result.error());
+                    }
+                }
+                return new PortfolioActionsSupport.BatchResult(successes, failures);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    private void handleCleanAllExpired() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CLEAN_ALL_EXPIRED;
+        List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), action);
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                List<String> successes = new ArrayList<>();
+                List<String> failures = new ArrayList<>();
+                for (ManagedStrategy entry : targets) {
+                    StrategyService.ArchiveResult result = gateway.archiveStrategy(
+                            entry.strategy.id(),
+                            "Archived by Clean All Expired portfolio action"
+                    );
+                    if (result.success()) {
+                        successes.add(entry.strategy.symbol());
+                    } else {
+                        failures.add(entry.strategy.symbol() + ": " + result.error());
+                    }
+                }
+                return new PortfolioActionsSupport.BatchResult(successes, failures);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    private void handleRepositionExpired() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.REPOSITION_EXPIRED;
+        List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), action);
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                List<String> successes = new ArrayList<>();
+                List<String> failures = new ArrayList<>();
+                for (ManagedStrategy entry : targets) {
+                    StrategyService modeAwareService = gateway.strategyServiceForMode(entry.strategy.mode());
+                    if (modeAwareService == null) {
+                        failures.add(entry.strategy.symbol() + ": broker client is not configured for " + entry.strategy.mode().name());
+                        continue;
+                    }
+                    StrategyService.StrategyCreationResult result = modeAwareService.repositionExpiredStrategy(entry.strategy.id());
                     if (result.success()) {
                         successes.add(entry.strategy.symbol());
                     } else {

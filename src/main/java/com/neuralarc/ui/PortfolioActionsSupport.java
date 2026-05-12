@@ -5,6 +5,7 @@ import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
+import com.neuralarc.util.BrokerOrderStatusUtil;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -58,6 +59,14 @@ final class PortfolioActionsSupport {
                 && state != StrategyLifecycleState.STOPPED
                 && state != StrategyLifecycleState.SELL_PLACED
                 && state != StrategyLifecycleState.SELL_PARTIALLY_FILLED;
+    }
+
+    private static boolean isExpired(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return false;
+        }
+        return entry.strategy.status() == StrategyStatus.FAILED
+                && "expired".equals(BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus()));
     }
 
     List<ManagedStrategy> filterTargets(List<ManagedStrategy> strategies, Scope scope) {
@@ -273,6 +282,60 @@ final class PortfolioActionsSupport {
             @Override
             String resultSuccessLabel() {
                 return "Archived";
+            }
+        },
+        CLEAN_ALL_EXPIRED("Clean All Expired") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return isExpired(entry);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Clean " + count + " expired strategy(ies) from Current Strategies?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Matching expired strategies will be archived and removed from the Current Strategies tab."
+                        + "<br>History records remain available.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no expired strategies to clean from Current Strategies.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Archived";
+            }
+        },
+        REPOSITION_EXPIRED("Reposition Expired") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return isExpired(entry);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Reposition " + count + " expired strategy(ies)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Matching expired strategies will be reactivated and submit a fresh base limit buy order."
+                        + "<br>Strategies with open positions or open orders are skipped for safety.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no expired strategies eligible for reposition.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Repositioned";
             }
         },
         PROMOTE_ALL_TO_LIVE("Promote All to Live") {
