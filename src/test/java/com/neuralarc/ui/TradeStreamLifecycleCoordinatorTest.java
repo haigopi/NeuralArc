@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.awt.Color;
 import java.math.BigDecimal;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -59,7 +60,7 @@ class TradeStreamLifecycleCoordinatorTest {
         coordinator.onTradeEvent(event);
 
         assertEquals("trade update", gateway.lastStatus);
-        assertEquals("AAPL", gateway.lastRefreshedSymbol);
+        assertEquals("strategy-1", gateway.lastRefreshedStrategyId);
         assertTrue(gateway.tradeUpdateForwarded);
         assertTrue(gateway.uiRefreshTriggered);
     }
@@ -71,13 +72,30 @@ class TradeStreamLifecycleCoordinatorTest {
         assertEquals(new Color(180, 100, 0), presentation.color());
     }
 
+    @Test
+    void tradeEventWithoutMatchedStrategyDoesNotRequestTargetedPositionRefresh() {
+        FakeGateway gateway = new FakeGateway();
+        gateway.onTradeUpdateResult = Optional.empty();
+        TradeStreamLifecycleCoordinator coordinator = new TradeStreamLifecycleCoordinator(gateway, (ignoredUrl, ignoredKey, ignoredSecret) -> gateway.client);
+        AlpacaTradeUpdateEvent event = new AlpacaTradeUpdateEvent(
+                "fill",
+                new AlpacaOrderData("oid", "cid", "AAPL", "buy", "limit", new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO, "filled", "{}")
+        );
+
+        coordinator.onTradeEvent(event);
+
+        assertTrue(gateway.lastRefreshedStrategyId == null);
+        assertTrue(gateway.tradeUpdateForwarded);
+    }
+
     private static final class FakeGateway implements TradeStreamLifecycleCoordinator.Gateway {
         boolean webSocketEnabled = true;
         String lastStatus;
         Color lastColor;
-        String lastRefreshedSymbol;
+        String lastRefreshedStrategyId;
         boolean tradeUpdateForwarded;
         boolean uiRefreshTriggered;
+        Optional<String> onTradeUpdateResult = Optional.of("strategy-1");
         final FakeStreamClient client = new FakeStreamClient();
 
         @Override public boolean webSocketEnabled() { return webSocketEnabled; }
@@ -86,8 +104,8 @@ class TradeStreamLifecycleCoordinatorTest {
         @Override public void onStreamError(String message) { }
         @Override public void log(String message) { }
         @Override public boolean canProcessTradeUpdates() { return true; }
-        @Override public void onTradeUpdate(AlpacaTradeUpdateEvent event) { tradeUpdateForwarded = true; }
-        @Override public void refreshDisplayedPositionFromStream(String symbol) { lastRefreshedSymbol = symbol; }
+        @Override public Optional<String> onTradeUpdate(AlpacaTradeUpdateEvent event) { tradeUpdateForwarded = true; return onTradeUpdateResult; }
+        @Override public void refreshDisplayedPositionFromStream(String strategyId) { lastRefreshedStrategyId = strategyId; }
         @Override public void invokeLater(Runnable runnable) { runnable.run(); }
         @Override public void syncStrategiesFromRepository() { uiRefreshTriggered = true; }
         @Override public void refreshStrategyTableContent() { }

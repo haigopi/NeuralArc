@@ -4,6 +4,7 @@ import com.neuralarc.api.AlpacaTradeUpdateEvent;
 import com.neuralarc.api.AlpacaTradingWebSocketClient;
 
 import java.awt.Color;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 public final class TradeStreamLifecycleCoordinator {
@@ -74,12 +75,13 @@ public final class TradeStreamLifecycleCoordinator {
         gateway.updateStreamStatus("trade update", STREAM_TRADE_UPDATE);
         String orderId = event.orderData() == null ? "" : event.orderData().orderId();
         String clientOrderId = event.orderData() == null ? "" : event.orderData().clientOrderId();
-        String symbol = event.orderData() == null ? "" : event.orderData().symbol();
         gateway.log("[STREAM] Trade update received: event=" + event.eventType()
                 + " orderId=" + orderId
                 + " clientOrderId=" + clientOrderId);
-        gateway.onTradeUpdate(event);
-        gateway.refreshDisplayedPositionFromStream(symbol);
+        Optional<String> strategyId = gateway.onTradeUpdate(event);
+        if (strategyId.isPresent()) {
+            gateway.refreshDisplayedPositionFromStream(strategyId.get());
+        }
         gateway.invokeLater(() -> {
             gateway.syncStrategiesFromRepository();
             gateway.refreshStrategyTableContent();
@@ -110,8 +112,8 @@ public final class TradeStreamLifecycleCoordinator {
         void log(String message);
 
         boolean canProcessTradeUpdates();
-        void onTradeUpdate(AlpacaTradeUpdateEvent event);
-        void refreshDisplayedPositionFromStream(String symbol);
+        Optional<String> onTradeUpdate(AlpacaTradeUpdateEvent event);
+        void refreshDisplayedPositionFromStream(String strategyId);
 
         void invokeLater(Runnable runnable);
         void syncStrategiesFromRepository();

@@ -593,15 +593,16 @@ public class TradingFrame extends JFrame {
             }
 
             @Override
-            public void onTradeUpdate(AlpacaTradeUpdateEvent event) {
+            public Optional<String> onTradeUpdate(AlpacaTradeUpdateEvent event) {
                 if (strategyPollingService != null) {
-                    strategyPollingService.onTradeUpdate(event);
+                    return strategyPollingService.onTradeUpdate(event);
                 }
+                return Optional.empty();
             }
 
             @Override
-            public void refreshDisplayedPositionFromStream(String symbol) {
-                TradingFrame.this.refreshDisplayedPositionFromStream(symbol);
+            public void refreshDisplayedPositionFromStream(String strategyId) {
+                TradingFrame.this.refreshDisplayedPositionFromStream(strategyId);
             }
 
             @Override
@@ -4201,16 +4202,16 @@ public class TradingFrame extends JFrame {
     }
 
 
-    private void refreshDisplayedPositionFromStream(String symbol) {
-        if (tradingApi == null || symbol == null || symbol.isBlank()) {
+    private void refreshDisplayedPositionFromStream(String strategyId) {
+        if (tradingApi == null || strategyId == null || strategyId.isBlank()) {
             return;
         }
-        // Request one immediate batch refresh on the next polling tick.
-        batchGridPriceRefreshRequestedFromStream = true;
-        ManagedStrategy entry = findStrategy(symbol);
+        ManagedStrategy entry = findStrategyById(strategyId);
         if (entry == null) {
             return;
         }
+        // Keep stream updates scoped to the matched strategy when duplicate symbols exist.
+        entry.setCachedPosition(loadPositionForStrategy(entry.strategy));
         SwingUtilities.invokeLater(() -> {
             refreshStrategyTableContent();
             if (selectedStrategyId != null && selectedStrategyId.equals(entry.strategy.id())) {

@@ -315,18 +315,19 @@ public class StrategyPollingService {
         pollExecutor.shutdownNow();
     }
 
-    public void onTradeUpdate(AlpacaTradeUpdateEvent updateEvent) {
+    public Optional<String> onTradeUpdate(AlpacaTradeUpdateEvent updateEvent) {
         if (updateEvent == null || updateEvent.orderData() == null) {
-            return;
+            return Optional.empty();
         }
         try {
-            boolean applied = strategyEngine.applyStreamingOrderUpdate(updateEvent.orderData());
-            if (applied) {
+            Optional<String> appliedStrategyId = strategyEngine.applyStreamingOrderUpdate(updateEvent.orderData());
+            if (appliedStrategyId.isPresent()) {
                 lastStreamingEventAt = Instant.now();
                 LOGGER.info(() -> "Applied trade update event "
                         + updateEvent.eventType()
                         + " for orderId=" + updateEvent.orderData().orderId()
-                        + " clientOrderId=" + updateEvent.orderData().clientOrderId());
+                        + " clientOrderId=" + updateEvent.orderData().clientOrderId()
+                        + " strategyId=" + appliedStrategyId.get());
             } else {
                 LOGGER.info(() -> "Ignored trade update event "
                         + updateEvent.eventType()
@@ -334,8 +335,10 @@ public class StrategyPollingService {
                         + updateEvent.orderData().orderId()
                         + " clientOrderId=" + updateEvent.orderData().clientOrderId());
             }
+            return appliedStrategyId;
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Failed to process streaming trade update", ex);
+            return Optional.empty();
         }
     }
 

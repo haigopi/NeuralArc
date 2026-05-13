@@ -3,6 +3,7 @@ package com.neuralarc.service;
 import com.neuralarc.api.AlpacaClient;
 import com.neuralarc.api.AlpacaOrderData;
 import com.neuralarc.api.AlpacaPositionData;
+import com.neuralarc.api.AlpacaTradeUpdateEvent;
 import com.neuralarc.model.*;
 import com.neuralarc.util.Monetary;
 import org.junit.jupiter.api.Test;
@@ -59,6 +60,60 @@ class StrategyPollingServiceTest {
         f.service.pollStrategy(strategy.id());
 
         assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_2).isPresent());
+    }
+
+    @Test
+    void onTradeUpdateWithDuplicateSymbolsAppliesOnlyToMatchedStrategyOrder() {
+        Fixture f = new Fixture();
+        Strategy first = f.activeStrategy(false);
+        Strategy second = new Strategy(
+                UUID.randomUUID().toString(), "s2", "AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE,
+                StrategyLifecycleState.CREATED,
+                new BigDecimal("8.00"), 10,
+                new BigDecimal("6.00"), 5,
+                new BigDecimal("5.00"), 5,
+                true, StopLossType.FIXED_PRICE, new BigDecimal("7.00"), BigDecimal.ZERO,
+                false, BigDecimal.ZERO,
+                true, new BigDecimal("10.00"), new BigDecimal("100.00"), true,
+                false, ProfitHoldType.PERCENT_TRAILING, new BigDecimal("10.00"), BigDecimal.ZERO, BigDecimal.ZERO,
+                false, 25, new BigDecimal("300.00"), 2, Instant.now(), Instant.now()
+        );
+        f.strategies.save(second);
+
+        StrategyOrder firstOrder = new StrategyOrder(
+                UUID.randomUUID().toString(), first.id(), StrategyStage.BASE_BUY,
+                "ord-first", "client-first", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT,
+                new BigDecimal("8.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO,
+                StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        );
+        StrategyOrder secondOrder = new StrategyOrder(
+                UUID.randomUUID().toString(), second.id(), StrategyStage.BASE_BUY,
+                "ord-second", "client-second", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT,
+                new BigDecimal("8.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO,
+                StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        );
+        f.orders.save(firstOrder);
+        f.orders.save(secondOrder);
+
+        Optional<String> appliedStrategyId = f.service.onTradeUpdate(new AlpacaTradeUpdateEvent(
+                "fill",
+                new AlpacaOrderData("ord-first", "client-first", "AAPL", "buy", "limit",
+                        new BigDecimal("8.00"), new BigDecimal("10"), new BigDecimal("8.00"), "filled", "{}")
+        ));
+
+        assertEquals(Optional.of(first.id()), appliedStrategyId);
+        Strategy firstUpdated = f.strategies.findById(first.id()).orElseThrow();
+        Strategy secondUpdated = f.strategies.findById(second.id()).orElseThrow();
+        assertEquals(StrategyOrderStatus.FILLED, f.orders.findByAlpacaOrderId("ord-first").orElseThrow().status());
+        assertEquals(StrategyOrderStatus.SUBMITTED, f.orders.findByAlpacaOrderId("ord-second").orElseThrow().status());
+        assertEquals(StrategyLifecycleState.CREATED, secondUpdated.currentState());
+        assertTrue(secondUpdated.latestOrderStatus() == null || secondUpdated.latestOrderStatus().isBlank());
     }
 
     @Test

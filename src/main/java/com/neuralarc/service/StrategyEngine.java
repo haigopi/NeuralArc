@@ -426,9 +426,9 @@ public class StrategyEngine {
         }
     }
 
-    public boolean applyStreamingOrderUpdate(AlpacaOrderData orderData) {
+    public Optional<String> applyStreamingOrderUpdate(AlpacaOrderData orderData) {
         if (orderData == null) {
-            return false;
+            return Optional.empty();
         }
 
         Optional<StrategyOrder> matchingOrder = orderRepository.findByAlpacaOrderId(orderData.orderId());
@@ -436,13 +436,13 @@ public class StrategyEngine {
             matchingOrder = orderRepository.findByClientOrderId(orderData.clientOrderId());
         }
         if (matchingOrder.isEmpty()) {
-            return false;
+            return Optional.empty();
         }
 
         StrategyOrder order = matchingOrder.get();
         Optional<Strategy> maybeStrategy = strategyRepository.findById(order.strategyId());
         if (maybeStrategy.isEmpty()) {
-            return false;
+            return Optional.empty();
         }
 
         Strategy strategy = maybeStrategy.get();
@@ -450,7 +450,7 @@ public class StrategyEngine {
         if (status == StrategyOrderStatus.FILLED || status == StrategyOrderStatus.PARTIALLY_FILLED) {
             reconcile(strategy);
         }
-        return true;
+        return Optional.of(strategy.id());
     }
 
     private StrategyOrderStatus applyOrderUpdate(Strategy strategy, StrategyOrder order, AlpacaOrderData data) {
