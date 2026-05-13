@@ -31,6 +31,8 @@ public class StrategyService {
     private final StrategyMode defaultStrategyMode;
     private final StrategyStateMachine stateMachine;
     private final StrategyEngine strategyEngine;
+    private final PendingLimitOrderCanceler pendingLimitOrderCanceler;
+    private final LiveStrategyPromotionFactory liveStrategyPromotionFactory;
     private final AppSettingsService appSettingsService;
     private final MarketHoursService marketHoursService;
 
@@ -86,6 +88,8 @@ public class StrategyService {
                 appSettingsService,
                 marketHoursService
         );
+        this.pendingLimitOrderCanceler = new PendingLimitOrderCanceler(alpacaClient, orderRepository);
+        this.liveStrategyPromotionFactory = new LiveStrategyPromotionFactory();
     }
 
     public StrategyCreationResult createAndActivate(Strategy strategy) {
@@ -230,7 +234,7 @@ public class StrategyService {
             return LimitBuyCancelResult.failed("Strategy not found");
         }
         Strategy strategy = maybeStrategy.get();
-        int canceledCount = cancelPendingLimitBuyOrders(strategy);
+        int canceledCount = pendingLimitOrderCanceler.cancelPendingLimitBuys(strategy);
         if (canceledCount <= 0) {
             return LimitBuyCancelResult.failed("No pending limit buy orders found");
         }
@@ -250,6 +254,34 @@ public class StrategyService {
                 "{}"
         );
         return LimitBuyCancelResult.success(canceledCount);
+    }
+
+    public LimitSellCancelResult cancelPendingLimitSells(String strategyId) {
+        Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
+        if (maybeStrategy.isEmpty()) {
+            return LimitSellCancelResult.failed("Strategy not found");
+        }
+        Strategy strategy = maybeStrategy.get();
+        int canceledCount = pendingLimitOrderCanceler.cancelPendingLimitSells(strategy);
+        if (canceledCount <= 0) {
+            return LimitSellCancelResult.failed("No pending limit sell orders found");
+        }
+
+        if (strategy.currentState() == StrategyLifecycleState.SELL_PLACED
+                || strategy.currentState() == StrategyLifecycleState.SELL_PARTIALLY_FILLED) {
+            strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        }
+        strategy.setLatestOrderStatus("canceled");
+        strategy.clearLastError();
+        strategyRepository.save(strategy);
+        stateMachine.transition(
+                strategy,
+                strategy.currentState(),
+                StrategyEventType.ORDER_STATUS_UPDATED,
+                "Pending limit sell order(s) canceled by portfolio action",
+                "{}"
+        );
+        return LimitSellCancelResult.success(canceledCount);
     }
 
     public void resume(String strategyId) {
@@ -465,7 +497,7 @@ public class StrategyService {
         }
         Strategy paperStrategy = preview.strategy();
 
-        Strategy liveStrategy = cloneStrategyForLivePromotion(paperStrategy);
+        Strategy liveStrategy = liveStrategyPromotionFactory.cloneFromPaper(paperStrategy);
         StrategyCreationResult creationResult = createAndActivate(liveStrategy);
         if (!creationResult.success()) {
             return LivePromotionResult.failed(creationResult.error());
@@ -514,6 +546,10 @@ public class StrategyService {
     }
 
     public StrategyCreationResult closePosition(String strategyId) {
+        return closePosition(strategyId, SellSubmissionType.LIMIT);
+    }
+
+    public StrategyCreationResult closePosition(String strategyId, SellSubmissionType submissionType) {
         Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
         if (maybeStrategy.isEmpty()) {
             return StrategyCreationResult.failed("Strategy not found");
@@ -532,7 +568,10 @@ public class StrategyService {
             return StrategyCreationResult.failed("No open quantity to close");
         }
         String clientOrderId = buildClientOrderId(strategy.id(), StrategyStage.MANUAL_EXIT);
-        com.neuralarc.api.AlpacaOrderData submitted = alpacaClient.submitLimitSellOrder(strategy.symbol(), quantity, latestPrice, clientOrderId);
+        SellSubmissionType effectiveType = submissionType == null ? SellSubmissionType.LIMIT : submissionType;
+        com.neuralarc.api.AlpacaOrderData submitted = effectiveType == SellSubmissionType.MARKET
+                ? alpacaClient.submitMarketSellOrder(strategy.symbol(), quantity, clientOrderId)
+                : alpacaClient.submitLimitSellOrder(strategy.symbol(), quantity, latestPrice, clientOrderId);
         Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
         StrategyOrder order = new StrategyOrder(
                 java.util.UUID.randomUUID().toString(),
@@ -542,8 +581,8 @@ public class StrategyService {
                 clientOrderId,
                 strategy.symbol(),
                 StrategyOrderSide.SELL,
-                StrategyOrderType.LIMIT,
-                latestPrice,
+                effectiveType == SellSubmissionType.MARKET ? StrategyOrderType.MARKET : StrategyOrderType.LIMIT,
+                effectiveType == SellSubmissionType.MARKET ? BigDecimal.ZERO : latestPrice,
                 BigDecimal.ZERO,
                 BigDecimal.valueOf(quantity),
                 submitted.filledQuantity(),
@@ -559,7 +598,13 @@ public class StrategyService {
         strategy.setLatestAlpacaOrderId(order.alpacaOrderId());
         strategy.setLastTriggeredRuleType("MANUAL_EXIT");
         strategyRepository.save(strategy);
-        stateMachine.transition(strategy, StrategyLifecycleState.SELL_PLACED, StrategyEventType.ORDER_SUBMITTED, "Manual sell order submitted", submitted.rawJson());
+        stateMachine.transition(
+                strategy,
+                StrategyLifecycleState.SELL_PLACED,
+                StrategyEventType.ORDER_SUBMITTED,
+                effectiveType == SellSubmissionType.MARKET ? "Manual market sell order submitted" : "Manual limit sell order submitted",
+                submitted.rawJson()
+        );
         return StrategyCreationResult.success(strategy.id(), order.id(), order.alpacaOrderId(), order.clientOrderId());
     }
 
@@ -576,8 +621,7 @@ public class StrategyService {
             case "canceled", "expired" -> StrategyOrderStatus.CANCELED;
             case "rejected", "suspended" -> StrategyOrderStatus.REJECTED;
             case "pending_cancel", "pending_replace", "calculated" -> StrategyOrderStatus.PENDING;
-            case "failed_transport" -> StrategyOrderStatus.FAILED;
-            case "failed" -> StrategyOrderStatus.REJECTED;
+            case "failed_transport", "api_error", "failed" -> StrategyOrderStatus.FAILED;
             default -> StrategyOrderStatus.PENDING;
         };
     }
@@ -606,66 +650,6 @@ public class StrategyService {
             stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.ORDER_STATUS_UPDATED,
                     "Open Alpaca orders canceled for strategy " + strategy.symbol(), "{}");
         }
-    }
-
-    private int cancelPendingLimitBuyOrders(Strategy strategy) {
-        int canceledCount = 0;
-        List<com.neuralarc.api.AlpacaOrderData> openOrders = alpacaClient.getOpenOrders(strategy.symbol());
-        for (com.neuralarc.api.AlpacaOrderData remoteOrder : openOrders) {
-            if (!isPendingLimitBuy(remoteOrder)) {
-                continue;
-            }
-            if (alpacaClient.cancelOrder(remoteOrder.orderId())) {
-                canceledCount++;
-                markMatchingLocalLimitBuyCanceled(strategy, remoteOrder);
-            }
-        }
-
-        for (StrategyOrder localOrder : orderRepository.findByStrategyId(strategy.id())) {
-            if (!isPendingLimitBuy(localOrder)) {
-                continue;
-            }
-            localOrder.setStatus(StrategyOrderStatus.CANCELED);
-            orderRepository.save(localOrder);
-            canceledCount++;
-        }
-        return canceledCount;
-    }
-
-    private void markMatchingLocalLimitBuyCanceled(Strategy strategy, com.neuralarc.api.AlpacaOrderData remoteOrder) {
-        for (StrategyOrder localOrder : orderRepository.findByStrategyId(strategy.id())) {
-            if (!isPendingLimitBuy(localOrder)) {
-                continue;
-            }
-            boolean sameOrder = remoteOrder.orderId().equals(localOrder.alpacaOrderId())
-                    || remoteOrder.clientOrderId().equals(localOrder.clientOrderId());
-            if (!sameOrder) {
-                continue;
-            }
-            localOrder.setStatus(StrategyOrderStatus.CANCELED);
-            localOrder.setRawResponseJson(remoteOrder.rawJson());
-            orderRepository.save(localOrder);
-        }
-    }
-
-    private boolean isPendingLimitBuy(com.neuralarc.api.AlpacaOrderData order) {
-        if (order == null || !"buy".equalsIgnoreCase(order.side()) || !"limit".equalsIgnoreCase(order.type())) {
-            return false;
-        }
-        String normalized = BrokerOrderStatusUtil.normalize(order.status());
-        return !"filled".equals(normalized)
-                && !"canceled".equals(normalized)
-                && !"cancelled".equals(normalized)
-                && !"expired".equals(normalized)
-                && !"rejected".equals(normalized)
-                && !"failed".equals(normalized);
-    }
-
-    private boolean isPendingLimitBuy(StrategyOrder order) {
-        return order != null
-                && order.side() == StrategyOrderSide.BUY
-                && order.orderType() == StrategyOrderType.LIMIT
-                && order.isPending();
     }
 
     private Strategy buildRemoteStrategy(
@@ -741,55 +725,6 @@ public class StrategyService {
                 || stage == StrategyStage.MANUAL_EXIT;
     }
 
-    private Strategy cloneStrategyForLivePromotion(Strategy paperStrategy) {
-        Strategy liveStrategy = new Strategy(
-                UUID.randomUUID().toString(),
-                liveStrategyName(paperStrategy),
-                paperStrategy.symbol(),
-                StrategyMode.LIVE,
-                StrategyStatus.CREATED,
-                StrategyLifecycleState.CREATED,
-                paperStrategy.baseBuyLimitPrice(),
-                paperStrategy.baseBuyQuantity(),
-                paperStrategy.buyLimit1Price(),
-                paperStrategy.buyLimit1Quantity(),
-                paperStrategy.buyLimit2Price(),
-                paperStrategy.buyLimit2Quantity(),
-                paperStrategy.automatedStopLossEnabled(),
-                paperStrategy.stopLossType(),
-                paperStrategy.stopLossPrice(),
-                paperStrategy.stopLossPercent(),
-                paperStrategy.optionalLossExitEnabled(),
-                paperStrategy.optionalLossExitPrice(),
-                paperStrategy.targetSellEnabled(),
-                paperStrategy.targetSellPrice(),
-                paperStrategy.targetSellQuantityOrPercent(),
-                paperStrategy.targetSellPercentBased(),
-                paperStrategy.profitHoldEnabled(),
-                paperStrategy.profitHoldType(),
-                paperStrategy.profitHoldPercent(),
-                paperStrategy.profitHoldAmount(),
-                BigDecimal.ZERO,
-                paperStrategy.restartAfterExitEnabled(),
-                paperStrategy.maxTotalQuantity(),
-                paperStrategy.maxCapitalAllowed(),
-                paperStrategy.pollingIntervalSeconds(),
-                Instant.now(),
-                Instant.now()
-        );
-        liveStrategy.setLossBuyLevelsEnabled(paperStrategy.lossBuyLevelsEnabled());
-        liveStrategy.setAlpacaTrailingStopEnabled(paperStrategy.alpacaTrailingStopEnabled());
-        liveStrategy.setProfitControlMode(paperStrategy.profitControlMode());
-        liveStrategy.setAutomaticStopSellThresholdType(paperStrategy.automaticStopSellThresholdType());
-        liveStrategy.setAutomaticStopSellThreshold(paperStrategy.automaticStopSellThreshold());
-        liveStrategy.setAutomaticStopSellTrailingType(paperStrategy.automaticStopSellTrailingType());
-        liveStrategy.setAutomaticStopSellTrailingValue(paperStrategy.automaticStopSellTrailingValue());
-        liveStrategy.setResubmitOnExpiryEnabled(paperStrategy.resubmitOnExpiryEnabled());
-        liveStrategy.setPauseReason(PauseReason.NONE);
-        liveStrategy.setResumeStateBeforePause(StrategyLifecycleState.CREATED);
-        return liveStrategy;
-    }
-
     private void archivePaperStrategyAfterPromotion(Strategy paperStrategy, String promotedLiveStrategyId) {
         paperStrategy.setStatus(StrategyStatus.ARCHIVED);
         paperStrategy.setCurrentState(StrategyLifecycleState.STOPPED);
@@ -807,16 +742,6 @@ public class StrategyService {
         );
     }
 
-    private String liveStrategyName(Strategy paperStrategy) {
-        String currentName = paperStrategy.name() == null ? "" : paperStrategy.name().trim();
-        if (currentName.isBlank()) {
-            return paperStrategy.symbol() + " Live Strategy";
-        }
-        if (currentName.toLowerCase().contains("live")) {
-            return currentName;
-        }
-        return currentName + " Live";
-    }
 
     private void restoreResumeStateAfterPause(Strategy strategy) {
         if (strategy.currentState() == StrategyLifecycleState.PAUSED) {
@@ -1000,6 +925,16 @@ public class StrategyService {
 
         public static LimitBuyCancelResult failed(String error) {
             return new LimitBuyCancelResult(false, 0, error == null ? "Unknown error" : error);
+        }
+    }
+
+    public record LimitSellCancelResult(boolean success, int canceledCount, String error) {
+        public static LimitSellCancelResult success(int canceledCount) {
+            return new LimitSellCancelResult(true, canceledCount, null);
+        }
+
+        public static LimitSellCancelResult failed(String error) {
+            return new LimitSellCancelResult(false, 0, error == null ? "Unknown error" : error);
         }
     }
 

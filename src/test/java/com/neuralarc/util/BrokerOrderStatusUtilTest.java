@@ -23,7 +23,8 @@ class BrokerOrderStatusUtilTest {
     @Test
     void displayLabelFormatsBrokerStatus() {
         assertEquals("Pending Replace", BrokerOrderStatusUtil.displayLabel("pending_replace"));
-        assertEquals("Failed", BrokerOrderStatusUtil.displayLabel("failed_transport"));
+        assertEquals("Unable To Reach Broker", BrokerOrderStatusUtil.displayLabel("failed_transport"));
+        assertEquals("Broker API Error", BrokerOrderStatusUtil.displayLabel("api_error"));
     }
 }
 

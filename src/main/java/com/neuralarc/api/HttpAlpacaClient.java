@@ -61,6 +61,23 @@ public class HttpAlpacaClient implements AlpacaClient {
     }
 
     @Override
+    public AlpacaOrderData submitMarketSellOrder(String symbol, int quantity, String clientOrderId) {
+        JSONObject payload = new JSONObject()
+                .put("symbol", symbol == null ? "" : symbol.toUpperCase())
+                .put("qty", quantity)
+                .put("side", "sell")
+                .put("type", "market")
+                .put("time_in_force", "day")
+                .put("client_order_id", clientOrderId == null ? "" : clientOrderId);
+        String endpoint = tradingBaseUrl + "/v2/orders";
+        HttpRequest request = baseRequest(endpoint)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .build();
+        return executeOrderSubmission(request, payload, endpoint, symbol, clientOrderId, "sell", "market", BigDecimal.ZERO);
+    }
+
+    @Override
     public AlpacaOrderData submitTrailingStopSellOrder(
             String symbol,
             int quantity,
@@ -337,12 +354,15 @@ public class HttpAlpacaClient implements AlpacaClient {
         try {
             logRequest("POST", endpoint, payload.toString());
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            recordRequestId("submitLimitOrder", "POST", endpoint, response);
+            recordRequestId("submitOrder", "POST", endpoint, response);
             String body = response.body() == null ? "{}" : response.body();
             logResponse("POST", endpoint, response.statusCode(), body);
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 JSONObject error = parseObject(body);
-                String brokerStatus = error.optString("status", "rejected");
+                String brokerStatus = error.optString("status", "");
+                if (brokerStatus == null || brokerStatus.isBlank()) {
+                    brokerStatus = "api_error";
+                }
                 return new AlpacaOrderData(
                         "",
                         clientOrderId,

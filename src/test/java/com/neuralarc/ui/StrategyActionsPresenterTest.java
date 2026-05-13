@@ -45,19 +45,28 @@ class StrategyActionsPresenterTest {
     }
 
     @Test
-    void manuallyCanceledStrategiesShowPlaceLimitBuyAgain() {
+    void manuallyCanceledStrategiesWithPositionShowResume() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
                 new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.PAUSED, true, false, "", true, true, true)
         );
 
-        assertEquals("Place Limit Buy Again", viewModel.toggleText());
+        assertEquals("Resume", viewModel.toggleText());
         assertTrue(viewModel.toggleEnabled());
     }
 
     @Test
-    void pausedWithoutPositionShowsPlaceLimitBuyAgainEvenWhenNotManualPause() {
+    void pausedWithoutPositionShowsPlaceLimitBuyAgain() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
                 new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.PAUSED, false, false, "", true, false, true)
+        );
+
+        assertEquals("Place Limit Buy Again", viewModel.toggleText());
+    }
+
+    @Test
+    void manuallyCanceledWithoutPositionShowsPlaceLimitBuyAgain() {
+        StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
+                new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.PAUSED, true, false, "", true, false, true)
         );
 
         assertEquals("Place Limit Buy Again", viewModel.toggleText());

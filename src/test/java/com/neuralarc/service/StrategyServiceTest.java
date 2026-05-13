@@ -15,13 +15,18 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class StrategyServiceTest {
     @Test
-    void mapOrderStatusTreatsBrokerFailedAsRejected() {
-        assertEquals(StrategyOrderStatus.REJECTED, StrategyService.mapOrderStatus("failed"));
+    void mapOrderStatusTreatsBrokerFailedAsInfrastructureFailure() {
+        assertEquals(StrategyOrderStatus.FAILED, StrategyService.mapOrderStatus("failed"));
     }
 
     @Test
     void mapOrderStatusTreatsTransportFailureAsFailed() {
         assertEquals(StrategyOrderStatus.FAILED, StrategyService.mapOrderStatus("failed_transport"));
+    }
+
+    @Test
+    void mapOrderStatusTreatsApiErrorAsFailed() {
+        assertEquals(StrategyOrderStatus.FAILED, StrategyService.mapOrderStatus("api_error"));
     }
 
     @Test
@@ -159,6 +164,30 @@ class StrategyServiceTest {
 
         assertTrue(result.success());
         assertTrue(orders.findLatestByStrategyStage(strategy.id(), StrategyStage.MANUAL_EXIT).isPresent());
+    }
+
+    @Test
+    void closePositionWithMarketTypeSubmitsMarketSellOrder() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("7"), new BigDecimal("8.00"), new BigDecimal("9.50"), "{}"));
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategies.save(strategy);
+
+        StrategyService.StrategyCreationResult result = service.closePosition(strategy.id(), SellSubmissionType.MARKET);
+
+        assertTrue(result.success());
+        assertEquals(1, alpaca.submittedOrders.size());
+        AlpacaOrderData submitted = alpaca.submittedOrders.getFirst();
+        assertEquals("sell", submitted.side());
+        assertEquals("market", submitted.type());
+        StrategyOrder local = orders.findLatestByStrategyStage(strategy.id(), StrategyStage.MANUAL_EXIT).orElseThrow();
+        assertEquals(StrategyOrderType.MARKET, local.orderType());
+        assertEquals(0, local.limitPrice().compareTo(BigDecimal.ZERO));
     }
 
     @Test
@@ -798,6 +827,75 @@ class StrategyServiceTest {
     }
 
     @Test
+    void cancelPendingLimitSellsCancelsOnlyPendingLimitSellOrdersAndRestoresWaitingState() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("180.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        strategies.save(strategy);
+        StrategyOrder buyOrder = new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY, "ord-buy", "client-buy", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("175.00"), BigDecimal.ZERO,
+                new BigDecimal("5"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        );
+        StrategyOrder sellOrder = new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.TARGET_SELL, "ord-sell", "client-sell", "AAPL",
+                StrategyOrderSide.SELL, StrategyOrderType.LIMIT, new BigDecimal("190.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        );
+        orders.save(buyOrder);
+        orders.save(sellOrder);
+        alpaca.openOrders.add(new AlpacaOrderData("ord-buy", "client-buy", "AAPL", "buy", "limit", new BigDecimal("175.00"), BigDecimal.ZERO, BigDecimal.ZERO, "new", "{}"));
+        alpaca.openOrders.add(new AlpacaOrderData("ord-sell", "client-sell", "AAPL", "sell", "limit", new BigDecimal("190.00"), BigDecimal.ZERO, BigDecimal.ZERO, "new", "{}"));
+
+        StrategyService.LimitSellCancelResult result = service.cancelPendingLimitSells(strategy.id());
+
+        assertTrue(result.success());
+        assertEquals(1, result.canceledCount());
+        assertEquals(List.of("ord-sell"), alpaca.canceledOrderIds);
+        assertEquals(StrategyOrderStatus.SUBMITTED, orders.findByAlpacaOrderId("ord-buy").orElseThrow().status());
+        assertEquals(StrategyOrderStatus.CANCELED, orders.findByAlpacaOrderId("ord-sell").orElseThrow().status());
+        Strategy updated = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, updated.status());
+        assertEquals(StrategyLifecycleState.BASE_BUY_FILLED, updated.currentState());
+        assertEquals("canceled", updated.latestOrderStatus());
+    }
+
+    @Test
+    void cancelPendingLimitSellsReportsFailureWhenNoLimitSellIsPending() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("180.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        strategies.save(strategy);
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.TARGET_SELL, "ord-filled", "client-filled", "AAPL",
+                StrategyOrderSide.SELL, StrategyOrderType.LIMIT, new BigDecimal("190.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), new BigDecimal("10"), new BigDecimal("190.00"), StrategyOrderStatus.FILLED,
+                Instant.now(), Instant.now(), Instant.now(), "{}"
+        ));
+
+        StrategyService.LimitSellCancelResult result = service.cancelPendingLimitSells(strategy.id());
+
+        assertFalse(result.success());
+        assertTrue(result.error().contains("No pending limit sell orders"));
+        assertTrue(alpaca.canceledOrderIds.isEmpty());
+        assertEquals(StrategyLifecycleState.SELL_PLACED, strategies.findById(strategy.id()).orElseThrow().currentState());
+    }
+
+    @Test
     void promotePaperStrategyToLiveClonesAndArchivesPaperStrategy() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
@@ -1057,6 +1155,15 @@ class StrategyServiceTest {
         public AlpacaOrderData submitLimitSellOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
             counter++;
             AlpacaOrderData order = new AlpacaOrderData("ord-" + counter, clientOrderId, symbol, "sell", "limit", limitPrice, Monetary.zero(), Monetary.zero(), "new", "{\"qty\":\"" + quantity + "\"}");
+            submittedOrders.add(order);
+            openOrders.add(order);
+            return order;
+        }
+
+        @Override
+        public AlpacaOrderData submitMarketSellOrder(String symbol, int quantity, String clientOrderId) {
+            counter++;
+            AlpacaOrderData order = new AlpacaOrderData("ord-" + counter, clientOrderId, symbol, "sell", "market", Monetary.zero(), Monetary.zero(), Monetary.zero(), "new", "{\"qty\":\"" + quantity + "\"}");
             submittedOrders.add(order);
             openOrders.add(order);
             return order;

@@ -26,6 +26,15 @@ final class PortfolioActionsSupport {
                 || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED;
     }
 
+    private static boolean hasCancelablePendingLimitSell(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null || entry.strategy.status() != StrategyStatus.ACTIVE) {
+            return false;
+        }
+        StrategyLifecycleState state = entry.strategy.currentState();
+        return state == StrategyLifecycleState.SELL_PLACED
+                || state == StrategyLifecycleState.SELL_PARTIALLY_FILLED;
+    }
+
     private static boolean isRemovableInactive(ManagedStrategy entry) {
         if (entry == null || entry.strategy == null) {
             return false;
@@ -54,11 +63,26 @@ final class PortfolioActionsSupport {
             return false;
         }
         StrategyLifecycleState state = entry.strategy.currentState();
+        if (isCanceledSellState(entry)) {
+            return true;
+        }
         return state != StrategyLifecycleState.COMPLETED
                 && state != StrategyLifecycleState.FAILED
                 && state != StrategyLifecycleState.STOPPED
                 && state != StrategyLifecycleState.SELL_PLACED
                 && state != StrategyLifecycleState.SELL_PARTIALLY_FILLED;
+    }
+
+    private static boolean isCanceledSellState(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return false;
+        }
+        StrategyLifecycleState state = entry.strategy.currentState();
+        if (state != StrategyLifecycleState.SELL_PLACED && state != StrategyLifecycleState.SELL_PARTIALLY_FILLED) {
+            return false;
+        }
+        String normalized = BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus());
+        return "canceled".equals(normalized) || "cancelled".equals(normalized);
     }
 
     private static boolean isExpired(ManagedStrategy entry) {
@@ -90,12 +114,7 @@ final class PortfolioActionsSupport {
     }
 
     String buildConfirmationMessage(Scope scope, List<ManagedStrategy> targets) {
-        return buildConfirmationMessage(
-                scope.confirmHeading(targets.size()),
-                targets,
-                "Each strategy will submit a manual limit sell using its latest broker price."
-                        + "<br>Strategies configured to repeat after exit can re-initiate after the position fully closes."
-        );
+        return buildConfirmationMessage(scope.confirmHeading(targets.size()), targets, scope.confirmDetail());
     }
 
     String buildConfirmationMessage(BulkAction action, List<ManagedStrategy> targets) {
@@ -171,6 +190,12 @@ final class PortfolioActionsSupport {
             String emptyMessage() {
                 return "There are no profitable open positions to sell.";
             }
+
+            @Override
+            String confirmDetail() {
+                return "Each strategy will submit a manual limit sell using its latest broker price."
+                        + "<br>Strategies configured to repeat after exit can re-initiate after the position fully closes.";
+            }
         },
         ALL_OPEN("Sell All Open Positions") {
             @Override
@@ -187,6 +212,12 @@ final class PortfolioActionsSupport {
             @Override
             String emptyMessage() {
                 return "There are no open positions to sell.";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Each strategy will submit a manual limit sell using its latest broker price."
+                        + "<br>Use this when you want to flatten all currently open positions with limit orders.";
             }
         },
         LOSS_ONLY("Sell Losing Positions") {
@@ -207,6 +238,61 @@ final class PortfolioActionsSupport {
             String emptyMessage() {
                 return "There are no losing open positions to sell.";
             }
+            @Override
+            String confirmDetail() {
+                return "Each strategy will submit a manual limit sell using its latest broker price."
+                        + "<br>Use this to place limit exits only for positions currently in loss.";
+            }
+        },
+        LOSS_ONLY_MARKET("Sell All Losing Positions at Market Value") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                Position position = entry.cachedPosition();
+                return isEligibleForManualSell(entry)
+                        && position.getTotalShares() > 0
+                        && position.unrealizedPnl().compareTo(BigDecimal.ZERO) < 0;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Sell " + count + " losing position(s) at market?";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no losing open positions to sell at market.";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Each strategy will submit a manual market sell for immediate market execution."
+                        + "<br>Final fill prices can vary from quotes due to market movement and liquidity.";
+            }
+        },
+        PROFITABLE_MARKET("Sell All Profitable Positions at Market Value") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                Position position = entry.cachedPosition();
+                return isEligibleForManualSell(entry)
+                        && position.getTotalShares() > 0
+                        && position.unrealizedPnl().compareTo(BigDecimal.ZERO) > 0;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Sell " + count + " profitable position(s) at market?";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no profitable open positions to sell at market.";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Each strategy will submit a manual market sell for immediate market execution."
+                        + "<br>Final fill prices can vary from quotes due to market movement and liquidity.";
+            }
         };
 
         private final String menuLabel;
@@ -220,6 +306,8 @@ final class PortfolioActionsSupport {
         abstract String confirmHeading(int count);
 
         abstract String emptyMessage();
+
+        abstract String confirmDetail();
 
         String menuLabel() {
             return menuLabel;
@@ -255,6 +343,28 @@ final class PortfolioActionsSupport {
             @Override
             String emptyMessage() {
                 return "There are no strategies with cancelable pending limit buy orders.";
+            }
+        },
+        CANCEL_PENDING_LIMIT_SELLS("Cancel All Pending Limit Sells") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return hasCancelablePendingLimitSell(entry);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Cancel pending limit sell orders for " + count + " cancelable strategy(ies)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Only pending limit sell orders will be canceled. Open positions remain open."
+                        + "<br>Matching strategies return to waiting-for-next-rule evaluation.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no strategies with cancelable pending limit sell orders.";
             }
         },
         REMOVE_INACTIVE_LIST("Remove Inactive List") {

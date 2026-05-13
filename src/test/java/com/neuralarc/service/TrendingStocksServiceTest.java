@@ -83,11 +83,11 @@ class TrendingStocksServiceTest {
             public JSONObject getMarketMovers(int top) {
                 return new JSONObject()
                         .put("gainers", new JSONArray()
-                                .put(new JSONObject().put("symbol", "PENNY").put("price", "1.25").put("percent_change", "40"))
-                                .put(new JSONObject().put("symbol", "NVDA").put("price", "125").put("percent_change", "8")))
+                                .put(new JSONObject().put("symbol", "PENNY").put("price", "1.25").put("percent_change", "40").put("volume", "50000"))
+                                .put(new JSONObject().put("symbol", "NVDA").put("price", "125").put("percent_change", "8").put("volume", "500000")))
                         .put("losers", new JSONArray()
-                                .put(new JSONObject().put("symbol", "CHEAP").put("price", "2.00").put("percent_change", "-30"))
-                                .put(new JSONObject().put("symbol", "MSFT").put("price", "410").put("percent_change", "-5")));
+                                .put(new JSONObject().put("symbol", "CHEAP").put("price", "2.00").put("percent_change", "-30").put("volume", "75000"))
+                                .put(new JSONObject().put("symbol", "MSFT").put("price", "410").put("percent_change", "-5").put("volume", "300000")));
             }
 
             @Override
@@ -100,6 +100,32 @@ class TrendingStocksServiceTest {
 
         assertEquals(List.of("NVDA"), groups.gainers().stream().map(TrendingStock::symbol).toList());
         assertEquals(List.of("MSFT"), groups.losers().stream().map(TrendingStock::symbol).toList());
+    }
+
+    @Test
+    void topGainersAndLosersFiltersStocksBelowMinimumVolumeThreshold() throws Exception {
+        TrendingStocksService service = new TrendingStocksService(new AlpacaScreenerClient() {
+            @Override
+            public JSONObject getMarketMovers(int top) {
+                return new JSONObject()
+                        .put("gainers", new JSONArray()
+                                .put(new JSONObject().put("symbol", "LOWVOL").put("price", "50.00").put("percent_change", "10").put("volume", "100000"))
+                                .put(new JSONObject().put("symbol", "HIGHVOL").put("price", "150.00").put("percent_change", "5").put("volume", "500000")))
+                        .put("losers", new JSONArray()
+                                .put(new JSONObject().put("symbol", "LOWVOL2").put("price", "40.00").put("percent_change", "-8").put("volume", "150000"))
+                                .put(new JSONObject().put("symbol", "HIGHVOL2").put("price", "200.00").put("percent_change", "-3").put("volume", "600000")));
+            }
+
+            @Override
+            public JSONObject getMostActives(String by, int top) {
+                return new JSONObject();
+            }
+        });
+
+        var groups = service.topGainersAndLosers(10);
+
+        assertEquals(List.of("HIGHVOL"), groups.gainers().stream().map(TrendingStock::symbol).toList());
+        assertEquals(List.of("HIGHVOL2"), groups.losers().stream().map(TrendingStock::symbol).toList());
     }
 
     private TrendingStock stock(String symbol, String score) {

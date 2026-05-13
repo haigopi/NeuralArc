@@ -44,6 +44,16 @@ public final class StrategyTablePresenter {
             boolean waitingForFill,
             boolean queueableSessionError
     ) {
+        return displayStatusLabel(strategy, null, marketClosedSuppressed, waitingForFill, queueableSessionError);
+    }
+
+    public String displayStatusLabel(
+            Strategy strategy,
+            Position position,
+            boolean marketClosedSuppressed,
+            boolean waitingForFill,
+            boolean queueableSessionError
+    ) {
         if (strategy == null) {
             return "";
         }
@@ -83,6 +93,10 @@ public final class StrategyTablePresenter {
             }
         }
         String lifecycle = formatLifecycleStateForDisplay(strategy.currentState());
+        String normalizedStatus = BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus());
+        if (strategy.status() == StrategyStatus.ACTIVE && isBrokerUnavailableStatus(normalizedStatus)) {
+            return lifecycle + " (Retrying: Unable to reach broker)";
+        }
         if (strategy.status() == StrategyStatus.ACTIVE
                 && waitingForFill
                 && strategy.latestOrderStatus() != null
@@ -90,9 +104,32 @@ public final class StrategyTablePresenter {
             return lifecycle + " (" + BrokerOrderStatusUtil.displayLabel(strategy.latestOrderStatus()) + ")";
         }
         if (strategy.status() == StrategyStatus.ACTIVE && isWaitingForNextRule(strategy.currentState())) {
-            return lifecycle + " - Waiting on next rule";
+            String activeRule = resolveActiveRuleLabel(strategy, position);
+            return (activeRule.isBlank() ? lifecycle : activeRule) + " - Waiting on next rule";
         }
         return lifecycle;
+    }
+
+    private String resolveActiveRuleLabel(Strategy strategy, Position position) {
+        if (!isProfitablePosition(position) && (position == null || position.getTotalShares() <= 0)) {
+            return "";
+        }
+        if (strategy.currentState() == StrategyLifecycleState.PROFIT_HOLD_ACTIVE && strategy.profitHoldEnabled()) {
+            return "Profit Hold Active";
+        }
+        if (isProfitablePosition(position) && strategy.targetSellEnabled()) {
+            return "Sell Trigger Active";
+        }
+        if (strategy.automatedStopLossEnabled()) {
+            return "Stop Loss Active";
+        }
+        return "";
+    }
+
+    private boolean isProfitablePosition(Position position) {
+        return position != null
+                && position.getTotalShares() > 0
+                && position.unrealizedPnl().compareTo(BigDecimal.ZERO) > 0;
     }
 
     private boolean isWaitingForNextRule(StrategyLifecycleState state) {
@@ -101,6 +138,10 @@ public final class StrategyTablePresenter {
                 || state == StrategyLifecycleState.BUY_LIMIT_2_FILLED
                 || state == StrategyLifecycleState.STOP_LOSS_ACTIVE
                 || state == StrategyLifecycleState.PROFIT_HOLD_ACTIVE;
+    }
+
+    private boolean isBrokerUnavailableStatus(String normalizedStatus) {
+        return "failed_transport".equals(normalizedStatus) || "api_error".equals(normalizedStatus);
     }
 
     public Object valueAt(
@@ -127,9 +168,55 @@ public final class StrategyTablePresenter {
             case 1 -> statusLabel;
             case 7 -> strategy.pollingIntervalSeconds();
             case 8 -> brokerModeLabel;
-            case 9 -> statusLabel;
+            case 9 -> entrySource(strategy);
+            case 10 -> exitSource(strategy);
+            case 11 -> statusLabel;
             default -> "";
         };
+    }
+
+
+    private String entrySource(Strategy strategy) {
+        if (strategy == null) {
+            return "-";
+        }
+        String name = strategy.name() == null ? "" : strategy.name().toLowerCase();
+        String event = strategy.lastEvent() == null ? "" : strategy.lastEvent().toLowerCase();
+        if (event.contains("synced from alpaca remote state")) {
+            return "Broker Synced";
+        }
+        if (name.contains("i_am_feeling_lucky") || event.contains("i am feeling lucky")) {
+            if (event.contains("gainer")) {
+                return "Lucky (Gainers)";
+            }
+            if (event.contains("loser")) {
+                return "Lucky (Losers)";
+            }
+            return "Lucky";
+        }
+        return "Manually Added";
+    }
+
+    private String exitSource(Strategy strategy) {
+        if (strategy == null) {
+            return "-";
+        }
+        String rule = strategy.lastTriggeredRuleType();
+        if (rule == null || rule.isBlank()) {
+            String event = strategy.lastEvent() == null ? "" : strategy.lastEvent().toLowerCase();
+            if (event.contains("synced from alpaca remote state")
+                    && strategy.status() != StrategyStatus.ACTIVE) {
+                return "Broker Direct";
+            }
+            return "-";
+        }
+        if ("MANUAL_EXIT".equalsIgnoreCase(rule)) {
+            return "Manual Exit";
+        }
+        if ("REMOTE_SYNC".equalsIgnoreCase(rule)) {
+            return "Broker Direct";
+        }
+        return "System Exit (" + rule + ")";
     }
 
     private String displayPrice(Position position, BigDecimal lastSellPrice) {

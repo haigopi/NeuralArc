@@ -102,8 +102,10 @@ public class TrendingStocksService {
 
     private static List<TrendingStock> selectMovers(JSONArray array, String reason, int limit) {
         List<TrendingStock> all = parseMoverList(array, reason);
+        BigDecimal minVolume = new BigDecimal("200000");
         List<TrendingStock> filtered = all.stream()
                 .filter(stock -> stock.latestPrice().compareTo(new BigDecimal("5.00")) >= 0)
+                .filter(stock -> stock.volume().compareTo(minVolume) >= 0)
                 .sorted(Comparator.comparing(TrendingStocksService::techPreferenceScore).reversed()
                         .thenComparing(TrendingStock::trendingScore, Comparator.reverseOrder())
                         .thenComparing(TrendingStock::symbol))
@@ -113,6 +115,7 @@ public class TrendingStocksService {
             return filtered;
         }
         return all.stream()
+                .filter(stock -> stock.volume().compareTo(minVolume) >= 0)
                 .sorted(Comparator.comparing(TrendingStocksService::techPreferenceScore).reversed()
                         .thenComparing(TrendingStock::trendingScore, Comparator.reverseOrder())
                         .thenComparing(TrendingStock::symbol))

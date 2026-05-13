@@ -4,6 +4,7 @@ import com.neuralarc.analytics.AnalyticsEvent;
 import com.neuralarc.model.BrokerType;
 import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.Position;
+import com.neuralarc.model.SellSubmissionType;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
@@ -193,12 +194,22 @@ public final class StrategyActionsController {
             return;
         }
 
+        Optional<SellSubmissionType> selection = gateway.chooseSellSubmissionType(strategy);
+        if (selection.isEmpty()) {
+            actionLog.canceled("Sell Position " + strategy.symbol());
+            return;
+        }
+        SellSubmissionType submissionType = selection.get();
+
         String restartMessage = strategy.restartAfterExitEnabled()
                 ? "After the position fully closes, the strategy can re-initiate its cycle automatically."
                 : "After the position fully closes, the strategy will remain completed unless you restart it manually.";
+        String executionDetail = submissionType == SellSubmissionType.MARKET
+                ? "This submits a manual market sell on Alpaca. Fill price can differ from the latest quote due to market movement."
+                : "This submits a manual limit sell on Alpaca using the latest broker price.";
         String message = "<html><body style='width:340px'>"
                 + "<b>Sell the current " + strategy.symbol() + " position now?</b><br><br>"
-                + "This submits a manual limit sell on Alpaca using the latest broker price.<br><br>"
+                + executionDetail + "<br><br>"
                 + restartMessage
                 + "</body></html>";
         int choice = gateway.confirm(
@@ -215,15 +226,15 @@ public final class StrategyActionsController {
         actionLog.started("Sell Position " + strategy.symbol());
         gateway.runBackgroundTask(
                 () -> {
-                    StrategyService.StrategyCreationResult result = gateway.sellPosition(strategy);
+                    StrategyService.StrategyCreationResult result = gateway.sellPosition(strategy, submissionType);
                     if (!result.success()) {
                         throw new IllegalStateException(result.error());
                     }
                 },
                 () -> {
                     gateway.findStrategyById(strategy.id()).ifPresent(entry::syncFrom);
-                    gateway.log("Manual sell order submitted for symbol " + strategy.symbol());
-                    actionLog.completed("Sell Position " + strategy.symbol(), "Manual sell order submitted.");
+                    gateway.log("Manual " + submissionType.name().toLowerCase() + " sell order submitted for symbol " + strategy.symbol());
+                    actionLog.completed("Sell Position " + strategy.symbol(), "Manual " + submissionType.name().toLowerCase() + " sell order submitted.");
                 },
                 ex -> {
                     actionLog.failed("Sell Position " + strategy.symbol(), ex.getMessage());
@@ -266,8 +277,12 @@ public final class StrategyActionsController {
                 + "• Status: " + statusLabel + "<br>"
                 + "• Mode: " + modeLabel + "<br>"
                 + positionNote + "<br><br>"
-                + "This will immediately stop polling and permanently remove the strategy from saved data.<br>"
-                + "This action <b>cannot be undone</b>."
+                + (strategy.status() == StrategyStatus.COMPLETED
+                    ? "This removes the strategy from Current Strategies and keeps history/order records.<br>"
+                    : "This will immediately stop polling and permanently remove the strategy from saved data.<br>")
+                + (strategy.status() == StrategyStatus.COMPLETED
+                    ? "You can still review this strategy in Trade History."
+                    : "This action <b>cannot be undone</b>.")
                 + "</body></html>";
         int choice = gateway.confirm(
                 message,
@@ -281,12 +296,31 @@ public final class StrategyActionsController {
         }
 
         actionLog.started("Delete Strategy " + strategy.symbol());
-        BigDecimal realizedAtDeletion = gateway.realizedPnlForStrategy(strategy.id());
-        gateway.addArchivedRealized(strategy.mode(), realizedAtDeletion);
-        gateway.strategyService().delete(strategy.id());
-        gateway.removeStrategyAt(row);
-        gateway.log("Deleted strategy for symbol " + strategy.symbol());
-        gateway.publishAnalytics(new AnalyticsEvent("STRATEGY_DELETED").put("symbol", strategy.symbol()));
+        if (strategy.status() == StrategyStatus.COMPLETED) {
+            StrategyService.ArchiveResult archiveResult = gateway.archiveStrategy(
+                    strategy.id(),
+                    "Archived from Current Strategies by delete action for completed strategy"
+            );
+            if (!archiveResult.success()) {
+                actionLog.failed("Delete Strategy " + strategy.symbol(), archiveResult.error());
+                gateway.showMessage(
+                        "Failed to remove completed strategy from Current Strategies: " + archiveResult.error(),
+                        "Remove Failed",
+                        JOptionPane.ERROR_MESSAGE
+                );
+                return;
+            }
+            gateway.syncStrategiesFromRepository();
+            gateway.log("Removed completed strategy from Current Strategies for symbol " + strategy.symbol());
+            gateway.publishAnalytics(new AnalyticsEvent("STRATEGY_ARCHIVED").put("symbol", strategy.symbol()));
+        } else {
+            BigDecimal realizedAtDeletion = gateway.realizedPnlForStrategy(strategy.id());
+            gateway.addArchivedRealized(strategy.mode(), realizedAtDeletion);
+            gateway.strategyService().delete(strategy.id());
+            gateway.removeStrategyAt(row);
+            gateway.log("Deleted strategy for symbol " + strategy.symbol());
+            gateway.publishAnalytics(new AnalyticsEvent("STRATEGY_DELETED").put("symbol", strategy.symbol()));
+        }
 
         if (gateway.strategiesSize() == 0) {
             gateway.setSelectedStrategyId(null);
@@ -343,7 +377,9 @@ public final class StrategyActionsController {
 
         Position loadPositionForStrategy(Strategy strategy);
         boolean hasOpenPosition(Strategy strategy);
-        StrategyService.StrategyCreationResult sellPosition(Strategy strategy);
+        StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason);
+        Optional<SellSubmissionType> chooseSellSubmissionType(Strategy strategy);
+        StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType);
         BigDecimal realizedPnlForStrategy(String strategyId);
         String closePaperAccountState(Strategy strategy);
 

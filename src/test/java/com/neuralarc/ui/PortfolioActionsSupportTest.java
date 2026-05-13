@@ -38,6 +38,100 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
+    void profitableIncludesCanceledSellPlacedOpenPositions() {
+        ManagedStrategy canceledSellPlaced = managed(
+                "AAPL",
+                StrategyStatus.ACTIVE,
+                StrategyLifecycleState.SELL_PLACED,
+                10,
+                new BigDecimal("100"),
+                new BigDecimal("110")
+        );
+        canceledSellPlaced.strategy.setLatestOrderStatus("cancelled");
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(canceledSellPlaced),
+                PortfolioActionsSupport.Scope.PROFITABLE
+        );
+
+        assertEquals(List.of("AAPL"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
+    void lossOnlyMarketTargetsOnlyLosingOpenPositions() {
+        ManagedStrategy losing = managed("AAPL", StrategyStatus.ACTIVE, 10, new BigDecimal("100"), new BigDecimal("90"));
+        ManagedStrategy profitable = managed("MSFT", StrategyStatus.ACTIVE, 10, new BigDecimal("100"), new BigDecimal("110"));
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(losing, profitable),
+                PortfolioActionsSupport.Scope.LOSS_ONLY_MARKET
+        );
+
+        assertEquals(1, targets.size());
+        assertEquals("AAPL", targets.getFirst().strategy.symbol());
+    }
+
+    @Test
+    void lossOnlyMarketIncludesCanceledSellPlacedOpenPositions() {
+        ManagedStrategy canceledSellPlaced = managed(
+                "AAPL",
+                StrategyStatus.ACTIVE,
+                StrategyLifecycleState.SELL_PLACED,
+                10,
+                new BigDecimal("100"),
+                new BigDecimal("90")
+        );
+        canceledSellPlaced.strategy.setLatestOrderStatus("cancelled");
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(canceledSellPlaced),
+                PortfolioActionsSupport.Scope.LOSS_ONLY_MARKET
+        );
+
+        assertEquals(List.of("AAPL"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
+    void lossOnlyIncludesCanceledSellPartiallyFilledOpenPositions() {
+        ManagedStrategy canceledSellPartial = managed(
+                "AAPL",
+                StrategyStatus.ACTIVE,
+                StrategyLifecycleState.SELL_PARTIALLY_FILLED,
+                10,
+                new BigDecimal("100"),
+                new BigDecimal("90")
+        );
+        canceledSellPartial.strategy.setLatestOrderStatus("canceled");
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(canceledSellPartial),
+                PortfolioActionsSupport.Scope.LOSS_ONLY
+        );
+
+        assertEquals(List.of("AAPL"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
+    void profitableExcludesSellPlacedWhenNotCanceled() {
+        ManagedStrategy activePendingSell = managed(
+                "AAPL",
+                StrategyStatus.ACTIVE,
+                StrategyLifecycleState.SELL_PLACED,
+                10,
+                new BigDecimal("100"),
+                new BigDecimal("110")
+        );
+        activePendingSell.strategy.setLatestOrderStatus("new");
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(activePendingSell),
+                PortfolioActionsSupport.Scope.PROFITABLE
+        );
+
+        assertTrue(targets.isEmpty());
+    }
+
+    @Test
     void allOpenExcludesCompletedStrategiesEvenWhenCachedPositionShowsShares() {
         ManagedStrategy completed = managed(
                 "AAPL",
@@ -73,6 +167,26 @@ class PortfolioActionsSupportTest {
         );
 
         assertTrue(targets.isEmpty());
+    }
+
+    @Test
+    void allOpenIncludesSellPlacedWhenLatestStatusIsCanceled() {
+        ManagedStrategy canceledSellPlaced = managed(
+                "AAPL",
+                StrategyStatus.ACTIVE,
+                StrategyLifecycleState.SELL_PLACED,
+                10,
+                new BigDecimal("100"),
+                new BigDecimal("110")
+        );
+        canceledSellPlaced.strategy.setLatestOrderStatus("canceled");
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(canceledSellPlaced),
+                PortfolioActionsSupport.Scope.ALL_OPEN
+        );
+
+        assertEquals(List.of("AAPL"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
     }
 
     @Test
@@ -154,6 +268,50 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
+    void cancelPendingLimitSellsTargetsOnlyCancelablePendingSellStrategies() {
+        ManagedStrategy cancelableSellPlaced = managed(
+                "AAPL",
+                StrategyStatus.ACTIVE,
+                StrategyLifecycleState.SELL_PLACED,
+                0,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
+        );
+        ManagedStrategy cancelableSellPartial = managed(
+                "MSFT",
+                StrategyStatus.ACTIVE,
+                StrategyLifecycleState.SELL_PARTIALLY_FILLED,
+                0,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
+        );
+        ManagedStrategy notCancelableBuyPlaced = managed(
+                "TSLA",
+                StrategyStatus.ACTIVE,
+                StrategyLifecycleState.BASE_BUY_PLACED,
+                0,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
+        );
+        ManagedStrategy paused = managed(
+                "NVDA",
+                StrategyStatus.PAUSED,
+                StrategyLifecycleState.SELL_PLACED,
+                0,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
+        );
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(cancelableSellPlaced, cancelableSellPartial, notCancelableBuyPlaced, paused),
+                PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_SELLS
+        );
+
+        assertEquals(2, targets.size());
+        assertEquals(List.of("AAPL", "MSFT"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
     void promoteAllTargetsActiveAndPausedPaperStrategiesOnly() {
         ManagedStrategy activePaper = managed("AAPL", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
         ManagedStrategy pausedPaper = managed("MSFT", StrategyStatus.PAUSED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
@@ -195,6 +353,28 @@ class PortfolioActionsSupportTest {
 
         assertTrue(message.contains("Cancel pending limit buy orders"));
         assertTrue(message.contains("Open positions and sell orders are not closed"));
+    }
+
+    @Test
+    void marketLosingConfirmationIncludesMarketExecutionWarning() {
+        String message = support.buildConfirmationMessage(
+                PortfolioActionsSupport.Scope.LOSS_ONLY_MARKET,
+                List.of(managed("AAPL", StrategyStatus.ACTIVE, 1, new BigDecimal("100"), new BigDecimal("95")))
+        );
+
+        assertTrue(message.contains("manual market sell"));
+        assertTrue(message.contains("can vary"));
+    }
+
+    @Test
+    void cancelPendingLimitSellsConfirmationUsesSpecificDescription() {
+        String message = support.buildConfirmationMessage(
+                PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_SELLS,
+                List.of(managed("AAPL", StrategyStatus.ACTIVE, StrategyLifecycleState.SELL_PLACED, 0, BigDecimal.ZERO, BigDecimal.ZERO))
+        );
+
+        assertTrue(message.contains("Cancel pending limit sell orders"));
+        assertTrue(message.contains("Open positions remain open"));
     }
 
     @Test

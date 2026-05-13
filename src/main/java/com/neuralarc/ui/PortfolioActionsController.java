@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.model.SellSubmissionType;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.service.StrategyService;
@@ -21,7 +22,7 @@ final class PortfolioActionsController {
         StrategyService strategyService();
         StrategyService strategyServiceForMode(StrategyMode mode);
         StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason);
-        StrategyService.StrategyCreationResult sellPosition(Strategy strategy);
+        StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType);
         JMenuItem createMenuItem(String text, String iconPath, Runnable action);
         int confirm(Object message, String title, int optionType, int messageType);
         void showMessage(Object message, String title, int messageType);
@@ -52,15 +53,25 @@ final class PortfolioActionsController {
                 BorderFactory.createLineBorder(new Color(70, 76, 90), 1, true),
                 new EmptyBorder(4, 4, 4, 4)
         ));
+        menu.add(sectionHeader("Sell Actions"));
         menu.add(gateway.createMenuItem("Sell Profitable Positions", "icons/submit.svg",
-                () -> handleSellAction(PortfolioActionsSupport.Scope.PROFITABLE)));
+                () -> handleSellAction(PortfolioActionsSupport.Scope.PROFITABLE, SellSubmissionType.LIMIT)));
         menu.add(gateway.createMenuItem("Sell All Open Positions", "icons/close.svg",
-                () -> handleSellAction(PortfolioActionsSupport.Scope.ALL_OPEN)));
+                () -> handleSellAction(PortfolioActionsSupport.Scope.ALL_OPEN, SellSubmissionType.LIMIT)));
         menu.add(gateway.createMenuItem("Sell Losing Positions", "icons/delete.svg",
-                () -> handleSellAction(PortfolioActionsSupport.Scope.LOSS_ONLY)));
+                () -> handleSellAction(PortfolioActionsSupport.Scope.LOSS_ONLY, SellSubmissionType.LIMIT)));
+        menu.add(gateway.createMenuItem("Sell All Profitable Positions at Market Value", "icons/submit.svg",
+                () -> handleSellAction(PortfolioActionsSupport.Scope.PROFITABLE_MARKET, SellSubmissionType.MARKET)));
+        menu.add(gateway.createMenuItem("Sell All Losing Positions at Market Value", "icons/delete.svg",
+                () -> handleSellAction(PortfolioActionsSupport.Scope.LOSS_ONLY_MARKET, SellSubmissionType.MARKET)));
         menu.addSeparator();
+        menu.add(sectionHeader("Order Cleanup"));
         menu.add(gateway.createMenuItem("Cancel All Pending Limit Buys", "icons/close.svg",
                 this::handleCancelAllPendingLimitBuys));
+        menu.add(gateway.createMenuItem("Cancel All Pending Limit Sells", "icons/close.svg",
+                this::handleCancelAllPendingLimitSells));
+        menu.addSeparator();
+        menu.add(sectionHeader("Lifecycle"));
         menu.add(gateway.createMenuItem("Clean All Expired", "icons/delete.svg",
                 this::handleCleanAllExpired));
         menu.add(gateway.createMenuItem("Reposition Expired", "icons/submit.svg",
@@ -71,6 +82,12 @@ final class PortfolioActionsController {
                 this::handlePromoteAllToLive));
         menu.show(anchor, 0, anchor.getHeight());
         gateway.actionCompleted("Portfolio Actions", "Menu opened.");
+    }
+
+    private JMenuItem sectionHeader(String text) {
+        JMenuItem header = new JMenuItem(text);
+        header.setEnabled(false);
+        return header;
     }
 
     private void handleCancelAllPendingLimitBuys() {
@@ -104,6 +121,52 @@ final class PortfolioActionsController {
                             successes.add(entry.strategy.symbol() + " (" + result.canceledCount() + ")");
                         } else {
                             skipped.add(entry.strategy.symbol() + ": no pending limit buy orders were cancelable");
+                        }
+                    } else {
+                        failures.add(entry.strategy.symbol() + ": " + result.error());
+                    }
+                }
+                return new PortfolioActionsSupport.BatchResult(successes, failures, skipped);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    private void handleCancelAllPendingLimitSells() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_SELLS;
+        List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), action);
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                List<String> successes = new ArrayList<>();
+                List<String> failures = new ArrayList<>();
+                List<String> skipped = new ArrayList<>();
+                if (gateway.strategyService() == null) {
+                    for (ManagedStrategy entry : targets) {
+                        failures.add(entry.strategy.symbol() + ": strategy service is not configured");
+                    }
+                    return new PortfolioActionsSupport.BatchResult(successes, failures);
+                }
+                for (ManagedStrategy entry : targets) {
+                    StrategyService modeAwareService = gateway.strategyServiceForMode(entry.strategy.mode());
+                    if (modeAwareService == null) {
+                        failures.add(entry.strategy.symbol() + ": broker client is not configured for " + entry.strategy.mode().name());
+                        continue;
+                    }
+                    StrategyService.LimitSellCancelResult result = modeAwareService.cancelPendingLimitSells(entry.strategy.id());
+                    if (result.success()) {
+                        if (result.canceledCount() > 0) {
+                            successes.add(entry.strategy.symbol() + " (" + result.canceledCount() + ")");
+                        } else {
+                            skipped.add(entry.strategy.symbol() + ": no pending limit sell orders were cancelable");
                         }
                     } else {
                         failures.add(entry.strategy.symbol() + ": " + result.error());
@@ -308,7 +371,7 @@ final class PortfolioActionsController {
         }
     }
 
-    private void handleSellAction(PortfolioActionsSupport.Scope scope) {
+    private void handleSellAction(PortfolioActionsSupport.Scope scope, SellSubmissionType submissionType) {
         List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), scope);
         if (targets.isEmpty()) {
             gateway.actionSkipped(scope.menuLabel(), scope.emptyMessage());
@@ -333,7 +396,7 @@ final class PortfolioActionsController {
                 List<String> successes = new ArrayList<>();
                 List<String> failures = new ArrayList<>();
                 for (ManagedStrategy entry : targets) {
-                    StrategyService.StrategyCreationResult result = gateway.sellPosition(entry.strategy);
+                    StrategyService.StrategyCreationResult result = gateway.sellPosition(entry.strategy, submissionType);
                     if (result.success()) {
                         successes.add(entry.strategy.symbol());
                     } else {

@@ -1,28 +1,25 @@
 package com.neuralarc.ui;
 
-import com.neuralarc.model.Position;
 import com.neuralarc.model.Strategy;
-import com.neuralarc.util.FontLoader;
 
 import javax.swing.table.AbstractTableModel;
-import java.awt.Font;
 import java.util.List;
 import java.util.function.Function;
 
 final class StrategyGridTableModel extends AbstractTableModel {
     static final String[] COLUMNS = {
             "Symbol", "Status", "Shares", "Avg Cost", "Stock Price", "Market Value",
-            "P&L", "Polling", "Broker + Mode", "Actions"
+            "P&L", "Polling", "Broker + Mode", "Entry Source", "Exit Source", "Actions"
     };
 
     private final List<ManagedStrategy> strategies;
-    private final Function<Strategy, String> statusLabelFn;
+    private final Function<ManagedStrategy, String> statusLabelFn;
     private final Function<Strategy, String> brokerModeLabelFn;
     private final StrategyTablePresenter strategyTablePresenter;
 
     StrategyGridTableModel(
             List<ManagedStrategy> strategies,
-            Function<Strategy, String> statusLabelFn,
+            Function<ManagedStrategy, String> statusLabelFn,
             Function<Strategy, String> brokerModeLabelFn,
             StrategyTablePresenter strategyTablePresenter
     ) {
@@ -39,7 +36,7 @@ final class StrategyGridTableModel extends AbstractTableModel {
     @Override
     public Object getValueAt(int rowIndex, int columnIndex) {
         ManagedStrategy entry = strategies.get(rowIndex);
-        String statusLabel = statusLabelFn.apply(entry.strategy);
+        String statusLabel = statusLabelFn.apply(entry);
         return strategyTablePresenter.valueAt(
                 entry.strategy,
                 entry.cachedPosition(),

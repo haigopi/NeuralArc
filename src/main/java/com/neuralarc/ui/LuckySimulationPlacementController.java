@@ -110,8 +110,12 @@ public class LuckySimulationPlacementController {
         Strategy strategy = Strategy.fromConfig(UUID.randomUUID().toString(), luckyStrategyName(selection.stock().symbol()), config, StrategyMode.PAPER);
         strategy.setStatus(StrategyStatus.CREATED);
         strategy.setCurrentState(StrategyLifecycleState.CREATED);
+        String stockReason = selection.stock().reason() == null || selection.stock().reason().isBlank()
+                ? "lucky-simulation"
+                : selection.stock().reason();
         strategy.setLastEvent("Alpaca Paper mode from I Am Feeling Lucky. Selected "
                 + selection.selectedRecommendationType().name()
+                + ". Source " + stockReason
                 + ". Base limit buy $" + recommendation.baseBuyPrice().toPlainString()
                 + ".");
         strategy.setLatestOrderStatus("PAPER_PENDING");

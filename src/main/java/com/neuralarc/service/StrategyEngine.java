@@ -568,6 +568,18 @@ public class StrategyEngine {
         );
         if (order.status() == StrategyOrderStatus.REJECTED || order.status() == StrategyOrderStatus.FAILED) {
             orderRepository.save(order);
+            String normalizedSubmittedStatus = BrokerOrderStatusUtil.normalize(submitted.status());
+            if (isRetryableBrokerConnectivityFailure(normalizedSubmittedStatus)) {
+                strategy.setLastError("Unable to reach broker. Retrying position.");
+                strategy.setLatestOrderStatus(normalizedSubmittedStatus);
+                strategy.setLatestAlpacaOrderId("");
+                stateMachine.transition(strategy, strategy.currentState(),
+                        StrategyEventType.ORDER_STATUS_UPDATED,
+                        "Unable to reach broker; retrying order submission",
+                        submitted.rawJson());
+                strategyRepository.save(strategy);
+                return order;
+            }
             String failureMessage = failureMessage(submitted.rawJson(), stage);
             if (isQueueableSessionRejection(submitted.rawJson())) {
                 strategy.clearLastError();
@@ -642,6 +654,18 @@ public class StrategyEngine {
         );
         if (order.status() == StrategyOrderStatus.REJECTED || order.status() == StrategyOrderStatus.FAILED) {
             orderRepository.save(order);
+            String normalizedSubmittedStatus = BrokerOrderStatusUtil.normalize(submitted.status());
+            if (isRetryableBrokerConnectivityFailure(normalizedSubmittedStatus)) {
+                strategy.setLastError("Unable to reach broker. Retrying position.");
+                strategy.setLatestOrderStatus(normalizedSubmittedStatus);
+                strategy.setLatestAlpacaOrderId("");
+                stateMachine.transition(strategy, strategy.currentState(),
+                        StrategyEventType.ORDER_STATUS_UPDATED,
+                        "Unable to reach broker; retrying order submission",
+                        submitted.rawJson());
+                strategyRepository.save(strategy);
+                return order;
+            }
             String failureMessage = failureMessage(submitted.rawJson(), stage);
             if (isQueueableSessionRejection(submitted.rawJson())) {
                 strategy.clearLastError();
@@ -734,6 +758,18 @@ public class StrategyEngine {
         );
         if (order.status() == StrategyOrderStatus.REJECTED || order.status() == StrategyOrderStatus.FAILED) {
             orderRepository.save(order);
+            String normalizedSubmittedStatus = BrokerOrderStatusUtil.normalize(submitted.status());
+            if (isRetryableBrokerConnectivityFailure(normalizedSubmittedStatus)) {
+                strategy.setLastError("Unable to reach broker. Retrying position.");
+                strategy.setLatestOrderStatus(normalizedSubmittedStatus);
+                strategy.setLatestAlpacaOrderId("");
+                stateMachine.transition(strategy, strategy.currentState(),
+                        StrategyEventType.ORDER_STATUS_UPDATED,
+                        "Unable to reach broker; retrying order submission",
+                        submitted.rawJson());
+                strategyRepository.save(strategy);
+                return order;
+            }
             String failureMessage = failureMessage(submitted.rawJson(), StrategyStage.PROFIT_EXIT);
             if (isQueueableSessionRejection(submitted.rawJson())) {
                 strategy.clearLastError();
@@ -776,6 +812,10 @@ public class StrategyEngine {
 
     private boolean hasPendingOrFilledStage(List<StrategyOrder> orders, StrategyStage stage) {
         return orders.stream().anyMatch(order -> order.stage() == stage && (order.isPending() || order.status() == StrategyOrderStatus.FILLED));
+    }
+
+    private boolean isRetryableBrokerConnectivityFailure(String normalizedStatus) {
+        return "failed_transport".equals(normalizedStatus) || "api_error".equals(normalizedStatus);
     }
 
     private boolean hasPendingStage(List<StrategyOrder> orders, StrategyStage stage) {

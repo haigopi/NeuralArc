@@ -3,6 +3,7 @@ package com.neuralarc.ui;
 import com.neuralarc.analytics.AnalyticsEvent;
 import com.neuralarc.model.BrokerType;
 import com.neuralarc.model.Position;
+import com.neuralarc.model.SellSubmissionType;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
@@ -17,6 +18,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class StrategyActionsControllerTest {
     @Test
@@ -76,7 +78,7 @@ class StrategyActionsControllerTest {
 
         assertEquals(1, gateway.confirmCalls);
         assertEquals(1, gateway.backgroundTasksRun);
-        assertEquals(1, gateway.refreshRowCalls);
+        assertEquals(2, gateway.refreshRowCalls);
     }
 
     @Test
@@ -142,6 +144,47 @@ class StrategyActionsControllerTest {
         assertEquals(0, gateway.confirmCalls);
     }
 
+    @Test
+    void sellPositionReturnsEarlyWhenSubmissionTypeSelectionIsCanceled() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        gateway.openPosition = true;
+        gateway.sellSelection = Optional.empty();
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.sellPosition(0);
+
+        assertEquals(0, gateway.confirmCalls);
+        assertEquals(0, gateway.backgroundTasksRun);
+        assertNull(gateway.lastSellSubmissionType);
+    }
+
+    @Test
+    void sellPositionSubmitsSelectedMarketOrderType() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        gateway.openPosition = true;
+        gateway.sellSelection = Optional.of(SellSubmissionType.MARKET);
+        gateway.confirmResult = JOptionPane.YES_OPTION;
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.sellPosition(0);
+
+        assertEquals(1, gateway.confirmCalls);
+        assertEquals(1, gateway.backgroundTasksRun);
+        assertEquals(SellSubmissionType.MARKET, gateway.lastSellSubmissionType);
+    }
+
+    @Test
+    void deleteCompletedStrategyArchivesWithoutHardDelete() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.COMPLETED));
+        gateway.confirmResult = JOptionPane.YES_OPTION;
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.deleteStrategy(0);
+
+        assertEquals(1, gateway.archiveCalls);
+        assertEquals(0, gateway.removeCalls);
+    }
+
     private static Strategy baseStrategy(StrategyMode mode, StrategyStatus status) {
         Strategy strategy = new Strategy(
                 UUID.randomUUID().toString(),
@@ -190,6 +233,10 @@ class StrategyActionsControllerTest {
         int confirmResult = JOptionPane.NO_OPTION;
         boolean marketOpen = true;
         boolean openPosition;
+        Optional<SellSubmissionType> sellSelection = Optional.of(SellSubmissionType.LIMIT);
+        SellSubmissionType lastSellSubmissionType;
+        int archiveCalls;
+        int removeCalls;
 
         private FakeGateway(Strategy strategy) {
             this.entry = new StrategyActionsController.ActionEntry() {
@@ -220,7 +267,17 @@ class StrategyActionsControllerTest {
         @Override public void resetPollingCountdown(String strategyId) { }
         @Override public Position loadPositionForStrategy(Strategy strategy) { return new Position(strategy.symbol()); }
         @Override public boolean hasOpenPosition(Strategy strategy) { return openPosition; }
-        @Override public StrategyService.StrategyCreationResult sellPosition(Strategy strategy) { return StrategyService.StrategyCreationResult.failed("not-used"); }
+        @Override
+        public StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason) {
+            archiveCalls++;
+            return StrategyService.ArchiveResult.success(strategyId);
+        }
+        @Override public Optional<SellSubmissionType> chooseSellSubmissionType(Strategy strategy) { return sellSelection; }
+        @Override
+        public StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType) {
+            lastSellSubmissionType = submissionType;
+            return StrategyService.StrategyCreationResult.success(strategy.id(), "ord", "alpaca", "client");
+        }
         @Override public BigDecimal realizedPnlForStrategy(String strategyId) { return BigDecimal.ZERO; }
         @Override public String closePaperAccountState(Strategy strategy) { return ""; }
         @Override public void updateHeaderModeStatus(BrokerType brokerType) { }
@@ -229,7 +286,7 @@ class StrategyActionsControllerTest {
         @Override public boolean marketOpenForUi() { return marketOpen; }
         @Override public void setSelectedStrategyId(String strategyId) { }
         @Override public String selectedStrategyId() { return null; }
-        @Override public void removeStrategyAt(int modelRow) { }
+        @Override public void removeStrategyAt(int modelRow) { removeCalls++; }
         @Override public void addArchivedRealized(StrategyMode mode, BigDecimal amount) { }
         @Override public void log(String message) { }
         @Override public void publishAnalytics(AnalyticsEvent event) { }
@@ -242,6 +299,14 @@ class StrategyActionsControllerTest {
         @Override
         public void runBackgroundTask(StrategyActionsController.ThrowingRunnable background, Runnable onSuccess, java.util.function.Consumer<Exception> onFailure, Runnable onFinally) {
             backgroundTasksRun++;
+            try {
+                background.run();
+                onSuccess.run();
+            } catch (Exception ex) {
+                onFailure.accept(ex);
+            } finally {
+                onFinally.run();
+            }
         }
     }
 }

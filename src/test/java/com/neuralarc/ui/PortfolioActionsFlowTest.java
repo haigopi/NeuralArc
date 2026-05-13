@@ -192,6 +192,13 @@ class PortfolioActionsFlowTest {
         assertTrue(msg.contains("open"), "ALL_OPEN emptyMessage should reference 'open'");
     }
 
+    @Test
+    void lossOnlyMarketScopeEmptyMessageMentionsMarketAndLosing() {
+        String msg = PortfolioActionsSupport.Scope.LOSS_ONLY_MARKET.emptyMessage().toLowerCase();
+        assertTrue(msg.contains("losing"), "LOSS_ONLY_MARKET emptyMessage should reference 'losing'");
+        assertTrue(msg.contains("market"), "LOSS_ONLY_MARKET emptyMessage should reference 'market'");
+    }
+
     // ---- Result message surface area ----
 
     @Test
@@ -236,6 +243,18 @@ class PortfolioActionsFlowTest {
         assertTrue(message.contains("2"), "Confirmation heading should include the target count");
         assertTrue(message.contains("AAPL"));
         assertTrue(message.contains("MSFT"));
+    }
+
+    @Test
+    void marketLosingConfirmationMentionsManualMarketExecution() {
+        List<ManagedStrategy> targets = List.of(
+                managed("AAPL", 1, new BigDecimal("100"), new BigDecimal("90"))
+        );
+
+        String message = support.buildConfirmationMessage(PortfolioActionsSupport.Scope.LOSS_ONLY_MARKET, targets);
+
+        assertTrue(message.contains("manual market sell"));
+        assertTrue(message.contains("vary"));
     }
 
     @Test

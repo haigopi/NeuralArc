@@ -42,7 +42,7 @@ public final class StrategyActionsPresenter {
                 : status == StrategyStatus.STOPPED
                 ? "Stopped"
                 : paused
-                ? (!state.hasPosition() || state.manuallyCanceled()) ? "Place Limit Buy Again" : "Resume"
+                ? (state.hasPosition() ? "Resume" : "Place Limit Buy Again")
                 : "Cancel";
 
         Color toggleColor = busy || !actionableToggle

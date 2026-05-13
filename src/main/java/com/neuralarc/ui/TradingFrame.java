@@ -209,6 +209,31 @@ public class TradingFrame extends JFrame {
     private final HistoryGridTableModel filledOrdersTableModel = new HistoryGridTableModel(filledOrderRows);
     private final JTable strategyTable = new JTable(strategyTableModel) {
         @Override
+        public String getToolTipText(java.awt.event.MouseEvent event) {
+            int viewRow = rowAtPoint(event.getPoint());
+            int viewCol = columnAtPoint(event.getPoint());
+            if (viewRow < 0 || viewCol < 0) {
+                return null;
+            }
+            int modelRow = convertRowIndexToModel(viewRow);
+            if (modelRow < 0 || modelRow >= strategies.size() || viewCol != 1) {
+                return null;
+            }
+            Strategy strategy = strategies.get(modelRow).strategy;
+            String normalized = BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus());
+            if (!"rejected".equals(normalized)) {
+                return null;
+            }
+            String reason = strategy.lastError() == null || strategy.lastError().isBlank()
+                    ? "Broker rejected this order. Review configuration and submit again."
+                    : strategy.lastError();
+            return TooltipStyler.html(
+                    "<b style='color:#ff6b6b;'>Rejected - action required</b><br>" + escapeHtml(reason),
+                    360
+            );
+        }
+
+        @Override
         public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
             Component c = super.prepareRenderer(renderer, row, column);
             // Force the custom selection colour even on macOS Aqua LAF, which otherwise
@@ -355,7 +380,10 @@ public class TradingFrame extends JFrame {
                 }
                 return strategyService.archiveStrategy(strategyId, reason);
             }
-            @Override public StrategyService.StrategyCreationResult sellPosition(Strategy strategy) { return TradingFrame.this.sellPosition(strategy); }
+            @Override
+            public StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType) {
+                return TradingFrame.this.sellPosition(strategy, submissionType);
+            }
             @Override public JMenuItem createMenuItem(String text, String iconPath, Runnable action) { return TradingFrame.this.createStatusMenuItem(text, iconPath, action); }
             @Override public int confirm(Object message, String title, int optionType, int messageType) {
                 return JOptionPane.showConfirmDialog(TradingFrame.this, message, title, optionType, messageType);
@@ -443,7 +471,43 @@ public class TradingFrame extends JFrame {
 
             @Override public Position loadPositionForStrategy(Strategy strategy) { return TradingFrame.this.loadPositionForStrategy(strategy); }
             @Override public boolean hasOpenPosition(Strategy strategy) { return TradingFrame.this.loadPositionForStrategy(strategy).getTotalShares() > 0; }
-            @Override public StrategyService.StrategyCreationResult sellPosition(Strategy strategy) { return strategyService.closePosition(strategy.id()); }
+            @Override
+            public StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason) {
+                if (strategyService == null) {
+                    return StrategyService.ArchiveResult.failed("strategy service is not configured");
+                }
+                return strategyService.archiveStrategy(strategyId, reason);
+            }
+            @Override
+            public Optional<SellSubmissionType> chooseSellSubmissionType(Strategy strategy) {
+                Object[] options = {"Limit Sell", "Market Sell", "Cancel"};
+                String message = "<html><body style='width:360px'>"
+                        + "<b>Select sell submission type for " + strategy.symbol() + "</b><br><br>"
+                        + "<b>Limit Sell</b>: submits a limit order at the latest broker price.<br>"
+                        + "<b>Market Sell</b>: submits a market order for immediate execution at market prices."
+                        + "</body></html>";
+                int choice = JOptionPane.showOptionDialog(
+                        TradingFrame.this,
+                        message,
+                        "Sell Type — " + strategy.symbol(),
+                        JOptionPane.DEFAULT_OPTION,
+                        JOptionPane.QUESTION_MESSAGE,
+                        null,
+                        options,
+                        options[0]
+                );
+                if (choice == 0) {
+                    return Optional.of(SellSubmissionType.LIMIT);
+                }
+                if (choice == 1) {
+                    return Optional.of(SellSubmissionType.MARKET);
+                }
+                return Optional.empty();
+            }
+            @Override
+            public StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType) {
+                return TradingFrame.this.sellPosition(strategy, submissionType);
+            }
             @Override public BigDecimal realizedPnlForStrategy(String strategyId) { return TradingFrame.this.realizedPnlForStrategy(strategyId); }
             @Override public String closePaperAccountState(Strategy strategy) { return TradingFrame.this.closePaperAccountState(strategy); }
             @Override public void updateHeaderModeStatus(BrokerType brokerType) { TradingFrame.this.updateHeaderModeStatus(brokerType); }
@@ -897,11 +961,15 @@ public class TradingFrame extends JFrame {
         strategyTable.setDefaultRenderer(Number.class, statusRowRenderer);
         strategyTable.getColumnModel().getColumn(6).setCellRenderer(new UnrealizedPnLRenderer());
         strategyTable.getColumnModel().getColumn(7).setCellRenderer(new PollingBarRenderer());
-        strategyTable.getColumnModel().getColumn(9).setCellRenderer(new ActionsRenderer());
+        strategyTable.getColumnModel().getColumn(11).setCellRenderer(new ActionsRenderer());
         strategyTable.getColumnModel().getColumn(7).setPreferredWidth(240);
         strategyTable.getColumnModel().getColumn(7).setMinWidth(220);
-        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(500);
-        strategyTable.getColumnModel().getColumn(9).setMinWidth(480);
+        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(180);
+        strategyTable.getColumnModel().getColumn(9).setMinWidth(150);
+        strategyTable.getColumnModel().getColumn(10).setPreferredWidth(220);
+        strategyTable.getColumnModel().getColumn(10).setMinWidth(180);
+        strategyTable.getColumnModel().getColumn(11).setPreferredWidth(500);
+        strategyTable.getColumnModel().getColumn(11).setMinWidth(480);
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
         // Using mousePressed (not mouseClicked) gives instant response — mouseClicked only fires
@@ -918,14 +986,14 @@ public class TradingFrame extends JFrame {
                     strategyTable.setRowSelectionInterval(viewRow, viewRow);
                 }
 
-                // Dispatch the action buttons (column 9 only) via five equal zones.
+                // Dispatch the action buttons (column 11 only) via five equal zones.
                 // Use invokeLater so the action runs AFTER ALL mousePressed handlers
                 // (ours + BasicTableUI) have finished — this is critical because:
                 //   • BasicTableUI fires its own mousePressed AFTER ours (LIFO order).
                 //   • Without deferral, dialogs opened here block BasicTableUI from
                 //     ever running, leaving the table in a broken state on first click.
                 if (e.getButton() != java.awt.event.MouseEvent.BUTTON1) return;
-                if (viewRow < 0 || viewRow >= strategies.size() || viewCol != 9) return;
+                if (viewRow < 0 || viewRow >= strategies.size() || viewCol != 11) return;
                 java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, viewCol, false);
                 int xInCell  = e.getX() - cellRect.x;
                 int section  = Math.max(1, cellRect.width / 5);
@@ -987,7 +1055,7 @@ public class TradingFrame extends JFrame {
             return leftValue.compareTo(rightValue);
         });
         sorter.setSortable(7, false); // Polling countdown bar column — not sortable
-        sorter.setSortable(9, false); // Actions button column — not sortable
+        sorter.setSortable(11, false); // Actions button column — not sortable
         sorter.setRowFilter(new RowFilter<>() {
             @Override
             public boolean include(Entry<? extends StrategyGridTableModel, ? extends Integer> entry) {
@@ -1681,13 +1749,17 @@ public class TradingFrame extends JFrame {
     }
 
     private StrategyService.StrategyCreationResult sellPosition(Strategy strategy) {
+        return sellPosition(strategy, SellSubmissionType.LIMIT);
+    }
+
+    private StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType) {
         StrategyService modeAwareService = strategyServiceForMode(strategy.mode());
         if (modeAwareService == null) {
             return StrategyService.StrategyCreationResult.failed(
                     "Broker client is not configured for " + strategy.mode().name() + " mode."
             );
         }
-        return modeAwareService.closePosition(strategy.id());
+        return modeAwareService.closePosition(strategy.id(), submissionType);
     }
 
     private StrategyService strategyServiceForMode(StrategyMode mode) {
@@ -2582,8 +2654,7 @@ public class TradingFrame extends JFrame {
     }
 
     private String buildRuleTriggeredShortSummary(Strategy strategy, ManagedStrategy entry, StrategyOrder latestOrder, StrategyOrder pendingOrder) {
-        StrategyLifecycleState state = strategy.currentState();
-        String stateDisplay = displayStatusLabel(strategy);
+        String stateDisplay = displayStatusLabel(entry);
 
         if (stateDisplay.isEmpty()) {
             return "Rules: -";
@@ -2601,12 +2672,16 @@ public class TradingFrame extends JFrame {
         return strategyTablePresenter.formatLifecycleStateForDisplay(state);
     }
 
-    private String displayStatusLabel(Strategy strategy) {
+    private String displayStatusLabel(ManagedStrategy entry) {
+        if (entry == null) {
+            return "";
+        }
         return strategyTablePresenter.displayStatusLabel(
-                strategy,
-                strategy != null && isStrategySessionSuppressed(strategy),
-                strategy != null && isWaitingForFill(strategy),
-                strategy != null && strategy.status() == StrategyStatus.FAILED && isQueueableSessionError(strategy.lastError())
+                entry.strategy,
+                entry.cachedPosition(),
+                isStrategySessionSuppressed(entry.strategy),
+                isWaitingForFill(entry.strategy),
+                entry.strategy.status() == StrategyStatus.FAILED && isQueueableSessionError(entry.strategy.lastError())
         );
     }
 
@@ -2723,6 +2798,16 @@ public class TradingFrame extends JFrame {
             return minutes + "m " + seconds + "s";
         }
         return seconds + "s";
+    }
+
+    private String escapeHtml(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
     }
 
     private void updateUnrealizedSummaries() {
@@ -3030,7 +3115,7 @@ public class TradingFrame extends JFrame {
             sources.add(new HistoryTablePresenter.HistorySource(
                     entry.strategy.symbol(),
                     gridBrokerModeLabel(entry.strategy),
-                    displayStatusLabel(entry.strategy),
+                    displayStatusLabel(entry),
                     entry.strategy.currentState() == null ? "-" : formatLifecycleStateForDisplay(entry.strategy.currentState()),
                     entry.strategy.latestOrderStatus(),
                     entry.strategy.lastPolledAt(),
@@ -3828,7 +3913,11 @@ public class TradingFrame extends JFrame {
                 } else {
                     setBackground(row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD);
                     if (column == 1) {
-                        if (strategies.get(modelRow).strategy.status() == StrategyStatus.ARCHIVED) {
+                        String latestOrderStatus = BrokerOrderStatusUtil.normalize(strategies.get(modelRow).strategy.latestOrderStatus());
+                        if ("rejected".equals(latestOrderStatus)) {
+                            setForeground(STATUS_ERR);
+                            setFont(getFont().deriveFont(Font.BOLD));
+                        } else if (strategies.get(modelRow).strategy.status() == StrategyStatus.ARCHIVED) {
                             setForeground(new Color(108, 117, 125));
                         } else if (strategies.get(modelRow).strategy.pauseReason() == PauseReason.SYSTEM_ERROR) {
                             setForeground(STATUS_ERR);
@@ -3841,6 +3930,12 @@ public class TradingFrame extends JFrame {
                         setForeground(table.getForeground());
                     }
                 }
+            }
+            if (!(column == 1
+                    && modelRow >= 0
+                    && modelRow < strategies.size()
+                    && "rejected".equals(BrokerOrderStatusUtil.normalize(strategies.get(modelRow).strategy.latestOrderStatus())))) {
+                setFont(getFont().deriveFont(Font.PLAIN));
             }
             setHorizontalAlignment(alignmentForColumn(column));
             // Border is managed by prepareRenderer for selected rows (accent stripe on col 0);

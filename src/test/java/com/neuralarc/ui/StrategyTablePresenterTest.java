@@ -43,6 +43,48 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void profitablePositionPrioritizesSellTriggerActiveRule() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.STOP_LOSS_ACTIVE);
+
+        Position position = new Position("AAPL");
+        position.applyBuy(10, new BigDecimal("100.00"));
+        position.setLastPrice(new BigDecimal("120.00"));
+
+        String label = presenter.displayStatusLabel(strategy, position, false, false, false);
+
+        assertEquals("Sell Trigger Active - Waiting on next rule", label);
+    }
+
+    @Test
+    void losingPositionShowsStopLossActiveRuleWhenEnabled() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.STOP_LOSS_ACTIVE);
+
+        Position position = new Position("AAPL");
+        position.applyBuy(10, new BigDecimal("100.00"));
+        position.setLastPrice(new BigDecimal("92.50"));
+
+        String label = presenter.displayStatusLabel(strategy, position, false, false, false);
+
+        assertEquals("Stop Loss Active - Waiting on next rule", label);
+    }
+
+    @Test
+    void brokerUnavailableStatusShowsRetryingMessage() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        strategy.setLatestOrderStatus("failed_transport");
+
+        String label = presenter.displayStatusLabel(strategy, false, false, false);
+
+        assertEquals("Limit Sell Placed (Retrying: Unable to reach broker)", label);
+    }
+
+    @Test
     void failedExpiredShowsExpiredStatus() {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.FAILED);
@@ -91,6 +133,36 @@ class StrategyTablePresenterTest {
                 "Completed",
                 "Paper"
         ));
+    }
+
+    @Test
+    void valueAtSourceColumnsExposeEntryAndExitIndependently() {
+        Strategy strategy = strategy();
+        strategy.setName("I_AM_FEELING_LUCKY: AAPL Paper");
+        strategy.setLastEvent("Alpaca Paper mode from I Am Feeling Lucky. Source top mover gainer.");
+        strategy.setLastTriggeredRuleType("MANUAL_EXIT");
+
+        Object entryValue = presenter.valueAt(
+                strategy,
+                new Position("AAPL"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                9,
+                "Active",
+                "Paper"
+        );
+        Object exitValue = presenter.valueAt(
+                strategy,
+                new Position("AAPL"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                10,
+                "Active",
+                "Paper"
+        );
+
+        assertEquals("Lucky (Gainers)", entryValue);
+        assertEquals("Manual Exit", exitValue);
     }
 
     private Strategy strategy() {

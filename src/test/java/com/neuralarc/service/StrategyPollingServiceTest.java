@@ -864,6 +864,15 @@ class StrategyPollingServiceTest {
         }
 
         @Override
+        public AlpacaOrderData submitMarketSellOrder(String symbol, int quantity, String clientOrderId) {
+            orderCounter++;
+            String orderId = "ord-" + orderCounter;
+            AlpacaOrderData data = new AlpacaOrderData(orderId, clientOrderId, symbol, "sell", "market", Monetary.zero(), Monetary.zero(), Monetary.zero(), "new", "{}");
+            orderById.put(orderId, data);
+            return data;
+        }
+
+        @Override
         public AlpacaOrderData submitTrailingStopSellOrder(String symbol, int quantity, BigDecimal trailPercent, BigDecimal trailPrice, String clientOrderId) {
             orderCounter++;
             String orderId = "ord-" + orderCounter;

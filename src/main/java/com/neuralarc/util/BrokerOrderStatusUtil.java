@@ -33,7 +33,10 @@ public final class BrokerOrderStatusUtil {
             return "-";
         }
         if ("failed_transport".equals(normalized)) {
-            return "Failed";
+            return "Unable To Reach Broker";
+        }
+        if ("api_error".equals(normalized)) {
+            return "Broker API Error";
         }
         String[] parts = normalized.split("_");
         StringBuilder builder = new StringBuilder();
