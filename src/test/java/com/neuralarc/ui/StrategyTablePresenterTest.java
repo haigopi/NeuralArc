@@ -161,8 +161,80 @@ class StrategyTablePresenterTest {
                 "Paper"
         );
 
-        assertEquals("Lucky (Gainers)", entryValue);
+        assertEquals("Lucky [Gainers]", entryValue);
         assertEquals("Manual Exit", exitValue);
+    }
+
+    @Test
+    void entrySourceShowsLuckyLosersAndExitSourceStaysBlankForBuyRule() {
+        Strategy strategy = strategy();
+        strategy.setName("I_AM_FEELING_LUCKY: TSLA Paper");
+        strategy.setLastEvent("Alpaca Paper mode from I Am Feeling Lucky. Source top mover loser.");
+        strategy.setLastTriggeredRuleType("BASE_BUY");
+
+        Object entryValue = presenter.valueAt(
+                strategy,
+                new Position("TSLA"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                9,
+                "Limit Base Buy Placed",
+                "Paper"
+        );
+        Object exitValue = presenter.valueAt(
+                strategy,
+                new Position("TSLA"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                10,
+                "Limit Base Buy Placed",
+                "Paper"
+        );
+
+        assertEquals("Lucky [Losers]", entryValue);
+        assertEquals("", exitValue);
+    }
+
+    @Test
+    void sharesColumnShowsPendingBaseBuyQuantityBeforeFill() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
+        strategy.setBaseBuyQuantity(25);
+
+        Object quantityValue = presenter.valueAt(
+                strategy,
+                new Position("AAPL"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                2,
+                "Limit Base Buy Placed",
+                "Paper"
+        );
+
+        assertEquals(25, quantityValue);
+    }
+
+    @Test
+    void sharesColumnPrefersFilledPositionQuantity() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
+        strategy.setBaseBuyQuantity(25);
+        Position position = new Position("AAPL");
+        position.applyBuy(7, new BigDecimal("100.00"));
+
+        Object quantityValue = presenter.valueAt(
+                strategy,
+                position,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                2,
+                "Limit Base Buy Partially Filled",
+                "Paper"
+        );
+
+        assertEquals(7, quantityValue);
     }
 
     private Strategy strategy() {

@@ -31,18 +31,13 @@ import javax.swing.SwingWorker;
 import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
-import javax.swing.plaf.basic.BasicTabbedPaneUI;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
-import java.awt.FontMetrics;
-import java.awt.Graphics;
 import java.awt.GridLayout;
-import java.awt.Insets;
-import java.awt.Rectangle;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.Duration;
@@ -304,7 +299,8 @@ public class LuckyTrendingStocksDialog extends JDialog {
     private LuckyStockAnalysis analyze(TrendingStock stock) {
         try {
             log("Analysis started for " + stock.symbol());
-            AutoAnalyzeBundle bundle = new AutoAnalyzeService(marketDataApi).analyzeBundle(stock.symbol(), 12, 15);
+            AutoAnalyzeBundle bundle = new AutoAnalyzeService(marketDataApi)
+                    .analyzeBundle(stock.symbol(), 12, 15, stock.latestPrice());
             log("Analysis completed for " + stock.symbol());
             return new LuckyStockAnalysis(stock, bundle, "");
         } catch (Exception ex) {
@@ -323,9 +319,9 @@ public class LuckyTrendingStocksDialog extends JDialog {
             repaint();
             return;
         }
-        addGroup("Top 10 Gainers", result.gainers(), SECTION_GAINERS_BG, SECTION_GAINERS_BORDER);
+        addGroup("Top 10 Gainers (" + result.gainers().size() + ")", result.gainers(), SECTION_GAINERS_BG, SECTION_GAINERS_BORDER);
         cardsPanel.add(Box.createVerticalStrut(6));
-        addGroup("Top 10 Losers", result.losers(), SECTION_LOSERS_BG, SECTION_LOSERS_BORDER);
+        addGroup("Top 10 Losers (" + result.losers().size() + ")", result.losers(), SECTION_LOSERS_BG, SECTION_LOSERS_BORDER);
         statusLabel.setText("Review " + cards.size() + " stock(s), choose quantity/term for each, then start paper monitoring.");
         placeButton.setEnabled(cards.stream().anyMatch(StockCard::placeable));
         revalidate();
@@ -509,61 +505,42 @@ public class LuckyTrendingStocksDialog extends JDialog {
             styleTabs(tabs);
             tabs.setSelectedIndex(0);
             add(tabs, BorderLayout.CENTER);
+            add(actionsRow(), BorderLayout.SOUTH);
         }
 
         private void styleTabs(JTabbedPane tabPane) {
-            tabPane.setOpaque(false);
-            tabPane.setBackground(DIALOG_BG);
+            tabPane.setOpaque(true);
+            tabPane.setBackground(INPUT_BG);
             tabPane.setForeground(TAB_UNSELECTED_TEXT);
             tabPane.setFont(FontLoader.ui(Font.BOLD, 11f));
             tabPane.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(TAB_BORDER, 1, true),
                     new EmptyBorder(1, 1, 1, 1)
             ));
-            tabPane.setUI(new BasicTabbedPaneUI() {
-                @Override
-                protected void installDefaults() {
-                    super.installDefaults();
-                    selectedTabPadInsets = new Insets(0, 0, 0, 0);
-                    tabInsets = new Insets(5, 10, 5, 10);
-                    contentBorderInsets = new Insets(1, 0, 0, 0);
-                }
+            for (int i = 0; i < tabPane.getTabCount(); i++) {
+                JLabel label = new JLabel(tabPane.getTitleAt(i), JLabel.CENTER);
+                label.setFont(FontLoader.ui(Font.BOLD, 11f));
+                label.setForeground(i == tabPane.getSelectedIndex() ? TAB_SELECTED_TEXT : TAB_UNSELECTED_TEXT);
+                label.setOpaque(true);
+                label.setBackground(i == tabPane.getSelectedIndex() ? TAB_SELECTED_BG : TAB_UNSELECTED_BG);
+                label.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createMatteBorder(0, 0, 1, 0, TAB_BORDER),
+                        new EmptyBorder(5, 12, 5, 12)
+                ));
+                tabPane.setTabComponentAt(i, label);
+            }
+            tabPane.addChangeListener(ignored -> refreshTabLabels(tabPane));
+        }
 
-                @Override
-                protected void paintTabBackground(Graphics g, int tabPlacement, int tabIndex,
-                                                  int x, int y, int w, int h, boolean isSelected) {
-                    g.setColor(isSelected ? TAB_SELECTED_BG : TAB_UNSELECTED_BG);
-                    g.fillRoundRect(x, y, w, h, 10, 10);
+        private void refreshTabLabels(JTabbedPane tabPane) {
+            for (int i = 0; i < tabPane.getTabCount(); i++) {
+                Component component = tabPane.getTabComponentAt(i);
+                if (component instanceof JLabel label) {
+                    boolean selected = i == tabPane.getSelectedIndex();
+                    label.setForeground(selected ? TAB_SELECTED_TEXT : TAB_UNSELECTED_TEXT);
+                    label.setBackground(selected ? TAB_SELECTED_BG : TAB_UNSELECTED_BG);
                 }
-
-                @Override
-                protected void paintTabBorder(Graphics g, int tabPlacement, int tabIndex,
-                                              int x, int y, int w, int h, boolean isSelected) {
-                    g.setColor(TAB_BORDER);
-                    g.drawRoundRect(x, y, w - 1, h - 1, 10, 10);
-                }
-
-                @Override
-                protected void paintContentBorder(Graphics g, int tabPlacement, int selectedIndex) {
-                    g.setColor(TAB_BORDER);
-                    g.drawLine(0, calculateTabAreaHeight(tabPlacement, runCount, maxTabHeight),
-                            tabPane.getWidth(), calculateTabAreaHeight(tabPlacement, runCount, maxTabHeight));
-                }
-
-                @Override
-                protected void paintText(Graphics g, int tabPlacement, Font font, FontMetrics metrics,
-                                         int tabIndex, String title, Rectangle textRect, boolean isSelected) {
-                    g.setFont(font);
-                    g.setColor(isSelected ? TAB_SELECTED_TEXT : TAB_UNSELECTED_TEXT);
-                    g.drawString(title, textRect.x, textRect.y + metrics.getAscent());
-                }
-
-                @Override
-                protected void paintFocusIndicator(Graphics g, int tabPlacement, Rectangle[] rects, int tabIndex,
-                                                   Rectangle iconRect, Rectangle textRect, boolean isSelected) {
-                    // Keep tab visuals clean.
-                }
-            });
+            }
         }
 
         private JPanel header() {
@@ -572,12 +549,18 @@ public class LuckyTrendingStocksDialog extends JDialog {
             panel.setOpaque(false);
             JLabel metrics = new JLabel("Price: $" + stock.latestPrice().toPlainString()
                     + "  Change: " + stock.dailyChangePercent().toPlainString() + "%"
-                    + "  Vol: " + stock.volume().toPlainString());
+                    + "  Vol: " + stock.volume().toPlainString(), JLabel.CENTER);
             metrics.setFont(FontLoader.ui(Font.BOLD, 11f));
             metrics.setForeground(TEXT_PRIMARY);
 
-            JButton removeButton = new JButton("Remove");
+            panel.add(metrics, BorderLayout.CENTER);
+            return panel;
+        }
+
+        private JPanel actionsRow() {
+            JButton removeButton = new JButton();
             DialogButtonStyles.apply(removeButton, "icons/delete.svg");
+            removeButton.setToolTipText("Remove this stock");
             removeButton.addActionListener(ignored -> removeCard(this));
             JButton addToCurrentButton = new JButton("Review New Stock Strategy");
             DialogButtonStyles.apply(addToCurrentButton, "icons/add-stock-strategy.svg");
@@ -598,18 +581,8 @@ public class LuckyTrendingStocksDialog extends JDialog {
             actions.add(qtyPanel);
             actions.add(addToCurrentButton);
             actions.add(removeButton);
-
-            JPanel topRow = new JPanel(new BorderLayout(0, 2));
-            topRow.setOpaque(false);
-
-            JPanel bottomRow = new JPanel(new BorderLayout(8, 0));
-            bottomRow.setOpaque(false);
-            bottomRow.add(metrics, BorderLayout.CENTER);
-            bottomRow.add(actions, BorderLayout.EAST);
-
-            panel.add(topRow, BorderLayout.NORTH);
-            panel.add(bottomRow, BorderLayout.SOUTH);
-            return panel;
+            actions.setBorder(new EmptyBorder(4, 0, 0, 0));
+            return actions;
         }
 
         private JPanel recommendationPanel(StrategyRecommendation recommendation) {
@@ -618,7 +591,9 @@ public class LuckyTrendingStocksDialog extends JDialog {
             panel.setBorder(new EmptyBorder(6, 6, 6, 6));
             addPair(panel, "Recommendation:", recommendation.recommendationAction().name());
             addPair(panel, "Confidence:", recommendation.confidenceScore() + "%");
-            addPair(panel, "Base limit buy:", money(recommendation.baseBuyPrice()));
+            addPair(panel, "Base limit buy:", usablePrice(recommendation.baseBuyPrice())
+                    ? money(recommendation.baseBuyPrice())
+                    : "Not available");
             addPair(panel, "Target sell:", money(recommendation.sellPrice()));
             addPair(panel, "Stop loss:", money(recommendation.stopLossPrice()));
             addPair(panel, "Generated:", DISPLAY_FMT.format(analysis.analysis().result().analyzedAt()));
@@ -642,8 +617,10 @@ public class LuckyTrendingStocksDialog extends JDialog {
             if (!analysis.successful()) {
                 return false;
             }
-            return selectedRecommendation().isApplicable()
-                    && selectedRecommendation().baseBuyPrice().compareTo(BigDecimal.ZERO) > 0;
+            StrategyRecommendation recommendation = selectedRecommendation();
+            return recommendation != null
+                    && recommendation.isApplicable()
+                    && usablePrice(recommendation.baseBuyPrice());
         }
 
         private LuckySimulationSelection selection() {
@@ -698,6 +675,10 @@ public class LuckyTrendingStocksDialog extends JDialog {
 
     private static String money(BigDecimal value) {
         return value == null ? "-" : "$" + value.toPlainString();
+    }
+
+    private static boolean usablePrice(BigDecimal value) {
+        return value != null && value.compareTo(BigDecimal.ZERO) > 0;
     }
 
     private static String escape(String value) {

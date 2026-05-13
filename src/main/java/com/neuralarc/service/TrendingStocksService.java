@@ -103,9 +103,11 @@ public class TrendingStocksService {
     private static List<TrendingStock> selectMovers(JSONArray array, String reason, int limit) {
         List<TrendingStock> all = parseMoverList(array, reason);
         BigDecimal minVolume = new BigDecimal("200000");
+        // Try filtering by price and volume (when volume data is available from the API)
         List<TrendingStock> filtered = all.stream()
                 .filter(stock -> stock.latestPrice().compareTo(new BigDecimal("5.00")) >= 0)
-                .filter(stock -> stock.volume().compareTo(minVolume) >= 0)
+                .filter(stock -> stock.volume().compareTo(BigDecimal.ZERO) == 0
+                        || stock.volume().compareTo(minVolume) >= 0)
                 .sorted(Comparator.comparing(TrendingStocksService::techPreferenceScore).reversed()
                         .thenComparing(TrendingStock::trendingScore, Comparator.reverseOrder())
                         .thenComparing(TrendingStock::symbol))
@@ -114,8 +116,9 @@ public class TrendingStocksService {
         if (!filtered.isEmpty()) {
             return filtered;
         }
+        // Fallback: just require price >= $5 if no stocks passed the volume filter
         return all.stream()
-                .filter(stock -> stock.volume().compareTo(minVolume) >= 0)
+                .filter(stock -> stock.latestPrice().compareTo(new BigDecimal("5.00")) >= 0)
                 .sorted(Comparator.comparing(TrendingStocksService::techPreferenceScore).reversed()
                         .thenComparing(TrendingStock::trendingScore, Comparator.reverseOrder())
                         .thenComparing(TrendingStock::symbol))

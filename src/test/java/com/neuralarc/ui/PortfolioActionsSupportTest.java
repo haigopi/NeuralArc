@@ -268,6 +268,34 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
+    void cleanTradeHistoryTargetsOnlyInactiveHistoryRecords() {
+        ManagedStrategy archived = managed("AAPL", StrategyStatus.ARCHIVED, StrategyLifecycleState.STOPPED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy completed = managed("MSFT", StrategyStatus.COMPLETED, StrategyLifecycleState.COMPLETED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy failed = managed("TSLA", StrategyStatus.FAILED, StrategyLifecycleState.FAILED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy stopped = managed("NVDA", StrategyStatus.STOPPED, StrategyLifecycleState.STOPPED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy active = managed("AMD", StrategyStatus.ACTIVE, StrategyLifecycleState.BASE_BUY_PLACED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy paused = managed("META", StrategyStatus.PAUSED, StrategyLifecycleState.PAUSED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(archived, completed, failed, stopped, active, paused),
+                PortfolioActionsSupport.BulkAction.CLEAN_TRADE_HISTORY
+        );
+
+        assertEquals(List.of("AAPL", "MSFT", "TSLA", "NVDA"),
+                targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
+    void cleanTradeHistoryResultLabelIsDeleted() {
+        String message = support.buildResultMessage(
+                PortfolioActionsSupport.BulkAction.CLEAN_TRADE_HISTORY,
+                new PortfolioActionsSupport.BatchResult(List.of("AAPL", "MSFT"), List.of())
+        );
+
+        assertTrue(message.contains("Deleted: 2"));
+    }
+
+    @Test
     void cancelPendingLimitSellsTargetsOnlyCancelablePendingSellStrategies() {
         ManagedStrategy cancelableSellPlaced = managed(
                 "AAPL",

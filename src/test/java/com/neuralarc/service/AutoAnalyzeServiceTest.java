@@ -3,6 +3,7 @@ package com.neuralarc.service;
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.api.AlpacaMarketDataException;
 import com.neuralarc.model.AutoAnalyzeResult;
+import com.neuralarc.model.AutoAnalyzeBundle;
 import com.neuralarc.model.MarketBar;
 import org.junit.jupiter.api.Test;
 
@@ -277,6 +278,21 @@ class AutoAnalyzeServiceTest {
                 List.of(bar("AAPL", "10.00", "11.00", "9.00", "10.50")));
         AutoAnalyzeResult result = service.analyze("AAPL", 12, 15);
         assertEquals("AAPL", result.symbol());
+    }
+
+    @Test
+    void analyzeBundleUsesFallbackCurrentPriceWhenSnapshotAndHistoricalCloseAreMissing() throws Exception {
+        List<MarketBar> daily = new java.util.ArrayList<>();
+        for (int i = 0; i < 14; i++) {
+            daily.add(bar("AAPL", "120.00", "130.00", "118.00", "0.00"));
+        }
+        AutoAnalyzeService service = serviceWithDailyBars(daily);
+
+        AutoAnalyzeBundle bundle = service.analyzeBundle("AAPL", 12, 15, new BigDecimal("125.50"));
+
+        assertEquals(new BigDecimal("125.50"), bundle.shortTermRecommendation().currentPrice());
+        assertTrue(bundle.shortTermRecommendation().baseBuyPrice().compareTo(BigDecimal.ZERO) > 0);
+        assertTrue(bundle.highRiskShortTermRecommendation().baseBuyPrice().compareTo(BigDecimal.ZERO) > 0);
     }
 
     @Test

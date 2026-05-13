@@ -155,7 +155,7 @@ public final class StrategyTablePresenter {
     ) {
         if (columnIndex >= 2 && columnIndex <= 6) {
             return switch (columnIndex) {
-                case 2 -> position.getTotalShares();
+                case 2 -> displayQuantity(strategy, position);
                 case 3 -> position.getTotalShares() > 0 ? position.getAverageCost().toPlainString() : "-";
                 case 4 -> displayPrice(position, lastSellPrice);
                 case 5 -> position.getTotalShares() > 0 ? position.marketValue().toPlainString() : "-";
@@ -178,7 +178,7 @@ public final class StrategyTablePresenter {
 
     private String entrySource(Strategy strategy) {
         if (strategy == null) {
-            return "-";
+            return "";
         }
         String name = strategy.name() == null ? "" : strategy.name().toLowerCase();
         String event = strategy.lastEvent() == null ? "" : strategy.lastEvent().toLowerCase();
@@ -187,10 +187,10 @@ public final class StrategyTablePresenter {
         }
         if (name.contains("i_am_feeling_lucky") || event.contains("i am feeling lucky")) {
             if (event.contains("gainer")) {
-                return "Lucky (Gainers)";
+                return "Lucky [Gainers]";
             }
             if (event.contains("loser")) {
-                return "Lucky (Losers)";
+                return "Lucky [Losers]";
             }
             return "Lucky";
         }
@@ -199,7 +199,15 @@ public final class StrategyTablePresenter {
 
     private String exitSource(Strategy strategy) {
         if (strategy == null) {
-            return "-";
+            return "";
+        }
+        String normalizedStatus = BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus());
+        if ("expired".equals(normalizedStatus)) {
+            return "Expired";
+        }
+        if (strategy.status() == StrategyStatus.PAUSED
+                && strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED) {
+            return "User Cancelled";
         }
         String rule = strategy.lastTriggeredRuleType();
         if (rule == null || rule.isBlank()) {
@@ -208,15 +216,48 @@ public final class StrategyTablePresenter {
                     && strategy.status() != StrategyStatus.ACTIVE) {
                 return "Broker Direct";
             }
-            return "-";
+            return "";
+        }
+        if (isBuyRule(rule)) {
+            return "";
         }
         if ("MANUAL_EXIT".equalsIgnoreCase(rule)) {
             return "Manual Exit";
+        }
+        if ("STOP_LOSS".equalsIgnoreCase(rule)) {
+            return "Stop Loss";
+        }
+        if ("TARGET_SELL".equalsIgnoreCase(rule)) {
+            return "Sell Trigger";
+        }
+        if ("PROFIT_EXIT".equalsIgnoreCase(rule)) {
+            return "Profit Exit";
         }
         if ("REMOTE_SYNC".equalsIgnoreCase(rule)) {
             return "Broker Direct";
         }
         return "System Exit (" + rule + ")";
+    }
+
+    private boolean isBuyRule(String rule) {
+        return "BASE_BUY".equalsIgnoreCase(rule)
+                || "BUY_LIMIT_1".equalsIgnoreCase(rule)
+                || "BUY_LIMIT_2".equalsIgnoreCase(rule);
+    }
+
+    private Object displayQuantity(Strategy strategy, Position position) {
+        if (position.getTotalShares() > 0) {
+            return position.getTotalShares();
+        }
+        if (strategy == null || strategy.status() != StrategyStatus.ACTIVE) {
+            return 0;
+        }
+        return switch (strategy.currentState()) {
+            case BASE_BUY_PLACED, BASE_BUY_PARTIALLY_FILLED, QUEUED_FOR_OPEN -> Math.max(0, strategy.baseBuyQuantity());
+            case BUY_LIMIT_1_PLACED, BUY_LIMIT_1_PARTIALLY_FILLED -> Math.max(0, strategy.buyLimit1Quantity());
+            case BUY_LIMIT_2_PLACED, BUY_LIMIT_2_PARTIALLY_FILLED -> Math.max(0, strategy.buyLimit2Quantity());
+            default -> 0;
+        };
     }
 
     private String displayPrice(Position position, BigDecimal lastSellPrice) {

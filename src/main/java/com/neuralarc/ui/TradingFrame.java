@@ -300,6 +300,7 @@ public class TradingFrame extends JFrame {
     private volatile String lastStreamApiKey = "";
     private volatile String lastStreamApiSecret = "";
     private volatile boolean streamReconnectAvailable;
+    private volatile boolean streamRecoverySyncPending;
     private volatile boolean showStreamReconnectFailureDialog;
     private volatile String lastStreamErrorMessage = "";
     private Timer streamReconnectRetryTimer;
@@ -379,6 +380,9 @@ public class TradingFrame extends JFrame {
                     return StrategyService.ArchiveResult.failed("strategy service is not configured");
                 }
                 return strategyService.archiveStrategy(strategyId, reason);
+            }
+            @Override public StrategyService.ArchiveResult deleteLocalTradeHistoryStrategy(String strategyId) {
+                return TradingFrame.this.deleteLocalTradeHistoryStrategy(strategyId);
             }
             @Override
             public StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType) {
@@ -1833,6 +1837,29 @@ public class TradingFrame extends JFrame {
         log("[SETTINGS] Local strategy data cleared. New Alpaca account data will sync after reconnect.");
     }
 
+    private StrategyService.ArchiveResult deleteLocalTradeHistoryStrategy(String strategyId) {
+        if (strategyId == null || strategyId.isBlank()) {
+            return StrategyService.ArchiveResult.failed("Strategy id is missing");
+        }
+        Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
+        if (maybeStrategy.isEmpty()) {
+            return StrategyService.ArchiveResult.failed("Strategy not found");
+        }
+        Strategy strategy = maybeStrategy.get();
+        if (strategy.status() != StrategyStatus.ARCHIVED
+                && strategy.status() != StrategyStatus.COMPLETED
+                && strategy.status() != StrategyStatus.FAILED
+                && strategy.status() != StrategyStatus.STOPPED) {
+            return StrategyService.ArchiveResult.failed("Only inactive trade history records can be deleted");
+        }
+        strategyOrderRepository.deleteByStrategyId(strategy.id());
+        strategyEventRepository.deleteByStrategyId(strategy.id());
+        strategyRepository.deleteById(strategy.id());
+        aggregatePnlStore.reset();
+        log("[PORTFOLIO] Deleted trade history record for " + strategy.symbol() + ".");
+        return StrategyService.ArchiveResult.success(strategy.id());
+    }
+
     private boolean autoInitializeConnection() {
         return connectionLifecycleCoordinator.autoInitializeConnection();
     }
@@ -2407,10 +2434,11 @@ public class TradingFrame extends JFrame {
             }
             Strategy strategy = Strategy.fromConfig(
                     UUID.randomUUID().toString(),
-                    config.symbol() + " Strategy",
+                    "I_AM_FEELING_LUCKY: " + config.symbol() + " Paper",
                     config,
                     StrategyMode.PAPER
             );
+            strategy.setLastEvent(luckyEntrySourceEvent(selection, recommendation));
             StrategyService.StrategyCreationResult creationResult =
                     strategyServiceForMode(StrategyMode.PAPER).createAndActivate(strategy);
             if (!creationResult.success()) {
@@ -2440,6 +2468,20 @@ public class TradingFrame extends JFrame {
         );
         dialog.setReviewHandler(reviewHandler);
         dialog.setVisible(true);
+    }
+
+    private String luckyEntrySourceEvent(LuckySimulationSelection selection, StrategyRecommendation recommendation) {
+        String stockReason = selection.stock().reason() == null || selection.stock().reason().isBlank()
+                ? "lucky-simulation"
+                : selection.stock().reason();
+        String basePrice = recommendation == null || recommendation.baseBuyPrice() == null
+                ? "-"
+                : recommendation.baseBuyPrice().toPlainString();
+        return "Alpaca Paper mode from I Am Feeling Lucky. Selected "
+                + selection.selectedRecommendationType().name()
+                + ". Source " + stockReason
+                + ". Base limit buy $" + basePrice
+                + ".";
     }
 
     private void placeLuckySimulationStrategies(List<LuckySimulationSelection> selections) {
@@ -4333,6 +4375,7 @@ public class TradingFrame extends JFrame {
                 if (lower.contains("authorized") || lower.contains("listening") || lower.contains("trade update")) {
                     showStreamReconnectFailureDialog = false;
                     resetTradeStreamReconnectBackoff("stream status=" + normalized);
+                    syncStrategiesAfterTradeStreamRecovery(normalized);
                 }
             }
             streamStatus.setForeground(color == null ? BOTTOM_STATUS_ACCENT : color);
@@ -4343,6 +4386,7 @@ public class TradingFrame extends JFrame {
         lastStreamErrorMessage = message == null || message.isBlank()
                 ? "Unknown trade stream error."
                 : message;
+        streamRecoverySyncPending = true;
         scheduleTradeStreamReconnectRetry();
         if (!showStreamReconnectFailureDialog) {
             return;
@@ -4377,6 +4421,43 @@ public class TradingFrame extends JFrame {
         tradeLog("[STREAM] Manual reconnect requested from status bar.");
         cancelTradeStreamReconnectRetry();
         startTradingEventStreamIfConfigured(credentials.apiKey(), credentials.apiSecret());
+    }
+
+    private void syncStrategiesAfterTradeStreamRecovery(String status) {
+        if (!streamRecoverySyncPending) {
+            return;
+        }
+        streamRecoverySyncPending = false;
+        tradeLog("[STREAM] Reconnected with status=" + status + ". Syncing strategies after missed stream window.");
+        uiPollingExecutor.submit(() -> {
+            try {
+                if (strategyService != null) {
+                    strategyService.syncRemoteStrategies();
+                }
+                if (strategyPollingService != null) {
+                    for (Strategy strategy : strategyRepository.findAll()) {
+                        if (strategy.status() == StrategyStatus.ACTIVE || strategy.status() == StrategyStatus.PAUSED) {
+                            strategyPollingService.pollStrategy(strategy.id());
+                        }
+                    }
+                }
+                List<Strategy> stored = strategyRepository.findAll();
+                Map<String, Position> snapshots = hasStrategiesNeedingBrokerSnapshots(stored)
+                        ? loadPositionSnapshotsForStrategies(stored)
+                        : Map.of();
+                SwingUtilities.invokeLater(() -> {
+                    syncStrategies(stored);
+                    applyPositionSnapshots(snapshots);
+                    refreshStrategyTableContent();
+                    refreshPanels();
+                    updateStatusBar();
+                    tradeLog("[STREAM] Strategy sync after reconnect completed.");
+                });
+            } catch (Exception ex) {
+                streamRecoverySyncPending = true;
+                tradeLog("[STREAM] Strategy sync after reconnect failed: " + ex.getMessage());
+            }
+        });
     }
 
     private void scheduleTradeStreamReconnectRetry() {

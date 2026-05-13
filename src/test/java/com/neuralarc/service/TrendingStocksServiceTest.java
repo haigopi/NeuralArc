@@ -81,13 +81,14 @@ class TrendingStocksServiceTest {
         TrendingStocksService service = new TrendingStocksService(new AlpacaScreenerClient() {
             @Override
             public JSONObject getMarketMovers(int top) {
+                // Alpaca movers endpoint doesn't return volume; only returns symbol, price, percent_change
                 return new JSONObject()
                         .put("gainers", new JSONArray()
-                                .put(new JSONObject().put("symbol", "PENNY").put("price", "1.25").put("percent_change", "40").put("volume", "50000"))
-                                .put(new JSONObject().put("symbol", "NVDA").put("price", "125").put("percent_change", "8").put("volume", "500000")))
+                                .put(new JSONObject().put("symbol", "PENNY").put("price", "1.25").put("percent_change", "40"))
+                                .put(new JSONObject().put("symbol", "NVDA").put("price", "125").put("percent_change", "8")))
                         .put("losers", new JSONArray()
-                                .put(new JSONObject().put("symbol", "CHEAP").put("price", "2.00").put("percent_change", "-30").put("volume", "75000"))
-                                .put(new JSONObject().put("symbol", "MSFT").put("price", "410").put("percent_change", "-5").put("volume", "300000")));
+                                .put(new JSONObject().put("symbol", "CHEAP").put("price", "2.00").put("percent_change", "-30"))
+                                .put(new JSONObject().put("symbol", "MSFT").put("price", "410").put("percent_change", "-5")));
             }
 
             @Override
@@ -98,6 +99,9 @@ class TrendingStocksServiceTest {
 
         var groups = service.topGainersAndLosers(10);
 
+        // Should filter out penny stocks (price < $5) but include all with price >= $5
+        // NVDA is included (price $125)
+        // MSFT is included (price $410)
         assertEquals(List.of("NVDA"), groups.gainers().stream().map(TrendingStock::symbol).toList());
         assertEquals(List.of("MSFT"), groups.losers().stream().map(TrendingStock::symbol).toList());
     }
@@ -107,6 +111,7 @@ class TrendingStocksServiceTest {
         TrendingStocksService service = new TrendingStocksService(new AlpacaScreenerClient() {
             @Override
             public JSONObject getMarketMovers(int top) {
+                // When volume data is present in movers response, filter by minimum volume
                 return new JSONObject()
                         .put("gainers", new JSONArray()
                                 .put(new JSONObject().put("symbol", "LOWVOL").put("price", "50.00").put("percent_change", "10").put("volume", "100000"))
@@ -124,7 +129,9 @@ class TrendingStocksServiceTest {
 
         var groups = service.topGainersAndLosers(10);
 
+        // Only HIGHVOL (500k volume >= 200k threshold) from gainers
         assertEquals(List.of("HIGHVOL"), groups.gainers().stream().map(TrendingStock::symbol).toList());
+        // Only HIGHVOL2 (600k volume >= 200k threshold) from losers
         assertEquals(List.of("HIGHVOL2"), groups.losers().stream().map(TrendingStock::symbol).toList());
     }
 

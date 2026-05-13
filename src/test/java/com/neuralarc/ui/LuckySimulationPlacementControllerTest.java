@@ -63,6 +63,19 @@ class LuckySimulationPlacementControllerTest {
     }
 
     @Test
+    void storesLuckyMoverSourceOnCreatedStrategy() {
+        InMemoryRepository repository = new InMemoryRepository();
+        LuckySimulationPlacementController controller = controller(repository, true, false);
+
+        LuckySimulationPlacementController.PlacementResult result =
+                controller.place(List.of(selection("NVDA", 10, "top mover loser")));
+
+        assertEquals(1, result.created());
+        Strategy saved = repository.findAll().getFirst();
+        assertTrue(saved.lastEvent().contains("Source top mover loser"));
+    }
+
+    @Test
     void duplicateWaitingForFillNoStopsPlacementWithoutChanges() {
         InMemoryRepository repository = new InMemoryRepository();
         repository.save(waitingPaperStrategy("NVDA", "existing-waiting"));
@@ -201,6 +214,10 @@ class LuckySimulationPlacementControllerTest {
     }
 
     private LuckySimulationSelection selection(String symbol, int quantity) {
+        return selection(symbol, quantity, "");
+    }
+
+    private LuckySimulationSelection selection(String symbol, int quantity, String reason) {
         StrategyRecommendation recommendation = recommendation(symbol, RecommendationType.SHORT_TERM, new BigDecimal("125.00"));
         AutoAnalyzeBundle bundle = new AutoAnalyzeBundle(
                 result(symbol),
@@ -209,7 +226,7 @@ class LuckySimulationPlacementControllerTest {
                 recommendation(symbol, RecommendationType.LONG_TERM, new BigDecimal("120.00"))
         );
         return new LuckySimulationSelection(
-                new TrendingStock(symbol, "", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "", BigDecimal.TEN),
+                new TrendingStock(symbol, "", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, reason, BigDecimal.TEN),
                 bundle,
                 RecommendationType.SHORT_TERM,
                 quantity

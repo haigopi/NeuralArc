@@ -233,11 +233,21 @@ public class AutoAnalyzeService {
 
     public AutoAnalyzeBundle analyzeBundle(String symbol, int monthsBack, int intervalMinutes)
             throws AutoAnalyzeException {
+        return analyzeBundle(symbol, monthsBack, intervalMinutes, BigDecimal.ZERO);
+    }
+
+    public AutoAnalyzeBundle analyzeBundle(String symbol, int monthsBack, int intervalMinutes, BigDecimal fallbackCurrentPrice)
+            throws AutoAnalyzeException {
         AutoAnalyzeResult result = analyze(symbol, monthsBack, intervalMinutes);
         List<MarketBar> history = historicalPriceService.getHistoricalPrices(result.symbol(), 365);
         BigDecimal currentPrice = result.todayStockPrice().compareTo(BigDecimal.ZERO) > 0
                 ? result.todayStockPrice()
                 : latestClose(history);
+        if (currentPrice.compareTo(BigDecimal.ZERO) <= 0
+                && fallbackCurrentPrice != null
+                && fallbackCurrentPrice.compareTo(BigDecimal.ZERO) > 0) {
+            currentPrice = round2(fallbackCurrentPrice);
+        }
         BigDecimal lastClosePrice = result.todayCloseAvailable() && result.todayClose().compareTo(BigDecimal.ZERO) > 0
                 ? result.todayClose()
                 : currentPrice;

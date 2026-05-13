@@ -93,6 +93,17 @@ final class PortfolioActionsSupport {
                 && "expired".equals(BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus()));
     }
 
+    private static boolean isTradeHistoryRecord(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return false;
+        }
+        StrategyStatus status = entry.strategy.status();
+        return status == StrategyStatus.ARCHIVED
+                || status == StrategyStatus.COMPLETED
+                || status == StrategyStatus.FAILED
+                || status == StrategyStatus.STOPPED;
+    }
+
     List<ManagedStrategy> filterTargets(List<ManagedStrategy> strategies, Scope scope) {
         List<ManagedStrategy> targets = new ArrayList<>();
         for (ManagedStrategy entry : strategies) {
@@ -419,6 +430,33 @@ final class PortfolioActionsSupport {
             @Override
             String resultSuccessLabel() {
                 return "Archived";
+            }
+        },
+        CLEAN_TRADE_HISTORY("Clean Trade History") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return isTradeHistoryRecord(entry);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Delete " + count + " trade history record(s)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Archived, completed, failed, and stopped strategy history will be permanently removed locally."
+                        + "<br>Active and paused current strategies are not deleted.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no trade history records to clean.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Deleted";
             }
         },
         REPOSITION_EXPIRED("Reposition Expired") {
