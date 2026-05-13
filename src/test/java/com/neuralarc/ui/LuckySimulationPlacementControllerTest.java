@@ -44,7 +44,7 @@ class LuckySimulationPlacementControllerTest {
         assertEquals(StrategyStatus.ACTIVE, saved.status());
         assertEquals(10, saved.baseBuyQuantity());
         assertEquals("PAPER_PENDING", saved.latestOrderStatus());
-        assertTrue(saved.name().startsWith("I_AM_FEELING_LUCKY:"));
+        assertTrue(saved.name().startsWith("I_AM_FEELING_LUCKY_REVIEWED:"));
         assertTrue(saved.lastEvent().contains("Alpaca Paper mode"));
     }
 
@@ -72,6 +72,7 @@ class LuckySimulationPlacementControllerTest {
 
         assertEquals(1, result.created());
         Strategy saved = repository.findAll().getFirst();
+        assertTrue(saved.name().startsWith("I_AM_FEELING_LUCKY_LOSERS:"));
         assertTrue(saved.lastEvent().contains("Source top mover loser"));
     }
 

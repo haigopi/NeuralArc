@@ -107,7 +107,7 @@ public class LuckySimulationPlacementController {
 
     private Strategy toStrategy(LuckySimulationSelection selection, StrategyRecommendation recommendation) {
         StrategyConfig config = luckySimulationConfig(selection, recommendation);
-        Strategy strategy = Strategy.fromConfig(UUID.randomUUID().toString(), luckyStrategyName(selection.stock().symbol()), config, StrategyMode.PAPER);
+        Strategy strategy = Strategy.fromConfig(UUID.randomUUID().toString(), luckyStrategyName(selection), config, StrategyMode.PAPER);
         strategy.setStatus(StrategyStatus.CREATED);
         strategy.setCurrentState(StrategyLifecycleState.CREATED);
         String stockReason = selection.stock().reason() == null || selection.stock().reason().isBlank()
@@ -196,8 +196,21 @@ public class LuckySimulationPlacementController {
         };
     }
 
-    private String luckyStrategyName(String symbol) {
-        return "I_AM_FEELING_LUCKY: " + symbol + " Paper";
+    private String luckyStrategyName(LuckySimulationSelection selection) {
+        return "I_AM_FEELING_LUCKY_" + luckySourceToken(selection) + ": " + selection.stock().symbol() + " Paper";
+    }
+
+    private String luckySourceToken(LuckySimulationSelection selection) {
+        String reason = selection == null || selection.stock() == null || selection.stock().reason() == null
+                ? ""
+                : selection.stock().reason().toLowerCase(Locale.ROOT);
+        if (reason.contains("gainer")) {
+            return "GAINERS";
+        }
+        if (reason.contains("loser")) {
+            return "LOSERS";
+        }
+        return "REVIEWED";
     }
 
     public String summaryMessage(PlacementResult result) {

@@ -2434,7 +2434,7 @@ public class TradingFrame extends JFrame {
             }
             Strategy strategy = Strategy.fromConfig(
                     UUID.randomUUID().toString(),
-                    "I_AM_FEELING_LUCKY: " + config.symbol() + " Paper",
+                    luckyStrategyName(selection, config.symbol()),
                     config,
                     StrategyMode.PAPER
             );
@@ -2482,6 +2482,23 @@ public class TradingFrame extends JFrame {
                 + ". Source " + stockReason
                 + ". Base limit buy $" + basePrice
                 + ".";
+    }
+
+    private String luckyStrategyName(LuckySimulationSelection selection, String symbol) {
+        return "I_AM_FEELING_LUCKY_" + luckySourceToken(selection) + ": " + symbol + " Paper";
+    }
+
+    private String luckySourceToken(LuckySimulationSelection selection) {
+        String reason = selection == null || selection.stock() == null || selection.stock().reason() == null
+                ? ""
+                : selection.stock().reason().toLowerCase(Locale.ROOT);
+        if (reason.contains("gainer")) {
+            return "GAINERS";
+        }
+        if (reason.contains("loser")) {
+            return "LOSERS";
+        }
+        return "REVIEWED";
     }
 
     private void placeLuckySimulationStrategies(List<LuckySimulationSelection> selections) {

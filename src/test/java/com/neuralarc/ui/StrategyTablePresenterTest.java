@@ -140,6 +140,8 @@ class StrategyTablePresenterTest {
         Strategy strategy = strategy();
         strategy.setName("I_AM_FEELING_LUCKY: AAPL Paper");
         strategy.setLastEvent("Alpaca Paper mode from I Am Feeling Lucky. Source top mover gainer.");
+        strategy.setStatus(StrategyStatus.COMPLETED);
+        strategy.setCurrentState(StrategyLifecycleState.COMPLETED);
         strategy.setLastTriggeredRuleType("MANUAL_EXIT");
 
         Object entryValue = presenter.valueAt(
@@ -166,10 +168,29 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void entrySourceUsesLuckySourceFromNameWhenOrderSubmissionOverwritesLastEvent() {
+        Strategy strategy = strategy();
+        strategy.setName("I_AM_FEELING_LUCKY_GAINERS: AAPL Paper");
+        strategy.setLastEvent("Stop loss sell submitted");
+
+        Object entryValue = presenter.valueAt(
+                strategy,
+                new Position("AAPL"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                9,
+                "Active",
+                "Paper"
+        );
+
+        assertEquals("Lucky [Gainers]", entryValue);
+    }
+
+    @Test
     void entrySourceShowsLuckyLosersAndExitSourceStaysBlankForBuyRule() {
         Strategy strategy = strategy();
-        strategy.setName("I_AM_FEELING_LUCKY: TSLA Paper");
-        strategy.setLastEvent("Alpaca Paper mode from I Am Feeling Lucky. Source top mover loser.");
+        strategy.setName("I_AM_FEELING_LUCKY_LOSERS: TSLA Paper");
+        strategy.setLastEvent("Order BASE_BUY is ACCEPTED");
         strategy.setLastTriggeredRuleType("BASE_BUY");
 
         Object entryValue = presenter.valueAt(
@@ -193,6 +214,42 @@ class StrategyTablePresenterTest {
 
         assertEquals("Lucky [Losers]", entryValue);
         assertEquals("", exitValue);
+    }
+
+    @Test
+    void exitSourceStaysBlankUntilSellCompletes() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        strategy.setLastTriggeredRuleType("TARGET_SELL");
+
+        Object exitValue = presenter.valueAt(
+                strategy,
+                new Position("AAPL"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                10,
+                "Limit Sell Placed",
+                "Paper"
+        );
+
+        assertEquals("", exitValue);
+    }
+
+    @Test
+    void exitSourceStaysBlankForExpiredOrCancelledBuyOrder() {
+        Strategy expired = strategy();
+        expired.setStatus(StrategyStatus.FAILED);
+        expired.setCurrentState(StrategyLifecycleState.FAILED);
+        expired.setLatestOrderStatus("expired");
+
+        Strategy cancelled = strategy();
+        cancelled.setStatus(StrategyStatus.PAUSED);
+        cancelled.setCurrentState(StrategyLifecycleState.PAUSED);
+        cancelled.setPauseReason(PauseReason.MANUAL_LIMIT_BUY_CANCELED);
+
+        assertEquals("", presenter.valueAt(expired, new Position("AAPL"), BigDecimal.ZERO, BigDecimal.ZERO, 10, "Expired", "Paper"));
+        assertEquals("", presenter.valueAt(cancelled, new Position("AAPL"), BigDecimal.ZERO, BigDecimal.ZERO, 10, "Canceled", "Paper"));
     }
 
     @Test

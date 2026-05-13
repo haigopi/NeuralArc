@@ -107,18 +107,17 @@ class TrendingStocksServiceTest {
     }
 
     @Test
-    void topGainersAndLosersFiltersStocksBelowMinimumVolumeThreshold() throws Exception {
+    void topGainersAndLosersFiltersStocksBelowMinimumDailyBarsThreshold() throws Exception {
         TrendingStocksService service = new TrendingStocksService(new AlpacaScreenerClient() {
             @Override
             public JSONObject getMarketMovers(int top) {
-                // When volume data is present in movers response, filter by minimum volume
                 return new JSONObject()
                         .put("gainers", new JSONArray()
-                                .put(new JSONObject().put("symbol", "LOWVOL").put("price", "50.00").put("percent_change", "10").put("volume", "100000"))
-                                .put(new JSONObject().put("symbol", "HIGHVOL").put("price", "150.00").put("percent_change", "5").put("volume", "500000")))
+                                .put(new JSONObject().put("symbol", "LOWBARS").put("price", "50.00").put("percent_change", "10").put("volume", "5000000").put("trade_count", "25"))
+                                .put(new JSONObject().put("symbol", "HIGHBARS").put("price", "150.00").put("percent_change", "5").put("volume", "1").put("trade_count", "500")))
                         .put("losers", new JSONArray()
-                                .put(new JSONObject().put("symbol", "LOWVOL2").put("price", "40.00").put("percent_change", "-8").put("volume", "150000"))
-                                .put(new JSONObject().put("symbol", "HIGHVOL2").put("price", "200.00").put("percent_change", "-3").put("volume", "600000")));
+                                .put(new JSONObject().put("symbol", "LOWBARS2").put("price", "40.00").put("percent_change", "-8").put("volume", "6000000").put("trade_count", "50"))
+                                .put(new JSONObject().put("symbol", "HIGHBARS2").put("price", "200.00").put("percent_change", "-3").put("volume", "1").put("trade_count", "300")));
             }
 
             @Override
@@ -129,10 +128,8 @@ class TrendingStocksServiceTest {
 
         var groups = service.topGainersAndLosers(10);
 
-        // Only HIGHVOL (500k volume >= 200k threshold) from gainers
-        assertEquals(List.of("HIGHVOL"), groups.gainers().stream().map(TrendingStock::symbol).toList());
-        // Only HIGHVOL2 (600k volume >= 200k threshold) from losers
-        assertEquals(List.of("HIGHVOL2"), groups.losers().stream().map(TrendingStock::symbol).toList());
+        assertEquals(List.of("HIGHBARS"), groups.gainers().stream().map(TrendingStock::symbol).toList());
+        assertEquals(List.of("HIGHBARS2"), groups.losers().stream().map(TrendingStock::symbol).toList());
     }
 
     private TrendingStock stock(String symbol, String score) {

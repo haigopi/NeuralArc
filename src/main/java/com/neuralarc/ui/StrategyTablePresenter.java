@@ -186,10 +186,10 @@ public final class StrategyTablePresenter {
             return "Broker Synced";
         }
         if (name.contains("i_am_feeling_lucky") || event.contains("i am feeling lucky")) {
-            if (event.contains("gainer")) {
+            if (name.contains("gainer") || event.contains("gainer")) {
                 return "Lucky [Gainers]";
             }
-            if (event.contains("loser")) {
+            if (name.contains("loser") || event.contains("loser")) {
                 return "Lucky [Losers]";
             }
             return "Lucky";
@@ -201,19 +201,13 @@ public final class StrategyTablePresenter {
         if (strategy == null) {
             return "";
         }
-        String normalizedStatus = BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus());
-        if ("expired".equals(normalizedStatus)) {
-            return "Expired";
-        }
-        if (strategy.status() == StrategyStatus.PAUSED
-                && strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED) {
-            return "User Cancelled";
+        if (!isSellCompleted(strategy)) {
+            return "";
         }
         String rule = strategy.lastTriggeredRuleType();
         if (rule == null || rule.isBlank()) {
             String event = strategy.lastEvent() == null ? "" : strategy.lastEvent().toLowerCase();
-            if (event.contains("synced from alpaca remote state")
-                    && strategy.status() != StrategyStatus.ACTIVE) {
+            if (event.contains("synced from alpaca remote state")) {
                 return "Broker Direct";
             }
             return "";
@@ -237,6 +231,11 @@ public final class StrategyTablePresenter {
             return "Broker Direct";
         }
         return "System Exit (" + rule + ")";
+    }
+
+    private boolean isSellCompleted(Strategy strategy) {
+        return strategy.status() == StrategyStatus.COMPLETED
+                || strategy.currentState() == StrategyLifecycleState.COMPLETED;
     }
 
     private boolean isBuyRule(String rule) {

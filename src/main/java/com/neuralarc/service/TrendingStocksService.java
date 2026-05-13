@@ -17,6 +17,8 @@ import java.util.logging.Logger;
 
 public class TrendingStocksService {
     private static final Logger LOGGER = Logger.getLogger(TrendingStocksService.class.getName());
+    private static final BigDecimal MIN_LISTING_PRICE = new BigDecimal("5.00");
+    private static final BigDecimal MIN_DAILY_BARS_FOR_PROCESSING = new BigDecimal("100");
 
     private final AlpacaScreenerClient client;
 
@@ -102,12 +104,8 @@ public class TrendingStocksService {
 
     private static List<TrendingStock> selectMovers(JSONArray array, String reason, int limit) {
         List<TrendingStock> all = parseMoverList(array, reason);
-        BigDecimal minVolume = new BigDecimal("200000");
-        // Try filtering by price and volume (when volume data is available from the API)
         List<TrendingStock> filtered = all.stream()
-                .filter(stock -> stock.latestPrice().compareTo(new BigDecimal("5.00")) >= 0)
-                .filter(stock -> stock.volume().compareTo(BigDecimal.ZERO) == 0
-                        || stock.volume().compareTo(minVolume) >= 0)
+                .filter(TrendingStocksService::isProcessableMover)
                 .sorted(Comparator.comparing(TrendingStocksService::techPreferenceScore).reversed()
                         .thenComparing(TrendingStock::trendingScore, Comparator.reverseOrder())
                         .thenComparing(TrendingStock::symbol))
@@ -116,14 +114,24 @@ public class TrendingStocksService {
         if (!filtered.isEmpty()) {
             return filtered;
         }
-        // Fallback: just require price >= $5 if no stocks passed the volume filter
+        // Fallback: some Alpaca mover payloads omit trade_count/trades, so keep the listing usable.
         return all.stream()
-                .filter(stock -> stock.latestPrice().compareTo(new BigDecimal("5.00")) >= 0)
+                .filter(stock -> stock.latestPrice().compareTo(MIN_LISTING_PRICE) >= 0)
                 .sorted(Comparator.comparing(TrendingStocksService::techPreferenceScore).reversed()
                         .thenComparing(TrendingStock::trendingScore, Comparator.reverseOrder())
                         .thenComparing(TrendingStock::symbol))
                 .limit(limit)
                 .toList();
+    }
+
+    private static boolean isProcessableMover(TrendingStock stock) {
+        return stock.latestPrice().compareTo(MIN_LISTING_PRICE) >= 0
+                && hasMinimumDailyBars(stock);
+    }
+
+    private static boolean hasMinimumDailyBars(TrendingStock stock) {
+        return stock.tradeCount().compareTo(BigDecimal.ZERO) == 0
+                || stock.tradeCount().compareTo(MIN_DAILY_BARS_FOR_PROCESSING) >= 0;
     }
 
     static List<TrendingStock> parseMoverList(JSONArray array, String reason) {
