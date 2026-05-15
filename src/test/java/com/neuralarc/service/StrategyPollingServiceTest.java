@@ -172,6 +172,35 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void targetSellImmediateFillSendsSellExecutedEmail() throws Exception {
+        Fixture f = new Fixture();
+        RecordingTradeEmailNotificationService emailService = new RecordingTradeEmailNotificationService(f.settingsService);
+        StrategyStateMachine stateMachine = new StrategyStateMachine(f.events, new StrategyEventBus());
+        StrategyEngine engine = new StrategyEngine(
+                f.strategies,
+                f.orders,
+                stateMachine,
+                f.alpaca,
+                f.settingsService,
+                f.marketHoursService,
+                emailService
+        );
+        Strategy strategy = f.activeStrategy(false);
+        f.alpaca.latestPrice = new BigDecimal("10.00");
+        f.alpaca.nextLimitSellStatus = "filled";
+        f.alpaca.nextLimitSellFilledQuantity = new BigDecimal("10");
+        f.alpaca.nextLimitSellFilledAveragePrice = new BigDecimal("10.00");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.00"), "{}"));
+
+        engine.reconcile(strategy);
+
+        StrategyOrder sellOrder = f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.TARGET_SELL).orElseThrow();
+        assertEquals(StrategyOrderStatus.FILLED, sellOrder.status());
+        assertEquals(StrategyLifecycleState.COMPLETED, f.strategies.findById(strategy.id()).orElseThrow().currentState());
+        assertEquals(List.of("AAPL:TARGET_SELL:FILLED"), emailService.sellExecuted);
+    }
+
+    @Test
     void targetSellPlacesBrokerTrailingStopWhenEnabled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
@@ -850,6 +879,9 @@ class StrategyPollingServiceTest {
         int openOrderCalls;
         BigDecimal lastTrailPercent = BigDecimal.ZERO;
         BigDecimal lastTrailPrice = BigDecimal.ZERO;
+        String nextLimitSellStatus = "new";
+        BigDecimal nextLimitSellFilledQuantity = Monetary.zero();
+        BigDecimal nextLimitSellFilledAveragePrice = Monetary.zero();
         private volatile CountDownLatch openOrdersEnteredLatch;
         private volatile CountDownLatch openOrdersReleaseLatch;
 
@@ -860,7 +892,7 @@ class StrategyPollingServiceTest {
 
         @Override
         public AlpacaOrderData submitLimitSellOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
-            return submit(symbol, "sell", quantity, limitPrice, clientOrderId);
+            return submitSell(symbol, quantity, limitPrice, clientOrderId);
         }
 
         @Override
@@ -891,6 +923,28 @@ class StrategyPollingServiceTest {
             String orderId = "ord-" + orderCounter;
             AlpacaOrderData data = new AlpacaOrderData(orderId, clientOrderId, symbol, side, "limit", limitPrice, Monetary.zero(), Monetary.zero(), "new", "{}");
             orderById.put(orderId, data);
+            return data;
+        }
+
+        private AlpacaOrderData submitSell(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
+            orderCounter++;
+            String orderId = "ord-" + orderCounter;
+            AlpacaOrderData data = new AlpacaOrderData(
+                    orderId,
+                    clientOrderId,
+                    symbol,
+                    "sell",
+                    "limit",
+                    limitPrice,
+                    nextLimitSellFilledAveragePrice,
+                    nextLimitSellFilledQuantity,
+                    nextLimitSellStatus,
+                    "{}"
+            );
+            orderById.put(orderId, data);
+            nextLimitSellStatus = "new";
+            nextLimitSellFilledQuantity = Monetary.zero();
+            nextLimitSellFilledAveragePrice = Monetary.zero();
             return data;
         }
 
@@ -1045,5 +1099,18 @@ class StrategyPollingServiceTest {
         @Override public void save(StrategyExecutionEvent event) { events.add(event); }
         @Override public List<StrategyExecutionEvent> findByStrategyId(String strategyId) { return events.stream().filter(e -> e.strategyId().equals(strategyId)).toList(); }
         @Override public void deleteByStrategyId(String strategyId) { events.removeIf(event -> event.strategyId().equals(strategyId)); }
+    }
+
+    private static final class RecordingTradeEmailNotificationService extends TradeEmailNotificationService {
+        private final List<String> sellExecuted = new ArrayList<>();
+
+        private RecordingTradeEmailNotificationService(AppSettingsService settingsService) {
+            super(settingsService, (recipientEmail, subject, textBody, htmlBody) -> {}, Runnable::run, "ops@example.com");
+        }
+
+        @Override
+        public void notifySellExecuted(Strategy strategy, StrategyOrder order) {
+            sellExecuted.add(strategy.symbol() + ":" + order.stage() + ":" + order.status());
+        }
     }
 }

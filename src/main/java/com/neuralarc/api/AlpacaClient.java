@@ -33,6 +33,10 @@ public interface AlpacaClient {
 
     List<AlpacaPositionData> getPositions();
 
+    default Optional<BigDecimal> getAvailableFunds() {
+        return Optional.empty();
+    }
+
     BigDecimal getLatestPrice(String symbol);
 
     /**

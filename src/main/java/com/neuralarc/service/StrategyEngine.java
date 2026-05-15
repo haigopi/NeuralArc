@@ -19,6 +19,7 @@ import java.util.logging.Logger;
 
 public class StrategyEngine {
     private static final Logger LOGGER = Logger.getLogger(StrategyEngine.class.getName());
+    private static final Logger TRADE_LOGGER = Logger.getLogger("com.neuralarc.trade");
 
     private final StrategyRepository strategyRepository;
     private final StrategyOrderRepository orderRepository;
@@ -472,6 +473,7 @@ public class StrategyEngine {
         if (order.side() == StrategyOrderSide.SELL
                 && status == StrategyOrderStatus.FILLED
                 && previousStatus != StrategyOrderStatus.FILLED) {
+            logSellCompleted(target, order);
             emailNotificationService.notifySellExecuted(target, order);
         }
         target.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(data.status()));
@@ -690,10 +692,11 @@ public class StrategyEngine {
             return order;
         }
         orderRepository.save(order);
+        notifyImmediateFilledSell(strategy, order);
         strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
         strategy.setLatestAlpacaOrderId(submitted.orderId());
         strategy.setLastTriggeredRuleType(mapStageToRuleName(stage));
-        stateMachine.transition(strategy, lifecycleState, eventType, message, submitted.rawJson());
+        stateMachine.transition(strategy, lifecycleStateForSubmittedSell(order, lifecycleState), eventType, message, submitted.rawJson());
         strategyRepository.save(strategy);
         return order;
     }
@@ -794,12 +797,51 @@ public class StrategyEngine {
             return order;
         }
         orderRepository.save(order);
+        notifyImmediateFilledSell(strategy, order);
         strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
         strategy.setLatestAlpacaOrderId(submitted.orderId());
         strategy.setLastTriggeredRuleType("ALPACA_TRAILING_STOP");
-        stateMachine.transition(strategy, lifecycleState, eventType, message, submitted.rawJson());
+        stateMachine.transition(strategy, lifecycleStateForSubmittedSell(order, lifecycleState), eventType, message, submitted.rawJson());
         strategyRepository.save(strategy);
         return order;
+    }
+
+    private void notifyImmediateFilledSell(Strategy strategy, StrategyOrder order) {
+        if (order.side() != StrategyOrderSide.SELL || order.status() != StrategyOrderStatus.FILLED) {
+            return;
+        }
+        if (order.filledAt() == null) {
+            order.setFilledAt(Instant.now());
+            orderRepository.save(order);
+        }
+        logSellCompleted(strategy, order);
+        emailNotificationService.notifySellExecuted(strategy, order);
+    }
+
+    private void logSellCompleted(Strategy strategy, StrategyOrder order) {
+        TRADE_LOGGER.info(() -> "SELL_COMPLETED symbol=" + strategy.symbol()
+                + " stage=" + order.stage()
+                + " quantity=" + order.filledQuantity().toPlainString()
+                + " averagePrice=" + order.filledAveragePrice().toPlainString()
+                + " alpacaOrderId=" + safeLogValue(order.alpacaOrderId())
+                + " strategyId=" + strategy.id());
+    }
+
+    private String safeLogValue(String value) {
+        return value == null || value.isBlank() ? "-" : value.trim();
+    }
+
+    private StrategyLifecycleState lifecycleStateForSubmittedSell(StrategyOrder order, StrategyLifecycleState fallback) {
+        if (order.side() != StrategyOrderSide.SELL) {
+            return fallback;
+        }
+        if (order.status() == StrategyOrderStatus.FILLED) {
+            return StrategyLifecycleState.COMPLETED;
+        }
+        if (order.status() == StrategyOrderStatus.PARTIALLY_FILLED) {
+            return StrategyLifecycleState.SELL_PARTIALLY_FILLED;
+        }
+        return fallback;
     }
 
     private BigDecimal trailingThreshold(Strategy strategy) {

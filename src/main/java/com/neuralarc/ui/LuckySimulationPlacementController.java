@@ -16,6 +16,7 @@ import com.neuralarc.service.StrategyApplyService;
 import com.neuralarc.service.StrategyRepository;
 import com.neuralarc.service.StrategyService;
 import com.neuralarc.util.BrokerOrderStatusUtil;
+import com.neuralarc.util.Monetary;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -56,15 +57,6 @@ public class LuckySimulationPlacementController {
                 gateway.log("[I Am Feeling Lucky] Skipped " + selection.stock().symbol() + ": missing valid base limit buy price.");
                 continue;
             }
-            if (recommendation.currentPrice() != null
-                    && recommendation.currentPrice().compareTo(BigDecimal.ZERO) > 0
-                    && recommendation.baseBuyPrice().compareTo(recommendation.currentPrice()) > 0) {
-                skipped++;
-                skippedReasons.add(selection.stock().symbol() + ": recommended base buy price is above current price");
-                gateway.log("[I Am Feeling Lucky] Skipped " + selection.stock().symbol()
-                        + ": recommended base buy price is above current price.");
-                continue;
-            }
             Strategy existing = findExistingPaperStrategy(selection.stock().symbol()).orElse(null);
             Strategy existingForReplace = null;
             if (existing != null && isWaitingForFill(existing)) {
@@ -87,7 +79,8 @@ public class LuckySimulationPlacementController {
                         + ": duplicate symbol policy blocked a new paper strategy.");
                 continue;
             }
-            Strategy strategy = toStrategy(selection, recommendation);
+            BigDecimal effectiveBaseBuyPrice = effectiveBaseBuyPrice(selection, recommendation);
+            Strategy strategy = toStrategy(selection, recommendation, effectiveBaseBuyPrice);
             StrategyService.StrategyCreationResult creationResult = gateway.createPaperStrategy(strategy);
             if (!creationResult.success()) {
                 skipped++;
@@ -105,9 +98,14 @@ public class LuckySimulationPlacementController {
         return new PlacementResult(created, replaced, skipped, skippedReasons, canceled);
     }
 
-    private Strategy toStrategy(LuckySimulationSelection selection, StrategyRecommendation recommendation) {
+    private Strategy toStrategy(
+            LuckySimulationSelection selection,
+            StrategyRecommendation recommendation,
+            BigDecimal effectiveBaseBuyPrice
+    ) {
         StrategyConfig config = luckySimulationConfig(selection, recommendation);
         Strategy strategy = Strategy.fromConfig(UUID.randomUUID().toString(), luckyStrategyName(selection), config, StrategyMode.PAPER);
+        strategy.setBaseBuyLimitPrice(effectiveBaseBuyPrice);
         strategy.setStatus(StrategyStatus.CREATED);
         strategy.setCurrentState(StrategyLifecycleState.CREATED);
         String stockReason = selection.stock().reason() == null || selection.stock().reason().isBlank()
@@ -116,11 +114,46 @@ public class LuckySimulationPlacementController {
         strategy.setLastEvent("Alpaca Paper mode from I Am Feeling Lucky. Selected "
                 + selection.selectedRecommendationType().name()
                 + ". Source " + stockReason
-                + ". Base limit buy $" + recommendation.baseBuyPrice().toPlainString()
+                + ". Base limit buy $" + strategy.baseBuyLimitPrice().toPlainString()
                 + ".");
         strategy.setLatestOrderStatus("PAPER_PENDING");
         strategy.setLatestAlpacaOrderId("");
         return strategy;
+    }
+
+    private BigDecimal effectiveBaseBuyPrice(LuckySimulationSelection selection, StrategyRecommendation recommendation) {
+        BigDecimal recommendedBase = recommendation.baseBuyPrice();
+        BigDecimal current = resolveCurrentPrice(selection, recommendation);
+        BigDecimal adjusted = adjustedLuckyPaperBaseBuyPrice(recommendedBase, current);
+        if (adjusted.compareTo(recommendedBase) != 0) {
+            gateway.log("[I Am Feeling Lucky] Adjusted base limit buy for " + selection.stock().symbol()
+                    + " from $" + recommendedBase.toPlainString()
+                    + " to $" + adjusted.toPlainString()
+                    + " (1% below current $" + current.toPlainString() + ").");
+        }
+        return adjusted;
+    }
+
+    static BigDecimal adjustedLuckyPaperBaseBuyPrice(BigDecimal proposedBasePrice, BigDecimal currentPrice) {
+        if (proposedBasePrice == null) {
+            return BigDecimal.ZERO;
+        }
+        if (currentPrice != null
+                && currentPrice.compareTo(BigDecimal.ZERO) > 0
+                && proposedBasePrice.compareTo(currentPrice) >= 0) {
+            return Monetary.round(currentPrice.multiply(new BigDecimal("0.99")));
+        }
+        return proposedBasePrice;
+    }
+
+    private BigDecimal resolveCurrentPrice(LuckySimulationSelection selection, StrategyRecommendation recommendation) {
+        BigDecimal latestPrice = selection == null || selection.stock() == null
+                ? null
+                : selection.stock().latestPrice();
+        if (latestPrice != null && latestPrice.compareTo(BigDecimal.ZERO) > 0) {
+            return latestPrice;
+        }
+        return recommendation == null ? null : recommendation.currentPrice();
     }
 
     private Optional<Strategy> findExistingPaperStrategy(String symbol) {

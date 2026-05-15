@@ -23,6 +23,7 @@ class LogArchiveServiceTest {
         Files.createDirectories(logs);
         Files.writeString(logs.resolve("app-2026-05-08.log"), "app");
         Files.writeString(logs.resolve("error-2026-05-08.log"), "error");
+        Files.writeString(logs.resolve("system-2026-05-08.log"), "system");
         Files.writeString(logs.resolve("trade-2026-05-09.log"), "trade");
 
         LogArchiveService service = new LogArchiveService(logs, archives);
@@ -33,6 +34,7 @@ class LogArchiveServiceTest {
         try (ZipFile zip = new ZipFile(archive.toFile())) {
             assertNotNull(zip.getEntry("app-2026-05-08.log"));
             assertNotNull(zip.getEntry("error-2026-05-08.log"));
+            assertNotNull(zip.getEntry("system-2026-05-08.log"));
         }
     }
 }

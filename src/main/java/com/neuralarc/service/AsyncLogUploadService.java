@@ -79,7 +79,11 @@ public final class AsyncLogUploadService implements AutoCloseable {
     private void safeReconcileAndUpload() {
         try {
             uploader.ensureEmailFile(userId, userEmail);
-            List<LocalDate> dates = archiveService.discoverArchivedLogDates(LocalDate.now());
+            LocalDate today = LocalDate.now();
+            LocalDate beforeDate = LocalTime.now().isBefore(marketCloseUploadTime)
+                    ? today
+                    : today.plusDays(1);
+            List<LocalDate> dates = archiveService.discoverArchivedLogDates(beforeDate);
             for (LocalDate date : dates) {
                 if (statusStore.isUploaded(date)) {
                     continue;

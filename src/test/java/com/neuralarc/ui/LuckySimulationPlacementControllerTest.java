@@ -132,16 +132,71 @@ class LuckySimulationPlacementControllerTest {
     }
 
     @Test
-    void skipsPlacementWhenRecommendationBasePriceIsAboveCurrentPrice() {
+    void autoAdjustsBaseLimitWhenRecommendationBasePriceIsAboveCurrentPrice() {
         InMemoryRepository repository = new InMemoryRepository();
         LuckySimulationPlacementController controller = controller(repository, true, false);
 
         LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selectionWithBaseAboveCurrent("NVDA", 10)));
 
-        assertEquals(0, result.created());
-        assertEquals(1, result.skipped());
-        assertEquals(0, repository.findAll().size());
-        assertTrue(result.skippedReasons().getFirst().contains("above current price"));
+        assertEquals(1, result.created());
+        assertEquals(0, result.skipped());
+        Strategy saved = repository.findAll().getFirst();
+        assertEquals(new BigDecimal("118.80"), saved.baseBuyLimitPrice());
+    }
+
+    @Test
+    void autoAdjustsBaseLimitWhenRecommendationBasePriceEqualsCurrentPrice() {
+        InMemoryRepository repository = new InMemoryRepository();
+        LuckySimulationPlacementController controller = controller(repository, true, false);
+
+        LuckySimulationSelection selection = selectionWithBaseAndCurrent("NVDA", 10,
+                new BigDecimal("120.00"), new BigDecimal("120.00"));
+        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection));
+
+        assertEquals(1, result.created());
+        assertEquals(0, result.skipped());
+        Strategy saved = repository.findAll().getFirst();
+        assertEquals(new BigDecimal("118.80"), saved.baseBuyLimitPrice());
+    }
+
+    @Test
+    void usesStockLatestPriceAsCurrentSourcePriorityForAdjustment() {
+        InMemoryRepository repository = new InMemoryRepository();
+        LuckySimulationPlacementController controller = controller(repository, true, false);
+
+        LuckySimulationSelection selection = selectionWithBaseCurrentAndLatest(
+                "NVDA",
+                10,
+                new BigDecimal("125.00"),
+                new BigDecimal("130.00"),
+                new BigDecimal("120.00")
+        );
+        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection));
+
+        assertEquals(1, result.created());
+        assertEquals(0, result.skipped());
+        Strategy saved = repository.findAll().getFirst();
+        assertEquals(new BigDecimal("118.80"), saved.baseBuyLimitPrice());
+    }
+
+    @Test
+    void fallsBackToRecommendationCurrentWhenStockLatestUnavailable() {
+        InMemoryRepository repository = new InMemoryRepository();
+        LuckySimulationPlacementController controller = controller(repository, true, false);
+
+        LuckySimulationSelection selection = selectionWithBaseCurrentAndLatest(
+                "NVDA",
+                10,
+                new BigDecimal("125.00"),
+                new BigDecimal("121.00"),
+                BigDecimal.ZERO
+        );
+        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection));
+
+        assertEquals(1, result.created());
+        assertEquals(0, result.skipped());
+        Strategy saved = repository.findAll().getFirst();
+        assertEquals(new BigDecimal("119.79"), saved.baseBuyLimitPrice());
     }
 
     @Test
@@ -235,16 +290,35 @@ class LuckySimulationPlacementControllerTest {
     }
 
     private LuckySimulationSelection selectionWithBaseAboveCurrent(String symbol, int quantity) {
+        return selectionWithBaseAndCurrent(symbol, quantity, new BigDecimal("125.00"), new BigDecimal("120.00"));
+    }
+
+    private LuckySimulationSelection selectionWithBaseAndCurrent(
+            String symbol,
+            int quantity,
+            BigDecimal basePrice,
+            BigDecimal currentPrice
+    ) {
+        return selectionWithBaseCurrentAndLatest(symbol, quantity, basePrice, currentPrice, BigDecimal.ZERO);
+    }
+
+    private LuckySimulationSelection selectionWithBaseCurrentAndLatest(
+            String symbol,
+            int quantity,
+            BigDecimal basePrice,
+            BigDecimal currentPrice,
+            BigDecimal latestPrice
+    ) {
         StrategyRecommendation recommendation = recommendation(symbol, RecommendationType.SHORT_TERM,
-                new BigDecimal("125.00"), new BigDecimal("120.00"));
+                basePrice, currentPrice);
         AutoAnalyzeBundle bundle = new AutoAnalyzeBundle(
                 result(symbol),
                 recommendation,
-                recommendation(symbol, RecommendationType.HIGH_RISK_SHORT_TERM, new BigDecimal("126.00"), new BigDecimal("120.00")),
-                recommendation(symbol, RecommendationType.LONG_TERM, new BigDecimal("124.00"), new BigDecimal("120.00"))
+                recommendation(symbol, RecommendationType.HIGH_RISK_SHORT_TERM, basePrice.add(BigDecimal.ONE), currentPrice),
+                recommendation(symbol, RecommendationType.LONG_TERM, basePrice.subtract(BigDecimal.ONE), currentPrice)
         );
         return new LuckySimulationSelection(
-                new TrendingStock(symbol, "", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "", BigDecimal.TEN),
+                new TrendingStock(symbol, "", latestPrice, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "", BigDecimal.TEN),
                 bundle,
                 RecommendationType.SHORT_TERM,
                 quantity

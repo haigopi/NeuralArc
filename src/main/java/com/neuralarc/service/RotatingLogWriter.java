@@ -13,6 +13,7 @@ public final class RotatingLogWriter {
     public enum LogType {
         APP("app"),
         ERROR("error"),
+        SYSTEM("system"),
         TRADE("trade");
 
         private final String prefix;

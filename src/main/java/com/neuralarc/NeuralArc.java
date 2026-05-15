@@ -1,6 +1,7 @@
 package com.neuralarc;
 
 import com.neuralarc.ui.AboutDialog;
+import com.neuralarc.service.RotatingJavaLogHandler;
 import com.neuralarc.ui.SplashScreenWindow;
 import com.neuralarc.ui.TradingFrame;
 import com.neuralarc.util.AppIconLoader;
@@ -12,6 +13,7 @@ import java.awt.Desktop;
 import java.awt.Image;
 import java.awt.Taskbar;
 import java.io.InputStream;
+import java.util.logging.Logger;
 import java.util.logging.LogManager;
 
 public class NeuralArc {
@@ -84,6 +86,16 @@ public class NeuralArc {
             }
         } catch (Exception ignored) {
             // Fall back to JVM defaults if config cannot be loaded.
+        }
+        installRotatingApplicationLogHandler();
+    }
+
+    private static void installRotatingApplicationLogHandler() {
+        try {
+            Logger root = Logger.getLogger("");
+            root.addHandler(new RotatingJavaLogHandler(AppMetadata.appDataDirectory().resolve("logs")));
+        } catch (Exception ignored) {
+            // Console logging remains available if file logging cannot be installed.
         }
     }
 

@@ -209,6 +209,30 @@ public class HttpAlpacaClient implements AlpacaClient {
     }
 
     @Override
+    public Optional<BigDecimal> getAvailableFunds() {
+        String endpoint = tradingBaseUrl + "/v2/account";
+        HttpRequest request = baseRequest(endpoint).GET().build();
+        Optional<String> body = executeBody(request);
+        if (body.isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            JSONObject json = new JSONObject(body.get());
+            BigDecimal funds = firstPositiveAccountMoney(
+                    json,
+                    "buying_power",
+                    "regt_buying_power",
+                    "daytrading_buying_power",
+                    "cash"
+            );
+            return Optional.of(Monetary.round(funds));
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "Failed to parse account funds", ex);
+            return Optional.empty();
+        }
+    }
+
+    @Override
     public BigDecimal getLatestPrice(String symbol) {
         if (symbol == null || symbol.isBlank()) {
             return Monetary.zero();
@@ -538,6 +562,20 @@ public class HttpAlpacaClient implements AlpacaClient {
         } catch (NumberFormatException ex) {
             return Monetary.zero();
         }
+    }
+
+    private BigDecimal firstPositiveAccountMoney(JSONObject json, String... keys) {
+        for (String key : keys) {
+            Object value = json.opt(key);
+            if (value == null) {
+                continue;
+            }
+            BigDecimal parsed = parseMoney(String.valueOf(value));
+            if (parsed.compareTo(BigDecimal.ZERO) > 0) {
+                return parsed;
+            }
+        }
+        return Monetary.zero();
     }
 
     private String normalizeBaseUrl(String value) {

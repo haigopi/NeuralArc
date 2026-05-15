@@ -8,8 +8,13 @@ import java.util.function.Function;
 
 final class StrategyGridTableModel extends AbstractTableModel {
     static final String[] COLUMNS = {
-            "Symbol", "Status", "Shares", "Avg Cost", "Stock Price", "Market Value",
-            "P&L", "Polling", "Broker + Mode", "Entry Source", "Exit Source", "Actions"
+            "Shares", "Symbol", "Avg Cost", "Stock Price", "Market Value", "P&L",
+            "Status", "Polling", "Broker + Mode", "Entry Source", "Exit Source", "Actions"
+    };
+
+    // Maps the grid column order to the presenter column contract used by StrategyTablePresenter.
+    private static final int[] MODEL_TO_PRESENTER_COLUMN_INDEX = {
+            2, 0, 3, 4, 5, 6, 1, 7, 8, 9, 10, 11
     };
 
     private final List<ManagedStrategy> strategies;
@@ -42,10 +47,17 @@ final class StrategyGridTableModel extends AbstractTableModel {
                 entry.cachedPosition(),
                 entry.cachedLastSellPrice(),
                 entry.cachedRealizedPnl(),
-                columnIndex,
+                presenterColumnIndex(columnIndex),
                 statusLabel,
                 brokerModeLabelFn.apply(entry.strategy)
         );
+    }
+
+    private int presenterColumnIndex(int modelColumnIndex) {
+        if (modelColumnIndex < 0 || modelColumnIndex >= MODEL_TO_PRESENTER_COLUMN_INDEX.length) {
+            return modelColumnIndex;
+        }
+        return MODEL_TO_PRESENTER_COLUMN_INDEX[modelColumnIndex];
     }
 
     @Override

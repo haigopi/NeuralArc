@@ -118,6 +118,7 @@ public class TradingFrame extends JFrame {
     private final JLabel pollingSummary = new JLabel("Poll: -");
     private final JLabel marketStatus = new JLabel("Market: Unknown");
     private final JLabel streamStatus = new JLabel("Trade Stream: idle");
+    private final JLabel availableFundsStatus = new JLabel("Funds Available: -");
     private final JLabel marketValueStatus = new JLabel("Market Value: -");
     private final JLabel investedValueStatus = new JLabel("Invested Value: -");
     private final JLabel cpuUsageStatus = new JLabel("CPU: -");
@@ -219,7 +220,7 @@ public class TradingFrame extends JFrame {
                 return null;
             }
             int modelRow = convertRowIndexToModel(viewRow);
-            if (modelRow < 0 || modelRow >= strategies.size() || viewCol != 1) {
+            if (modelRow < 0 || modelRow >= strategies.size() || viewCol != 6) {
                 return null;
             }
             Strategy strategy = strategies.get(modelRow).strategy;
@@ -295,6 +296,10 @@ public class TradingFrame extends JFrame {
     private String runtimeApiSecret = "";
     private volatile HttpAlpacaClient paperModeClient;
     private volatile HttpAlpacaClient liveModeClient;
+    private volatile String availableFundsText = "Funds Available: -";
+    private volatile long lastAvailableFundsFetchAtMillis;
+    private final AtomicBoolean availableFundsFetchInFlight = new AtomicBoolean(false);
+    private static final long AVAILABLE_FUNDS_REFRESH_INTERVAL_MILLIS = 15000L;
     private volatile long lastBatchGridPriceRefreshAtMillis;
     private volatile boolean batchGridPriceRefreshRequestedFromStream;
     private volatile long lastLoggedSnapshotIntervalMillis = -1L;
@@ -971,17 +976,21 @@ public class TradingFrame extends JFrame {
         StatusRowRenderer statusRowRenderer = new StatusRowRenderer();
         strategyTable.setDefaultRenderer(Object.class, statusRowRenderer);
         strategyTable.setDefaultRenderer(Number.class, statusRowRenderer);
-        strategyTable.getColumnModel().getColumn(6).setCellRenderer(new UnrealizedPnLRenderer());
+        strategyTable.getColumnModel().getColumn(5).setCellRenderer(new UnrealizedPnLRenderer());
         strategyTable.getColumnModel().getColumn(7).setCellRenderer(new PollingBarRenderer());
         strategyTable.getColumnModel().getColumn(11).setCellRenderer(new ActionsRenderer());
+        strategyTable.getColumnModel().getColumn(0).setPreferredWidth(100);
+        strategyTable.getColumnModel().getColumn(0).setMinWidth(88);
+        strategyTable.getColumnModel().getColumn(6).setPreferredWidth(300);
+        strategyTable.getColumnModel().getColumn(6).setMinWidth(260);
         strategyTable.getColumnModel().getColumn(7).setPreferredWidth(240);
         strategyTable.getColumnModel().getColumn(7).setMinWidth(220);
         strategyTable.getColumnModel().getColumn(9).setPreferredWidth(180);
         strategyTable.getColumnModel().getColumn(9).setMinWidth(150);
         strategyTable.getColumnModel().getColumn(10).setPreferredWidth(220);
         strategyTable.getColumnModel().getColumn(10).setMinWidth(180);
-        strategyTable.getColumnModel().getColumn(11).setPreferredWidth(500);
-        strategyTable.getColumnModel().getColumn(11).setMinWidth(480);
+        strategyTable.getColumnModel().getColumn(11).setPreferredWidth(560);
+        strategyTable.getColumnModel().getColumn(11).setMinWidth(520);
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
         // Using mousePressed (not mouseClicked) gives instant response — mouseClicked only fires
@@ -1039,7 +1048,7 @@ public class TradingFrame extends JFrame {
                 // an actual data row — NOT over the empty viewport space below the rows.
                 int viewRow = strategyTable.rowAtPoint(e.getPoint());
                 int viewCol = strategyTable.columnAtPoint(e.getPoint());
-                if (viewRow >= 0 && viewCol == 9) {
+                if (viewRow >= 0 && viewCol == 11) {
                     strategyTable.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
                 } else {
                     strategyTable.setCursor(java.awt.Cursor.getDefaultCursor());
@@ -1049,10 +1058,11 @@ public class TradingFrame extends JFrame {
 
         // Make table sortable — click column headers to sort
         strategySorter = new TableRowSorter<>(strategyTableModel);
+        strategySorter.setComparator(0, (left, right) -> compareNumericCells(left, right));
+        strategySorter.setComparator(2, (left, right) -> compareNumericCells(left, right));
         strategySorter.setComparator(3, (left, right) -> compareNumericCells(left, right));
         strategySorter.setComparator(4, (left, right) -> compareNumericCells(left, right));
-        strategySorter.setComparator(5, (left, right) -> compareNumericCells(left, right));
-        strategySorter.setComparator(6, (left, right) -> {
+        strategySorter.setComparator(5, (left, right) -> {
             BigDecimal leftValue = sortableNumericValue(left);
             BigDecimal rightValue = sortableNumericValue(right);
             if (leftValue == null && rightValue == null) {
@@ -1159,6 +1169,10 @@ public class TradingFrame extends JFrame {
         marketValueStatus.setForeground(BOTTOM_STATUS_MARKET_VALUE);
         marketValueStatus.setVerticalAlignment(SwingConstants.CENTER);
         marketValueStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
+        availableFundsStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        availableFundsStatus.setForeground(BOTTOM_STATUS_MARKET_VALUE);
+        availableFundsStatus.setVerticalAlignment(SwingConstants.CENTER);
+        availableFundsStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
         investedValueStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         investedValueStatus.setForeground(BOTTOM_STATUS_MARKET_VALUE);
         investedValueStatus.setVerticalAlignment(SwingConstants.CENTER);
@@ -1241,23 +1255,14 @@ public class TradingFrame extends JFrame {
         GridBagConstraints leftGbc = new GridBagConstraints();
         leftGbc.gridy = 0;
         leftGbc.anchor = GridBagConstraints.CENTER;
-        leftGbc.insets = statusSegmentInsets();
-        leftGbc.gridx = 0;
-        statusLeft.add(createStatusSegment(statusBar), leftGbc);
-        leftGbc.gridx = 1;
-        statusLeft.add(createStatusSegment(marketStatus), leftGbc);
-        leftGbc.gridx = 2;
-        statusLeft.add(createStatusSegment(statusStrategyCount), leftGbc);
-        leftGbc.gridx = 3;
-        statusLeft.add(createStatusSegment(streamStatus), leftGbc);
-        leftGbc.gridx = 4;
-        statusLeft.add(createStatusSegment(marketValueStatus), leftGbc);
-        leftGbc.gridx = 5;
-        statusLeft.add(createStatusSegment(investedValueStatus), leftGbc);
-        leftGbc.gridx = 6;
-        statusLeft.add(createCpuMemorySegment(), leftGbc);
-        leftGbc.gridx = 7;
-        statusLeft.add(createStatusSegment(pollingSummary), leftGbc);
+        int statusColumn = 0;
+        statusColumn = addStatusSegment(statusLeft, leftGbc, statusColumn, createStatusSegment(statusBar), true);
+        statusColumn = addStatusSegment(statusLeft, leftGbc, statusColumn, createStatusSegment(marketStatus), true);
+        statusColumn = addStatusSegment(statusLeft, leftGbc, statusColumn, createStatusSegment(statusStrategyCount), true);
+        statusColumn = addStatusSegment(statusLeft, leftGbc, statusColumn, createStatusSegment(streamStatus), true);
+        statusColumn = addStatusSegment(statusLeft, leftGbc, statusColumn, createPortfolioValueSegment(), true);
+        statusColumn = addStatusSegment(statusLeft, leftGbc, statusColumn, createCpuMemorySegment(), true);
+        addStatusSegment(statusLeft, leftGbc, statusColumn, createStatusSegment(pollingSummary), false);
 
         JPanel statusRight = new JPanel(new GridBagLayout());
         statusRight.setOpaque(false);
@@ -2376,12 +2381,20 @@ public class TradingFrame extends JFrame {
             StrategyApplyService applyService = new StrategyApplyService();
             StrategyApplyService.AppliedStrategyValues values =
                     applyService.applyRecommendationToCurrentStrategy(recommendation);
+            BigDecimal currentPriceForGuard = selection.stock() == null ? null : selection.stock().latestPrice();
+            if (currentPriceForGuard == null || currentPriceForGuard.compareTo(BigDecimal.ZERO) <= 0) {
+                currentPriceForGuard = recommendation.currentPrice();
+            }
+            BigDecimal guardedBaseBuyPrice = LuckySimulationPlacementController.adjustedLuckyPaperBaseBuyPrice(
+                    values.buyRulePrice(),
+                    currentPriceForGuard
+            );
             int pollingSeconds = settingsDialog.appliedDefaultStrategyPollingSeconds();
             boolean repeatCycle = settingsDialog.appliedDefaultRepeatCycleAfterProfitExitEnabled();
             boolean resubmit = settingsDialog.appliedDefaultResubmitOnExpiryEnabled();
             StrategyConfig prefilledConfig = new StrategyConfig(
                     selection.stock().symbol(),
-                    values.buyRulePrice(),
+                    guardedBaseBuyPrice,
                     Math.max(1, selection.buyQuantity()),
                     true,
                     values.stopLossPrice(),
@@ -2437,7 +2450,7 @@ public class TradingFrame extends JFrame {
                     config,
                     StrategyMode.PAPER
             );
-            strategy.setLastEvent(luckyEntrySourceEvent(selection, recommendation));
+            strategy.setLastEvent(luckyEntrySourceEvent(selection, strategy.baseBuyLimitPrice()));
             StrategyService.StrategyCreationResult creationResult =
                     strategyServiceForMode(StrategyMode.PAPER).createAndActivate(strategy);
             if (!creationResult.success()) {
@@ -2469,13 +2482,13 @@ public class TradingFrame extends JFrame {
         dialog.setVisible(true);
     }
 
-    private String luckyEntrySourceEvent(LuckySimulationSelection selection, StrategyRecommendation recommendation) {
+    private String luckyEntrySourceEvent(LuckySimulationSelection selection, BigDecimal baseBuyLimitPrice) {
         String stockReason = selection.stock().reason() == null || selection.stock().reason().isBlank()
                 ? "lucky-simulation"
                 : selection.stock().reason();
-        String basePrice = recommendation == null || recommendation.baseBuyPrice() == null
+        String basePrice = baseBuyLimitPrice == null
                 ? "-"
-                : recommendation.baseBuyPrice().toPlainString();
+                : baseBuyLimitPrice.toPlainString();
         return "Alpaca Paper mode from I Am Feeling Lucky. Selected "
                 + selection.selectedRecommendationType().name()
                 + ". Source " + stockReason
@@ -3670,8 +3683,12 @@ public class TradingFrame extends JFrame {
     }
 
     private void updateStatusBar() {
-        long running = strategies.stream().filter(s -> s.strategy.status() == StrategyStatus.ACTIVE).count();
-        long inactive = Math.max(0L, strategies.size() - running);
+        long totalCurrentStrategies = strategies.stream().filter(this::includeInCurrentStrategiesTab).count();
+        long running = strategies.stream()
+                .filter(this::includeInCurrentStrategiesTab)
+                .filter(s -> s.strategy.status() == StrategyStatus.ACTIVE)
+                .count();
+        long inactive = Math.max(0L, totalCurrentStrategies - running);
         AppSettingsService.AppSettings settings = appSettingsService.load();
         boolean regularMarketOpen = marketHoursService.isRegularMarketHours();
         boolean tradingSessionOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
@@ -3697,7 +3714,7 @@ public class TradingFrame extends JFrame {
                         pollSnapshot != null && pollSnapshot.marketClosedSuppressed(),
                         pollSnapshot == null ? 0 : pollSnapshot.due(),
                         pollSnapshot == null ? 0 : pollSnapshot.skippedNotDue(),
-                        filledOrderRows.size(),
+                        tradeHistoryStockCount(),
                         connectionRetryPending,
                         connectionOk,
                         marketStatusViewModel.label(),
@@ -3716,6 +3733,7 @@ public class TradingFrame extends JFrame {
             marketStatus.setText(statusBarViewModel.marketText());
             marketStatus.setForeground(statusToneColor(statusBarViewModel.marketTone()));
             marketStatus.setToolTipText(TooltipStyler.text(statusBarViewModel.marketTooltip()));
+            availableFundsStatus.setText(availableFundsText);
             marketValueStatus.setText(statusBarViewModel.marketValueText());
             investedValueStatus.setText(investedValueText);
             cpuUsageStatus.setText(statusBarViewModel.cpuText());
@@ -3725,6 +3743,35 @@ public class TradingFrame extends JFrame {
             luckyButton.setEnabled(settingsDialog.hasRequiredSettings());
             refreshTradeHistoryHeading();
             refreshGridSearchVisibility();
+            refreshAvailableFundsAsync();
+        });
+    }
+
+    private void refreshAvailableFundsAsync() {
+        if (!connectionOk || connectionRetryPending) {
+            availableFundsText = "Funds Available: -";
+            availableFundsStatus.setText(availableFundsText);
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastAvailableFundsFetchAtMillis < AVAILABLE_FUNDS_REFRESH_INTERVAL_MILLIS) {
+            return;
+        }
+        HttpAlpacaClient client = alpacaClientForMode(settingsDialog.appliedApplicationMode());
+        if (client == null || !availableFundsFetchInFlight.compareAndSet(false, true)) {
+            return;
+        }
+        lastAvailableFundsFetchAtMillis = now;
+        uiPollingExecutor.execute(() -> {
+            try {
+                String updatedText = client.getAvailableFunds()
+                        .map(value -> "Funds Available: $" + value.toPlainString())
+                        .orElse("Funds Available: -");
+                availableFundsText = updatedText;
+                SwingUtilities.invokeLater(() -> availableFundsStatus.setText(updatedText));
+            } finally {
+                availableFundsFetchInFlight.set(false);
+            }
         });
     }
 
@@ -3762,22 +3809,68 @@ public class TradingFrame extends JFrame {
         };
     }
 
-    private java.awt.Insets statusSegmentInsets() {
-        return new java.awt.Insets(0, 0, 0, 14);
-    }
-
     private JPanel createStatusSegment(JComponent component) {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setOpaque(false);
-        panel.setBorder(new EmptyBorder(2, 0, 2, 0));
+        panel.setBorder(new EmptyBorder(2, 4, 2, 4));
         panel.add(component, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private int addStatusSegment(
+            JPanel statusPanel,
+            GridBagConstraints constraints,
+            int column,
+            JComponent segment,
+            boolean separatorAfter
+    ) {
+        constraints.gridx = column;
+        constraints.insets = new java.awt.Insets(0, 0, 0, 0);
+        statusPanel.add(segment, constraints);
+        if (!separatorAfter) {
+            return column + 1;
+        }
+        constraints.gridx = column + 1;
+        statusPanel.add(createStatusSeparator(), constraints);
+        return column + 2;
+    }
+
+    private JLabel createStatusSeparator() {
+        JLabel separator = new JLabel("|");
+        separator.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        separator.setForeground(new Color(92, 92, 108));
+        separator.setHorizontalAlignment(SwingConstants.CENTER);
+        separator.setBorder(new EmptyBorder(0, 8, 0, 8));
+        return separator;
+    }
+
+    private JPanel createPortfolioValueSegment() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setOpaque(false);
+        panel.setBorder(new EmptyBorder(2, 4, 2, 4));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridy = 0;
+        gbc.anchor = GridBagConstraints.CENTER;
+        gbc.gridx = 0;
+        gbc.insets = new java.awt.Insets(0, 0, 0, 6);
+        panel.add(availableFundsStatus, gbc);
+        gbc.gridx = 1;
+        gbc.insets = new java.awt.Insets(0, 0, 0, 6);
+        panel.add(createInlineStatusSeparator(), gbc);
+        gbc.gridx = 2;
+        panel.add(marketValueStatus, gbc);
+        gbc.gridx = 3;
+        panel.add(createInlineStatusSeparator(), gbc);
+        gbc.gridx = 4;
+        gbc.insets = new java.awt.Insets(0, 0, 0, 0);
+        panel.add(investedValueStatus, gbc);
         return panel;
     }
 
     private JPanel createCpuMemorySegment() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setOpaque(false);
-        panel.setBorder(new EmptyBorder(2, 0, 2, 0));
+        panel.setBorder(new EmptyBorder(2, 4, 2, 4));
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridy = 0;
         gbc.anchor = GridBagConstraints.CENTER;
@@ -3786,14 +3879,18 @@ public class TradingFrame extends JFrame {
         panel.add(cpuUsageStatus, gbc);
         gbc.gridx = 1;
         gbc.insets = new java.awt.Insets(0, 0, 0, 5);
-        JLabel separator = new JLabel("|");
-        separator.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
-        separator.setForeground(new Color(95, 95, 110));
-        panel.add(separator, gbc);
+        panel.add(createInlineStatusSeparator(), gbc);
         gbc.gridx = 2;
         gbc.insets = new java.awt.Insets(0, 0, 0, 0);
         panel.add(memoryUsageStatus, gbc);
         return panel;
+    }
+
+    private JLabel createInlineStatusSeparator() {
+        JLabel separator = new JLabel("|");
+        separator.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        separator.setForeground(new Color(95, 95, 110));
+        return separator;
     }
 
     private String formatMarketValueText() {
@@ -4129,7 +4226,7 @@ public class TradingFrame extends JFrame {
                     setForeground(TABLE_SELECTION_FG);
                 } else {
                     setBackground(row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD);
-                    if (column == 1) {
+                    if (column == 6) {
                         String latestOrderStatus = BrokerOrderStatusUtil.normalize(strategies.get(modelRow).strategy.latestOrderStatus());
                         if ("rejected".equals(latestOrderStatus)) {
                             setForeground(STATUS_ERR);
@@ -4143,12 +4240,17 @@ public class TradingFrame extends JFrame {
                         }
                     } else if (column == 8) {
                         setForeground(gridBrokerModeColor(strategies.get(modelRow).strategy));
+                    } else if (column == 1) {
+                        Object pnlValue = table.getModel().getValueAt(modelRow, 5);
+                        setForeground(PnlCellStyleSupport.foregroundFor(pnlValue, table.getForeground()));
+                    } else if (column == 9) {
+                        setForeground(entrySourceTextColor(value, table.getForeground()));
                     } else {
                         setForeground(table.getForeground());
                     }
                 }
             }
-            if (!(column == 1
+            if (!(column == 6
                     && modelRow >= 0
                     && modelRow < strategies.size()
                     && "rejected".equals(BrokerOrderStatusUtil.normalize(strategies.get(modelRow).strategy.latestOrderStatus())))) {
@@ -4165,9 +4267,23 @@ public class TradingFrame extends JFrame {
 
         private int alignmentForColumn(int column) {
             return switch (column) {
-                case 1 -> CENTER;
+                case 6 -> RIGHT;
                 default -> LEFT;
             };
+        }
+
+        private Color entrySourceTextColor(Object value, Color fallback) {
+            if (value == null) {
+                return fallback;
+            }
+            String source = String.valueOf(value).toLowerCase(Locale.ROOT);
+            if (source.contains("gainer")) {
+                return new Color(34, 139, 34);
+            }
+            if (source.contains("loser")) {
+                return new Color(210, 130, 20);
+            }
+            return fallback;
         }
     }
 
