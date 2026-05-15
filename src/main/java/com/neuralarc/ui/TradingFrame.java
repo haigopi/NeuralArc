@@ -1098,6 +1098,9 @@ public class TradingFrame extends JFrame {
         filledSorter.setComparator(6, (left, right) -> compareHistoryNumericCells(left, right));
         filledSorter.setComparator(7, (left, right) -> compareHistoryNumericCells(left, right));
         filledSorter.setComparator(8, (left, right) -> compareHistoryNumericCells(left, right));
+        for (int column = 0; column < HistoryGridTableModel.COLUMNS.length; column++) {
+            filledSorter.setSortable(column, column == 0); // Only Symbol is sortable in Trade History.
+        }
         filledOrdersTable.setRowSorter(filledSorter);
 
         JScrollPane filledOrdersGrid = new JScrollPane(filledOrdersTable);
@@ -1118,7 +1121,7 @@ public class TradingFrame extends JFrame {
 
         strategyTabs.setBorder(new EmptyBorder(0, 0, 0, 0));
         strategyTabs.addTab(currentStrategiesHeadingText(), strategyGrid);
-        strategyTabs.addTab("Trade History", filledOrdersGrid);
+        strategyTabs.addTab(tradeHistoryHeadingText(), filledOrdersGrid);
 
 
         // ── Status bar ─────────────────────────────────────────────────────────
@@ -3178,6 +3181,7 @@ public class TradingFrame extends JFrame {
         filledOrderRows.clear();
         filledOrderRows.addAll(historyTablePresenter.buildRows(sources, this::formatTimestampForDisplay));
         filledOrdersTableModel.fireTableDataChanged();
+        refreshTradeHistoryHeading();
     }
 
     private ManagedStrategy findStrategy(String symbol) {
@@ -3570,6 +3574,7 @@ public class TradingFrame extends JFrame {
             statusBar.setText(statusBarViewModel.brokerText());
             statusBar.setForeground(statusToneColor(statusBarViewModel.brokerTone()));
             luckyButton.setEnabled(settingsDialog.hasRequiredSettings());
+            refreshTradeHistoryHeading();
         });
     }
 
@@ -3580,9 +3585,23 @@ public class TradingFrame extends JFrame {
         strategyTabs.setTitleAt(0, currentStrategiesHeadingText());
     }
 
+    private void refreshTradeHistoryHeading() {
+        if (strategyTabs.getTabCount() < 2) {
+            return;
+        }
+        strategyTabs.setTitleAt(1, tradeHistoryHeadingText());
+    }
+
     private String currentStrategiesHeadingText() {
         long currentCount = strategies.stream().filter(this::includeInCurrentStrategiesTab).count();
         return "Current Strategies (" + currentCount + ")";
+    }
+
+    private String tradeHistoryHeadingText() {
+        long historyCount = filledOrderRows.stream()
+                .filter(row -> row.style() != HistoryTablePresenter.HistoryRowStyle.SUBTOTAL)
+                .count();
+        return "Trade History (" + historyCount + ")";
     }
 
     private Color statusToneColor(StatusBarPresenter.Tone tone) {
