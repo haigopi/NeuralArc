@@ -38,6 +38,8 @@ import org.json.JSONArray;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.RowSorter;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -102,6 +104,7 @@ public class TradingFrame extends JFrame {
     private static final DateTimeFormatter LOG_TIME_FORMAT = DateTimeFormatter.ofPattern("h:mm a");
     private static final DateTimeFormatter RULE_TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM d yyyy, h:mm a");
     private static final DateTimeFormatter NEXT_OPEN_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM d yyyy h:mm a z");
+    private static final int GRID_SEARCH_MIN_STOCK_COUNT = 9;
 
     private final JLabel positionSummary = new JLabel("Position: -");
     private final JLabel ruleState = new JLabel("Rules: -");
@@ -259,6 +262,12 @@ public class TradingFrame extends JFrame {
     };
     private final JTable filledOrdersTable = new JTable(filledOrdersTableModel);
     private final JTabbedPane strategyTabs = new JTabbedPane();
+    private final JTextField currentStrategiesSearchField = new JTextField(24);
+    private final JTextField tradeHistorySearchField = new JTextField(24);
+    private final JPanel currentStrategiesSearchPanel = createGridSearchPanel("Search stocks:", currentStrategiesSearchField);
+    private final JPanel tradeHistorySearchPanel = createGridSearchPanel("Search stocks:", tradeHistorySearchField);
+    private TableRowSorter<StrategyGridTableModel> strategySorter;
+    private TableRowSorter<HistoryGridTableModel> filledOrdersSorter;
 
     private TradingApi tradingApi;
     private AnalyticsPublisher analyticsPublisher;
@@ -1039,11 +1048,11 @@ public class TradingFrame extends JFrame {
         });
 
         // Make table sortable — click column headers to sort
-        TableRowSorter<StrategyGridTableModel> sorter = new TableRowSorter<>(strategyTableModel);
-        sorter.setComparator(3, (left, right) -> compareNumericCells(left, right));
-        sorter.setComparator(4, (left, right) -> compareNumericCells(left, right));
-        sorter.setComparator(5, (left, right) -> compareNumericCells(left, right));
-        sorter.setComparator(6, (left, right) -> {
+        strategySorter = new TableRowSorter<>(strategyTableModel);
+        strategySorter.setComparator(3, (left, right) -> compareNumericCells(left, right));
+        strategySorter.setComparator(4, (left, right) -> compareNumericCells(left, right));
+        strategySorter.setComparator(5, (left, right) -> compareNumericCells(left, right));
+        strategySorter.setComparator(6, (left, right) -> {
             BigDecimal leftValue = sortableNumericValue(left);
             BigDecimal rightValue = sortableNumericValue(right);
             if (leftValue == null && rightValue == null) {
@@ -1057,19 +1066,10 @@ public class TradingFrame extends JFrame {
             }
             return leftValue.compareTo(rightValue);
         });
-        sorter.setSortable(7, false); // Polling countdown bar column — not sortable
-        sorter.setSortable(11, false); // Actions button column — not sortable
-        sorter.setRowFilter(new RowFilter<>() {
-            @Override
-            public boolean include(Entry<? extends StrategyGridTableModel, ? extends Integer> entry) {
-                int modelRow = entry.getIdentifier();
-                if (modelRow < 0 || modelRow >= strategies.size()) {
-                    return false;
-                }
-                return includeInCurrentStrategiesTab(strategies.get(modelRow));
-            }
-        });
-        strategyTable.setRowSorter(sorter);
+        strategySorter.setSortable(7, false); // Polling countdown bar column — not sortable
+        strategySorter.setSortable(11, false); // Actions button column — not sortable
+        applyCurrentStrategiesRowFilter();
+        strategyTable.setRowSorter(strategySorter);
 
         JScrollPane strategyGrid = new JScrollPane(strategyTable);
         strategyGrid.setOpaque(false);
@@ -1094,14 +1094,15 @@ public class TradingFrame extends JFrame {
         filledOrdersTable.setIntercellSpacing(new Dimension(0, 0));
         filledOrdersTable.setDefaultRenderer(Object.class, new HistoryRowRenderer());
         filledOrdersTable.setDefaultRenderer(Number.class, new HistoryRowRenderer());
-        TableRowSorter<HistoryGridTableModel> filledSorter = new TableRowSorter<>(filledOrdersTableModel);
-        filledSorter.setComparator(6, (left, right) -> compareHistoryNumericCells(left, right));
-        filledSorter.setComparator(7, (left, right) -> compareHistoryNumericCells(left, right));
-        filledSorter.setComparator(8, (left, right) -> compareHistoryNumericCells(left, right));
+        filledOrdersSorter = new TableRowSorter<>(filledOrdersTableModel);
+        filledOrdersSorter.setComparator(6, (left, right) -> compareHistoryNumericCells(left, right));
+        filledOrdersSorter.setComparator(7, (left, right) -> compareHistoryNumericCells(left, right));
+        filledOrdersSorter.setComparator(8, (left, right) -> compareHistoryNumericCells(left, right));
         for (int column = 0; column < HistoryGridTableModel.COLUMNS.length; column++) {
-            filledSorter.setSortable(column, column == 0); // Only Symbol is sortable in Trade History.
+            filledOrdersSorter.setSortable(column, column == 0); // Only Symbol is sortable in Trade History.
         }
-        filledOrdersTable.setRowSorter(filledSorter);
+        applyTradeHistoryRowFilter();
+        filledOrdersTable.setRowSorter(filledOrdersSorter);
 
         JScrollPane filledOrdersGrid = new JScrollPane(filledOrdersTable);
         filledOrdersGrid.setOpaque(false);
@@ -1120,8 +1121,10 @@ public class TradingFrame extends JFrame {
         ));
 
         strategyTabs.setBorder(new EmptyBorder(0, 0, 0, 0));
-        strategyTabs.addTab(currentStrategiesHeadingText(), strategyGrid);
-        strategyTabs.addTab(tradeHistoryHeadingText(), filledOrdersGrid);
+        strategyTabs.addTab(currentStrategiesHeadingText(), wrapGridWithSearch(currentStrategiesSearchPanel, strategyGrid));
+        strategyTabs.addTab(tradeHistoryHeadingText(), wrapGridWithSearch(tradeHistorySearchPanel, filledOrdersGrid));
+        wireGridSearchFields();
+        refreshGridSearchVisibility();
 
 
         // ── Status bar ─────────────────────────────────────────────────────────
@@ -3084,6 +3087,7 @@ public class TradingFrame extends JFrame {
             sorter.allRowsChanged();
         }
         refreshFilledOrdersTableData();
+        refreshGridSearchVisibility();
         preservingSelection = false;
         SwingUtilities.invokeLater(this::restoreSelectedRow);
     }
@@ -3110,6 +3114,7 @@ public class TradingFrame extends JFrame {
         refreshStrategyTradeSnapshots();
         strategyTableModel.fireTableDataChanged();
         refreshFilledOrdersTableData();
+        refreshGridSearchVisibility();
         preservingSelection = false;
         SwingUtilities.invokeLater(() -> {
             restoreSelectedRow();
@@ -3182,6 +3187,7 @@ public class TradingFrame extends JFrame {
         filledOrderRows.addAll(historyTablePresenter.buildRows(sources, this::formatTimestampForDisplay));
         filledOrdersTableModel.fireTableDataChanged();
         refreshTradeHistoryHeading();
+        refreshGridSearchVisibility();
     }
 
     private ManagedStrategy findStrategy(String symbol) {
@@ -3520,6 +3526,149 @@ public class TradingFrame extends JFrame {
                 : MODE_TEXT_ALPACA_PAPER;
     }
 
+    private JPanel createGridSearchPanel(String labelText, JTextField searchField) {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        panel.setOpaque(false);
+        panel.setBorder(new EmptyBorder(8, 0, 6, 0));
+        JLabel label = new JLabel(labelText);
+        label.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        searchField.setToolTipText(TooltipStyler.text("Type to filter rows by stock symbol."));
+        panel.add(label);
+        panel.add(searchField);
+        panel.setVisible(false);
+        return panel;
+    }
+
+    private JComponent wrapGridWithSearch(JPanel searchPanel, JComponent grid) {
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setOpaque(false);
+        wrapper.add(searchPanel, BorderLayout.NORTH);
+        wrapper.add(grid, BorderLayout.CENTER);
+        return wrapper;
+    }
+
+    private void wireGridSearchFields() {
+        attachSearchListener(currentStrategiesSearchField, this::applyCurrentStrategiesRowFilter);
+        attachSearchListener(tradeHistorySearchField, this::applyTradeHistoryRowFilter);
+    }
+
+    private void attachSearchListener(JTextField field, Runnable onChange) {
+        field.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                onChange.run();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                onChange.run();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                onChange.run();
+            }
+        });
+    }
+
+    private void applyCurrentStrategiesRowFilter() {
+        if (strategySorter == null) {
+            return;
+        }
+        final String query = normalizeGridSearchQuery(currentStrategiesSearchField.getText());
+        strategySorter.setRowFilter(new RowFilter<>() {
+            @Override
+            public boolean include(Entry<? extends StrategyGridTableModel, ? extends Integer> entry) {
+                int modelRow = entry.getIdentifier();
+                if (modelRow < 0 || modelRow >= strategies.size()) {
+                    return false;
+                }
+                ManagedStrategy managedStrategy = strategies.get(modelRow);
+                if (!includeInCurrentStrategiesTab(managedStrategy)) {
+                    return false;
+                }
+                return query.isBlank() || matchesStockSymbol(managedStrategy.strategy.symbol(), query);
+            }
+        });
+    }
+
+    private void applyTradeHistoryRowFilter() {
+        if (filledOrdersSorter == null) {
+            return;
+        }
+        final String query = normalizeGridSearchQuery(tradeHistorySearchField.getText());
+        final java.util.Set<String> matchedGroupKeys = new java.util.HashSet<>();
+        if (!query.isBlank()) {
+            for (HistoryTablePresenter.HistoryRow row : filledOrderRows) {
+                if (row.style() == HistoryTablePresenter.HistoryRowStyle.SUBTOTAL) {
+                    continue;
+                }
+                if (matchesStockSymbol(row.symbol(), query)) {
+                    matchedGroupKeys.add(normalizeGridSearchQuery(row.groupKey()));
+                }
+            }
+        }
+        filledOrdersSorter.setRowFilter(new RowFilter<>() {
+            @Override
+            public boolean include(Entry<? extends HistoryGridTableModel, ? extends Integer> entry) {
+                int modelRow = entry.getIdentifier();
+                if (modelRow < 0 || modelRow >= filledOrderRows.size()) {
+                    return false;
+                }
+                HistoryTablePresenter.HistoryRow row = filledOrderRows.get(modelRow);
+                if (query.isBlank()) {
+                    return true;
+                }
+                if (row.style() == HistoryTablePresenter.HistoryRowStyle.SUBTOTAL) {
+                    String normalizedGroupKey = normalizeGridSearchQuery(row.groupKey());
+                    return !normalizedGroupKey.equals("total") && matchedGroupKeys.contains(normalizedGroupKey);
+                }
+                return matchesStockSymbol(row.symbol(), query);
+            }
+        });
+    }
+
+    private boolean matchesStockSymbol(String symbol, String normalizedQuery) {
+        if (normalizedQuery == null || normalizedQuery.isBlank()) {
+            return true;
+        }
+        if (symbol == null || symbol.isBlank()) {
+            return false;
+        }
+        return symbol.toLowerCase(Locale.ROOT).contains(normalizedQuery);
+    }
+
+    private String normalizeGridSearchQuery(String text) {
+        return text == null ? "" : text.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private void refreshGridSearchVisibility() {
+        boolean showCurrentStrategiesSearch = strategies.stream()
+                .filter(this::includeInCurrentStrategiesTab)
+                .count() >= GRID_SEARCH_MIN_STOCK_COUNT;
+        boolean showTradeHistorySearch = tradeHistoryStockCount() >= GRID_SEARCH_MIN_STOCK_COUNT;
+
+        if (!showCurrentStrategiesSearch && !currentStrategiesSearchField.getText().isBlank()) {
+            currentStrategiesSearchField.setText("");
+        }
+        if (!showTradeHistorySearch && !tradeHistorySearchField.getText().isBlank()) {
+            tradeHistorySearchField.setText("");
+        }
+
+        currentStrategiesSearchPanel.setVisible(showCurrentStrategiesSearch);
+        tradeHistorySearchPanel.setVisible(showTradeHistorySearch);
+    }
+
+    private long tradeHistoryStockCount() {
+        return filledOrderRows.stream()
+                .filter(row -> row.style() != HistoryTablePresenter.HistoryRowStyle.SUBTOTAL)
+                .map(HistoryTablePresenter.HistoryRow::symbol)
+                .filter(symbol -> symbol != null && !symbol.isBlank())
+                .map(symbol -> symbol.toUpperCase(Locale.ROOT))
+                .distinct()
+                .count();
+    }
+
     private void updateStatusBar() {
         long running = strategies.stream().filter(s -> s.strategy.status() == StrategyStatus.ACTIVE).count();
         long inactive = Math.max(0L, strategies.size() - running);
@@ -3575,6 +3724,7 @@ public class TradingFrame extends JFrame {
             statusBar.setForeground(statusToneColor(statusBarViewModel.brokerTone()));
             luckyButton.setEnabled(settingsDialog.hasRequiredSettings());
             refreshTradeHistoryHeading();
+            refreshGridSearchVisibility();
         });
     }
 
@@ -3598,9 +3748,7 @@ public class TradingFrame extends JFrame {
     }
 
     private String tradeHistoryHeadingText() {
-        long historyCount = filledOrderRows.stream()
-                .filter(row -> row.style() != HistoryTablePresenter.HistoryRowStyle.SUBTOTAL)
-                .count();
+        long historyCount = tradeHistoryStockCount();
         return "Trade History (" + historyCount + ")";
     }
 
