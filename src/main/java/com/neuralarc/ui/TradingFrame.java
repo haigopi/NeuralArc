@@ -259,7 +259,6 @@ public class TradingFrame extends JFrame {
     };
     private final JTable filledOrdersTable = new JTable(filledOrdersTableModel);
     private final JTabbedPane strategyTabs = new JTabbedPane();
-    private javax.swing.border.TitledBorder strategyGridTitle;
 
     private TradingApi tradingApi;
     private AnalyticsPublisher analyticsPublisher;
@@ -1077,15 +1076,9 @@ public class TradingFrame extends JFrame {
         strategyGrid.setBackground(new Color(0, 0, 0, 0));
         strategyGrid.getViewport().setOpaque(false);
         strategyGrid.getViewport().setBackground(new Color(0, 0, 0, 0));
-        strategyGridTitle = BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(new Color(208, 214, 222), 1, true),
-                currentStrategiesHeadingText()
-        );
-        strategyGridTitle.setTitleFont(FontLoader.ui(Font.BOLD, 10f));
-        strategyGridTitle.setTitleColor(new Color(78, 84, 94));
         strategyGrid.setBorder(BorderFactory.createCompoundBorder(
                 new EmptyBorder(10, 0, 0, 0),
-                strategyGridTitle
+                BorderFactory.createLineBorder(new Color(208, 214, 222), 1, true)
         ));
 
         filledOrdersTable.setRowHeight(30);
@@ -1124,7 +1117,7 @@ public class TradingFrame extends JFrame {
         ));
 
         strategyTabs.setBorder(new EmptyBorder(0, 0, 0, 0));
-        strategyTabs.addTab("Current Strategies", strategyGrid);
+        strategyTabs.addTab(currentStrategiesHeadingText(), strategyGrid);
         strategyTabs.addTab("Trade History", filledOrdersGrid);
 
 
@@ -3581,12 +3574,10 @@ public class TradingFrame extends JFrame {
     }
 
     private void refreshCurrentStrategiesHeading() {
-        if (strategyGridTitle == null) {
+        if (strategyTabs.getTabCount() == 0) {
             return;
         }
-        strategyGridTitle.setTitle(currentStrategiesHeadingText());
-        strategyTable.getTableHeader().repaint();
-        strategyTable.repaint();
+        strategyTabs.setTitleAt(0, currentStrategiesHeadingText());
     }
 
     private String currentStrategiesHeadingText() {

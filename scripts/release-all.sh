@@ -19,7 +19,7 @@ usage() {
 Usage: ./scripts/release-all.sh [options]
 
 Options:
-  --version X.Y.Z   Use explicit version (otherwise auto-increments latest release patch)
+  --version X.Y.Z   Use explicit version (otherwise auto-increments latest release version)
   --draft           Create or keep release as draft (default publishes)
   --publish         Publish release (default; kept for compatibility)
   --skip-build      Skip build step and only publish existing artifacts
@@ -209,14 +209,25 @@ latest_release_version() {
     | tail -n 1
 }
 
-increment_patch_version() {
+increment_release_version() {
   local version="$1"
   local major minor patch
   IFS='.' read -r major minor patch <<<"$version"
   major="${major:-0}"
   minor="${minor:-0}"
   patch="${patch:-0}"
-  printf '%s.%s.%s\n' "$major" "$minor" "$((patch + 1))"
+  if (( patch >= 5 )); then
+    patch=0
+    if (( minor >= 5 )); then
+      minor=0
+      major=$((major + 1))
+    else
+      minor=$((minor + 1))
+    fi
+  else
+    patch=$((patch + 1))
+  fi
+  printf '%s.%s.%s\n' "$major" "$minor" "$patch"
 }
 
 release_exists() {
@@ -238,14 +249,14 @@ next_release_version() {
   local latest base candidate
   latest="$(latest_release_version || true)"
   if [[ -n "$latest" ]]; then
-    candidate="$(increment_patch_version "$latest")"
+    candidate="$(increment_release_version "$latest")"
   else
     base="$(normalize_version "$(version_from_gradle)")"
     candidate="${base:-1.0.0}"
   fi
 
   while release_exists "v$candidate" || tag_exists "v$candidate"; do
-    candidate="$(increment_patch_version "$candidate")"
+    candidate="$(increment_release_version "$candidate")"
   done
   printf '%s\n' "$candidate"
 }
