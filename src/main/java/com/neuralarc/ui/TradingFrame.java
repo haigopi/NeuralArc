@@ -979,18 +979,18 @@ public class TradingFrame extends JFrame {
         strategyTable.getColumnModel().getColumn(5).setCellRenderer(new UnrealizedPnLRenderer());
         strategyTable.getColumnModel().getColumn(7).setCellRenderer(new PollingBarRenderer());
         strategyTable.getColumnModel().getColumn(11).setCellRenderer(new ActionsRenderer());
-        strategyTable.getColumnModel().getColumn(0).setPreferredWidth(100);
-        strategyTable.getColumnModel().getColumn(0).setMinWidth(88);
+        strategyTable.getColumnModel().getColumn(0).setPreferredWidth(72);
+        strategyTable.getColumnModel().getColumn(0).setMinWidth(58);
         strategyTable.getColumnModel().getColumn(6).setPreferredWidth(300);
         strategyTable.getColumnModel().getColumn(6).setMinWidth(260);
-        strategyTable.getColumnModel().getColumn(7).setPreferredWidth(240);
-        strategyTable.getColumnModel().getColumn(7).setMinWidth(220);
-        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(180);
-        strategyTable.getColumnModel().getColumn(9).setMinWidth(150);
-        strategyTable.getColumnModel().getColumn(10).setPreferredWidth(220);
-        strategyTable.getColumnModel().getColumn(10).setMinWidth(180);
-        strategyTable.getColumnModel().getColumn(11).setPreferredWidth(560);
-        strategyTable.getColumnModel().getColumn(11).setMinWidth(520);
+        strategyTable.getColumnModel().getColumn(7).setPreferredWidth(170);
+        strategyTable.getColumnModel().getColumn(7).setMinWidth(150);
+        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(130);
+        strategyTable.getColumnModel().getColumn(9).setMinWidth(110);
+        strategyTable.getColumnModel().getColumn(10).setPreferredWidth(140);
+        strategyTable.getColumnModel().getColumn(10).setMinWidth(120);
+        strategyTable.getColumnModel().getColumn(11).setPreferredWidth(780);
+        strategyTable.getColumnModel().getColumn(11).setMinWidth(720);
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
         // Using mousePressed (not mouseClicked) gives instant response — mouseClicked only fires
@@ -4421,7 +4421,7 @@ public class TradingFrame extends JFrame {
         private final JButton deleteButton = new JButton("Delete");
 
         private ActionsRenderer() {
-            super(new GridLayout(1, 5, 4, 0));
+            super(new GridLayout(1, 5, 6, 0));
             setOpaque(true);
             applyButtonIcon(editButton, "icons/edit.svg", 12);
             applyButtonIcon(toggleButton, "icons/pause.svg", 13);
