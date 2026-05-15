@@ -2497,66 +2497,7 @@ public class TradingFrame extends JFrame {
         if (stored == null || stored.isEmpty() || currentBrokerType != BrokerType.ALPACA) {
             return Map.of();
         }
-        Map<String, Position> snapshots = new LinkedHashMap<>();
-        loadPositionSnapshotsForMode(stored, StrategyMode.PAPER, alpacaClientForMode(ApplicationMode.PAPER), snapshots);
-        loadPositionSnapshotsForMode(stored, StrategyMode.LIVE, alpacaClientForMode(ApplicationMode.LIVE), snapshots);
-        return snapshots;
-    }
-
-    private void loadPositionSnapshotsForMode(
-            List<Strategy> stored,
-            StrategyMode mode,
-            HttpAlpacaClient client,
-            Map<String, Position> target
-    ) {
-        if (client == null) {
-            return;
-        }
-        List<Strategy> strategiesForMode = stored.stream()
-                .filter(strategy -> strategy.mode() == mode)
-                .filter(this::includeInBrokerSnapshotRefresh)
-                .filter(strategy -> strategy.symbol() != null && !strategy.symbol().isBlank())
-                .toList();
-        if (strategiesForMode.isEmpty()) {
-            return;
-        }
-        List<String> symbols = new ArrayList<>();
-        for (Strategy strategy : strategiesForMode) {
-            if (!symbols.contains(strategy.symbol().toUpperCase(Locale.ROOT))) {
-                symbols.add(strategy.symbol().toUpperCase(Locale.ROOT));
-            }
-        }
-        if (symbols.isEmpty()) {
-            return;
-        }
-        Map<String, BigDecimal> latestPrices = client.getLatestPrices(symbols);
-        Map<String, com.neuralarc.api.AlpacaPositionData> positionsBySymbol = client.getPositions().stream()
-                .collect(Collectors.toMap(
-                        position -> position.symbol().toUpperCase(Locale.ROOT),
-                        position -> position,
-                        (left, right) -> left,
-                        LinkedHashMap::new
-                ));
-        for (Strategy strategy : strategiesForMode) {
-            Position snapshot = new Position(strategy.symbol());
-            com.neuralarc.api.AlpacaPositionData remotePosition = positionsBySymbol.get(strategy.symbol().toUpperCase(Locale.ROOT));
-            boolean positionMarketPriceApplied = false;
-            if (remotePosition != null && remotePosition.exists()) {
-                int quantity = remotePosition.quantity().setScale(0, java.math.RoundingMode.DOWN).intValue();
-                if (quantity > 0) {
-                    snapshot.applyBuy(quantity, remotePosition.avgEntryPrice());
-                }
-                if (remotePosition.marketPrice() != null && remotePosition.marketPrice().compareTo(BigDecimal.ZERO) > 0) {
-                    snapshot.setLastPrice(remotePosition.marketPrice());
-                    positionMarketPriceApplied = true;
-                }
-            }
-            BigDecimal latestPrice = latestPrices.get(strategy.symbol().toUpperCase(Locale.ROOT));
-            if (!positionMarketPriceApplied && latestPrice != null && latestPrice.compareTo(BigDecimal.ZERO) > 0) {
-                snapshot.setLastPrice(latestPrice);
-            }
-            target.put(strategy.id(), snapshot);
-        }
+        return BrokerSnapshotLoader.loadPositionSnapshots(stored, this::alpacaClientForMode, this::includeInBrokerSnapshotRefresh);
     }
 
     private void applyPositionSnapshots(Map<String, Position> snapshots) {
@@ -4436,21 +4377,10 @@ public class TradingFrame extends JFrame {
             return new Position(strategy.symbol());
         }
         Optional<com.neuralarc.api.AlpacaPositionData> remote = client.getPosition(strategy.symbol());
-        Position position = new Position(strategy.symbol());
-        if (remote.isPresent() && remote.get().exists()) {
-            com.neuralarc.api.AlpacaPositionData remotePosition = remote.get();
-            int quantity = remotePosition.quantity().setScale(0, java.math.RoundingMode.DOWN).intValue();
-            if (quantity > 0) {
-                position.applyBuy(quantity, remotePosition.avgEntryPrice());
-                position.setLastPrice(remotePosition.marketPrice());
-            }
-        } else {
-            BigDecimal latestPrice = client.getLatestPrice(strategy.symbol());
-            if (latestPrice.compareTo(BigDecimal.ZERO) > 0) {
-                position.setLastPrice(latestPrice);
-            }
-        }
-        return position;
+        BigDecimal latestPrice = remote.isPresent() && remote.get().exists()
+                ? BigDecimal.ZERO
+                : client.getLatestPrice(strategy.symbol());
+        return BrokerSnapshotLoader.buildPositionSnapshot(strategy.symbol(), remote.orElse(null), latestPrice);
     }
 
     private HttpAlpacaClient alpacaClientForStrategyMode(StrategyMode mode) {

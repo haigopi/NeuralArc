@@ -23,9 +23,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -43,6 +43,7 @@ public class StrategyPollingService {
     private final AlpacaClient alpacaClient;
     private final TradingSessionPolicy tradingSessionPolicy;
     private final ExecutorService pollExecutor;
+    private final Set<String> inFlightStrategyIds = ConcurrentHashMap.newKeySet();
     private volatile Instant lastStreamingEventAt;
     private volatile Boolean lastTradingSessionOpen;
     private volatile PollListener pollListener = PollListener.NOOP;
@@ -191,18 +192,12 @@ public class StrategyPollingService {
             }
         }
 
-        int dueStrategies = due.size();
-        List<Future<?>> futures = new ArrayList<>();
+        int dueStrategies = 0;
         final Map<String, BigDecimal> finalPriceCache = priceCache;
         for (Strategy strategy : due) {
             String strategyId = strategy.id();
-            futures.add(pollExecutor.submit(() -> pollStrategy(strategyId, finalPriceCache)));
-        }
-        for (Future<?> future : futures) {
-            try {
-                future.get();
-            } catch (Exception ex) {
-                LOGGER.log(Level.WARNING, "Failed waiting for poll task completion", ex);
+            if (submitPollTask(strategyId, finalPriceCache)) {
+                dueStrategies++;
             }
         }
         if (LOGGER.isLoggable(Level.FINE)) {
@@ -256,11 +251,49 @@ public class StrategyPollingService {
 
     /** Legacy single-strategy poll (no price cache). Used in tests and manual triggers. */
     public void pollStrategy(String strategyId) {
-        pollStrategy(strategyId, Map.of());
+        runPollIfNotInFlight(strategyId, Map.of());
     }
 
     /** Poll a single strategy using the pre-fetched price cache from the current cycle. */
     void pollStrategy(String strategyId, Map<String, BigDecimal> priceCache) {
+        runPollIfNotInFlight(strategyId, priceCache);
+    }
+
+    private boolean submitPollTask(String strategyId, Map<String, BigDecimal> priceCache) {
+        if (!markStrategyInFlight(strategyId)) {
+            LOGGER.fine(() -> "[POLL][SCHEDULER][" + strategyId + "] Skipping dispatch because a poll is already in flight");
+            return false;
+        }
+        try {
+            pollExecutor.submit(() -> executePoll(strategyId, priceCache));
+            return true;
+        } catch (RuntimeException ex) {
+            inFlightStrategyIds.remove(strategyId);
+            throw ex;
+        }
+    }
+
+    private void runPollIfNotInFlight(String strategyId, Map<String, BigDecimal> priceCache) {
+        if (!markStrategyInFlight(strategyId)) {
+            LOGGER.fine(() -> "[POLL][SCHEDULER][" + strategyId + "] Ignoring poll request because a poll is already in flight");
+            return;
+        }
+        executePoll(strategyId, priceCache);
+    }
+
+    private boolean markStrategyInFlight(String strategyId) {
+        return strategyId != null && !strategyId.isBlank() && inFlightStrategyIds.add(strategyId);
+    }
+
+    private void executePoll(String strategyId, Map<String, BigDecimal> priceCache) {
+        try {
+            doPollStrategy(strategyId, priceCache);
+        } finally {
+            inFlightStrategyIds.remove(strategyId);
+        }
+    }
+
+    private void doPollStrategy(String strategyId, Map<String, BigDecimal> priceCache) {
         Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
         if (maybeStrategy.isEmpty()) {
             return;

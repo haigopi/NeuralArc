@@ -17,7 +17,9 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -423,6 +425,61 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void pollDueStrategiesReturnsImmediatelyAndOtherStrategiesContinueWhileOnePollIsBlocked() throws Exception {
+        Fixture f = new Fixture();
+        Strategy blocked = f.activeStrategy("AAPL", false);
+        Strategy fast = f.activeStrategy("MSFT", false);
+        Instant blockedBaseline = Instant.now().minusSeconds(60);
+        Instant fastBaseline = Instant.now().minusSeconds(60);
+        blocked.setLastPolledAt(blockedBaseline);
+        fast.setLastPolledAt(fastBaseline);
+        f.strategies.save(blocked);
+        f.strategies.save(fast);
+        f.alpaca.blockOpenOrdersForSymbol(blocked.symbol());
+
+        long firstStartedAt = System.nanoTime();
+        int firstDue = f.service.pollDueStrategies();
+        long firstElapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - firstStartedAt);
+
+        assertEquals(2, firstDue);
+        assertTrue(firstElapsedMillis < 500, "pollDueStrategies should return without waiting for blocked strategy completion");
+        assertTrue(f.alpaca.awaitOpenOrdersBlock(blocked.symbol()), "Blocked strategy should reach the deterministic open-orders gate");
+
+        Instant fastFirstPoll = f.awaitLastPolledAfter(
+                fast.id(),
+                fastBaseline,
+                "Unblocked strategy should complete its first poll while another strategy is blocked"
+        );
+
+        Strategy fastDueAgain = f.strategies.findById(fast.id()).orElseThrow();
+        fastDueAgain.setLastPolledAt(Instant.now().minusSeconds(60));
+        f.strategies.save(fastDueAgain);
+
+        long secondStartedAt = System.nanoTime();
+        int secondDue = f.service.pollDueStrategies();
+        long secondElapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - secondStartedAt);
+
+        assertEquals(1, secondDue);
+        assertTrue(secondElapsedMillis < 500, "Subsequent poll cycles should stay independent of the blocked strategy");
+
+        Instant fastSecondPoll = f.awaitLastPolledAfter(
+                fast.id(),
+                fastFirstPoll,
+                "Ready strategy should be polled again even while another strategy remains blocked"
+        );
+        assertTrue(fastSecondPoll.isAfter(fastFirstPoll));
+        assertEquals(1, f.alpaca.openOrderCallsForSymbol(blocked.symbol()),
+                "Blocked strategy must not be dispatched a second time while already in flight");
+
+        f.alpaca.releaseBlockedOpenOrders(blocked.symbol());
+        f.awaitLastPolledAfter(
+                blocked.id(),
+                blockedBaseline,
+                "Blocked strategy should finish once its broker call is released"
+        );
+    }
+
+    @Test
     void pollCycleSkipsFailedHistoryStrategies() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
@@ -452,6 +509,13 @@ class StrategyPollingServiceTest {
         f.alpaca.orderById.clear();
 
         f.service.pollDueStrategies();
+
+        assertDoesNotThrow(() -> f.awaitTrue(() -> {
+            Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+            return updated.status() == StrategyStatus.ACTIVE
+                    && "new".equals(updated.latestOrderStatus())
+                    && f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).isPresent();
+        }, "Expired failed strategy should be resubmitted asynchronously"));
 
         Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
         assertEquals(StrategyStatus.ACTIVE, updated.status());
@@ -818,8 +882,12 @@ class StrategyPollingServiceTest {
         }
 
         Strategy activeStrategy(boolean profitHold) {
+            return activeStrategy("AAPL", profitHold);
+        }
+
+        Strategy activeStrategy(String symbol, boolean profitHold) {
             Strategy strategy = new Strategy(
-                    UUID.randomUUID().toString(), "s", "AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE,
+                    UUID.randomUUID().toString(), "s", symbol, StrategyMode.PAPER, StrategyStatus.ACTIVE,
                     StrategyLifecycleState.CREATED,
                     new BigDecimal("8.00"), 10,
                     new BigDecimal("6.00"), 5,
@@ -832,6 +900,30 @@ class StrategyPollingServiceTest {
             );
             strategies.save(strategy);
             return strategy;
+        }
+
+        Instant awaitLastPolledAfter(String strategyId, Instant baseline, String message) throws Exception {
+            long deadline = System.currentTimeMillis() + 2_000L;
+            while (System.currentTimeMillis() < deadline) {
+                Instant current = strategies.findById(strategyId).orElseThrow().lastPolledAt();
+                if (current != null && current.isAfter(baseline)) {
+                    return current;
+                }
+                Thread.sleep(10L);
+            }
+            fail(message);
+            return baseline;
+        }
+
+        void awaitTrue(BooleanSupplier condition, String message) throws Exception {
+            long deadline = System.currentTimeMillis() + 2_000L;
+            while (System.currentTimeMillis() < deadline) {
+                if (condition.getAsBoolean()) {
+                    return;
+                }
+                Thread.sleep(10L);
+            }
+            fail(message);
         }
 
         StrategyOrder filledOrder(String strategyId, StrategyStage stage, int qty, BigDecimal price) {
@@ -884,6 +976,9 @@ class StrategyPollingServiceTest {
         BigDecimal nextLimitSellFilledAveragePrice = Monetary.zero();
         private volatile CountDownLatch openOrdersEnteredLatch;
         private volatile CountDownLatch openOrdersReleaseLatch;
+        private final Map<String, CountDownLatch> openOrdersEnteredBySymbol = new ConcurrentHashMap<>();
+        private final Map<String, CountDownLatch> openOrdersReleaseBySymbol = new ConcurrentHashMap<>();
+        private final Map<String, Integer> openOrderCallsBySymbol = new ConcurrentHashMap<>();
 
         @Override
         public AlpacaOrderData submitLimitBuyOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
@@ -956,7 +1051,10 @@ class StrategyPollingServiceTest {
         @Override
         public List<AlpacaOrderData> getOpenOrders(String symbol) {
             openOrderCalls++;
+            String normalizedSymbol = normalize(symbol);
+            openOrderCallsBySymbol.merge(normalizedSymbol, 1, Integer::sum);
             awaitOpenOrdersGateIfConfigured();
+            awaitOpenOrdersGateIfConfigured(normalizedSymbol);
             return orderById.values().stream().filter(o -> o.symbol().equalsIgnoreCase(symbol)).toList();
         }
 
@@ -1002,8 +1100,19 @@ class StrategyPollingServiceTest {
             openOrdersReleaseLatch = new CountDownLatch(1);
         }
 
+        void blockOpenOrdersForSymbol(String symbol) {
+            String normalizedSymbol = normalize(symbol);
+            openOrdersEnteredBySymbol.put(normalizedSymbol, new CountDownLatch(1));
+            openOrdersReleaseBySymbol.put(normalizedSymbol, new CountDownLatch(1));
+        }
+
         boolean awaitOpenOrdersBlock() throws InterruptedException {
             CountDownLatch entered = openOrdersEnteredLatch;
+            return entered != null && entered.await(2, TimeUnit.SECONDS);
+        }
+
+        boolean awaitOpenOrdersBlock(String symbol) throws InterruptedException {
+            CountDownLatch entered = openOrdersEnteredBySymbol.get(normalize(symbol));
             return entered != null && entered.await(2, TimeUnit.SECONDS);
         }
 
@@ -1012,6 +1121,17 @@ class StrategyPollingServiceTest {
             if (release != null) {
                 release.countDown();
             }
+        }
+
+        void releaseBlockedOpenOrders(String symbol) {
+            CountDownLatch release = openOrdersReleaseBySymbol.get(normalize(symbol));
+            if (release != null) {
+                release.countDown();
+            }
+        }
+
+        int openOrderCallsForSymbol(String symbol) {
+            return openOrderCallsBySymbol.getOrDefault(normalize(symbol), 0);
         }
 
         private void awaitOpenOrdersGateIfConfigured() {
@@ -1029,6 +1149,27 @@ class StrategyPollingServiceTest {
                 openOrdersEnteredLatch = null;
                 openOrdersReleaseLatch = null;
             }
+        }
+
+        private void awaitOpenOrdersGateIfConfigured(String normalizedSymbol) {
+            CountDownLatch entered = openOrdersEnteredBySymbol.get(normalizedSymbol);
+            CountDownLatch release = openOrdersReleaseBySymbol.get(normalizedSymbol);
+            if (entered == null || release == null) {
+                return;
+            }
+            entered.countDown();
+            try {
+                release.await(2, TimeUnit.SECONDS);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            } finally {
+                openOrdersEnteredBySymbol.remove(normalizedSymbol);
+                openOrdersReleaseBySymbol.remove(normalizedSymbol);
+            }
+        }
+
+        private String normalize(String symbol) {
+            return symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
         }
     }
 
@@ -1063,42 +1204,42 @@ class StrategyPollingServiceTest {
 
     private static final class InMemoryStrategyRepository implements StrategyRepository {
         private final Map<String, Strategy> store = new HashMap<>();
-        @Override public void save(Strategy strategy) { store.put(strategy.id(), strategy); }
-        @Override public Optional<Strategy> findById(String id) { return Optional.ofNullable(store.get(id)); }
-        @Override public List<Strategy> findAll() { return new ArrayList<>(store.values()); }
-        @Override public List<Strategy> findActive() { return findAll().stream().filter(s -> s.status() == StrategyStatus.ACTIVE).toList(); }
-        @Override public void deleteById(String id) { store.remove(id); }
+        @Override public synchronized void save(Strategy strategy) { store.put(strategy.id(), strategy); }
+        @Override public synchronized Optional<Strategy> findById(String id) { return Optional.ofNullable(store.get(id)); }
+        @Override public synchronized List<Strategy> findAll() { return new ArrayList<>(store.values()); }
+        @Override public synchronized List<Strategy> findActive() { return findAll().stream().filter(s -> s.status() == StrategyStatus.ACTIVE).toList(); }
+        @Override public synchronized void deleteById(String id) { store.remove(id); }
     }
 
     private static final class InMemoryOrderRepository implements StrategyOrderRepository {
         private final List<StrategyOrder> orders = new ArrayList<>();
-        @Override public void save(StrategyOrder order) {
+        @Override public synchronized void save(StrategyOrder order) {
             orders.removeIf(o -> o.id().equals(order.id()));
             orders.add(order);
         }
-        @Override public List<StrategyOrder> findByStrategyId(String strategyId) { return orders.stream().filter(o -> o.strategyId().equals(strategyId)).toList(); }
-        @Override public Optional<StrategyOrder> findLatestByStrategyStage(String strategyId, StrategyStage stage) {
+        @Override public synchronized List<StrategyOrder> findByStrategyId(String strategyId) { return orders.stream().filter(o -> o.strategyId().equals(strategyId)).toList(); }
+        @Override public synchronized Optional<StrategyOrder> findLatestByStrategyStage(String strategyId, StrategyStage stage) {
             return findByStrategyId(strategyId).stream().filter(o -> o.stage() == stage)
                     .max(Comparator.comparing(StrategyOrder::submittedAt));
         }
-        @Override public Optional<StrategyOrder> findByAlpacaOrderId(String alpacaOrderId) {
+        @Override public synchronized Optional<StrategyOrder> findByAlpacaOrderId(String alpacaOrderId) {
             return orders.stream()
                     .filter(order -> alpacaOrderId != null && alpacaOrderId.equals(order.alpacaOrderId()))
                     .max(Comparator.comparing(StrategyOrder::submittedAt));
         }
-        @Override public Optional<StrategyOrder> findByClientOrderId(String clientOrderId) {
+        @Override public synchronized Optional<StrategyOrder> findByClientOrderId(String clientOrderId) {
             return orders.stream()
                     .filter(order -> clientOrderId != null && clientOrderId.equals(order.clientOrderId()))
                     .max(Comparator.comparing(StrategyOrder::submittedAt));
         }
-        @Override public void deleteByStrategyId(String strategyId) { orders.removeIf(order -> order.strategyId().equals(strategyId)); }
+        @Override public synchronized void deleteByStrategyId(String strategyId) { orders.removeIf(order -> order.strategyId().equals(strategyId)); }
     }
 
     private static final class InMemoryEventRepository implements StrategyExecutionEventRepository {
         private final List<StrategyExecutionEvent> events = new ArrayList<>();
-        @Override public void save(StrategyExecutionEvent event) { events.add(event); }
-        @Override public List<StrategyExecutionEvent> findByStrategyId(String strategyId) { return events.stream().filter(e -> e.strategyId().equals(strategyId)).toList(); }
-        @Override public void deleteByStrategyId(String strategyId) { events.removeIf(event -> event.strategyId().equals(strategyId)); }
+        @Override public synchronized void save(StrategyExecutionEvent event) { events.add(event); }
+        @Override public synchronized List<StrategyExecutionEvent> findByStrategyId(String strategyId) { return events.stream().filter(e -> e.strategyId().equals(strategyId)).toList(); }
+        @Override public synchronized void deleteByStrategyId(String strategyId) { events.removeIf(event -> event.strategyId().equals(strategyId)); }
     }
 
     private static final class RecordingTradeEmailNotificationService extends TradeEmailNotificationService {
