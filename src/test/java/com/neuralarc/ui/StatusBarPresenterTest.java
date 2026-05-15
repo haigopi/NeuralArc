@@ -27,7 +27,7 @@ class StatusBarPresenterTest {
                 "Memory: 1 MB"
         ));
 
-        assertEquals("Monitoring: Paused for market close", vm.pollingText());
+        assertEquals("Strategy Polling: Paused for market close", vm.pollingText());
         assertEquals(StatusBarPresenter.Tone.MUTED, vm.pollingTone());
     }
 

@@ -2,14 +2,14 @@ package com.neuralarc.ui;
 
 public final class StatusBarPresenter {
     public StatusBarViewModel present(StatusBarState state) {
-        String pollingText = "Monitoring: Ready";
+        String pollingText = "Strategy Polling: Ready";
         Tone pollingTone = Tone.DEFAULT;
         if (state.pollCycleEvaluated()) {
             if (state.pollMarketClosedSuppressed()) {
-                pollingText = "Monitoring: Paused for market close";
+                pollingText = "Strategy Polling: Paused for market close";
                 pollingTone = Tone.MUTED;
             } else {
-                pollingText = "Monitoring: Active";
+                pollingText = "Strategy Polling: Active";
                 pollingTone = Tone.OK;
             }
         }

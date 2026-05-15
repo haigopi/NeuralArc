@@ -314,8 +314,6 @@ public final class StrategyActionsController {
             gateway.log("Removed completed strategy from Current Strategies for symbol " + strategy.symbol());
             gateway.publishAnalytics(new AnalyticsEvent("STRATEGY_ARCHIVED").put("symbol", strategy.symbol()));
         } else {
-            BigDecimal realizedAtDeletion = gateway.realizedPnlForStrategy(strategy.id());
-            gateway.addArchivedRealized(strategy.mode(), realizedAtDeletion);
             gateway.strategyService().delete(strategy.id());
             gateway.removeStrategyAt(row);
             gateway.log("Deleted strategy for symbol " + strategy.symbol());
@@ -391,7 +389,6 @@ public final class StrategyActionsController {
         void setSelectedStrategyId(String strategyId);
         String selectedStrategyId();
         void removeStrategyAt(int modelRow);
-        void addArchivedRealized(StrategyMode mode, BigDecimal amount);
 
         void log(String message);
         void publishAnalytics(AnalyticsEvent event);

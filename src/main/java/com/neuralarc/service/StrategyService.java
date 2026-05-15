@@ -605,7 +605,14 @@ public class StrategyService {
                 effectiveType == SellSubmissionType.MARKET ? "Manual market sell order submitted" : "Manual limit sell order submitted",
                 submitted.rawJson()
         );
-        return StrategyCreationResult.success(strategy.id(), order.id(), order.alpacaOrderId(), order.clientOrderId());
+        return StrategyCreationResult.success(
+                strategy.id(),
+                order.id(),
+                order.alpacaOrderId(),
+                order.clientOrderId(),
+                submitted.filledQuantity(),
+                submitted.filledAveragePrice()
+        );
     }
 
     public static String buildClientOrderId(String strategyId, StrategyStage stage) {
@@ -898,13 +905,42 @@ public class StrategyService {
         return StrategyCreationResult.success(strategy.id(), order.id(), order.alpacaOrderId(), order.clientOrderId());
     }
 
-    public record StrategyCreationResult(boolean success, String strategyId, String strategyOrderId, String alpacaOrderId, String clientOrderId, String error) {
+    public record StrategyCreationResult(
+            boolean success,
+            String strategyId,
+            String strategyOrderId,
+            String alpacaOrderId,
+            String clientOrderId,
+            String error,
+            BigDecimal filledQuantity,
+            BigDecimal filledAveragePrice
+    ) {
         public static StrategyCreationResult success(String strategyId, String strategyOrderId, String alpacaOrderId, String clientOrderId) {
-            return new StrategyCreationResult(true, strategyId, strategyOrderId, alpacaOrderId, clientOrderId, null);
+            return success(strategyId, strategyOrderId, alpacaOrderId, clientOrderId, BigDecimal.ZERO, BigDecimal.ZERO);
+        }
+
+        public static StrategyCreationResult success(
+                String strategyId,
+                String strategyOrderId,
+                String alpacaOrderId,
+                String clientOrderId,
+                BigDecimal filledQuantity,
+                BigDecimal filledAveragePrice
+        ) {
+            return new StrategyCreationResult(
+                    true,
+                    strategyId,
+                    strategyOrderId,
+                    alpacaOrderId,
+                    clientOrderId,
+                    null,
+                    filledQuantity == null ? BigDecimal.ZERO : filledQuantity,
+                    filledAveragePrice == null ? BigDecimal.ZERO : filledAveragePrice
+            );
         }
 
         public static StrategyCreationResult failed(String error) {
-            return new StrategyCreationResult(false, null, null, null, null, error == null ? "Unknown error" : error);
+            return new StrategyCreationResult(false, null, null, null, null, error == null ? "Unknown error" : error, BigDecimal.ZERO, BigDecimal.ZERO);
         }
     }
 

@@ -28,14 +28,24 @@ import java.util.UUID;
 public class LuckySimulationPlacementController {
     private final Gateway gateway;
     private final StrategyApplyService applyService;
+    private final StrategyMode targetMode;
 
     public LuckySimulationPlacementController(Gateway gateway) {
-        this(gateway, new StrategyApplyService());
+        this(gateway, new StrategyApplyService(), StrategyMode.PAPER);
+    }
+
+    public LuckySimulationPlacementController(Gateway gateway, StrategyMode targetMode) {
+        this(gateway, new StrategyApplyService(), targetMode);
     }
 
     LuckySimulationPlacementController(Gateway gateway, StrategyApplyService applyService) {
+        this(gateway, applyService, StrategyMode.PAPER);
+    }
+
+    LuckySimulationPlacementController(Gateway gateway, StrategyApplyService applyService, StrategyMode targetMode) {
         this.gateway = gateway;
         this.applyService = applyService;
+        this.targetMode = targetMode == null ? StrategyMode.PAPER : targetMode;
     }
 
     public PlacementResult place(List<LuckySimulationSelection> selections) {
@@ -57,7 +67,7 @@ public class LuckySimulationPlacementController {
                 gateway.log("[I Am Feeling Lucky] Skipped " + selection.stock().symbol() + ": missing valid base limit buy price.");
                 continue;
             }
-            Strategy existing = findExistingPaperStrategy(selection.stock().symbol()).orElse(null);
+            Strategy existing = findExistingStrategy(selection.stock().symbol()).orElse(null);
             Strategy existingForReplace = null;
             if (existing != null && isWaitingForFill(existing)) {
                 if (!gateway.confirmReplaceWaitingPaperStrategy(selection.stock().symbol())) {
@@ -69,7 +79,7 @@ public class LuckySimulationPlacementController {
                 existingForReplace = existing;
             } else if (existing != null && DuplicateSymbolPolicy.wouldBeDuplicate(
                     selection.stock().symbol(),
-                    StrategyMode.PAPER,
+                    targetMode,
                     gateway.repository().findAll(),
                     gateway.allowDuplicateSymbols()
             )) {
@@ -81,7 +91,7 @@ public class LuckySimulationPlacementController {
             }
             BigDecimal effectiveBaseBuyPrice = effectiveBaseBuyPrice(selection, recommendation);
             Strategy strategy = toStrategy(selection, recommendation, effectiveBaseBuyPrice);
-            StrategyService.StrategyCreationResult creationResult = gateway.createPaperStrategy(strategy);
+            StrategyService.StrategyCreationResult creationResult = gateway.createStrategy(strategy, targetMode);
             if (!creationResult.success()) {
                 skipped++;
                 skippedReasons.add(selection.stock().symbol() + ": " + creationResult.error());
@@ -89,7 +99,7 @@ public class LuckySimulationPlacementController {
                 continue;
             }
             if (existingForReplace == null) created++; else replaced++;
-            gateway.log("[I Am Feeling Lucky] Started paper monitoring for " + strategy.symbol()
+            gateway.log("[I Am Feeling Lucky] Started " + targetMode.name() + " monitoring for " + strategy.symbol()
                     + " at base limit $" + strategy.baseBuyLimitPrice().toPlainString()
                     + " qty=" + strategy.baseBuyQuantity()
                     + ". Alpaca paper order id=" + creationResult.alpacaOrderId());
@@ -104,14 +114,14 @@ public class LuckySimulationPlacementController {
             BigDecimal effectiveBaseBuyPrice
     ) {
         StrategyConfig config = luckySimulationConfig(selection, recommendation);
-        Strategy strategy = Strategy.fromConfig(UUID.randomUUID().toString(), luckyStrategyName(selection), config, StrategyMode.PAPER);
+        Strategy strategy = Strategy.fromConfig(UUID.randomUUID().toString(), luckyStrategyName(selection), config, targetMode);
         strategy.setBaseBuyLimitPrice(effectiveBaseBuyPrice);
         strategy.setStatus(StrategyStatus.CREATED);
         strategy.setCurrentState(StrategyLifecycleState.CREATED);
         String stockReason = selection.stock().reason() == null || selection.stock().reason().isBlank()
                 ? "lucky-simulation"
                 : selection.stock().reason();
-        strategy.setLastEvent("Alpaca Paper mode from I Am Feeling Lucky. Selected "
+        strategy.setLastEvent("Alpaca " + modeLabel() + " mode from I Am Feeling Lucky. Selected "
                 + selection.selectedRecommendationType().name()
                 + ". Source " + stockReason
                 + ". Base limit buy $" + strategy.baseBuyLimitPrice().toPlainString()
@@ -156,10 +166,10 @@ public class LuckySimulationPlacementController {
         return recommendation == null ? null : recommendation.currentPrice();
     }
 
-    private Optional<Strategy> findExistingPaperStrategy(String symbol) {
+    private Optional<Strategy> findExistingStrategy(String symbol) {
         String normalized = symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
         return gateway.repository().findAll().stream()
-                .filter(strategy -> strategy.mode() == StrategyMode.PAPER)
+                .filter(strategy -> strategy.mode() == targetMode)
                 .filter(strategy -> strategy.symbol().equalsIgnoreCase(normalized))
                 .findFirst();
     }
@@ -190,7 +200,7 @@ public class LuckySimulationPlacementController {
                 selection.stock().symbol(),
                 values.buyRulePrice(),
                 Math.max(1, selection.buyQuantity()),
-                true,
+                targetMode == StrategyMode.PAPER,
                 values.stopLossPrice(),
                 true,
                 values.sellRulePrice(),
@@ -230,7 +240,7 @@ public class LuckySimulationPlacementController {
     }
 
     private String luckyStrategyName(LuckySimulationSelection selection) {
-        return "I_AM_FEELING_LUCKY_" + luckySourceToken(selection) + ": " + selection.stock().symbol() + " Paper";
+        return "I_AM_FEELING_LUCKY_" + luckySourceToken(selection) + ": " + selection.stock().symbol() + " " + modeLabel();
     }
 
     private String luckySourceToken(LuckySimulationSelection selection) {
@@ -247,7 +257,7 @@ public class LuckySimulationPlacementController {
     }
 
     public String summaryMessage(PlacementResult result) {
-        String message = "Started " + result.created() + " Alpaca Paper strateg"
+        String message = "Started " + result.created() + " Alpaca " + modeLabel() + " strateg"
                 + (result.created() == 1 ? "y" : "ies")
                 + (result.replaced() > 0 ? ", replaced " + result.replaced() : "")
                 + (result.skipped() > 0 ? ", skipped " + result.skipped() : "")
@@ -260,6 +270,10 @@ public class LuckySimulationPlacementController {
 
     public interface Gateway {
         StrategyRepository repository();
+
+        default StrategyService.StrategyCreationResult createStrategy(Strategy strategy, StrategyMode mode) {
+            return createPaperStrategy(strategy);
+        }
 
         StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy);
 
@@ -293,4 +307,8 @@ public class LuckySimulationPlacementController {
             List<String> skippedReasons,
             boolean canceled
     ) {}
+
+    private String modeLabel() {
+        return targetMode == StrategyMode.LIVE ? "Live" : "Paper";
+    }
 }

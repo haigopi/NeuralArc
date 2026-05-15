@@ -11,11 +11,11 @@ import com.neuralarc.db.SqliteStrategyExecutionEventRepository;
 import com.neuralarc.db.SqliteStrategyOrderRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
 import com.neuralarc.service.AutoAnalyzeResultStore;
+import com.neuralarc.service.AutoAnalyzeService;
 import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.GitHubReleaseUpdateService;
 import com.neuralarc.service.MarketHoursService;
 import com.neuralarc.service.OnboardingStateStore;
-import com.neuralarc.service.PersistentAggregatePnlStore;
 import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.service.AsyncLogUploadService;
 import com.neuralarc.service.LogArchiveService;
@@ -47,6 +47,7 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableRowSorter;
 import javax.swing.plaf.basic.BasicProgressBarUI;
+import javax.swing.plaf.basic.BasicButtonUI;
 import javax.swing.plaf.basic.BasicSplitPaneDivider;
 import javax.swing.plaf.basic.BasicSplitPaneUI;
 import javax.swing.text.BadLocationException;
@@ -116,7 +117,7 @@ public class TradingFrame extends JFrame {
     private final JLabel rulesSectionTitle = new JLabel("Rules Triggered");
     private final JLabel statusBar = new JLabel("Broker: Not connected");
     private final JLabel statusStrategyCount = new JLabel("Strategies: Active 0 | Inactive 0");
-    private final JLabel pollingSummary = new JLabel("Poll: -");
+    private final JLabel pollingSummary = new JLabel("Strategy Polling: -");
     private final JLabel marketStatus = new JLabel("Market: Unknown");
     private final JLabel streamStatus = new JLabel("Trade Stream: idle");
     private final JLabel availableFundsStatus = new JLabel("Funds Available: -");
@@ -130,6 +131,12 @@ public class TradingFrame extends JFrame {
     private static final Color STATUS_ERR = new Color(180, 30, 30);
     private static final Color UPDATE_FLASH_BG = new Color(185, 112, 0);
     private static final Color UPDATE_FLASH_BORDER = new Color(255, 184, 65);
+    private static final Color CAPTURE_ACTIVE_BG = new Color(210, 52, 38);
+    private static final Color CAPTURE_ACTIVE_BG_ALT = new Color(255, 136, 0);
+    private static final Color CAPTURE_ACTIVE_BORDER = new Color(255, 187, 74);
+    private static final Color CAPTURE_ACTIVE_BORDER_ALT = new Color(255, 96, 80);
+    private static final Color CAPTURE_INDICATOR_ACTIVE_TEXT = new Color(19, 102, 74);
+    private static final Color CAPTURE_INDICATOR_IDLE_TEXT = new Color(86, 92, 104);
     private static final Color TABLE_SELECTION_BG       = new Color(201, 220, 252); // blue row highlight
     private static final Color TABLE_SELECTION_FG       = new Color(10,  35, 100); // dark navy text on blue
     private static final Color TABLE_SELECTION_BORDER   = new Color(66, 133, 244); // left accent stripe on selected row
@@ -193,6 +200,8 @@ public class TradingFrame extends JFrame {
     private Timer updateAvailableFlashTimer;
     private boolean updateAvailableNoticeActive;
     private boolean updateAvailableFlashOn;
+    private Timer capturePortfolioPulseTimer;
+    private boolean capturePortfolioPulseOn;
 
     private final UserIdentityService identityService = new UserIdentityService();
     private final UserActionLogSupport userActionLog = new UserActionLogSupport(this::log);
@@ -203,13 +212,17 @@ public class TradingFrame extends JFrame {
     private final StatusBarPresenter statusBarPresenter = new StatusBarPresenter();
     private final StrategyActionsPresenter strategyActionsPresenter = new StrategyActionsPresenter();
     private final StrategyTablePresenter strategyTablePresenter = new StrategyTablePresenter();
+    private final StrategyPnlTotalsCalculator strategyPnlTotalsCalculator = new StrategyPnlTotalsCalculator();
     private final SystemMetricsPresenter systemMetricsPresenter = new SystemMetricsPresenter();
     private final KillSwitchController killSwitchController;
     private final JButton refreshPortfolioButton = new JButton("Refresh & Reevaluate Portfolio");
+    private final JButton capturePortfolioButton = new JButton("Capture Portfolio");
+    private final JLabel capturePortfolioIndicator = new JLabel("");
     private final JButton footerActionsButton = new JButton("Actions");
     private final JPopupMenu footerActionsMenu = new JPopupMenu();
     private final PortfolioRefreshController portfolioRefreshController;
     private final PortfolioActionsController portfolioActionsController;
+    private final PortfolioCaptureController portfolioCaptureController;
     private final List<ManagedStrategy> strategies = new ArrayList<>();
     private final List<HistoryTablePresenter.HistoryRow> filledOrderRows = new ArrayList<>();
     private final StrategyGridTableModel strategyTableModel = new StrategyGridTableModel(
@@ -284,7 +297,6 @@ public class TradingFrame extends JFrame {
     private final SqliteStrategyRepository strategyRepository;
     private final SqliteStrategyOrderRepository strategyOrderRepository;
     private final SqliteStrategyExecutionEventRepository strategyEventRepository;
-    private final PersistentAggregatePnlStore aggregatePnlStore;
     private boolean connectionOk;
     private boolean connectionRetryPending;
     private boolean appLaunchedPublished;
@@ -428,6 +440,42 @@ public class TradingFrame extends JFrame {
             @Override public void actionCanceled(String actionName) { userActionLog.canceled(actionName); }
             @Override public void actionFailed(String actionName, String reason) { userActionLog.failed(actionName, reason); }
         });
+        portfolioCaptureController = new PortfolioCaptureController(
+                new PortfolioCaptureController.Gateway() {
+                    @Override public List<ManagedStrategy> strategies() { return strategies; }
+                    @Override
+                    public StrategyService.StrategyCreationResult sellPosition(ManagedStrategy entry, SellSubmissionType submissionType) {
+                        return TradingFrame.this.sellPosition(entry.strategy, submissionType);
+                    }
+                    @Override public int cancelPendingBaseBuys() { return TradingFrame.this.cancelPendingBaseBuysForAutomation(); }
+                    @Override public String runLuckyAutomation(PortfolioCaptureConfig config) { return TradingFrame.this.runLuckyAutomation(config); }
+                    @Override
+                    public void onMonitoringChanged(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
+                        TradingFrame.this.updateCapturePortfolioUi(active, snapshot, config);
+                    }
+                    @Override
+                    public void onSnapshotUpdated(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
+                        TradingFrame.this.updateCapturePortfolioIndicator(snapshot, config);
+                    }
+                    @Override
+                    public void onAutomationStateChanged(PortfolioCaptureAutomationState state, int loopCount, int pendingCanceled) {
+                        TradingFrame.this.updateCaptureAutomationState(state, loopCount, pendingCanceled);
+                    }
+                    @Override public void onExecutionStarted() { setCapturePortfolioBusy(true); }
+                    @Override
+                    public void onExecutionFinished(PortfolioCaptureExecutionResult result, boolean targetTriggered) {
+                        setCapturePortfolioBusy(false);
+                        syncStrategiesFromRepository();
+                        refreshStrategyTableContent();
+                        refreshPanels();
+                        updateStatusBar();
+                        showPortfolioCaptureSummary(result, targetTriggered);
+                    }
+                    @Override public void log(String message) { TradingFrame.this.log(message); }
+                },
+                new PortfolioCaptureCalculator(),
+                new PortfolioCaptureStateStore(AppMetadata.appDataDirectory().resolve("portfolio-capture-state.json"))
+        );
         tradingRuntimeSupport = new TradingRuntimeSupport(
                 strategyRepository,
                 strategyOrderRepository,
@@ -542,7 +590,6 @@ public class TradingFrame extends JFrame {
             @Override public void setSelectedStrategyId(String strategyId) { selectedStrategyId = strategyId; }
             @Override public String selectedStrategyId() { return selectedStrategyId; }
             @Override public void removeStrategyAt(int modelRow) { strategies.remove(modelRow); }
-            @Override public void addArchivedRealized(StrategyMode mode, BigDecimal amount) { aggregatePnlStore.addArchivedRealized(mode, amount); }
             @Override public void log(String message) { TradingFrame.this.log(message); }
 
             @Override
@@ -837,9 +884,6 @@ public class TradingFrame extends JFrame {
                 TradingFrame.this.setStatus(message, tone);
             }
         });
-        aggregatePnlStore = new PersistentAggregatePnlStore(
-                AppMetadata.appDataDirectory().resolve("aggregate-pnl.json")
-        );
         legalDisclosureAccepted = legalDisclosureController.loadAccepted();
         refreshStrategyRuntimeServices(
                 settingsDialog.savedApiKey(settingsDialog.appliedApplicationMode()),
@@ -1392,6 +1436,7 @@ public class TradingFrame extends JFrame {
         setExtendedState(getExtendedState() | JFrame.MAXIMIZED_BOTH);
         setLocationRelativeTo(null);
         startBackgroundUpdateAvailabilityCheck();
+        SwingUtilities.invokeLater(portfolioCaptureController::restoreIfNeeded);
     }
 
     private void applyUiPolish() {
@@ -1400,16 +1445,22 @@ public class TradingFrame extends JFrame {
         styleHeaderButton(addStrategyButton);
         styleHeaderButton(luckyButton);
         styleHeaderButton(refreshPortfolioButton);
+        styleCompactHeaderButton(capturePortfolioButton);
         styleHeaderButton(portfolioActionsButton);
         styleHeaderButton(settingsButton);
         applyButtonIcon(addStrategyButton, "icons/add-stock-strategy.svg", 16);
         applyButtonIcon(luckyButton, "icons/lucky.svg", 16);
         applyButtonIcon(refreshPortfolioButton, "icons/refresh.svg", 16);
+        applyButtonIcon(capturePortfolioButton, "icons/portfolio.svg", 16);
         applyButtonIcon(portfolioActionsButton, "icons/portfolio.svg", 16);
         applyButtonIcon(settingsButton, "icons/settings.svg", 16);
         refreshPortfolioButton.setToolTipText(TooltipStyler.text(
                 "Refetches Alpaca positions and quote data, updates matching Current Strategies, and recalculates grid P&L.",
                 320
+        ));
+        capturePortfolioButton.setToolTipText(TooltipStyler.text(
+                "Capture all portfolio profits/losses now, or automatically when the portfolio reaches a target profit.",
+                340
         ));
         luckyButton.setToolTipText(TooltipStyler.text(
                 "Find today's top trending Alpaca stocks, auto-analyze them, and add reviewed picks as local paper simulations.",
@@ -1508,6 +1559,24 @@ public class TradingFrame extends JFrame {
                 new EmptyBorder(6, 11, 6, 11));
     }
 
+    private void styleCompactHeaderButton(JButton button) {
+        button.setFocusPainted(false);
+        button.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+        button.setForeground(new Color(230, 230, 255));
+        button.setBackground(DARK_BTN_BG);
+        button.setOpaque(true);
+        button.setContentAreaFilled(true);
+        button.setRolloverEnabled(true);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(DARK_BTN_BORDER, 1, true),
+                new EmptyBorder(5, 10, 5, 10)
+        ));
+        button.setIconTextGap(8);
+        installDarkButtonInteraction(button,
+                new EmptyBorder(5, 10, 5, 10),
+                new EmptyBorder(4, 9, 4, 9));
+    }
+
     private void styleStatusActionButton(JButton button) {
         button.setFocusPainted(false);
         button.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
@@ -1524,6 +1593,31 @@ public class TradingFrame extends JFrame {
         installDarkButtonInteraction(button,
                 new EmptyBorder(5, 12, 5, 12),
                 new EmptyBorder(4, 11, 4, 11));
+    }
+
+    private void installPremiumActionButtonStyle(JButton button) {
+        button.setUI(new BasicButtonUI() {
+            @Override
+            public void paint(Graphics g, JComponent c) {
+                JButton b = (JButton) c;
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                Color top = b.getModel().isRollover() ? new Color(58, 132, 255) : new Color(42, 101, 225);
+                Color bottom = b.getModel().isRollover() ? new Color(120, 84, 255) : new Color(91, 63, 204);
+                if (portfolioCaptureController != null && portfolioCaptureController.monitoringActive()) {
+                    top = capturePortfolioPulseOn ? new Color(36, 140, 108) : CAPTURE_ACTIVE_BG;
+                    bottom = capturePortfolioPulseOn ? new Color(16, 128, 98) : new Color(24, 152, 118);
+                }
+                g2.setPaint(new java.awt.GradientPaint(0, 0, top, 0, c.getHeight(), bottom));
+                g2.fillRoundRect(0, 0, c.getWidth() - 1, c.getHeight() - 1, 18, 18);
+                g2.dispose();
+                super.paint(g, c);
+            }
+        });
+        button.setContentAreaFilled(false);
+        button.setOpaque(false);
+        button.setForeground(Color.WHITE);
+        button.setBorder(new EmptyBorder(7, 13, 7, 13));
     }
 
     private JMenuItem createStatusMenuItem(String text, String iconPath, Runnable action) {
@@ -1764,6 +1858,216 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    private void openPortfolioCaptureDialog() {
+        userActionLog.started("Capture Portfolio");
+        PortfolioCaptureDialog dialog = new PortfolioCaptureDialog(
+                this,
+                portfolioCaptureController::currentSnapshot,
+                config -> {
+                    userActionLog.started("Capture Portfolio Now");
+                    portfolioCaptureController.executeNow(config);
+                },
+                config -> {
+                    userActionLog.started("Capture Portfolio Monitoring");
+                    portfolioCaptureController.activateMonitoring(config);
+                    userActionLog.completed("Capture Portfolio Monitoring", "Monitoring activated.");
+                },
+                () -> {
+                    portfolioCaptureController.emergencyStop();
+                    userActionLog.completed("Capture Portfolio Monitoring", "Monitoring deactivated.");
+                },
+                portfolioCaptureController.monitoringActive()
+        );
+        boolean changed = dialog.showDialog();
+        if (!changed) {
+            userActionLog.canceled("Capture Portfolio");
+        }
+    }
+
+    private void updateCapturePortfolioUi(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
+        if (active) {
+            capturePortfolioButton.setText("Capture Portfolio");
+            startCapturePortfolioPulse();
+        } else {
+            stopCapturePortfolioPulse();
+            capturePortfolioButton.setText("Capture Portfolio");
+        }
+        updateCapturePortfolioIndicator(snapshot, config);
+    }
+
+    private void updateCapturePortfolioIndicator(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
+        if (snapshot == null || config == null || config.mode() != PortfolioCaptureMode.TARGET_MONITORING) {
+            capturePortfolioIndicator.setText("");
+            capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
+            return;
+        }
+        String targetLabel = config.targetType() == PortfolioCaptureTargetType.PROFIT_PERCENT
+                ? Monetary.round(config.targetValue()) + "%"
+                : "$" + Monetary.round(config.targetValue());
+        capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_ACTIVE_TEXT);
+        capturePortfolioIndicator.setText("Monitoring Active | P&L $" + Monetary.round(snapshot.unrealizedPnl())
+                + " | Target " + targetLabel
+                + " | Progress " + Monetary.round(snapshot.targetProgressPercent()) + "%");
+    }
+
+    private void updateCaptureAutomationState(PortfolioCaptureAutomationState state, int loopCount, int pendingCanceled) {
+        SwingUtilities.invokeLater(() -> {
+            if (state == PortfolioCaptureAutomationState.STOPPED && !portfolioCaptureController.monitoringActive()) {
+                return;
+            }
+            String suffix = " | State " + state
+                    + " | Loops " + loopCount
+                    + " | Pending Cancelled " + pendingCanceled;
+            String current = capturePortfolioIndicator.getText();
+            int stateMarker = current.indexOf(" | State ");
+            if (stateMarker >= 0) {
+                current = current.substring(0, stateMarker);
+            }
+            capturePortfolioIndicator.setText((current == null || current.isBlank() ? "Monitoring Active" : current) + suffix);
+        });
+    }
+
+    private int cancelPendingBaseBuysForAutomation() {
+        int canceled = 0;
+        for (ManagedStrategy entry : new ArrayList<>(strategies)) {
+            StrategyService service = strategyServiceForMode(entry.strategy.mode());
+            if (service == null) {
+                continue;
+            }
+            StrategyService.LimitBuyCancelResult result = service.cancelPendingLimitBuys(entry.strategy.id());
+            if (result.success()) {
+                canceled += Math.max(0, result.canceledCount());
+            }
+        }
+        syncStrategiesFromRepository();
+        refreshStrategyTableData();
+        updateStatusBar();
+        refreshPanels();
+        return canceled;
+    }
+
+    private String runLuckyAutomation(PortfolioCaptureConfig config) {
+        ApplicationMode mode = config.reentryMode() == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER;
+        String apiKey = settingsDialog.savedApiKey(mode);
+        String apiSecret = settingsDialog.savedApiSecret(mode);
+        if (apiKey.isBlank() || apiSecret.isBlank()) {
+            return "Skipped: Alpaca credentials are required.";
+        }
+        log("[Portfolio Capture] Auto re-entry started. mode=" + config.reentryMode()
+                + " quantity=" + config.reentryQuantity()
+                + " term=" + config.reentryRecommendationType());
+        HttpAlpacaMarketDataApi marketDataApi = new HttpAlpacaMarketDataApi(apiKey, apiSecret);
+        TrendingStockGroups groups;
+        try {
+            groups = new TrendingStocksService(new HttpAlpacaScreenerClient(apiKey, apiSecret)).topGainersAndLosers(10);
+        } catch (Exception ex) {
+            log("[Portfolio Capture] Auto re-entry failed to fetch I Am Feeling Lucky stocks: " + ex.getMessage());
+            return "Skipped: unable to fetch trending stocks.";
+        }
+        List<TrendingStock> stocks = new ArrayList<>();
+        stocks.addAll(groups.gainers());
+        stocks.addAll(groups.losers());
+        AutoAnalyzeService analyzeService = new AutoAnalyzeService(marketDataApi);
+        List<LuckySimulationSelection> selections = new ArrayList<>();
+        for (TrendingStock stock : stocks) {
+            try {
+                AutoAnalyzeBundle bundle = analyzeService.analyzeBundle(stock.symbol(), 1, 15, stock.latestPrice());
+                selections.add(new LuckySimulationSelection(stock, bundle, config.reentryRecommendationType(), config.reentryQuantity()));
+            } catch (Exception ex) {
+                log("[Portfolio Capture] Auto re-entry skipped " + stock.symbol() + ": " + ex.getMessage());
+            }
+        }
+        LuckySimulationPlacementController controller = new LuckySimulationPlacementController(new LuckySimulationPlacementController.Gateway() {
+            @Override public com.neuralarc.service.StrategyRepository repository() { return strategyRepository; }
+            @Override public StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy) {
+                return createStrategy(strategy, StrategyMode.PAPER);
+            }
+            @Override public StrategyService.StrategyCreationResult createStrategy(Strategy strategy, StrategyMode targetMode) {
+                StrategyService service = strategyServiceForMode(targetMode);
+                if (service == null) {
+                    return StrategyService.StrategyCreationResult.failed("Strategy service is not configured for " + targetMode);
+                }
+                return service.createAndActivate(strategy);
+            }
+            @Override public boolean confirmReplaceWaitingPaperStrategy(String symbol) { return true; }
+            @Override public boolean allowDuplicateSymbols() { return settingsDialog.appliedAllowDuplicateSymbolStrategies(); }
+            @Override public int defaultStrategyPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
+            @Override public boolean defaultRepeatCycleAfterProfitExitEnabled() { return settingsDialog.appliedDefaultRepeatCycleAfterProfitExitEnabled(); }
+            @Override public boolean defaultResubmitOnExpiryEnabled() { return settingsDialog.appliedDefaultResubmitOnExpiryEnabled(); }
+            @Override public void cancelAndDeletePaperStrategy(String strategyId) { strategyServiceForMode(config.reentryMode()).delete(strategyId); }
+            @Override public void afterPlacement() {
+                syncStrategiesFromRepository();
+                refreshStrategyTableData();
+                updateStatusBar();
+                refreshPanels();
+            }
+            @Override public void log(String message) { TradingFrame.this.log(message); }
+        }, config.reentryMode());
+        LuckySimulationPlacementController.PlacementResult result = controller.place(selections);
+        log("[Portfolio Capture] Auto re-entry generated positions. created=" + result.created()
+                + " replaced=" + result.replaced() + " skipped=" + result.skipped());
+        return controller.summaryMessage(result).replace('\n', ' ');
+    }
+
+    private void setCapturePortfolioBusy(boolean busy) {
+        capturePortfolioButton.setEnabled(!busy);
+        capturePortfolioButton.setText(busy ? "Capturing..." : "Capture Portfolio");
+    }
+
+    private void startCapturePortfolioPulse() {
+        if (capturePortfolioPulseTimer == null) {
+            capturePortfolioPulseTimer = new Timer(550, ignored -> {
+                capturePortfolioPulseOn = !capturePortfolioPulseOn;
+                capturePortfolioButton.setBackground(capturePortfolioPulseOn ? CAPTURE_ACTIVE_BG : CAPTURE_ACTIVE_BG_ALT);
+                capturePortfolioButton.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(capturePortfolioPulseOn ? CAPTURE_ACTIVE_BORDER : CAPTURE_ACTIVE_BORDER_ALT, 1, true),
+                        new EmptyBorder(5, 10, 5, 10)
+                ));
+            });
+            capturePortfolioPulseTimer.setInitialDelay(0);
+        }
+        capturePortfolioButton.setRolloverEnabled(false);
+        capturePortfolioPulseTimer.start();
+    }
+
+    private void stopCapturePortfolioPulse() {
+        if (capturePortfolioPulseTimer != null) {
+            capturePortfolioPulseTimer.stop();
+        }
+        capturePortfolioPulseOn = false;
+        capturePortfolioButton.setBackground(DARK_BTN_BG);
+        capturePortfolioButton.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(DARK_BTN_BORDER, 1, true),
+                new EmptyBorder(5, 10, 5, 10)
+        ));
+        capturePortfolioButton.setRolloverEnabled(true);
+    }
+
+    private void showPortfolioCaptureSummary(PortfolioCaptureExecutionResult result, boolean targetTriggered) {
+        if (targetTriggered) {
+            JOptionPane.showMessageDialog(this,
+                    "Portfolio target reached. Capture executed successfully.",
+                    "Capture Portfolio",
+                    JOptionPane.INFORMATION_MESSAGE);
+        }
+        JOptionPane.showMessageDialog(this,
+                "<html><body style='width:420px'>"
+                        + "<b>Portfolio Capture Summary</b><br><br>"
+                        + "Total Stocks Captured: " + result.capturedCount() + "<br>"
+                        + "Total Investment: $" + Monetary.round(result.totalInvestment()) + "<br>"
+                        + "Estimated Portfolio Value: $" + Monetary.round(result.estimatedPortfolioValue()) + "<br>"
+                        + "Actual Broker Execution Value: $" + Monetary.round(result.actualBrokerExecutionValue()) + "<br>"
+                        + "Estimated Profit/Loss: $" + Monetary.round(result.estimatedPnl()) + "<br>"
+                        + "Actual Profit/Loss: $" + Monetary.round(result.actualPnl()) + "<br>"
+                        + "Execution Variance: $" + Monetary.round(result.executionVariance()) + "<br>"
+                        + "Timestamp: " + result.timestamp() + "<br><br>"
+                        + (result.failures().isEmpty() ? "" : "<b>Failures:</b><br>" + String.join("<br>", result.failures()))
+                        + "</body></html>",
+                "Portfolio Capture Summary",
+                result.failures().isEmpty() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
+        userActionLog.completed("Capture Portfolio", "Captured " + result.capturedCount() + " stock(s).");
+    }
+
     private static Font createBaseFont() {
         return FontLoader.ui(Font.PLAIN, 12);
     }
@@ -1772,6 +2076,7 @@ public class TradingFrame extends JFrame {
         addStrategyButton.addActionListener(e -> addStrategy());
         luckyButton.addActionListener(e -> openLuckyTrendingStocksDialog());
         refreshPortfolioButton.addActionListener(e -> portfolioRefreshController.refresh(true));
+        capturePortfolioButton.addActionListener(e -> openPortfolioCaptureDialog());
         portfolioActionsButton.addActionListener(e -> portfolioActionsController.showMenu(portfolioActionsButton));
         settingsButton.addActionListener(e -> openSettingsDialog());
         configureButtonShortcut(addStrategyButton, KeyEvent.VK_S,
@@ -1783,6 +2088,9 @@ public class TradingFrame extends JFrame {
         configureButtonShortcut(refreshPortfolioButton, KeyEvent.VK_R,
                 KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
                 "refreshPortfolio");
+        configureButtonShortcut(capturePortfolioButton, KeyEvent.VK_C,
+                KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
+                "capturePortfolio");
         configureButtonShortcut(portfolioActionsButton, KeyEvent.VK_P,
                 KeyStroke.getKeyStroke(KeyEvent.VK_P, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
                 "portfolioActions");
@@ -1920,7 +2228,6 @@ public class TradingFrame extends JFrame {
         strategyRepository.invalidateCache();
         strategyOrderRepository.invalidateCache();
         strategyEventRepository.invalidateCache();
-        aggregatePnlStore.reset();
         strategies.clear();
         filledOrderRows.clear();
         strategyTableModel.fireTableDataChanged();
@@ -1948,7 +2255,6 @@ public class TradingFrame extends JFrame {
         strategyOrderRepository.deleteByStrategyId(strategy.id());
         strategyEventRepository.deleteByStrategyId(strategy.id());
         strategyRepository.deleteById(strategy.id());
-        aggregatePnlStore.reset();
         log("[PORTFOLIO] Deleted trade history record for " + strategy.symbol() + ".");
         return StrategyService.ArchiveResult.success(strategy.id());
     }
@@ -2975,31 +3281,21 @@ public class TradingFrame extends JFrame {
     }
 
     private void updateUnrealizedSummaries() {
-        BigDecimal paperTotal = BigDecimal.ZERO;
-        BigDecimal liveTotal = BigDecimal.ZERO;
-        BigDecimal paperRealized = aggregatePnlStore.archivedRealized(StrategyMode.PAPER);
-        BigDecimal liveRealized = aggregatePnlStore.archivedRealized(StrategyMode.LIVE);
-        for (ManagedStrategy strategy : strategies) {
-            BigDecimal unrealized = tradingApi == null
-                    ? BigDecimal.ZERO
-                    : strategy.cachedPosition().unrealizedPnl();
-            BigDecimal realized = realizedPnlForStrategy(strategy.strategy.id());
-            if (strategy.strategy.mode() == StrategyMode.PAPER) {
-                paperTotal = paperTotal.add(unrealized);
-                paperRealized = paperRealized.add(realized);
-            } else {
-                liveTotal = liveTotal.add(unrealized);
-                liveRealized = liveRealized.add(realized);
-            }
-        }
+        String query = normalizeGridSearchQuery(currentStrategiesSearchField.getText());
+        StrategyPnlTotalsCalculator.Totals totals = strategyPnlTotalsCalculator.calculate(
+                strategies,
+                entry -> includeInCurrentStrategiesTab(entry)
+                        && (query.isBlank() || matchesStockSymbol(entry.strategy.symbol(), query)),
+                this::realizedPnlForStrategy
+        );
         paperUnrealizedSummary.setText("Paper P&L (Unrealized/Realized): "
-                + Monetary.round(paperTotal).toPlainString()
+                + Monetary.round(totals.paperUnrealized()).toPlainString()
                 + " / "
-                + Monetary.round(paperRealized).toPlainString());
+                + Monetary.round(totals.paperRealized()).toPlainString());
         liveUnrealizedSummary.setText("Live P&L (Unrealized/Realized): "
-                + Monetary.round(liveTotal).toPlainString()
+                + Monetary.round(totals.liveUnrealized()).toPlainString()
                 + " / "
-                + Monetary.round(liveRealized).toPlainString());
+                + Monetary.round(totals.liveRealized()).toPlainString());
         applyHeaderTotalsVisibility();
     }
 
@@ -3633,14 +3929,26 @@ public class TradingFrame extends JFrame {
     }
 
     private JPanel createGridSearchPanel(String labelText, JTextField searchField) {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        JPanel panel = new JPanel(new BorderLayout(8, 0));
         panel.setOpaque(false);
         panel.setBorder(new EmptyBorder(8, 0, 6, 0));
+        JPanel searchControls = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        searchControls.setOpaque(false);
         JLabel label = new JLabel(labelText);
         label.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         searchField.setToolTipText(TooltipStyler.text("Type to filter rows by stock symbol."));
-        panel.add(label);
-        panel.add(searchField);
+        searchControls.add(label);
+        searchControls.add(searchField);
+        panel.add(searchControls, BorderLayout.WEST);
+        if (searchField == currentStrategiesSearchField) {
+            JPanel captureControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+            captureControls.setOpaque(false);
+            capturePortfolioIndicator.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+            capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
+            captureControls.add(capturePortfolioIndicator);
+            captureControls.add(capturePortfolioButton);
+            panel.add(captureControls, BorderLayout.EAST);
+        }
         panel.setVisible(false);
         return panel;
     }
@@ -3761,7 +4069,7 @@ public class TradingFrame extends JFrame {
             tradeHistorySearchField.setText("");
         }
 
-        currentStrategiesSearchPanel.setVisible(showCurrentStrategiesSearch);
+        currentStrategiesSearchPanel.setVisible(true);
         tradeHistorySearchPanel.setVisible(showTradeHistorySearch);
     }
 
@@ -4047,6 +4355,10 @@ public class TradingFrame extends JFrame {
         if (updateAvailableFlashTimer != null) {
             updateAvailableFlashTimer.stop();
         }
+        if (capturePortfolioPulseTimer != null) {
+            capturePortfolioPulseTimer.stop();
+        }
+        portfolioCaptureController.shutdown();
         strategyPollingTimer.stop();
         uiPollingExecutor.shutdownNow();
         if (strategyPollingService != null) {

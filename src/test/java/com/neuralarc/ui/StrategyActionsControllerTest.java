@@ -287,7 +287,6 @@ class StrategyActionsControllerTest {
         @Override public void setSelectedStrategyId(String strategyId) { }
         @Override public String selectedStrategyId() { return null; }
         @Override public void removeStrategyAt(int modelRow) { removeCalls++; }
-        @Override public void addArchivedRealized(StrategyMode mode, BigDecimal amount) { }
         @Override public void log(String message) { }
         @Override public void publishAnalytics(AnalyticsEvent event) { }
         @Override public int confirm(String message, String title, int optionType, int messageType) { confirmCalls++; return confirmResult; }
