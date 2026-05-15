@@ -12,6 +12,7 @@ import com.neuralarc.db.SqliteStrategyOrderRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.FeedbackEmailService;
+import com.neuralarc.service.GitHubReleaseUpdateService;
 import com.neuralarc.service.MarketHoursService;
 import com.neuralarc.service.OnboardingStateStore;
 import com.neuralarc.service.PersistentAggregatePnlStore;
@@ -127,6 +128,8 @@ public class TradingFrame extends JFrame {
     private static final Color STATUS_OK = new Color(34, 139, 34);
     private static final Color STATUS_WARN = new Color(180, 100, 0);
     private static final Color STATUS_ERR = new Color(180, 30, 30);
+    private static final Color UPDATE_FLASH_BG = new Color(185, 112, 0);
+    private static final Color UPDATE_FLASH_BORDER = new Color(255, 184, 65);
     private static final Color TABLE_SELECTION_BG       = new Color(201, 220, 252); // blue row highlight
     private static final Color TABLE_SELECTION_FG       = new Color(10,  35, 100); // dark navy text on blue
     private static final Color TABLE_SELECTION_BORDER   = new Color(66, 133, 244); // left accent stripe on selected row
@@ -187,6 +190,9 @@ public class TradingFrame extends JFrame {
     private final LegalDisclosureController legalDisclosureController = new LegalDisclosureController();
     private boolean legalDisclosureAccepted;
     private final StringBuilder pendingLogWrites = new StringBuilder();
+    private Timer updateAvailableFlashTimer;
+    private boolean updateAvailableNoticeActive;
+    private boolean updateAvailableFlashOn;
 
     private final UserIdentityService identityService = new UserIdentityService();
     private final UserActionLogSupport userActionLog = new UserActionLogSupport(this::log);
@@ -199,7 +205,9 @@ public class TradingFrame extends JFrame {
     private final StrategyTablePresenter strategyTablePresenter = new StrategyTablePresenter();
     private final SystemMetricsPresenter systemMetricsPresenter = new SystemMetricsPresenter();
     private final KillSwitchController killSwitchController;
-    private final JButton refreshPortfolioButton = new JButton("Refresh Portfolio");
+    private final JButton refreshPortfolioButton = new JButton("Refresh & Reevaluate Portfolio");
+    private final JButton footerActionsButton = new JButton("Actions");
+    private final JPopupMenu footerActionsMenu = new JPopupMenu();
     private final PortfolioRefreshController portfolioRefreshController;
     private final PortfolioActionsController portfolioActionsController;
     private final List<ManagedStrategy> strategies = new ArrayList<>();
@@ -1220,27 +1228,31 @@ public class TradingFrame extends JFrame {
             openContactUsDialog();
         });
 
-        JButton moreButton = new JButton("Actions");
-        applyButtonIcon(moreButton, "icons/actions.svg", 15);
-        styleStatusActionButton(moreButton);
+        applyButtonIcon(footerActionsButton, "icons/actions.svg", 15);
+        styleStatusActionButton(footerActionsButton);
 
-        JPopupMenu moreMenu = new JPopupMenu();
-        moreMenu.add(createStatusMenuItem("Submit Bug", "icons/submit-bug.svg",
+        footerActionsMenu.add(createStatusMenuItem("Submit Bug", "icons/submit-bug.svg",
                 this::openSubmitBugDialog));
-        moreMenu.add(createStatusMenuItem("Request New Feature", "icons/request-new-feature.svg",
+        footerActionsMenu.add(createStatusMenuItem("Request New Feature", "icons/request-new-feature.svg",
                 () -> openRequestNewFeatureDialog()));
-        moreMenu.add(createStatusMenuItem("Contact Us / Feedback", "icons/contact-us.svg",
+        footerActionsMenu.add(createStatusMenuItem("Contact Us / Feedback", "icons/contact-us.svg",
                 () -> openContactUsDialog()));
-        moreMenu.add(createStatusMenuItem("Check for Updates", "icons/check-for-updates.svg",
-                () -> UpdateCheckSupport.checkForUpdates(this, moreButton, userActionLog)));
-        moreMenu.add(createStatusMenuItem("Legal Disclosure", "icons/legal-disclosure.svg",
+        footerActionsMenu.add(createStatusMenuItem("Check for Updates", "icons/check-for-updates.svg",
+                () -> UpdateCheckSupport.checkForUpdates(this, footerActionsButton, userActionLog)));
+        footerActionsMenu.add(createStatusMenuItem("Legal Disclosure", "icons/legal-disclosure.svg",
                 () -> showLegalDisclosureDialog(false)));
-        moreButton.addActionListener(e -> {
+        footerActionsButton.addActionListener(e -> {
+            if (updateAvailableNoticeActive) {
+                clearUpdateAvailableNotice();
+                userActionLog.started("Check Updates");
+                UpdateCheckSupport.checkForUpdates(this, footerActionsButton, userActionLog);
+                return;
+            }
             userActionLog.started("Actions Menu");
-            moreMenu.show(moreButton, 0, moreButton.getHeight());
+            footerActionsMenu.show(footerActionsButton, 0, footerActionsButton.getHeight());
             userActionLog.completed("Actions Menu", "Menu opened.");
         });
-        configureButtonShortcut(moreButton, KeyEvent.VK_A,
+        configureButtonShortcut(footerActionsButton, KeyEvent.VK_A,
                 KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
                 "footerActions");
 
@@ -1273,7 +1285,7 @@ public class TradingFrame extends JFrame {
         rightGbc.gridx = 0;
         statusRight.add(appLabel, rightGbc);
         rightGbc.gridx = 1;
-        statusRight.add(moreButton, rightGbc);
+        statusRight.add(footerActionsButton, rightGbc);
         rightGbc.gridx = 2;
         rightGbc.insets = new java.awt.Insets(0, 0, 0, 0);
         statusRight.add(faqsButton, rightGbc);
@@ -1379,6 +1391,7 @@ public class TradingFrame extends JFrame {
         });
         setExtendedState(getExtendedState() | JFrame.MAXIMIZED_BOTH);
         setLocationRelativeTo(null);
+        startBackgroundUpdateAvailabilityCheck();
     }
 
     private void applyUiPolish() {
@@ -1395,7 +1408,7 @@ public class TradingFrame extends JFrame {
         applyButtonIcon(portfolioActionsButton, "icons/portfolio.svg", 16);
         applyButtonIcon(settingsButton, "icons/settings.svg", 16);
         refreshPortfolioButton.setToolTipText(TooltipStyler.text(
-                "Refetches Alpaca positions and updates matching Current Strategies with broker-side position data.",
+                "Refetches Alpaca positions and quote data, updates matching Current Strategies, and recalculates grid P&L.",
                 320
         ));
         luckyButton.setToolTipText(TooltipStyler.text(
@@ -1439,7 +1452,7 @@ public class TradingFrame extends JFrame {
 
     private void setPortfolioRefreshButtonBusy(boolean busy) {
         refreshPortfolioButton.setEnabled(!busy);
-        refreshPortfolioButton.setText(busy ? "Refreshing..." : "Refresh Portfolio");
+        refreshPortfolioButton.setText(busy ? "Refreshing..." : "Refresh & Reevaluate Portfolio");
     }
 
     private JPanel createDetailSection(JLabel titleLabel, JLabel contentLabel) {
@@ -1531,6 +1544,82 @@ public class TradingFrame extends JFrame {
             }
         });
         return item;
+    }
+
+    private void startBackgroundUpdateAvailabilityCheck() {
+        if (!AppMetadata.updateCheckEnabled() || AppMetadata.githubLatestReleaseUrl().isBlank()) {
+            return;
+        }
+        SwingWorker<GitHubReleaseUpdateService.UpdateCheckResult, Void> worker = new SwingWorker<>() {
+            @Override
+            protected GitHubReleaseUpdateService.UpdateCheckResult doInBackground() throws Exception {
+                return new GitHubReleaseUpdateService(AppMetadata.githubLatestReleaseUrl())
+                        .checkForUpdates(AppMetadata.version());
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    GitHubReleaseUpdateService.UpdateCheckResult result = get();
+                    if (result.updateAvailable()) {
+                        showUpdateAvailableNotice(result);
+                    }
+                } catch (Exception ex) {
+                    log("[Update Check] Background update availability check failed: " + ex.getMessage());
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void showUpdateAvailableNotice(GitHubReleaseUpdateService.UpdateCheckResult result) {
+        updateAvailableNoticeActive = true;
+        footerActionsButton.setText("Update Available");
+        footerActionsButton.setToolTipText(TooltipStyler.text(
+                "Newer version " + result.latestVersion() + " is available. Click to check updates.",
+                300
+        ));
+        startUpdateAvailableFlash();
+    }
+
+    private void startUpdateAvailableFlash() {
+        if (updateAvailableFlashTimer == null) {
+            updateAvailableFlashTimer = new Timer(650, ignored -> applyUpdateAvailableFlash());
+            updateAvailableFlashTimer.setInitialDelay(0);
+        }
+        updateAvailableFlashTimer.start();
+    }
+
+    private void applyUpdateAvailableFlash() {
+        if (!updateAvailableNoticeActive) {
+            clearUpdateAvailableNotice();
+            return;
+        }
+        updateAvailableFlashOn = !updateAvailableFlashOn;
+        Color background = updateAvailableFlashOn ? UPDATE_FLASH_BG : DARK_BTN_BG;
+        Color border = updateAvailableFlashOn ? UPDATE_FLASH_BORDER : DARK_BTN_BORDER;
+        footerActionsButton.setBackground(background);
+        footerActionsButton.setForeground(Color.WHITE);
+        footerActionsButton.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(border, 1, true),
+                new EmptyBorder(5, 12, 5, 12)
+        ));
+    }
+
+    private void clearUpdateAvailableNotice() {
+        updateAvailableNoticeActive = false;
+        updateAvailableFlashOn = false;
+        if (updateAvailableFlashTimer != null) {
+            updateAvailableFlashTimer.stop();
+        }
+        footerActionsButton.setText("Actions");
+        footerActionsButton.setToolTipText(null);
+        footerActionsButton.setForeground(new Color(220, 220, 255));
+        footerActionsButton.setBackground(DARK_BTN_BG);
+        footerActionsButton.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(DARK_BTN_BORDER, 1, true),
+                new EmptyBorder(5, 12, 5, 12)
+        ));
     }
 
     private void runLoggedAction(String actionName, Runnable action) {
@@ -1997,7 +2086,9 @@ public class TradingFrame extends JFrame {
                         : strategyPollingService.drainMarketClosedAutoRepairedStrategyIds();
                 List<Strategy> stored = strategyRepository.findAll();
                 Map<String, Boolean> overnightEligibility = loadOvernightEligibilityForStrategies(stored);
-                boolean refreshBrokerSnapshots = shouldRunBatchGridPriceRefresh(stored) && hasStrategiesNeedingBrokerSnapshots(stored);
+                boolean intervalRefreshDue = shouldRunBatchGridPriceRefresh(stored);
+                boolean refreshBrokerSnapshots = hasStrategiesNeedingBrokerSnapshots(stored)
+                        && (dueStrategies > 0 || intervalRefreshDue);
                 Map<String, Position> positionSnapshots = refreshBrokerSnapshots
                         ? loadPositionSnapshotsForStrategies(stored)
                         : Map.of();
@@ -2143,6 +2234,7 @@ public class TradingFrame extends JFrame {
         for (Strategy strategy : strategiesForMode) {
             Position snapshot = new Position(strategy.symbol());
             com.neuralarc.api.AlpacaPositionData remotePosition = positionsBySymbol.get(strategy.symbol().toUpperCase(Locale.ROOT));
+            boolean positionMarketPriceApplied = false;
             if (remotePosition != null && remotePosition.exists()) {
                 int quantity = remotePosition.quantity().setScale(0, java.math.RoundingMode.DOWN).intValue();
                 if (quantity > 0) {
@@ -2150,10 +2242,11 @@ public class TradingFrame extends JFrame {
                 }
                 if (remotePosition.marketPrice() != null && remotePosition.marketPrice().compareTo(BigDecimal.ZERO) > 0) {
                     snapshot.setLastPrice(remotePosition.marketPrice());
+                    positionMarketPriceApplied = true;
                 }
             }
             BigDecimal latestPrice = latestPrices.get(strategy.symbol().toUpperCase(Locale.ROOT));
-            if (latestPrice != null && latestPrice.compareTo(BigDecimal.ZERO) > 0) {
+            if (!positionMarketPriceApplied && latestPrice != null && latestPrice.compareTo(BigDecimal.ZERO) > 0) {
                 snapshot.setLastPrice(latestPrice);
             }
             target.put(strategy.id(), snapshot);
@@ -3951,6 +4044,9 @@ public class TradingFrame extends JFrame {
         connectionRetryTimer.stop();
         logFlushTimer.stop();
         pollingIndicatorTimer.stop();
+        if (updateAvailableFlashTimer != null) {
+            updateAvailableFlashTimer.stop();
+        }
         strategyPollingTimer.stop();
         uiPollingExecutor.shutdownNow();
         if (strategyPollingService != null) {

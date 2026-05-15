@@ -23,6 +23,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 final class PortfolioRefreshController {
+    private static final String REFRESH_ACTION_NAME = "Refresh & Reevaluate Portfolio";
+
     interface Gateway {
         boolean isConnected();
         BrokerType brokerType();
@@ -59,20 +61,20 @@ final class PortfolioRefreshController {
     void refresh(boolean manualTrigger) {
         if (!refreshInFlight.compareAndSet(false, true)) {
             if (manualTrigger) {
-                actionLog.skipped("Refresh Portfolio", "Refresh already in progress.");
+                actionLog.skipped(REFRESH_ACTION_NAME, "Refresh already in progress.");
             }
             return;
         }
         if (!gateway.isConnected() || gateway.brokerType() != BrokerType.ALPACA) {
             refreshInFlight.set(false);
             if (manualTrigger) {
-                actionLog.failed("Refresh Portfolio", "Connect to Alpaca before refreshing the portfolio.");
+                actionLog.failed(REFRESH_ACTION_NAME, "Connect to Alpaca before refreshing the portfolio.");
                 runOnEdt(gateway::showConnectionRequired);
             }
             return;
         }
         if (manualTrigger) {
-            actionLog.started("Refresh Portfolio");
+            actionLog.started(REFRESH_ACTION_NAME);
         }
         runOnEdt(gateway::onRefreshStarted);
         executor.submit(() -> refreshInBackground(manualTrigger));
@@ -95,7 +97,7 @@ final class PortfolioRefreshController {
             gateway.refreshStrategyTableContent();
             gateway.refreshPanels();
             gateway.updateStatusBar();
-            actionLog.completed("Refresh Portfolio", "Refreshed "
+            actionLog.completed(REFRESH_ACTION_NAME, "Refreshed "
                     + snapshots.size()
                     + " strategy position snapshot(s) from Alpaca.");
         } finally {
@@ -105,7 +107,7 @@ final class PortfolioRefreshController {
 
     private void applyFailedRefresh(boolean manualTrigger, Exception ex) {
         try {
-            actionLog.failed("Refresh Portfolio", ex.getMessage());
+            actionLog.failed(REFRESH_ACTION_NAME, ex.getMessage());
             if (manualTrigger) {
                 gateway.showRefreshFailed(ex.getMessage());
             }
@@ -179,6 +181,7 @@ final class PortfolioRefreshController {
         String symbol = strategy.symbol().toUpperCase(Locale.ROOT);
         Position snapshot = new Position(strategy.symbol());
         AlpacaPositionData remotePosition = positionsBySymbol.get(symbol);
+        boolean positionMarketPriceApplied = false;
         if (remotePosition != null && remotePosition.exists()) {
             int quantity = remotePosition.quantity().setScale(0, RoundingMode.DOWN).intValue();
             if (quantity > 0) {
@@ -186,10 +189,11 @@ final class PortfolioRefreshController {
             }
             if (remotePosition.marketPrice() != null && remotePosition.marketPrice().compareTo(BigDecimal.ZERO) > 0) {
                 snapshot.setLastPrice(remotePosition.marketPrice());
+                positionMarketPriceApplied = true;
             }
         }
         BigDecimal latestPrice = latestPrices.get(symbol);
-        if (latestPrice != null && latestPrice.compareTo(BigDecimal.ZERO) > 0) {
+        if (!positionMarketPriceApplied && latestPrice != null && latestPrice.compareTo(BigDecimal.ZERO) > 0) {
             snapshot.setLastPrice(latestPrice);
         }
         return snapshot;
