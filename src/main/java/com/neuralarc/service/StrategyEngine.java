@@ -478,6 +478,15 @@ public class StrategyEngine {
         }
         target.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(data.status()));
         target.setLatestAlpacaOrderId(order.alpacaOrderId() == null ? "" : order.alpacaOrderId());
+        if ("expired".equals(BrokerOrderStatusUtil.normalize(data.status()))) {
+            target.setStatus(StrategyStatus.FAILED);
+            target.setCurrentState(StrategyLifecycleState.FAILED);
+            target.setLastError("Alpaca order expired");
+            stateMachine.transition(target, StrategyLifecycleState.FAILED, StrategyEventType.ORDER_STATUS_UPDATED,
+                    "Alpaca order expired", data.rawJson());
+            strategyRepository.save(target);
+            return status;
+        }
         if (target.status() != StrategyStatus.ACTIVE) {
             strategyRepository.save(target);
             if (target.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED) {

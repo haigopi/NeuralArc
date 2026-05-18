@@ -2,6 +2,7 @@ package com.neuralarc.ui;
 
 import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.Position;
+import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyStatus;
@@ -92,7 +93,11 @@ public final class StrategyTablePresenter {
                 return "Expired";
             }
         }
-        String lifecycle = formatLifecycleStateForDisplay(strategy.currentState());
+        String lifecycle = appendPlacedQuantity(
+                formatLifecycleStateForDisplay(strategy.currentState()),
+                strategy,
+                position
+        );
         String normalizedStatus = BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus());
         if (strategy.status() == StrategyStatus.ACTIVE && isBrokerUnavailableStatus(normalizedStatus)) {
             return lifecycle + " (Retrying: Unable to reach broker)";
@@ -105,7 +110,7 @@ public final class StrategyTablePresenter {
         }
         if (strategy.status() == StrategyStatus.ACTIVE && isWaitingForNextRule(strategy.currentState())) {
             String activeRule = resolveActiveRuleLabel(strategy, position);
-            return (activeRule.isBlank() ? lifecycle : activeRule) + " - Waiting on next rule";
+            return activeRule.isBlank() ? lifecycle + " - Monitoring next configured rule" : activeRule;
         }
         return lifecycle;
     }
@@ -115,15 +120,56 @@ public final class StrategyTablePresenter {
             return "";
         }
         if (strategy.currentState() == StrategyLifecycleState.PROFIT_HOLD_ACTIVE && strategy.profitHoldEnabled()) {
-            return "Profit Hold Active";
+            return "Profit Hold active"
+                    + profitHoldDescription(strategy)
+                    + currentPriceDescription(position)
+                    + " - monitoring trailing protection";
         }
         if (isProfitablePosition(position) && strategy.targetSellEnabled()) {
-            return "Sell Trigger Active";
+            return "Sell trigger active"
+                    + priceDescription(" @ $", strategy.targetSellPrice())
+                    + currentPriceDescription(position)
+                    + " - monitoring for sell trigger";
         }
         if (strategy.automatedStopLossEnabled()) {
-            return "Stop Loss Active";
+            return "Stop loss active"
+                    + priceDescription(" @ $", strategy.stopLossPrice())
+                    + currentPriceDescription(position)
+                    + " - monitoring downside protection";
         }
         return "";
+    }
+
+    private String profitHoldDescription(Strategy strategy) {
+        if (strategy.profitHoldType() == ProfitHoldType.FIXED_AMOUNT_TRAILING) {
+            return amountDescription(" by $", strategy.profitHoldAmount());
+        }
+        return amountDescription(" by ", strategy.profitHoldPercent(), "%");
+    }
+
+    private String currentPriceDescription(Position position) {
+        if (position == null || position.getLastPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            return "";
+        }
+        return " | Current $" + position.getLastPrice().toPlainString();
+    }
+
+    private String priceDescription(String prefix, BigDecimal value) {
+        if (value == null || value.compareTo(BigDecimal.ZERO) <= 0) {
+            return "";
+        }
+        return prefix + value.toPlainString();
+    }
+
+    private String amountDescription(String prefix, BigDecimal value) {
+        return amountDescription(prefix, value, "");
+    }
+
+    private String amountDescription(String prefix, BigDecimal value, String suffix) {
+        if (value == null || value.compareTo(BigDecimal.ZERO) <= 0) {
+            return "";
+        }
+        return prefix + value.toPlainString() + suffix;
     }
 
     private boolean isProfitablePosition(Position position) {
@@ -142,6 +188,39 @@ public final class StrategyTablePresenter {
 
     private boolean isBrokerUnavailableStatus(String normalizedStatus) {
         return "failed_transport".equals(normalizedStatus) || "api_error".equals(normalizedStatus);
+    }
+
+    private String appendPlacedQuantity(String lifecycle, Strategy strategy, Position position) {
+        int quantity = placedQuantity(strategy, position);
+        if (quantity <= 0 || lifecycle == null || lifecycle.isBlank()) {
+            return lifecycle;
+        }
+        return lifecycle + " - Qty " + quantity;
+    }
+
+    private int placedQuantity(Strategy strategy, Position position) {
+        if (strategy == null || strategy.currentState() == null) {
+            return 0;
+        }
+        return switch (strategy.currentState()) {
+            case BASE_BUY_PLACED, BASE_BUY_PARTIALLY_FILLED, QUEUED_FOR_OPEN -> Math.max(0, strategy.baseBuyQuantity());
+            case BUY_LIMIT_1_PLACED, BUY_LIMIT_1_PARTIALLY_FILLED -> Math.max(0, strategy.buyLimit1Quantity());
+            case BUY_LIMIT_2_PLACED, BUY_LIMIT_2_PARTIALLY_FILLED -> Math.max(0, strategy.buyLimit2Quantity());
+            case SELL_PLACED, SELL_PARTIALLY_FILLED -> placedSellQuantity(strategy, position);
+            default -> 0;
+        };
+    }
+
+    private int placedSellQuantity(Strategy strategy, Position position) {
+        int positionShares = position == null ? 0 : position.getTotalShares();
+        if (positionShares <= 0) {
+            return 0;
+        }
+        BigDecimal targetQuantity = strategy.targetSellQuantity(BigDecimal.valueOf(positionShares));
+        if (targetQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+            return positionShares;
+        }
+        return Math.max(1, targetQuantity.intValue());
     }
 
     public Object valueAt(

@@ -89,8 +89,24 @@ final class PortfolioActionsSupport {
         if (entry == null || entry.strategy == null) {
             return false;
         }
-        return entry.strategy.status() == StrategyStatus.FAILED
-                && "expired".equals(BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus()));
+        if (!"expired".equals(BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus()))) {
+            return false;
+        }
+        if (entry.strategy.status() == StrategyStatus.FAILED) {
+            return true;
+        }
+        return entry.strategy.status() == StrategyStatus.ACTIVE && isPendingOrderState(entry.strategy.currentState());
+    }
+
+    private static boolean isPendingOrderState(StrategyLifecycleState state) {
+        return state == StrategyLifecycleState.BASE_BUY_PLACED
+                || state == StrategyLifecycleState.BASE_BUY_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.SELL_PLACED
+                || state == StrategyLifecycleState.SELL_PARTIALLY_FILLED;
     }
 
     private static boolean isTradeHistoryRecord(ManagedStrategy entry) {

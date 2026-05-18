@@ -39,7 +39,7 @@ class StrategyTablePresenterTest {
 
         String label = presenter.displayStatusLabel(strategy, false, false, false);
 
-        assertEquals("Base Buy Filled - Waiting on next rule", label);
+        assertEquals("Base Buy Filled - Monitoring next configured rule", label);
     }
 
     @Test
@@ -54,7 +54,7 @@ class StrategyTablePresenterTest {
 
         String label = presenter.displayStatusLabel(strategy, position, false, false, false);
 
-        assertEquals("Sell Trigger Active - Waiting on next rule", label);
+        assertEquals("Sell trigger active @ $120.00 | Current $120.00 - monitoring for sell trigger", label);
     }
 
     @Test
@@ -69,7 +69,25 @@ class StrategyTablePresenterTest {
 
         String label = presenter.displayStatusLabel(strategy, position, false, false, false);
 
-        assertEquals("Stop Loss Active - Waiting on next rule", label);
+        assertEquals("Stop loss active @ $85.00 | Current $92.50 - monitoring downside protection", label);
+    }
+
+    @Test
+    void profitHoldStatusShowsTrailingConfiguration() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.PROFIT_HOLD_ACTIVE);
+        strategy.setProfitHoldEnabled(true);
+        strategy.setProfitHoldType(ProfitHoldType.PERCENT_TRAILING);
+        strategy.setProfitHoldPercent(new BigDecimal("5.00"));
+
+        Position position = new Position("AAPL");
+        position.applyBuy(10, new BigDecimal("100.00"));
+        position.setLastPrice(new BigDecimal("125.00"));
+
+        String label = presenter.displayStatusLabel(strategy, position, false, false, false);
+
+        assertEquals("Profit Hold active by 5.00% | Current $125.00 - monitoring trailing protection", label);
     }
 
     @Test
@@ -292,6 +310,33 @@ class StrategyTablePresenterTest {
         );
 
         assertEquals(7, quantityValue);
+    }
+
+    @Test
+    void statusShowsPendingBaseBuyQuantityAndBrokerStatus() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
+        strategy.setBaseBuyQuantity(25);
+        strategy.setLatestOrderStatus("new");
+
+        String label = presenter.displayStatusLabel(strategy, new Position("AAPL"), false, true, false);
+
+        assertEquals("Limit Base Buy Placed - Qty 25 (New)", label);
+    }
+
+    @Test
+    void statusShowsLimitSellQuantityAndBrokerStatus() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        strategy.setLatestOrderStatus("new");
+        Position position = new Position("AAPL");
+        position.applyBuy(8, new BigDecimal("100.00"));
+
+        String label = presenter.displayStatusLabel(strategy, position, false, true, false);
+
+        assertEquals("Limit Sell Placed - Qty 8 (New)", label);
     }
 
     private Strategy strategy() {

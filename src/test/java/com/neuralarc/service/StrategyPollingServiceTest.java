@@ -119,6 +119,35 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void expiredBrokerOrderMarksStrategyExpiredForUi() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        StrategyOrder order = new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY,
+                "ord-expired", "client-expired", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT,
+                new BigDecimal("8.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO,
+                StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        );
+        f.orders.save(order);
+
+        Optional<String> appliedStrategyId = f.service.onTradeUpdate(new AlpacaTradeUpdateEvent(
+                "expired",
+                new AlpacaOrderData("ord-expired", "client-expired", "AAPL", "buy", "limit",
+                        new BigDecimal("8.00"), BigDecimal.ZERO, BigDecimal.ZERO, "expired", "{}")
+        ));
+
+        assertEquals(Optional.of(strategy.id()), appliedStrategyId);
+        Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.FAILED, updated.status());
+        assertEquals(StrategyLifecycleState.FAILED, updated.currentState());
+        assertEquals("expired", updated.latestOrderStatus());
+        assertEquals(StrategyOrderStatus.CANCELED, f.orders.findByAlpacaOrderId("ord-expired").orElseThrow().status());
+    }
+
+    @Test
     void lossBuyLevelsDoNotTriggerWhenDisabled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);

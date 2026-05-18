@@ -20,6 +20,8 @@ final class PortfolioCaptureController {
         StrategyService.StrategyCreationResult sellPosition(ManagedStrategy entry, SellSubmissionType submissionType);
         int cancelPendingBaseBuys();
         String runLuckyAutomation(PortfolioCaptureConfig config);
+        boolean tradingSessionOpen();
+        String nextTradingSessionOpenDisplay();
         void onMonitoringChanged(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config);
         void onSnapshotUpdated(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config);
         void onAutomationStateChanged(PortfolioCaptureAutomationState state, int loopCount, int pendingCanceled);
@@ -39,6 +41,7 @@ final class PortfolioCaptureController {
     private int loopCount;
     private int pendingCanceledCount;
     private volatile boolean emergencyStopRequested;
+    private boolean marketClosedPauseLogged;
 
     PortfolioCaptureController(
             Gateway gateway,
@@ -123,6 +126,20 @@ final class PortfolioCaptureController {
     private void evaluateMonitoringTick() {
         if (activeConfig == null || executing.get()) {
             return;
+        }
+        if (!gateway.tradingSessionOpen()) {
+            if (!marketClosedPauseLogged) {
+                gateway.log("[Portfolio Capture] Monitoring paused because the trading session is closed. Next open="
+                        + gateway.nextTradingSessionOpenDisplay());
+                marketClosedPauseLogged = true;
+            }
+            setAutomationState(PortfolioCaptureAutomationState.PAUSED_MARKET_CLOSED);
+            return;
+        }
+        if (marketClosedPauseLogged) {
+            gateway.log("[Portfolio Capture] Trading session reopened. Monitoring resumed.");
+            marketClosedPauseLogged = false;
+            setAutomationState(PortfolioCaptureAutomationState.MONITORING);
         }
         lastSnapshot = currentSnapshot(activeConfig);
         stateStore.save(new PortfolioCaptureStateStore.State(

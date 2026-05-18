@@ -426,21 +426,30 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
-    void cleanAllExpiredTargetsOnlyFailedExpiredStrategies() {
+    void cleanAllExpiredTargetsFailedAndBrokerExpiredPendingStrategies() {
         ManagedStrategy expired = managed("AAPL", StrategyStatus.FAILED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
         expired.strategy.setCurrentState(StrategyLifecycleState.FAILED);
         expired.strategy.setLatestOrderStatus("expired");
+        ManagedStrategy activeExpiredBaseBuy = managed(
+                "NVDA",
+                StrategyStatus.ACTIVE,
+                StrategyLifecycleState.BASE_BUY_PLACED,
+                0,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
+        );
+        activeExpiredBaseBuy.strategy.setLatestOrderStatus("expired");
         ManagedStrategy failedRejected = managed("MSFT", StrategyStatus.FAILED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
         failedRejected.strategy.setCurrentState(StrategyLifecycleState.FAILED);
         failedRejected.strategy.setLatestOrderStatus("rejected");
         ManagedStrategy active = managed("TSLA", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
 
         List<ManagedStrategy> targets = support.filterTargets(
-                List.of(expired, failedRejected, active),
+                List.of(expired, activeExpiredBaseBuy, failedRejected, active),
                 PortfolioActionsSupport.BulkAction.CLEAN_ALL_EXPIRED
         );
 
-        assertEquals(List.of("AAPL"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+        assertEquals(List.of("AAPL", "NVDA"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
     }
 
     @Test

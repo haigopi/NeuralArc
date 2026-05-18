@@ -202,6 +202,7 @@ public class TradingFrame extends JFrame {
     private boolean updateAvailableFlashOn;
     private Timer capturePortfolioPulseTimer;
     private boolean capturePortfolioPulseOn;
+    private PortfolioCaptureConfig capturePortfolioConfigForUi;
 
     private final UserIdentityService identityService = new UserIdentityService();
     private final UserActionLogSupport userActionLog = new UserActionLogSupport(this::log);
@@ -406,6 +407,11 @@ public class TradingFrame extends JFrame {
         );
         portfolioActionsController = new PortfolioActionsController(new PortfolioActionsController.Gateway() {
             @Override public List<ManagedStrategy> strategies() { return strategies; }
+            @Override public List<ManagedStrategy> currentStrategies() {
+                return strategies.stream()
+                        .filter(TradingFrame.this::includeInCurrentStrategiesTab)
+                        .toList();
+            }
             @Override public StrategyService strategyService() { return strategyService; }
             @Override public StrategyService strategyServiceForMode(StrategyMode mode) { return TradingFrame.this.strategyServiceForMode(mode); }
             @Override public StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason) {
@@ -449,6 +455,8 @@ public class TradingFrame extends JFrame {
                     }
                     @Override public int cancelPendingBaseBuys() { return TradingFrame.this.cancelPendingBaseBuysForAutomation(); }
                     @Override public String runLuckyAutomation(PortfolioCaptureConfig config) { return TradingFrame.this.runLuckyAutomation(config); }
+                    @Override public boolean tradingSessionOpen() { return TradingFrame.this.isMarketOpenForUi(); }
+                    @Override public String nextTradingSessionOpenDisplay() { return TradingFrame.this.nextTradingSessionOpenDisplay(); }
                     @Override
                     public void onMonitoringChanged(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
                         TradingFrame.this.updateCapturePortfolioUi(active, snapshot, config);
@@ -1458,10 +1466,7 @@ public class TradingFrame extends JFrame {
                 "Refetches Alpaca positions and quote data, updates matching Current Strategies, and recalculates grid P&L.",
                 320
         ));
-        capturePortfolioButton.setToolTipText(TooltipStyler.text(
-                "Capture all portfolio profits/losses now, or automatically when the portfolio reaches a target profit.",
-                340
-        ));
+        capturePortfolioButton.setToolTipText(capturePortfolioDefaultTooltip());
         luckyButton.setToolTipText(TooltipStyler.text(
                 "Find today's top trending Alpaca stocks, auto-analyze them, and add reviewed picks as local paper simulations.",
                 320
@@ -1885,12 +1890,14 @@ public class TradingFrame extends JFrame {
     }
 
     private void updateCapturePortfolioUi(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
+        capturePortfolioConfigForUi = active ? config : null;
         if (active) {
             capturePortfolioButton.setText("Capture Portfolio");
             startCapturePortfolioPulse();
         } else {
             stopCapturePortfolioPulse();
             capturePortfolioButton.setText("Capture Portfolio");
+            capturePortfolioIndicator.setToolTipText(null);
         }
         updateCapturePortfolioIndicator(snapshot, config);
     }
@@ -1899,8 +1906,10 @@ public class TradingFrame extends JFrame {
         if (snapshot == null || config == null || config.mode() != PortfolioCaptureMode.TARGET_MONITORING) {
             capturePortfolioIndicator.setText("");
             capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
+            capturePortfolioIndicator.setToolTipText(null);
             return;
         }
+        capturePortfolioConfigForUi = config;
         String targetLabel = config.targetType() == PortfolioCaptureTargetType.PROFIT_PERCENT
                 ? Monetary.round(config.targetValue()) + "%"
                 : "$" + Monetary.round(config.targetValue());
@@ -1908,6 +1917,10 @@ public class TradingFrame extends JFrame {
         capturePortfolioIndicator.setText("Monitoring Active | P&L $" + Monetary.round(snapshot.unrealizedPnl())
                 + " | Target " + targetLabel
                 + " | Progress " + Monetary.round(snapshot.targetProgressPercent()) + "%");
+        capturePortfolioIndicator.setToolTipText(TooltipStyler.text(
+                "Capture Portfolio monitoring is evaluating current portfolio P&L against the configured target.",
+                320
+        ));
     }
 
     private void updateCaptureAutomationState(PortfolioCaptureAutomationState state, int loopCount, int pendingCanceled) {
@@ -1915,16 +1928,79 @@ public class TradingFrame extends JFrame {
             if (state == PortfolioCaptureAutomationState.STOPPED && !portfolioCaptureController.monitoringActive()) {
                 return;
             }
-            String suffix = " | State " + state
-                    + " | Loops " + loopCount
-                    + " | Pending Cancelled " + pendingCanceled;
-            String current = capturePortfolioIndicator.getText();
-            int stateMarker = current.indexOf(" | State ");
-            if (stateMarker >= 0) {
-                current = current.substring(0, stateMarker);
+            if (state == PortfolioCaptureAutomationState.PAUSED_MARKET_CLOSED) {
+                stopCapturePortfolioPulse();
+                capturePortfolioButton.setText("Capture Portfolio:Auto Paused [Closed Market]");
+                capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
+                capturePortfolioIndicator.setToolTipText(TooltipStyler.text(
+                        "Capture Portfolio automation is configured but paused because the market session is closed. "
+                                + "It resumes automatically when the configured regular or extended-hours session opens.",
+                        360
+                ));
+            } else if (portfolioCaptureController.monitoringActive()
+                    && state == PortfolioCaptureAutomationState.MONITORING) {
+                capturePortfolioButton.setText("Capture Portfolio");
+                capturePortfolioButton.setToolTipText(capturePortfolioDefaultTooltip());
+                capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_ACTIVE_TEXT);
+                startCapturePortfolioPulse();
             }
+            String suffix = captureAutomationCounterText(loopCount, pendingCanceled);
+            String current = stripCaptureAutomationCounters(capturePortfolioIndicator.getText());
             capturePortfolioIndicator.setText((current == null || current.isBlank() ? "Monitoring Active" : current) + suffix);
+            if (!suffix.isBlank()) {
+                capturePortfolioIndicator.setToolTipText(TooltipStyler.text(captureAutomationCounterTooltip(), 380));
+            }
         });
+    }
+
+    private String captureAutomationCounterText(int loopCount, int pendingCanceled) {
+        PortfolioCaptureConfig config = capturePortfolioConfigForUi;
+        StringBuilder text = new StringBuilder();
+        if (config != null && config.continuousLoop()) {
+            text.append(" | Loops ").append(loopCount);
+        }
+        if (config != null && config.autoCleanPendingBeforeCycle()) {
+            text.append(" | Pending Buy Orders Cancelled ").append(pendingCanceled);
+        }
+        return text.toString();
+    }
+
+    private String captureAutomationCounterTooltip() {
+        return "Loops is the number of completed continuous capture/re-entry cycles. "
+                + "Pending Buy Orders Cancelled is the number of pending base buy limit orders automatically cancelled "
+                + "by Capture Portfolio cleanup before capture or re-entry.";
+    }
+
+    private String stripCaptureAutomationCounters(String text) {
+        if (text == null || text.isBlank()) {
+            return text;
+        }
+        int marker = firstMarkerIndex(
+                text,
+                " | Loops ",
+                " | Pending Buy Orders Cancelled ",
+                " | Pending Cancelled ",
+                " | State "
+        );
+        return marker < 0 ? text : text.substring(0, marker);
+    }
+
+    private int firstMarkerIndex(String text, String... markers) {
+        int first = -1;
+        for (String marker : markers) {
+            int index = text.indexOf(marker);
+            if (index >= 0 && (first < 0 || index < first)) {
+                first = index;
+            }
+        }
+        return first;
+    }
+
+    private String capturePortfolioDefaultTooltip() {
+        return TooltipStyler.text(
+                "Capture all portfolio profits/losses now, or automatically when the portfolio reaches a target profit.",
+                340
+        );
     }
 
     private int cancelPendingBaseBuysForAutomation() {
@@ -3851,6 +3927,10 @@ public class TradingFrame extends JFrame {
     }
 
     private boolean isMarketOpenForUi() {
+        return currentMarketStatusViewModel().openForUi();
+    }
+
+    private MarketStatusPresenter.MarketStatusViewModel currentMarketStatusViewModel() {
         AppSettingsService.AppSettings settings = appSettingsService.load();
         boolean regularMarketOpen = marketHoursService.isRegularMarketHours();
         boolean tradingSessionOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
@@ -3859,8 +3939,20 @@ public class TradingFrame extends JFrame {
                 regularMarketOpen,
                 tradingSessionOpen,
                 Instant.now(),
-                marketHoursService.nextMarketOpen(settings.extendedHoursTradingEnabled())
-        ).openForUi();
+                currentNextTradingSessionOpen(settings)
+        );
+    }
+
+    private String nextTradingSessionOpenDisplay() {
+        AppSettingsService.AppSettings settings = appSettingsService.load();
+        return currentNextTradingSessionOpen(settings)
+                .atZone(java.time.ZoneId.systemDefault())
+                .format(NEXT_OPEN_FORMAT);
+    }
+
+    private Instant currentNextTradingSessionOpen(AppSettingsService.AppSettings settings) {
+        boolean extendedHoursEnabled = settings != null && settings.extendedHoursTradingEnabled();
+        return marketHoursService.nextMarketOpen(extendedHoursEnabled);
     }
 
     private Color gridBrokerModeColor(Strategy strategy) {
@@ -4031,16 +4123,7 @@ public class TradingFrame extends JFrame {
                 .filter(s -> s.strategy.status() == StrategyStatus.ACTIVE)
                 .count();
         long inactive = Math.max(0L, totalCurrentStrategies - running);
-        AppSettingsService.AppSettings settings = appSettingsService.load();
-        boolean regularMarketOpen = marketHoursService.isRegularMarketHours();
-        boolean tradingSessionOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
-        MarketStatusPresenter.MarketStatusViewModel marketStatusViewModel = marketStatusPresenter.present(
-                settings,
-                regularMarketOpen,
-                tradingSessionOpen,
-                Instant.now(),
-                marketHoursService.nextMarketOpen(settings.extendedHoursTradingEnabled())
-        );
+        MarketStatusPresenter.MarketStatusViewModel marketStatusViewModel = currentMarketStatusViewModel();
         String cpuText = formatCpuUsageText();
         String memoryText = formatMemoryUsageText();
         String marketValueText = formatMarketValueText();

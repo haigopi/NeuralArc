@@ -19,6 +19,7 @@ import java.util.List;
 final class PortfolioActionsController {
     interface Gateway {
         List<ManagedStrategy> strategies();
+        List<ManagedStrategy> currentStrategies();
         StrategyService strategyService();
         StrategyService strategyServiceForMode(StrategyMode mode);
         StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason);
@@ -95,7 +96,7 @@ final class PortfolioActionsController {
 
     private void handleCancelAllPendingLimitBuys() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_BUYS;
-        List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), action);
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
             return;
         }
@@ -141,7 +142,7 @@ final class PortfolioActionsController {
 
     private void handleCancelAllPendingLimitSells() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_SELLS;
-        List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), action);
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
             return;
         }
@@ -187,7 +188,7 @@ final class PortfolioActionsController {
 
     private void handlePromoteAllToLive() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.PROMOTE_ALL_TO_LIVE;
-        List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), action);
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
             return;
         }
@@ -228,7 +229,7 @@ final class PortfolioActionsController {
 
     private void handleRemoveInactiveList() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.REMOVE_INACTIVE_LIST;
-        List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), action);
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
             return;
         }
@@ -261,7 +262,7 @@ final class PortfolioActionsController {
 
     private void handleCleanAllExpired() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CLEAN_ALL_EXPIRED;
-        List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), action);
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
             return;
         }
@@ -294,7 +295,7 @@ final class PortfolioActionsController {
 
     private void handleRepositionExpired() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.REPOSITION_EXPIRED;
-        List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), action);
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
             return;
         }
@@ -329,7 +330,7 @@ final class PortfolioActionsController {
 
     private void handleCleanTradeHistory() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CLEAN_TRADE_HISTORY;
-        List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), action);
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
             return;
         }
@@ -405,7 +406,7 @@ final class PortfolioActionsController {
     }
 
     private void handleSellAction(PortfolioActionsSupport.Scope scope, SellSubmissionType submissionType) {
-        List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), scope);
+        List<ManagedStrategy> targets = support.filterTargets(gateway.currentStrategies(), scope);
         if (targets.isEmpty()) {
             gateway.actionSkipped(scope.menuLabel(), scope.emptyMessage());
             gateway.showMessage(scope.emptyMessage(), scope.dialogTitle(), JOptionPane.INFORMATION_MESSAGE);
@@ -480,5 +481,12 @@ final class PortfolioActionsController {
         gateway.updateSelectedStrategy();
         gateway.refreshPanels();
         gateway.updateStatusBar();
+    }
+
+    private List<ManagedStrategy> strategiesFor(PortfolioActionsSupport.BulkAction action) {
+        if (action == PortfolioActionsSupport.BulkAction.CLEAN_TRADE_HISTORY) {
+            return gateway.strategies();
+        }
+        return gateway.currentStrategies();
     }
 }
