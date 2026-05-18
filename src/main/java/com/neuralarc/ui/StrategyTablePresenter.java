@@ -195,7 +195,24 @@ public final class StrategyTablePresenter {
         if (quantity <= 0 || lifecycle == null || lifecycle.isBlank()) {
             return lifecycle;
         }
+        BigDecimal price = placedPrice(strategy);
+        if (price != null && price.compareTo(BigDecimal.ZERO) > 0) {
+            return lifecycle + " - @ $" + price.toPlainString() + "/" + quantity;
+        }
         return lifecycle + " - Qty " + quantity;
+    }
+
+    private BigDecimal placedPrice(Strategy strategy) {
+        if (strategy == null || strategy.currentState() == null) {
+            return BigDecimal.ZERO;
+        }
+        return switch (strategy.currentState()) {
+            case BASE_BUY_PLACED, BASE_BUY_PARTIALLY_FILLED, QUEUED_FOR_OPEN -> strategy.baseBuyLimitPrice();
+            case BUY_LIMIT_1_PLACED, BUY_LIMIT_1_PARTIALLY_FILLED -> strategy.buyLimit1Price();
+            case BUY_LIMIT_2_PLACED, BUY_LIMIT_2_PARTIALLY_FILLED -> strategy.buyLimit2Price();
+            case SELL_PLACED, SELL_PARTIALLY_FILLED -> strategy.targetSellPrice();
+            default -> BigDecimal.ZERO;
+        };
     }
 
     private int placedQuantity(Strategy strategy, Position position) {

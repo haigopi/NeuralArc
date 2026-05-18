@@ -31,6 +31,7 @@ public class RecommendationEngine {
     private static final BigDecimal SHORT_TERM_FALLBACK_DIP_PCT = new BigDecimal("0.0075");
     private static final BigDecimal NINETY_PERCENT = new BigDecimal("0.90");
     private static final BigDecimal ZERO_POINT_NINE_NINE_TWO_FIVE = new BigDecimal("0.9925");
+    private static final BigDecimal MAX_DEFAULT_STOP_LOSS_PCT = new BigDecimal("0.058");
     private static final BigDecimal MIN_PRICE = new BigDecimal("0.01");
 
     private final TechnicalIndicatorService indicators;
@@ -163,6 +164,10 @@ public class RecommendationEngine {
         BigDecimal buy1 = floorPrice(baseBuyPrice.subtract(atr14.get()));
         BigDecimal buy2 = floorPrice(baseBuyPrice.subtract(atr14.get().multiply(TWO)));
         BigDecimal stopLoss = floorPrice(buy2.subtract(atr14.get()));
+        EntryRiskDefaults riskDefaults = constrainEntryRiskDefaults(baseBuyPrice, buy1, buy2, stopLoss);
+        buy1 = riskDefaults.buy1();
+        buy2 = riskDefaults.buy2();
+        stopLoss = riskDefaults.stopLoss();
         BigDecimal target1 = Monetary.round(baseBuyPrice.add(atr14.get().multiply(ONE_POINT_FIVE)));
         BigDecimal target2 = Monetary.round(baseBuyPrice.add(atr14.get().multiply(THREE)));
         BigDecimal recommendedSell = target1.max(twoWeekHigh.get());
@@ -323,6 +328,10 @@ public class RecommendationEngine {
         BigDecimal buy1 = floorPrice(baseBuyPrice.subtract(atr.get().multiply(HALF)));
         BigDecimal buy2 = floorPrice(baseBuyPrice.subtract(atr.get()));
         BigDecimal stopLoss = floorPrice(buy2.subtract(atr.get().multiply(HALF)));
+        EntryRiskDefaults riskDefaults = constrainEntryRiskDefaults(baseBuyPrice, buy1, buy2, stopLoss);
+        buy1 = riskDefaults.buy1();
+        buy2 = riskDefaults.buy2();
+        stopLoss = riskDefaults.stopLoss();
         BigDecimal target1 = Monetary.round(baseBuyPrice.add(atr.get()));
         BigDecimal target2 = Monetary.round(baseBuyPrice.add(atr.get().multiply(TWO)));
         BigDecimal sellPrice = twoWeekHigh.get().max(target1);
@@ -521,6 +530,10 @@ public class RecommendationEngine {
         BigDecimal buy1 = floorPrice(adjustedBaseBuyPrice.subtract(atr14.get().multiply(ONE_POINT_FIVE)));
         BigDecimal buy2 = floorPrice(adjustedBaseBuyPrice.subtract(atr14.get().multiply(THREE)));
         BigDecimal stopLoss = floorPrice(buy2.subtract(atr14.get().multiply(ONE_POINT_FIVE)));
+        EntryRiskDefaults riskDefaults = constrainEntryRiskDefaults(adjustedBaseBuyPrice, buy1, buy2, stopLoss);
+        buy1 = riskDefaults.buy1();
+        buy2 = riskDefaults.buy2();
+        stopLoss = riskDefaults.stopLoss();
         BigDecimal target1 = Monetary.round(adjustedBaseBuyPrice.add(atr14.get().multiply(TWO)));
         BigDecimal target2 = Monetary.round(adjustedBaseBuyPrice.add(atr14.get().multiply(FOUR)));
         BigDecimal longTermSellPrice = oneYearHigh.get().min(sixMonthHigh.get().max(target2));
@@ -635,6 +648,48 @@ public class RecommendationEngine {
         return reward.divide(risk, 2, RoundingMode.HALF_UP);
     }
 
+    private EntryRiskDefaults constrainEntryRiskDefaults(
+            BigDecimal baseBuyPrice,
+            BigDecimal buy1,
+            BigDecimal buy2,
+            BigDecimal stopLoss
+    ) {
+        if (!validPrice(baseBuyPrice)) {
+            return new EntryRiskDefaults(floorPrice(buy1), floorPrice(buy2), floorPrice(stopLoss));
+        }
+        BigDecimal maxRiskStop = ceilingPrice(baseBuyPrice.multiply(BigDecimal.ONE.subtract(MAX_DEFAULT_STOP_LOSS_PCT)));
+        BigDecimal boundedStop = isWithinEntryBand(stopLoss, maxRiskStop, baseBuyPrice)
+                ? floorPrice(stopLoss)
+                : maxRiskStop;
+
+        BigDecimal boundedBuy1 = isWithinEntryBand(buy1, boundedStop, baseBuyPrice)
+                ? floorPrice(buy1)
+                : entryBandPrice(baseBuyPrice, boundedStop, new BigDecimal("0.66"));
+        BigDecimal boundedBuy2 = isWithinEntryBand(buy2, boundedStop, baseBuyPrice)
+                ? floorPrice(buy2)
+                : entryBandPrice(baseBuyPrice, boundedStop, new BigDecimal("0.33"));
+
+        if (boundedBuy1.compareTo(boundedBuy2) <= 0) {
+            boundedBuy1 = entryBandPrice(baseBuyPrice, boundedStop, new BigDecimal("0.66"));
+            boundedBuy2 = entryBandPrice(baseBuyPrice, boundedStop, new BigDecimal("0.33"));
+        }
+        return new EntryRiskDefaults(boundedBuy1, boundedBuy2, boundedStop);
+    }
+
+    private boolean isWithinEntryBand(BigDecimal price, BigDecimal lowerBound, BigDecimal baseBuyPrice) {
+        return validPrice(price)
+                && price.compareTo(lowerBound) > 0
+                && price.compareTo(baseBuyPrice) < 0;
+    }
+
+    private BigDecimal entryBandPrice(BigDecimal baseBuyPrice, BigDecimal stopLoss, BigDecimal distanceFromStopRatio) {
+        BigDecimal span = baseBuyPrice.subtract(stopLoss);
+        if (span.compareTo(BigDecimal.ZERO) <= 0) {
+            return floorPrice(baseBuyPrice.multiply(new BigDecimal("0.99")));
+        }
+        return floorPrice(stopLoss.add(span.multiply(distanceFromStopRatio)));
+    }
+
     private BasePriceGuardResult guardBasePriceAgainstCurrentAndTwoWeekLow(
             BigDecimal basePrice,
             BigDecimal currentPrice,
@@ -677,6 +732,10 @@ public class RecommendationEngine {
         return Monetary.round(value.max(MIN_PRICE));
     }
 
+    private BigDecimal ceilingPrice(BigDecimal value) {
+        return value.max(MIN_PRICE).setScale(2, RoundingMode.CEILING);
+    }
+
     private String appendWarning(String current, String extra) {
         if (current == null || current.isBlank()) {
             return extra;
@@ -687,6 +746,8 @@ public class RecommendationEngine {
     private boolean validPrice(BigDecimal value) {
         return value != null && value.compareTo(BigDecimal.ZERO) > 0;
     }
+
+    private record EntryRiskDefaults(BigDecimal buy1, BigDecimal buy2, BigDecimal stopLoss) {}
 
     private record BasePriceGuardResult(BigDecimal price, boolean adjusted) {}
 

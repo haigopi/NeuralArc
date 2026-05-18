@@ -117,6 +117,22 @@ class RecommendationEngineTest {
     }
 
     @Test
+    void recommendationsKeepDefaultStopLossAndBuyLevelsInsideFivePointEightPercentRiskBand() {
+        List<MarketBar> shortTermBars = shortTermBreakoutBars(new BigDecimal("1800.00"));
+        StrategyRecommendation shortTerm = engine.generateShortTermRecommendation(
+                "AAPL", shortTermBars, new BigDecimal("218.00"), new BigDecimal("218.00"));
+        StrategyRecommendation highRisk = engine.generateHighRiskShortTermRecommendation(
+                "AAPL", highRiskTwoWeekOnlyBars(), new BigDecimal("113.00"), new BigDecimal("113.00"));
+        StrategyRecommendation longTerm = engine.generateLongTermRecommendation(
+                "AAPL", breakoutBars(new BigDecimal("190.00"), new BigDecimal("120.00"), new BigDecimal("100.00")),
+                new BigDecimal("190.00"), new BigDecimal("190.00"));
+
+        assertRiskBand(shortTerm.baseBuyPrice(), shortTerm.buy1Price(), shortTerm.buy2Price(), shortTerm.stopLossPrice());
+        assertRiskBand(highRisk.baseBuyPrice(), highRisk.buy1Price(), highRisk.buy2Price(), highRisk.stopLossPrice());
+        assertRiskBand(longTerm.adjustedBaseBuyPrice(), longTerm.buy1Price(), longTerm.buy2Price(), longTerm.stopLossPrice());
+    }
+
+    @Test
     void highRiskShortTermDoesNotRecommendBaseAboveCurrentAndTwoWeekLow() {
         List<MarketBar> bars = highRiskTwoWeekOnlyBars();
 
@@ -463,5 +479,17 @@ class RecommendationEngineTest {
 
     private MarketBar bar(LocalDate date, BigDecimal open, BigDecimal high, BigDecimal low, BigDecimal close, BigDecimal volume) {
         return new MarketBar("AAPL", date + "T00:00:00Z", open, high, low, close, volume);
+    }
+
+    private void assertRiskBand(BigDecimal baseBuy, BigDecimal buy1, BigDecimal buy2, BigDecimal stopLoss) {
+        BigDecimal maxRisk = baseBuy.multiply(new BigDecimal("0.058"));
+        assertTrue(baseBuy.subtract(stopLoss).compareTo(maxRisk) <= 0,
+                "Stop loss should be within 5.8% of base buy");
+        assertTrue(buy1.compareTo(stopLoss) > 0 && buy1.compareTo(baseBuy) < 0,
+                "Buy 1 should be between stop loss and base buy");
+        assertTrue(buy2.compareTo(stopLoss) > 0 && buy2.compareTo(baseBuy) < 0,
+                "Buy 2 should be between stop loss and base buy");
+        assertTrue(buy1.compareTo(buy2) > 0,
+                "Buy 1 should remain above buy 2");
     }
 }

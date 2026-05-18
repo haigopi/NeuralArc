@@ -313,7 +313,7 @@ class StrategyTablePresenterTest {
     }
 
     @Test
-    void statusShowsPendingBaseBuyQuantityAndBrokerStatus() {
+    void statusShowsPendingBaseBuyPriceQuantityAndBrokerStatus() {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.ACTIVE);
         strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
@@ -322,11 +322,11 @@ class StrategyTablePresenterTest {
 
         String label = presenter.displayStatusLabel(strategy, new Position("AAPL"), false, true, false);
 
-        assertEquals("Limit Base Buy Placed - Qty 25 (New)", label);
+        assertEquals("Limit Base Buy Placed - @ $100.00/25 (New)", label);
     }
 
     @Test
-    void statusShowsLimitSellQuantityAndBrokerStatus() {
+    void statusShowsLimitSellPriceQuantityAndBrokerStatus() {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.ACTIVE);
         strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
@@ -336,7 +336,7 @@ class StrategyTablePresenterTest {
 
         String label = presenter.displayStatusLabel(strategy, position, false, true, false);
 
-        assertEquals("Limit Sell Placed - Qty 8 (New)", label);
+        assertEquals("Limit Sell Placed - @ $120.00/8 (New)", label);
     }
 
     private Strategy strategy() {

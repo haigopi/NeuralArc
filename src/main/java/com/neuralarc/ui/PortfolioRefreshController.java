@@ -9,13 +9,18 @@ import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.service.StrategyRepository;
 
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 final class PortfolioRefreshController {
     private static final String REFRESH_ACTION_NAME = "Refresh & Reevaluate Portfolio";
+    private static final int REFRESH_WATCHDOG_TIMEOUT_MILLIS = 45_000;
+    private static final int REFRESH_RETRY_DELAY_MILLIS = 3_000;
+    private static final int MAX_STUCK_REFRESH_RETRIES = 2;
 
     interface Gateway {
         boolean isConnected();
@@ -38,6 +43,7 @@ final class PortfolioRefreshController {
     private final Gateway gateway;
     private final UserActionLogSupport actionLog;
     private final AtomicBoolean refreshInFlight = new AtomicBoolean(false);
+    private final AtomicInteger refreshGeneration = new AtomicInteger();
 
     PortfolioRefreshController(
             StrategyRepository strategyRepository,
@@ -69,20 +75,33 @@ final class PortfolioRefreshController {
             actionLog.started(REFRESH_ACTION_NAME);
         }
         runOnEdt(gateway::onRefreshStarted);
-        executor.submit(() -> refreshInBackground(manualTrigger));
+        startRefreshAttempt(manualTrigger, 0);
     }
 
-    private void refreshInBackground(boolean manualTrigger) {
+    private void startRefreshAttempt(boolean manualTrigger, int attempt) {
+        int generation = refreshGeneration.incrementAndGet();
+        if (attempt > 0) {
+            gateway.log("[ACTION][" + REFRESH_ACTION_NAME + "] Retry " + attempt
+                    + " of " + MAX_STUCK_REFRESH_RETRIES + " after timeout.");
+        }
+        startRefreshWatchdog(generation, manualTrigger, attempt);
+        executor.submit(() -> refreshInBackground(manualTrigger, generation));
+    }
+
+    private void refreshInBackground(boolean manualTrigger, int generation) {
         try {
             List<Strategy> stored = strategyRepository.findAll();
             Map<String, Position> snapshots = loadPositionSnapshots(stored);
-            runOnEdt(() -> applySuccessfulRefresh(stored, snapshots));
+            runOnEdt(() -> applySuccessfulRefresh(generation, stored, snapshots));
         } catch (Exception ex) {
-            runOnEdt(() -> applyFailedRefresh(manualTrigger, ex));
+            runOnEdt(() -> applyFailedRefresh(generation, manualTrigger, ex));
         }
     }
 
-    private void applySuccessfulRefresh(List<Strategy> stored, Map<String, Position> snapshots) {
+    private void applySuccessfulRefresh(int generation, List<Strategy> stored, Map<String, Position> snapshots) {
+        if (generation != refreshGeneration.get()) {
+            return;
+        }
         try {
             gateway.syncStrategies(stored);
             gateway.applyPositionSnapshots(snapshots);
@@ -97,7 +116,10 @@ final class PortfolioRefreshController {
         }
     }
 
-    private void applyFailedRefresh(boolean manualTrigger, Exception ex) {
+    private void applyFailedRefresh(int generation, boolean manualTrigger, Exception ex) {
+        if (generation != refreshGeneration.get()) {
+            return;
+        }
         try {
             actionLog.failed(REFRESH_ACTION_NAME, ex.getMessage());
             if (manualTrigger) {
@@ -111,6 +133,46 @@ final class PortfolioRefreshController {
     private void finishRefresh() {
         refreshInFlight.set(false);
         gateway.onRefreshFinished();
+    }
+
+    private void startRefreshWatchdog(int generation, boolean manualTrigger, int attempt) {
+        Timer timer = new Timer(REFRESH_WATCHDOG_TIMEOUT_MILLIS, ignored -> {
+            if (generation != refreshGeneration.get()) {
+                return;
+            }
+            if (attempt < MAX_STUCK_REFRESH_RETRIES) {
+                scheduleRefreshRetry(generation, manualTrigger, attempt + 1);
+                return;
+            }
+            if (!refreshInFlight.compareAndSet(true, false)) {
+                return;
+            }
+            refreshGeneration.compareAndSet(generation, generation + 1);
+            actionLog.failed(REFRESH_ACTION_NAME, "Refresh timed out after "
+                    + (MAX_STUCK_REFRESH_RETRIES + 1)
+                    + " attempt(s) while waiting for Alpaca portfolio data.");
+            gateway.onRefreshFinished();
+            if (manualTrigger) {
+                gateway.showRefreshFailed("Refresh timed out while waiting for Alpaca portfolio data. "
+                        + "The app retried automatically and has re-enabled the button.");
+            }
+        });
+        timer.setRepeats(false);
+        timer.start();
+    }
+
+    private void scheduleRefreshRetry(int generation, boolean manualTrigger, int nextAttempt) {
+        actionLog.failed(REFRESH_ACTION_NAME, "Refresh attempt " + nextAttempt
+                + " of " + (MAX_STUCK_REFRESH_RETRIES + 1)
+                + " timed out while waiting for Alpaca portfolio data. Retrying automatically.");
+        Timer retryTimer = new Timer(REFRESH_RETRY_DELAY_MILLIS, ignored -> {
+            if (generation != refreshGeneration.get() || !refreshInFlight.get()) {
+                return;
+            }
+            startRefreshAttempt(manualTrigger, nextAttempt);
+        });
+        retryTimer.setRepeats(false);
+        retryTimer.start();
     }
 
     private Map<String, Position> loadPositionSnapshots(List<Strategy> stored) {

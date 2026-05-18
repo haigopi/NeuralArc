@@ -96,6 +96,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -358,8 +359,9 @@ public class TradingFrame extends JFrame {
         connectionRetryTimer = new Timer(10000, ignored -> retryBrokerConnectionIfConfigured());
         connectionRetryTimer.setInitialDelay(10000);
         connectionRetryTimer.setRepeats(false);
-        uiPollingExecutor = Executors.newSingleThreadExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "neuralarc-ui-polling");
+        AtomicInteger uiPollingThreadIndex = new AtomicInteger(1);
+        uiPollingExecutor = Executors.newFixedThreadPool(2, runnable -> {
+            Thread thread = new Thread(runnable, "neuralarc-ui-polling-" + uiPollingThreadIndex.getAndIncrement());
             thread.setDaemon(true);
             return thread;
         });

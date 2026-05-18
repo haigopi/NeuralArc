@@ -30,27 +30,29 @@ final class BrokerSnapshotLoader {
             return Map.of();
         }
         Map<String, Position> snapshots = new LinkedHashMap<>();
-        loadPositionSnapshotsForMode(stored, StrategyMode.PAPER, clientResolver.apply(ApplicationMode.PAPER), includeStrategy, snapshots);
-        loadPositionSnapshotsForMode(stored, StrategyMode.LIVE, clientResolver.apply(ApplicationMode.LIVE), includeStrategy, snapshots);
+        loadPositionSnapshotsForMode(stored, StrategyMode.PAPER, ApplicationMode.PAPER, clientResolver, includeStrategy, snapshots);
+        loadPositionSnapshotsForMode(stored, StrategyMode.LIVE, ApplicationMode.LIVE, clientResolver, includeStrategy, snapshots);
         return snapshots;
     }
 
     private static void loadPositionSnapshotsForMode(
             List<Strategy> stored,
             StrategyMode mode,
-            HttpAlpacaClient client,
+            ApplicationMode applicationMode,
+            Function<ApplicationMode, HttpAlpacaClient> clientResolver,
             Predicate<Strategy> includeStrategy,
             Map<String, Position> target
     ) {
-        if (client == null) {
-            return;
-        }
         List<Strategy> strategiesForMode = stored.stream()
                 .filter(strategy -> strategy.mode() == mode)
                 .filter(strategy -> includeStrategy == null || includeStrategy.test(strategy))
                 .filter(strategy -> strategy.symbol() != null && !strategy.symbol().isBlank())
                 .toList();
         if (strategiesForMode.isEmpty()) {
+            return;
+        }
+        HttpAlpacaClient client = clientResolver.apply(applicationMode);
+        if (client == null) {
             return;
         }
         List<String> symbols = uniqueSymbols(strategiesForMode);
@@ -100,5 +102,4 @@ final class BrokerSnapshotLoader {
         return snapshot;
     }
 }
-
 
