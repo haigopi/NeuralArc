@@ -55,6 +55,17 @@ public final class StrategyTablePresenter {
             boolean waitingForFill,
             boolean queueableSessionError
     ) {
+        return displayStatusLabel(strategy, position, marketClosedSuppressed, waitingForFill, queueableSessionError, true);
+    }
+
+    public String displayStatusLabel(
+            Strategy strategy,
+            Position position,
+            boolean marketClosedSuppressed,
+            boolean waitingForFill,
+            boolean queueableSessionError,
+            boolean brokerUnavailableActive
+    ) {
         if (strategy == null) {
             return "";
         }
@@ -99,13 +110,16 @@ public final class StrategyTablePresenter {
                 position
         );
         String normalizedStatus = BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus());
-        if (strategy.status() == StrategyStatus.ACTIVE && isBrokerUnavailableStatus(normalizedStatus)) {
+        if (strategy.status() == StrategyStatus.ACTIVE
+                && brokerUnavailableActive
+                && isBrokerUnavailableStatus(normalizedStatus)) {
             return lifecycle + " (Retrying: Unable to reach broker)";
         }
         if (strategy.status() == StrategyStatus.ACTIVE
                 && waitingForFill
                 && strategy.latestOrderStatus() != null
-                && !strategy.latestOrderStatus().isBlank()) {
+                && !strategy.latestOrderStatus().isBlank()
+                && !isBrokerUnavailableStatus(normalizedStatus)) {
             return lifecycle + " (" + BrokerOrderStatusUtil.displayLabel(strategy.latestOrderStatus()) + ")";
         }
         if (strategy.status() == StrategyStatus.ACTIVE && isWaitingForNextRule(strategy.currentState())) {

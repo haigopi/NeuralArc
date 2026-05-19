@@ -213,6 +213,7 @@ public class TradingFrame extends JFrame {
     private final PollingCellPresenter pollingCellPresenter = new PollingCellPresenter();
     private final StatusBarPresenter statusBarPresenter = new StatusBarPresenter();
     private final StrategyActionsPresenter strategyActionsPresenter = new StrategyActionsPresenter();
+    private final RuleTriggeredHistoryPresenter ruleTriggeredHistoryPresenter = new RuleTriggeredHistoryPresenter();
     private final StrategyTablePresenter strategyTablePresenter = new StrategyTablePresenter();
     private final StrategyPnlTotalsCalculator strategyPnlTotalsCalculator = new StrategyPnlTotalsCalculator();
     private final SystemMetricsPresenter systemMetricsPresenter = new SystemMetricsPresenter();
@@ -248,14 +249,28 @@ public class TradingFrame extends JFrame {
             }
             Strategy strategy = strategies.get(modelRow).strategy;
             String normalized = BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus());
-            if (!"rejected".equals(normalized)) {
-                return null;
+            String statusText = String.valueOf(getValueAt(viewRow, viewCol));
+            StringBuilder tooltip = new StringBuilder()
+                    .append("<b>Status:</b> ")
+                    .append(escapeHtml(statusText));
+            if (BrokerOrderStatusUtil.isWaitingForFill(strategy.latestOrderStatus())) {
+                tooltip.append("<br>Waiting for broker fill/update.");
             }
             String reason = strategy.lastError() == null || strategy.lastError().isBlank()
-                    ? "Broker rejected this order. Review configuration and submit again."
+                    ? ""
                     : strategy.lastError();
+            boolean brokerReachabilityReason = isBrokerReachabilityTooltipReason(normalized, reason);
+            if ("rejected".equals(normalized)) {
+                String rejectedReason = reason.isBlank()
+                        ? "Broker rejected this order. Review configuration and submit again."
+                        : reason;
+                tooltip.append("<br><b style='color:#ff6b6b;'>Rejected - action required</b><br>")
+                        .append(escapeHtml(rejectedReason));
+            } else if (!reason.isBlank() && (!brokerReachabilityReason || !connectionOk || connectionRetryPending)) {
+                tooltip.append("<br>").append(escapeHtml(reason));
+            }
             return TooltipStyler.html(
-                    "<b style='color:#ff6b6b;'>Rejected - action required</b><br>" + escapeHtml(reason),
+                    tooltip.toString(),
                     360
             );
         }
@@ -1060,6 +1075,9 @@ public class TradingFrame extends JFrame {
         strategyTable.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mousePressed(java.awt.event.MouseEvent e) {
+                if (maybeShowStrategyGridCopyPopup(e)) {
+                    return;
+                }
                 int viewRow = strategyTable.rowAtPoint(e.getPoint());
                 int viewCol = strategyTable.columnAtPoint(e.getPoint());
 
@@ -1102,6 +1120,11 @@ public class TradingFrame extends JFrame {
             public void mouseExited(java.awt.event.MouseEvent e) {
                 strategyTable.setCursor(java.awt.Cursor.getDefaultCursor());
             }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                maybeShowStrategyGridCopyPopup(e);
+            }
         });
         strategyTable.addMouseMotionListener(new java.awt.event.MouseMotionAdapter() {
             @Override
@@ -1142,6 +1165,17 @@ public class TradingFrame extends JFrame {
         strategySorter.setSortable(11, false); // Actions button column — not sortable
         applyCurrentStrategiesRowFilter();
         strategyTable.setRowSorter(strategySorter);
+        strategyTable.getTableHeader().addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                maybeShowStrategyHeaderCopyPopup(e);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                maybeShowStrategyHeaderCopyPopup(e);
+            }
+        });
 
         JScrollPane strategyGrid = new JScrollPane(strategyTable);
         strategyGrid.setOpaque(false);
@@ -3108,9 +3142,18 @@ public class TradingFrame extends JFrame {
         } else {
             positionSummary.setText("[" + entry.strategy.symbol() + "]: Position data available when broker is connected.");
         }
-        ruleState.setText(buildRuleTriggeredShortSummary(entry.strategy, entry, latestOrder, pendingOrder.orElse(null)));
+        String currentRuleSummary = buildRuleTriggeredShortSummary(entry.strategy, entry, latestOrder, pendingOrder.orElse(null));
+        ruleState.setText(ruleTriggeredHistoryPresenter.buildLabel(
+                currentRuleSummary,
+                strategyOrders,
+                this::formatTimestampForDisplay
+        ));
         ruleState.setToolTipText(TooltipStyler.html(
-                buildRuleTriggeredSummary(entry.strategy, latestOrder, pendingOrder.orElse(null)),
+                ruleTriggeredHistoryPresenter.buildTooltip(
+                        buildRuleTriggeredSummary(entry.strategy, latestOrder, pendingOrder.orElse(null)),
+                        strategyOrders,
+                        this::formatTimestampForDisplay
+                ),
                 320
         ));
     }
@@ -3170,7 +3213,8 @@ public class TradingFrame extends JFrame {
                 entry.cachedPosition(),
                 isStrategySessionSuppressed(entry.strategy),
                 isWaitingForFill(entry.strategy),
-                entry.strategy.status() == StrategyStatus.FAILED && isQueueableSessionError(entry.strategy.lastError())
+                entry.strategy.status() == StrategyStatus.FAILED && isQueueableSessionError(entry.strategy.lastError()),
+                !connectionOk || connectionRetryPending
         );
     }
 
@@ -3184,6 +3228,20 @@ public class TradingFrame extends JFrame {
                 || normalized.contains("extended_hours")
                 || normalized.contains("time_in_force")
                 || normalized.contains("session");
+    }
+
+    private boolean isBrokerReachabilityTooltipReason(String normalizedOrderStatus, String reason) {
+        if ("failed_transport".equals(normalizedOrderStatus) || "api_error".equals(normalizedOrderStatus)) {
+            return true;
+        }
+        if (reason == null || reason.isBlank()) {
+            return false;
+        }
+        String normalizedReason = reason.toLowerCase(Locale.ROOT);
+        return normalizedReason.contains("unable to reach broker")
+                || normalizedReason.contains("broker api error")
+                || normalizedReason.contains("transport")
+                || normalizedReason.contains("connection");
     }
 
     private String formatTimestampForDisplay(Instant timestamp) {
@@ -4915,6 +4973,67 @@ public class TradingFrame extends JFrame {
             return TABLE_SELECTION_BG;
         }
         return row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD;
+    }
+
+    private boolean maybeShowStrategyGridCopyPopup(MouseEvent event) {
+        if (!event.isPopupTrigger() && event.getButton() != MouseEvent.BUTTON3) {
+            return false;
+        }
+        int viewRow = strategyTable.rowAtPoint(event.getPoint());
+        int viewCol = strategyTable.columnAtPoint(event.getPoint());
+        if (viewRow < 0 || viewCol < 0) {
+            return true;
+        }
+        strategyTable.setRowSelectionInterval(viewRow, viewRow);
+        strategyTable.setColumnSelectionInterval(viewCol, viewCol);
+        Object value = strategyTable.getValueAt(viewRow, viewCol);
+        String text = value == null ? "" : value.toString();
+        JPopupMenu popup = new JPopupMenu();
+        JMenuItem copyCell = new JMenuItem("Copy Text to Clipboard");
+        copyCell.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
+        copyCell.addActionListener(e -> copyTextToClipboard(text));
+        popup.add(copyCell);
+        JMenuItem copyRow = new JMenuItem("Copy Row to Clipboard");
+        copyRow.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
+        copyRow.addActionListener(e -> copyTextToClipboard(strategyGridRowText(viewRow)));
+        popup.add(copyRow);
+        popup.show(event.getComponent(), event.getX(), event.getY());
+        return true;
+    }
+
+    private void maybeShowStrategyHeaderCopyPopup(MouseEvent event) {
+        if (!event.isPopupTrigger() && event.getButton() != MouseEvent.BUTTON3) {
+            return;
+        }
+        int viewCol = strategyTable.getTableHeader().columnAtPoint(event.getPoint());
+        if (viewCol < 0) {
+            return;
+        }
+        String columnName = strategyTable.getColumnName(viewCol);
+        JPopupMenu popup = new JPopupMenu();
+        JMenuItem copyColumn = new JMenuItem("Copy Column Name to Clipboard");
+        copyColumn.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
+        copyColumn.addActionListener(e -> copyTextToClipboard(columnName));
+        popup.add(copyColumn);
+        popup.show(event.getComponent(), event.getX(), event.getY());
+    }
+
+    private String strategyGridRowText(int viewRow) {
+        StringBuilder row = new StringBuilder();
+        for (int col = 0; col < strategyTable.getColumnCount(); col++) {
+            if (!row.isEmpty()) {
+                row.append(" | ");
+            }
+            Object value = strategyTable.getValueAt(viewRow, col);
+            row.append(strategyTable.getColumnName(col)).append(": ").append(value == null ? "" : value);
+        }
+        return row.toString();
+    }
+
+    private void copyTextToClipboard(String text) {
+        Toolkit.getDefaultToolkit()
+                .getSystemClipboard()
+                .setContents(new StringSelection(text == null ? "" : text), null);
     }
 
     private BigDecimal sortableNumericValue(Object value) {

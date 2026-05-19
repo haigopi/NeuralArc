@@ -103,6 +103,18 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void brokerUnavailableStatusIsIgnoredWhenBrokerIsCurrentlyReachable() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        strategy.setLatestOrderStatus("failed_transport");
+
+        String label = presenter.displayStatusLabel(strategy, new Position("AAPL"), false, true, false, false);
+
+        assertEquals("Limit Sell Placed", label);
+    }
+
+    @Test
     void failedExpiredShowsExpiredStatus() {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.FAILED);
