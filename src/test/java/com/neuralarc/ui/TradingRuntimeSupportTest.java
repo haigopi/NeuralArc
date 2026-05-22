@@ -4,14 +4,17 @@ import com.neuralarc.api.HttpAlpacaClient;
 import com.neuralarc.api.TradingApi;
 import com.neuralarc.model.ApplicationMode;
 import com.neuralarc.model.BrokerType;
+import com.neuralarc.model.StrategyMode;
 import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.service.FileStrategyExecutionEventRepository;
 import com.neuralarc.service.FileStrategyOrderRepository;
 import com.neuralarc.service.FileStrategyRepository;
 import com.neuralarc.service.MarketHoursService;
+import com.neuralarc.service.StrategyPollingService;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -65,6 +68,35 @@ class TradingRuntimeSupportTest {
 
         assertNotNull(services.strategyService());
         assertNotNull(services.strategyPollingService());
+        services.strategyPollingService().shutdown();
+    }
+
+    @Test
+    void createRuntimeServicesScopesPollingToApplicationMode() throws Exception {
+        TradingRuntimeSupport support = support((ignoredBrokerType, ignoredMode) -> new FakeTradingApi(true), HttpAlpacaClient::new);
+        HttpAlpacaClient client = new HttpAlpacaClient("key", "secret", "https://paper-api.alpaca.markets", "https://data.alpaca.markets", false);
+
+        TradingRuntimeSupport.RuntimeServices paperServices = support.createRuntimeServices(
+                client,
+                ApplicationMode.PAPER,
+                new StrategyPollingService.PollListener() {}
+        );
+        TradingRuntimeSupport.RuntimeServices liveServices = support.createRuntimeServices(
+                client,
+                ApplicationMode.LIVE,
+                new StrategyPollingService.PollListener() {}
+        );
+
+        assertEquals(StrategyMode.PAPER, pollingMode(paperServices.strategyPollingService()));
+        assertEquals(StrategyMode.LIVE, pollingMode(liveServices.strategyPollingService()));
+        paperServices.strategyPollingService().shutdown();
+        liveServices.strategyPollingService().shutdown();
+    }
+
+    private StrategyMode pollingMode(StrategyPollingService service) throws Exception {
+        Field field = StrategyPollingService.class.getDeclaredField("strategyMode");
+        field.setAccessible(true);
+        return (StrategyMode) field.get(service);
     }
 
     private TradingRuntimeSupport support(
@@ -125,4 +157,3 @@ class TradingRuntimeSupportTest {
         }
     }
 }
-

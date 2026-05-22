@@ -88,11 +88,13 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -353,7 +355,7 @@ public class TradingFrame extends JFrame {
     private volatile String availableFundsText = "Funds Available: -";
     private volatile long lastAvailableFundsFetchAtMillis;
     private final AtomicBoolean availableFundsFetchInFlight = new AtomicBoolean(false);
-    private static final long AVAILABLE_FUNDS_REFRESH_INTERVAL_MILLIS = 15000L;
+    private static final long AVAILABLE_FUNDS_REFRESH_INTERVAL_MILLIS = 30000L;
     private volatile long lastBatchGridPriceRefreshAtMillis;
     private volatile boolean batchGridPriceRefreshRequestedFromStream;
     private volatile long lastLoggedSnapshotIntervalMillis = -1L;
@@ -866,8 +868,13 @@ public class TradingFrame extends JFrame {
                 tradingApi = candidateApi;
                 currentBrokerType = brokerType;
                 connectionOk = true;
-                refreshStrategyRuntimeServices(apiKey, apiSecret, mode);
+                refreshStrategyRuntimeServices(
+                        savedApiKeyForSelectedMode(),
+                        savedApiSecretForSelectedMode(),
+                        selectedApplicationMode()
+                );
                 restartTradingEventStreamForSelectedMode();
+                refreshStrategyTableData();
                 setStatus("Connected - broker " + brokerType.name() + " ready.", STATUS_OK);
                 updateHeaderModeStatus(brokerType);
                 updateStatusBar();
@@ -944,9 +951,9 @@ public class TradingFrame extends JFrame {
         });
         legalDisclosureAccepted = legalDisclosureController.loadAccepted();
         refreshStrategyRuntimeServices(
-                settingsDialog.savedApiKey(settingsDialog.appliedApplicationMode()),
-                settingsDialog.savedApiSecret(settingsDialog.appliedApplicationMode()),
-                settingsDialog.appliedApplicationMode()
+                settingsDialog.savedApiKey(selectedApplicationMode()),
+                settingsDialog.savedApiSecret(selectedApplicationMode()),
+                selectedApplicationMode()
         );
         settingsDialog.setStrategyExportHandler(this::exportStrategiesToFile);
         settingsDialog.setStrategyImportHandler(this::importStrategiesFromFile);
@@ -1352,18 +1359,27 @@ public class TradingFrame extends JFrame {
 
         applyButtonIcon(footerActionsButton, "icons/actions.svg", 15);
         styleStatusActionButton(footerActionsButton);
+        footerActionsMenu.setBackground(new Color(46, 49, 60));
+        footerActionsMenu.setOpaque(true);
+        footerActionsMenu.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(70, 76, 90), 1, true),
+                new EmptyBorder(4, 4, 4, 4)
+        ));
 
+        footerActionsMenu.add(createStatusMenuHeader("Support"));
         footerActionsMenu.add(createStatusMenuItem("Submit Bug", "icons/submit-bug.svg",
                 this::openSubmitBugDialog));
         footerActionsMenu.add(createStatusMenuItem("Request New Feature", "icons/request-new-feature.svg",
                 () -> openRequestNewFeatureDialog()));
         footerActionsMenu.add(createStatusMenuItem("Contact Us / Feedback", "icons/contact-us.svg",
                 () -> openContactUsDialog()));
+        footerActionsMenu.add(createStatusMenuSeparator());
+        footerActionsMenu.add(createStatusMenuHeader("System"));
         footerActionsMenu.add(createStatusMenuItem("Check for Updates", "icons/check-for-updates.svg",
                 () -> UpdateCheckSupport.checkForUpdates(this, footerActionsButton, userActionLog)));
         footerActionsMenu.add(createStatusMenuItem("Legal Disclosure", "icons/legal-disclosure.svg",
                 () -> showLegalDisclosureDialog(false)));
-        footerActionsMenu.addSeparator();
+        footerActionsMenu.add(createStatusMenuSeparator());
         footerActionsMenu.add(createStatusMenuItem("Uninstall NeuralArc", "icons/delete.svg",
                 this::confirmAndScheduleUninstall));
         footerActionsButton.addActionListener(e -> {
@@ -1569,11 +1585,19 @@ public class TradingFrame extends JFrame {
         selectedStrategyId = null;
         syncModeToggleSelection();
         applyViewModeTheme();
-        refreshStrategyTableData();
-        updateSelectedStrategy();
-        refreshPanels();
-        updateStatusBar();
+        ViewModeSwitchRefreshFlow.apply(
+                this::syncStrategiesFromRepository,
+                this::refreshStrategyTableData,
+                this::updateSelectedStrategy,
+                this::refreshPanels,
+                this::updateStatusBar
+        );
         updateHeaderModeStatus(currentBrokerType);
+        refreshStrategyRuntimeServices(
+                savedApiKeyForSelectedMode(),
+                savedApiSecretForSelectedMode(),
+                selectedApplicationMode()
+        );
         restartTradingEventStreamForSelectedMode();
         userActionLog.completed("Mode Switch", "Viewing " + selectedViewMode.name() + " data.");
         log("[MODE] Switched app view to " + selectedViewMode.name() + ". Grids and actions are scoped to this mode.");
@@ -1872,6 +1896,27 @@ public class TradingFrame extends JFrame {
             }
         });
         return item;
+    }
+
+    private JMenuItem createStatusMenuHeader(String text) {
+        JMenuItem header = new JMenuItem(text);
+        header.setEnabled(false);
+        header.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        header.setForeground(new Color(155, 165, 184));
+        header.setBackground(new Color(46, 49, 60));
+        header.setOpaque(true);
+        header.setBorder(new EmptyBorder(6, 10, 4, 12));
+        return header;
+    }
+
+    private JMenuItem createStatusMenuSeparator() {
+        JMenuItem separator = new JMenuItem();
+        separator.setEnabled(false);
+        separator.setOpaque(true);
+        separator.setBackground(new Color(46, 49, 60));
+        separator.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(70, 76, 90)));
+        separator.setPreferredSize(new java.awt.Dimension(220, 3));
+        return separator;
     }
 
     private void startBackgroundUpdateAvailabilityCheck() {
@@ -2673,11 +2718,16 @@ public class TradingFrame extends JFrame {
         runtimeApiSecret = apiSecret == null ? "" : apiSecret;
         refreshCachedAlpacaClients();
         HttpAlpacaClient runtimeClient = alpacaClientForMode(mode);
-        if (runtimeClient == null) {
-            return;
-        }
         if (strategyPollingService != null) {
             strategyPollingService.shutdown();
+            strategyPollingService = null;
+        }
+        if (runtimeClient == null) {
+            strategyService = null;
+            log("[POLL][RUNTIME] Polling disabled for "
+                    + (mode == ApplicationMode.LIVE ? "LIVE" : "PAPER")
+                    + " mode because Alpaca credentials are not configured.");
+            return;
         }
         TradingRuntimeSupport.RuntimeServices runtimeServices = tradingRuntimeSupport.createRuntimeServices(
                 runtimeClient,
@@ -2909,12 +2959,118 @@ public class TradingFrame extends JFrame {
         if (snapshots == null || snapshots.isEmpty()) {
             return;
         }
+        List<String> healedSymbols = new ArrayList<>();
         for (ManagedStrategy entry : strategies) {
             Position snapshot = snapshots.get(entry.strategy.id());
             if (snapshot == null) {
                 continue;
             }
             entry.setCachedPosition(snapshot);
+            if (snapshot.getTotalShares() > 0 && healFailedStrategyFromExposure(entry.strategy, true, false, "filled")) {
+                healedSymbols.add(entry.strategy.symbol());
+                entry.syncFrom(strategyRepository.findById(entry.strategy.id()).orElse(entry.strategy));
+            }
+        }
+        if (!healedSymbols.isEmpty()) {
+            log("[Portfolio Refresh] Recovered stale failed status for: " + String.join(", ", healedSymbols));
+        }
+        logExposureStateMismatches("portfolio-refresh");
+    }
+
+    private void reconcileFailedStrategiesWithBrokerExposure(List<Strategy> storedStrategies) {
+        if (storedStrategies == null || storedStrategies.isEmpty()) {
+            return;
+        }
+        Map<StrategyMode, Set<String>> positionSymbolsByMode = new LinkedHashMap<>();
+        Map<StrategyMode, Set<String>> openOrderSymbolsByMode = new LinkedHashMap<>();
+        Map<StrategyMode, Map<String, String>> openOrderStatusByModeAndSymbol = new LinkedHashMap<>();
+        for (StrategyMode mode : StrategyMode.values()) {
+            HttpAlpacaClient client = alpacaClientForStrategyMode(mode);
+            if (client == null) {
+                continue;
+            }
+            Set<String> positionSymbols = new HashSet<>();
+            for (com.neuralarc.api.AlpacaPositionData position : client.getPositions()) {
+                if (position != null && position.exists() && position.symbol() != null && !position.symbol().isBlank()) {
+                    positionSymbols.add(position.symbol().toUpperCase(Locale.ROOT));
+                }
+            }
+            Set<String> openOrderSymbols = new HashSet<>();
+            Map<String, String> orderStatusBySymbol = new LinkedHashMap<>();
+            for (com.neuralarc.api.AlpacaOrderData order : client.getOpenOrders()) {
+                if (order == null || order.symbol() == null || order.symbol().isBlank()) {
+                    continue;
+                }
+                String symbol = order.symbol().toUpperCase(Locale.ROOT);
+                openOrderSymbols.add(symbol);
+                if (!orderStatusBySymbol.containsKey(symbol)) {
+                    orderStatusBySymbol.put(symbol, BrokerOrderStatusUtil.normalize(order.status()));
+                }
+            }
+            positionSymbolsByMode.put(mode, positionSymbols);
+            openOrderSymbolsByMode.put(mode, openOrderSymbols);
+            openOrderStatusByModeAndSymbol.put(mode, orderStatusBySymbol);
+        }
+
+        List<String> healedSymbols = new ArrayList<>();
+        for (Strategy strategy : storedStrategies) {
+            if (strategy == null || strategy.status() != StrategyStatus.FAILED) {
+                continue;
+            }
+            String symbol = strategy.symbol() == null ? "" : strategy.symbol().toUpperCase(Locale.ROOT);
+            boolean hasPosition = positionSymbolsByMode.getOrDefault(strategy.mode(), Set.of()).contains(symbol);
+            boolean hasOpenOrder = openOrderSymbolsByMode.getOrDefault(strategy.mode(), Set.of()).contains(symbol);
+            String orderStatus = openOrderStatusByModeAndSymbol
+                    .getOrDefault(strategy.mode(), Map.of())
+                    .getOrDefault(symbol, "");
+            if (healFailedStrategyFromExposure(strategy, hasPosition, hasOpenOrder, orderStatus)) {
+                healedSymbols.add(strategy.symbol());
+            }
+        }
+        if (!healedSymbols.isEmpty()) {
+            log("[RESTORE] Recovered stale failed status from broker exposure for: " + String.join(", ", healedSymbols));
+        }
+    }
+
+    private boolean healFailedStrategyFromExposure(
+            Strategy strategy,
+            boolean hasPosition,
+            boolean hasOpenOrder,
+            String brokerOrderStatus
+    ) {
+        if (!FailedStrategyExposureRecovery.recover(strategy, hasPosition, hasOpenOrder, brokerOrderStatus)) {
+            return false;
+        }
+        strategyRepository.save(strategy);
+        return true;
+    }
+
+    private void logExposureStateMismatches(String phase) {
+        List<String> mismatches = new ArrayList<>();
+        for (ManagedStrategy entry : strategies) {
+            if (entry == null || entry.strategy == null) {
+                continue;
+            }
+            int pendingOrders = (int) strategyOrderRepository.findByStrategyId(entry.strategy.id()).stream()
+                    .filter(StrategyOrder::isPending)
+                    .count();
+            int shares = entry.cachedPosition().getTotalShares();
+            boolean hasExposure = shares > 0 || pendingOrders > 0 || isWaitingForFill(entry.strategy);
+            boolean staleFailed = entry.strategy.status() == StrategyStatus.FAILED
+                    || entry.strategy.currentState() == StrategyLifecycleState.FAILED;
+            if (!hasExposure || !staleFailed) {
+                continue;
+            }
+            mismatches.add(entry.strategy.symbol()
+                    + " mode=" + entry.strategy.mode().name()
+                    + " status=" + entry.strategy.status().name()
+                    + " state=" + entry.strategy.currentState().name()
+                    + " latestOrderStatus=" + BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus())
+                    + " shares=" + shares
+                    + " pendingOrders=" + pendingOrders);
+        }
+        if (!mismatches.isEmpty()) {
+            log("[STATE AUDIT][" + phase + "] Open exposure still marked failed/closed: " + String.join(" | ", mismatches));
         }
     }
 
@@ -2925,6 +3081,14 @@ public class TradingFrame extends JFrame {
         List<Strategy> markedInvalid = new ArrayList<>();
         for (Strategy strategy : invalidStrategies) {
             if (strategy == null || strategy.id() == null || strategy.id().isBlank()) {
+                continue;
+            }
+            ManagedStrategy managed = findStrategyById(strategy.id());
+            boolean hasCachedExposure = managed != null && managed.cachedPosition().getTotalShares() > 0;
+            boolean hasPendingLocalOrder = strategyOrderRepository.findByStrategyId(strategy.id()).stream().anyMatch(StrategyOrder::isPending);
+            if (hasCachedExposure || hasPendingLocalOrder) {
+                log("[Portfolio Refresh] Skipped invalid mark for " + strategy.symbol()
+                        + " because open exposure is still present (cached position or pending order).");
                 continue;
             }
             Optional<Strategy> maybePersisted = strategyRepository.findById(strategy.id());
@@ -3037,10 +3201,16 @@ public class TradingFrame extends JFrame {
     private void restoreStrategies() {
         strategies.clear();
         List<Strategy> storedStrategies = strategyRepository.findAll();
-        List<Strategy> syncedRemoteStrategies = strategyService.syncRemoteStrategies();
+        List<Strategy> syncedRemoteStrategies = strategyService == null
+                ? List.of()
+                : strategyService.syncRemoteStrategies();
+        storedStrategies = strategyRepository.findAll();
+        reconcileFailedStrategiesWithBrokerExposure(storedStrategies);
         storedStrategies = strategyRepository.findAll();
         for (Strategy strategy : storedStrategies) {
-            strategy = strategyService.recoverStaleRestartFailure(strategy.id()).orElse(strategy);
+            if (strategyService != null) {
+                strategy = strategyService.recoverStaleRestartFailure(strategy.id()).orElse(strategy);
+            }
             ManagedStrategy managed = new ManagedStrategy(strategy);
             resetPollingCountdown(managed);
             strategies.add(managed);
@@ -3065,6 +3235,7 @@ public class TradingFrame extends JFrame {
         updateHeaderModeStatus(currentBrokerType);
         refreshPanels();
         updateStatusBar();
+        logExposureStateMismatches("restore");
     }
 
     static boolean canSelectFirstRestoredRow(int strategyCount, int visibleRowCount) {
@@ -4026,12 +4197,12 @@ public class TradingFrame extends JFrame {
         if (entry.strategy.mode() != selectedViewMode) {
             return false;
         }
-        if (entry.strategy.status() == StrategyStatus.FAILED
-                && "invalid".equals(BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus()))) {
-            return true;
-        }
         if (entry.strategy.status() == StrategyStatus.FAILED) {
-            return false;
+            if ("invalid".equals(BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus()))) {
+                return true;
+            }
+            // Keep failed rows visible when there is still open broker exposure.
+            return hasOpenExposure(entry);
         }
         if (entry.strategy.status() == StrategyStatus.ARCHIVED || entry.strategy.status() == StrategyStatus.STOPPED) {
             return false;
@@ -4053,6 +4224,20 @@ public class TradingFrame extends JFrame {
         // Keep showing rows that still have live exposure on the broker side.
         return entry.strategy.status() == StrategyStatus.ACTIVE
                 || isWaitingForFill(entry.strategy);
+    }
+
+    private boolean hasOpenExposure(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return false;
+        }
+        if (entry.cachedPosition().getTotalShares() > 0) {
+            return true;
+        }
+        if (isWaitingForFill(entry.strategy)) {
+            return true;
+        }
+        List<StrategyOrder> orders = strategyOrderRepository.findByStrategyId(entry.strategy.id());
+        return orders.stream().anyMatch(StrategyOrder::isPending);
     }
 
     private boolean includeInBrokerSnapshotRefresh(Strategy strategy) {

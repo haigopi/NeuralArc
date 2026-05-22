@@ -63,6 +63,26 @@ class TradeStreamLifecycleCoordinatorTest {
         assertEquals("strategy-1", gateway.lastRefreshedStrategyId);
         assertTrue(gateway.tradeUpdateForwarded);
         assertTrue(gateway.uiRefreshTriggered);
+        assertEquals(1, gateway.syncStrategiesCalls);
+        assertEquals(1, gateway.refreshTableCalls);
+    }
+
+    @Test
+    void tradeEventWithoutMatchedStrategyStillSyncsAndRefreshesTable() {
+        FakeGateway gateway = new FakeGateway();
+        gateway.onTradeUpdateResult = Optional.empty();
+        TradeStreamLifecycleCoordinator coordinator = new TradeStreamLifecycleCoordinator(gateway, (ignoredUrl, ignoredKey, ignoredSecret) -> gateway.client);
+        AlpacaTradeUpdateEvent event = new AlpacaTradeUpdateEvent(
+                "fill",
+                new AlpacaOrderData("oid", "cid", "AAPL", "buy", "limit", new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO, "filled", "{}")
+        );
+
+        coordinator.onTradeEvent(event);
+
+        assertTrue(gateway.lastRefreshedStrategyId == null);
+        assertTrue(gateway.tradeUpdateForwarded);
+        assertEquals(1, gateway.syncStrategiesCalls);
+        assertEquals(1, gateway.refreshTableCalls);
     }
 
     @Test
@@ -95,6 +115,8 @@ class TradeStreamLifecycleCoordinatorTest {
         String lastRefreshedStrategyId;
         boolean tradeUpdateForwarded;
         boolean uiRefreshTriggered;
+        int syncStrategiesCalls;
+        int refreshTableCalls;
         Optional<String> onTradeUpdateResult = Optional.of("strategy-1");
         final FakeStreamClient client = new FakeStreamClient();
 
@@ -107,8 +129,8 @@ class TradeStreamLifecycleCoordinatorTest {
         @Override public Optional<String> onTradeUpdate(AlpacaTradeUpdateEvent event) { tradeUpdateForwarded = true; return onTradeUpdateResult; }
         @Override public void refreshDisplayedPositionFromStream(String strategyId) { lastRefreshedStrategyId = strategyId; }
         @Override public void invokeLater(Runnable runnable) { runnable.run(); }
-        @Override public void syncStrategiesFromRepository() { uiRefreshTriggered = true; }
-        @Override public void refreshStrategyTableContent() { }
+        @Override public void syncStrategiesFromRepository() { uiRefreshTriggered = true; syncStrategiesCalls++; }
+        @Override public void refreshStrategyTableContent() { refreshTableCalls++; }
         @Override public void refreshPanels() { }
         @Override public void updateStatusBar() { }
     }

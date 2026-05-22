@@ -7,7 +7,9 @@ import com.neuralarc.model.StrategyStage;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -47,10 +49,26 @@ final class RuleTriggeredHistoryPresenter {
                         order -> order.filledAt() == null ? order.updatedAt() : order.filledAt(),
                         (left, right) -> left.isAfter(right) ? left : right
                 ));
-        return orders.stream()
+        List<StrategyOrder> sortedOrders = orders.stream()
                 .sorted(Comparator.comparing(StrategyOrder::submittedAt))
-                .flatMap(order -> entriesFor(order, timestampFormatter, latestFilledByStage).stream())
                 .toList();
+        Map<FailureGroupKey, FailureGroup> failureGroups = failureGroups(sortedOrders, latestFilledByStage);
+        List<String> entries = new ArrayList<>();
+        for (StrategyOrder order : sortedOrders) {
+            if (isSupersededFailure(order, latestFilledByStage)) {
+                continue;
+            }
+            FailureGroupKey failureKey = failureGroupKey(order);
+            FailureGroup failureGroup = failureKey == null ? null : failureGroups.get(failureKey);
+            if (failureGroup != null && failureGroup.count() > 1) {
+                if (failureGroup.firstOrder() == order) {
+                    entries.add(consolidatedFailureEntry(failureGroup, timestampFormatter));
+                }
+                continue;
+            }
+            entries.addAll(entriesFor(order, timestampFormatter, latestFilledByStage));
+        }
+        return entries;
     }
 
     private List<String> entriesFor(
@@ -105,6 +123,59 @@ final class RuleTriggeredHistoryPresenter {
         return !latestFillAt.isBefore(failedAt);
     }
 
+    private Map<FailureGroupKey, FailureGroup> failureGroups(
+            List<StrategyOrder> orders,
+            Map<StrategyStage, Instant> latestFilledByStage
+    ) {
+        Map<FailureGroupKey, FailureGroup> groups = new LinkedHashMap<>();
+        for (StrategyOrder order : orders) {
+            if (isSupersededFailure(order, latestFilledByStage)) {
+                continue;
+            }
+            FailureGroupKey key = failureGroupKey(order);
+            if (key == null) {
+                continue;
+            }
+            groups.compute(key, (ignored, existing) -> existing == null
+                    ? new FailureGroup(order, order, 1)
+                    : existing.with(order));
+        }
+        return groups;
+    }
+
+    private FailureGroupKey failureGroupKey(StrategyOrder order) {
+        if (order == null
+                || order.stage() == null
+                || (order.status() != StrategyOrderStatus.CANCELED
+                && order.status() != StrategyOrderStatus.REJECTED
+                && order.status() != StrategyOrderStatus.FAILED)) {
+            return null;
+        }
+        return new FailureGroupKey(
+                order.stage(),
+                order.side(),
+                order.status(),
+                normalized(order.limitPrice()),
+                normalized(order.stopPrice()),
+                normalized(order.requestedQuantity())
+        );
+    }
+
+    private String consolidatedFailureEntry(FailureGroup group, Function<Instant, String> timestampFormatter) {
+        StrategyOrder first = group.firstOrder();
+        StrategyOrder last = group.lastOrder();
+        String label = stageLabel(first.stage(), first.side());
+        String status = first.status().name().toLowerCase().replace('_', ' ');
+        String range = format(first.submittedAt(), timestampFormatter);
+        Instant lastUpdated = last.updatedAt() == null ? last.submittedAt() : last.updatedAt();
+        if (lastUpdated != null && !lastUpdated.equals(first.submittedAt())) {
+            range += " to " + format(lastUpdated, timestampFormatter);
+        }
+        return label + " " + status + " x" + group.count()
+                + orderPrice(first.limitPrice(), first.stopPrice(), first.requestedQuantity())
+                + " from " + range;
+    }
+
     private String stageLabel(StrategyStage stage, StrategyOrderSide side) {
         if (stage == null) {
             return side == StrategyOrderSide.SELL ? "Sell rule" : "Buy rule";
@@ -155,6 +226,10 @@ final class RuleTriggeredHistoryPresenter {
         return value != null && value.compareTo(BigDecimal.ZERO) > 0;
     }
 
+    private BigDecimal normalized(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value.stripTrailingZeros();
+    }
+
     private String escape(String value) {
         if (value == null || value.isBlank()) {
             return "";
@@ -163,5 +238,21 @@ final class RuleTriggeredHistoryPresenter {
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;");
+    }
+
+    private record FailureGroupKey(
+            StrategyStage stage,
+            StrategyOrderSide side,
+            StrategyOrderStatus status,
+            BigDecimal limitPrice,
+            BigDecimal stopPrice,
+            BigDecimal requestedQuantity
+    ) {
+    }
+
+    private record FailureGroup(StrategyOrder firstOrder, StrategyOrder lastOrder, int count) {
+        FailureGroup with(StrategyOrder order) {
+            return new FailureGroup(firstOrder, order, count + 1);
+        }
     }
 }

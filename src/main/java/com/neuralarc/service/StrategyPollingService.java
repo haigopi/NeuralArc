@@ -7,6 +7,7 @@ import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyEventType;
 import com.neuralarc.model.StrategyExecutionEvent;
 import com.neuralarc.model.StrategyLifecycleState;
+import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.util.BrokerOrderStatusUtil;
 
@@ -41,6 +42,7 @@ public class StrategyPollingService {
     private final AppSettingsService appSettingsService;
     private final MarketHoursService marketHoursService;
     private final AlpacaClient alpacaClient;
+    private final StrategyMode strategyMode;
     private final TradingSessionPolicy tradingSessionPolicy;
     private final ExecutorService pollExecutor;
     private final Set<String> inFlightStrategyIds = ConcurrentHashMap.newKeySet();
@@ -63,7 +65,8 @@ public class StrategyPollingService {
                 eventRepository,
                 alpacaClient,
                 new AppSettingsService(),
-                new MarketHoursService()
+                new MarketHoursService(),
+                null
         );
     }
 
@@ -75,11 +78,32 @@ public class StrategyPollingService {
             AppSettingsService appSettingsService,
             MarketHoursService marketHoursService
     ) {
+        this(
+                strategyRepository,
+                orderRepository,
+                eventRepository,
+                alpacaClient,
+                appSettingsService,
+                marketHoursService,
+                null
+        );
+    }
+
+    public StrategyPollingService(
+            StrategyRepository strategyRepository,
+            StrategyOrderRepository orderRepository,
+            StrategyExecutionEventRepository eventRepository,
+            AlpacaClient alpacaClient,
+            AppSettingsService appSettingsService,
+            MarketHoursService marketHoursService,
+            StrategyMode strategyMode
+    ) {
         this.strategyRepository = strategyRepository;
         this.eventRepository = eventRepository;
         this.appSettingsService = appSettingsService;
         this.marketHoursService = marketHoursService;
         this.alpacaClient = alpacaClient;
+        this.strategyMode = strategyMode;
         this.tradingSessionPolicy = new TradingSessionPolicy(marketHoursService, alpacaClient);
         StrategyEventBus eventBus = new StrategyEventBus();
         StrategyStateMachine stateMachine = new StrategyStateMachine(eventRepository, eventBus);
@@ -129,6 +153,9 @@ public class StrategyPollingService {
         List<Strategy> eligible = new ArrayList<>();
         List<Strategy> due = new ArrayList<>();
         for (Strategy strategy : strategyRepository.findAll()) {
+            if (!matchesRuntimeMode(strategy)) {
+                continue;
+            }
             totalStrategies++;
             boolean sessionOpenForStrategy = !autoPauseForMarketClose
                     || tradingSessionPolicy.isTradingSessionOpen(strategy, settings, now);
@@ -219,6 +246,10 @@ public class StrategyPollingService {
         return dueStrategies;
     }
 
+    private boolean matchesRuntimeMode(Strategy strategy) {
+        return strategyMode == null || (strategy != null && strategy.mode() == strategyMode);
+    }
+
     public PollCycleSnapshot lastPollCycleSnapshot() {
         return lastPollCycleSnapshot;
     }
@@ -299,6 +330,9 @@ public class StrategyPollingService {
             return;
         }
         Strategy strategy = maybeStrategy.get();
+        if (!matchesRuntimeMode(strategy)) {
+            return;
+        }
         if (strategy.status() == StrategyStatus.FAILED) {
             if (!isExpiryResubmitEligible(strategy) || !strategyEngine.canAutoRetryFailed(strategy)) {
                 return;

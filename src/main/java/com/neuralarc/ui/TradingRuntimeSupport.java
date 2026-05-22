@@ -96,7 +96,8 @@ public final class TradingRuntimeSupport {
                 strategyEventRepository,
                 runtimeClient,
                 appSettingsService,
-                marketHoursService
+                marketHoursService,
+                mode == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER
         );
         pollingService.setPollListener(pollListener);
         pollingService.setEmailNotificationListener(emailNotificationListener);

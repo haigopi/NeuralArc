@@ -55,6 +55,8 @@ final class PortfolioActionsController {
     void showMenu(AbstractButton anchor) {
         gateway.actionStarted("Portfolio Actions");
         JPopupMenu menu = new JPopupMenu();
+        menu.setBackground(new Color(46, 49, 60));
+        menu.setOpaque(true);
         menu.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(70, 76, 90), 1, true),
                 new EmptyBorder(4, 4, 4, 4)
@@ -70,13 +72,13 @@ final class PortfolioActionsController {
                 () -> handleSellAction(PortfolioActionsSupport.Scope.PROFITABLE_MARKET, SellSubmissionType.MARKET)));
         menu.add(gateway.createMenuItem("Sell All Losing Positions at Market Value", "icons/delete.svg",
                 () -> handleSellAction(PortfolioActionsSupport.Scope.LOSS_ONLY_MARKET, SellSubmissionType.MARKET)));
-        menu.addSeparator();
+        menu.add(sectionSeparator());
         menu.add(sectionHeader("Order Cleanup"));
         menu.add(gateway.createMenuItem("Cancel All Pending Limit Buys", "icons/close.svg",
                 this::handleCancelAllPendingLimitBuys));
         menu.add(gateway.createMenuItem("Cancel All Pending Limit Sells", "icons/close.svg",
                 this::handleCancelAllPendingLimitSells));
-        menu.addSeparator();
+        menu.add(sectionSeparator());
         menu.add(sectionHeader("Lifecycle"));
         menu.add(gateway.createMenuItem("Clean All Expired", "icons/delete.svg",
                 this::handleCleanAllExpired));
@@ -97,7 +99,22 @@ final class PortfolioActionsController {
     private JMenuItem sectionHeader(String text) {
         JMenuItem header = new JMenuItem(text);
         header.setEnabled(false);
+        header.setFont(header.getFont().deriveFont(java.awt.Font.BOLD, 11f));
+        header.setOpaque(true);
+        header.setBackground(new Color(46, 49, 60));
+        header.setForeground(new Color(155, 165, 184));
+        header.setBorder(new EmptyBorder(6, 10, 4, 12));
         return header;
+    }
+
+    private JMenuItem sectionSeparator() {
+        JMenuItem separator = new JMenuItem();
+        separator.setEnabled(false);
+        separator.setOpaque(true);
+        separator.setBackground(new Color(46, 49, 60));
+        separator.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(70, 76, 90)));
+        separator.setPreferredSize(new java.awt.Dimension(220, 3));
+        return separator;
     }
 
     private void handleCancelAllPendingLimitBuys() {

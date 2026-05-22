@@ -94,6 +94,51 @@ class RuleTriggeredHistoryPresenterTest {
         assertTrue(label.contains("Base Buy filled @ $99.75/10"));
     }
 
+    @Test
+    void labelConsolidatesRepeatedFailedRuleAttempts() {
+        Instant baseTime = Instant.parse("2026-05-18T14:30:00Z");
+        StrategyOrder firstFailed = order(
+                StrategyStage.BASE_BUY,
+                StrategyOrderSide.BUY,
+                new BigDecimal("100.00"),
+                new BigDecimal("10"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                StrategyOrderStatus.FAILED,
+                baseTime
+        );
+        StrategyOrder secondFailed = order(
+                StrategyStage.BASE_BUY,
+                StrategyOrderSide.BUY,
+                new BigDecimal("100.00"),
+                new BigDecimal("10"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                StrategyOrderStatus.FAILED,
+                baseTime.plusSeconds(60)
+        );
+        StrategyOrder thirdFailed = order(
+                StrategyStage.BASE_BUY,
+                StrategyOrderSide.BUY,
+                new BigDecimal("100.00"),
+                new BigDecimal("10"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                StrategyOrderStatus.FAILED,
+                baseTime.plusSeconds(120)
+        );
+
+        String label = presenter.buildLabel(
+                "Rules: Position Closed",
+                List.of(firstFailed, secondFailed, thirdFailed),
+                Instant::toString
+        );
+
+        assertTrue(label.contains("Base Buy failed x3 @ $100.00/10 from 2026-05-18T14:30:00Z"));
+        assertFalse(label.contains("Base Buy placed @ $100.00/10 on 2026-05-18T14:31:00Z"));
+        assertFalse(label.contains("Base Buy placed @ $100.00/10 on 2026-05-18T14:32:00Z"));
+    }
+
     private StrategyOrder order(
             StrategyStage stage,
             StrategyOrderSide side,
