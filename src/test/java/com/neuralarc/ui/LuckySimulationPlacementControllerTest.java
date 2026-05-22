@@ -49,6 +49,29 @@ class LuckySimulationPlacementControllerTest {
     }
 
     @Test
+    void startsLiveMonitoringThroughLiveCreationPath() {
+        InMemoryRepository repository = new InMemoryRepository();
+        LuckySimulationPlacementController controller = controller(
+                repository,
+                true,
+                false,
+                60,
+                true,
+                true,
+                StrategyMode.LIVE
+        );
+
+        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
+
+        assertEquals(1, result.created());
+        Strategy saved = repository.findAll().getFirst();
+        assertEquals(StrategyMode.LIVE, saved.mode());
+        assertEquals("LIVE_PENDING", saved.latestOrderStatus());
+        assertTrue(saved.name().endsWith("Live"));
+        assertTrue(saved.lastEvent().contains("Alpaca Live mode"));
+    }
+
+    @Test
     void usesPerSelectionQuantityWhenCreatingStrategy() {
         InMemoryRepository repository = new InMemoryRepository();
         LuckySimulationPlacementController controller = controller(repository, true, false);
@@ -225,12 +248,36 @@ class LuckySimulationPlacementControllerTest {
             boolean defaultRepeatCycleAfterProfitExit,
             boolean defaultResubmitOnExpiry
     ) {
+        return controller(
+                repository,
+                replaceChoice,
+                allowDuplicates,
+                defaultPollingSeconds,
+                defaultRepeatCycleAfterProfitExit,
+                defaultResubmitOnExpiry,
+                StrategyMode.PAPER
+        );
+    }
+
+    private LuckySimulationPlacementController controller(
+            InMemoryRepository repository,
+            boolean replaceChoice,
+            boolean allowDuplicates,
+            int defaultPollingSeconds,
+            boolean defaultRepeatCycleAfterProfitExit,
+            boolean defaultResubmitOnExpiry,
+            StrategyMode targetMode
+    ) {
         return new LuckySimulationPlacementController(new LuckySimulationPlacementController.Gateway() {
             @Override public StrategyRepository repository() { return repository; }
             @Override public StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy) {
+                return createStrategy(strategy, StrategyMode.PAPER);
+            }
+            @Override public StrategyService.StrategyCreationResult createStrategy(Strategy strategy, StrategyMode mode) {
                 strategy.setStatus(StrategyStatus.ACTIVE);
                 repository.save(strategy);
-                return StrategyService.StrategyCreationResult.success(strategy.id(), "order-row", "alpaca-paper-order", "client-order");
+                String orderId = mode == StrategyMode.LIVE ? "alpaca-live-order" : "alpaca-paper-order";
+                return StrategyService.StrategyCreationResult.success(strategy.id(), "order-row", orderId, "client-order");
             }
             @Override public boolean confirmReplaceWaitingPaperStrategy(String symbol) { return replaceChoice; }
             @Override public boolean allowDuplicateSymbols() { return allowDuplicates; }
@@ -240,7 +287,7 @@ class LuckySimulationPlacementControllerTest {
             @Override public void cancelAndDeletePaperStrategy(String strategyId) { repository.deleteById(strategyId); }
             @Override public void afterPlacement() {}
             @Override public void log(String message) {}
-        });
+        }, targetMode);
     }
 
     private Strategy waitingPaperStrategy(String symbol, String id) {

@@ -23,7 +23,6 @@ public final class StrategyActionsPresenter {
                 && (status == StrategyStatus.ACTIVE || marketOpenForUi);
         boolean canPromote = state.paperMode()
                 && (status == StrategyStatus.ACTIVE || status == StrategyStatus.PAUSED)
-                && marketOpenForUi
                 && !busy;
         boolean canSell = state.hasPosition()
                 && status != StrategyStatus.ARCHIVED

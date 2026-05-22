@@ -128,9 +128,8 @@ public final class StrategyActionsController {
 
         ActionEntry entry = gateway.entryAt(row);
         if (entry.strategy().mode() != StrategyMode.PAPER
-                || !isPromotionAllowed(entry.strategy().status())
-                || !gateway.marketOpenForUi()) {
-            actionLog.skipped("Promote to Live", "Strategy is not eligible or market is closed.");
+                || !isPromotionAllowed(entry.strategy().status())) {
+            actionLog.skipped("Promote to Live", "Strategy is not eligible.");
             return;
         }
 

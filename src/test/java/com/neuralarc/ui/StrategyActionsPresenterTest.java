@@ -124,13 +124,13 @@ class StrategyActionsPresenterTest {
     }
 
     @Test
-    void marketClosedDisablesSellAndPromote() {
+    void marketClosedDisablesSellButAllowsPromote() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
                 new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.ACTIVE, false, false, "", true, true, false)
         );
 
         assertTrue(viewModel.toggleEnabled());
         assertFalse(viewModel.sellEnabled());
-        assertFalse(viewModel.promoteEnabled());
+        assertTrue(viewModel.promoteEnabled());
     }
 }

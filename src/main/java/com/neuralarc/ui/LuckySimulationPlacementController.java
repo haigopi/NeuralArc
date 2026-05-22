@@ -84,9 +84,10 @@ public class LuckySimulationPlacementController {
                     gateway.allowDuplicateSymbols()
             )) {
                 skipped++;
-                skippedReasons.add(selection.stock().symbol() + ": duplicate symbol policy blocked a new paper strategy");
+                skippedReasons.add(selection.stock().symbol() + ": duplicate symbol policy blocked a new "
+                        + modeLabel().toLowerCase(Locale.ROOT) + " strategy");
                 gateway.log("[I Am Feeling Lucky] Skipped " + selection.stock().symbol()
-                        + ": duplicate symbol policy blocked a new paper strategy.");
+                        + ": duplicate symbol policy blocked a new " + modeLabel().toLowerCase(Locale.ROOT) + " strategy.");
                 continue;
             }
             BigDecimal effectiveBaseBuyPrice = effectiveBaseBuyPrice(selection, recommendation);
@@ -102,7 +103,7 @@ public class LuckySimulationPlacementController {
             gateway.log("[I Am Feeling Lucky] Started " + targetMode.name() + " monitoring for " + strategy.symbol()
                     + " at base limit $" + strategy.baseBuyLimitPrice().toPlainString()
                     + " qty=" + strategy.baseBuyQuantity()
-                    + ". Alpaca paper order id=" + creationResult.alpacaOrderId());
+                    + ". Alpaca " + modeLabel().toLowerCase(Locale.ROOT) + " order id=" + creationResult.alpacaOrderId());
         }
         gateway.afterPlacement();
         return new PlacementResult(created, replaced, skipped, skippedReasons, canceled);
@@ -126,7 +127,7 @@ public class LuckySimulationPlacementController {
                 + ". Source " + stockReason
                 + ". Base limit buy $" + strategy.baseBuyLimitPrice().toPlainString()
                 + ".");
-        strategy.setLatestOrderStatus("PAPER_PENDING");
+        strategy.setLatestOrderStatus(targetMode == StrategyMode.LIVE ? "LIVE_PENDING" : "PAPER_PENDING");
         strategy.setLatestAlpacaOrderId("");
         return strategy;
     }

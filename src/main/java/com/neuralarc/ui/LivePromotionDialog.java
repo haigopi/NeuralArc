@@ -98,24 +98,24 @@ final class LivePromotionDialog extends JDialog {
         gbc.gridx = 0;
         gbc.gridwidth = 2;
         gbc.weightx = 1.0;
-        gbc.insets = new Insets(8, 0, 0, 0);
+        gbc.insets = new Insets(8, 0, 4, 0);
         content.add(closePaperPositionCheckBox, gbc);
 
         JLabel note = new JLabel("<html><span style='color:#8A5A00;'>Paper orders and positions are not automatically closed by promotion. Review the paper account separately if needed.</span></html>");
         note.setFont(FontLoader.ui(Font.PLAIN, 10f));
-        note.setBorder(new EmptyBorder(10, 0, 0, 0));
+        gbc.gridy++;
         gbc.gridx = 0;
         gbc.gridwidth = 2;
         gbc.weightx = 1.0;
-        gbc.insets = new Insets(6, 0, 0, 0);
+        gbc.insets = new Insets(0, 22, 6, 0);
         content.add(note, gbc);
 
         if (!preview.validationErrors().isEmpty()) {
             JLabel validation = new JLabel("<html><span style='color:#B71C1C;'>Validation issues: "
                     + escapeHtml(String.join(" ", preview.validationErrors())) + "</span></html>");
             validation.setFont(FontLoader.ui(Font.PLAIN, 10f));
-            validation.setBorder(new EmptyBorder(8, 0, 0, 0));
             gbc.gridy++;
+            gbc.insets = new Insets(4, 0, 0, 0);
             content.add(validation, gbc);
         }
 
@@ -123,18 +123,22 @@ final class LivePromotionDialog extends JDialog {
             JLabel eligibility = new JLabel("<html><span style='color:#B71C1C;'>"
                     + escapeHtml(String.join(" ", preview.issues())) + "</span></html>");
             eligibility.setFont(FontLoader.ui(Font.PLAIN, 10f));
-            eligibility.setBorder(new EmptyBorder(8, 0, 0, 0));
             gbc.gridy++;
+            gbc.insets = new Insets(4, 0, 0, 0);
             content.add(eligibility, gbc);
         } else {
             JLabel ready = new JLabel("<html><span style='color:#2E7D32;'>Checklist passed. Type LIVE below to enable promotion.</span></html>");
             ready.setFont(FontLoader.ui(Font.PLAIN, 10f));
-            ready.setBorder(new EmptyBorder(8, 0, 0, 0));
             gbc.gridy++;
+            gbc.insets = new Insets(4, 0, 0, 0);
             content.add(ready, gbc);
         }
 
-        add(content, BorderLayout.CENTER);
+        JScrollPane scrollPane = new JScrollPane(content);
+        scrollPane.setBorder(null);
+        scrollPane.setOpaque(false);
+        scrollPane.getViewport().setOpaque(false);
+        add(scrollPane, BorderLayout.CENTER);
 
         JButton cancelButton = new JButton("Cancel");
         DialogButtonStyles.apply(cancelButton, "icons/delete.svg");
@@ -181,7 +185,7 @@ final class LivePromotionDialog extends JDialog {
         add(actions, BorderLayout.SOUTH);
 
         setResizable(true);
-        DialogSizing.packAndFit(this, 520, 380);
+        DialogSizing.packAndFit(this, 560, 560);
         setLocationRelativeTo(getOwner());
         updatePromoteButtonEnabled(preview);
     }

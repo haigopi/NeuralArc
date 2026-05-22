@@ -17,6 +17,7 @@ import com.neuralarc.service.GitHubReleaseUpdateService;
 import com.neuralarc.service.MarketHoursService;
 import com.neuralarc.service.OnboardingStateStore;
 import com.neuralarc.service.AppSettingsService;
+import com.neuralarc.service.AppUninstallService;
 import com.neuralarc.service.AsyncLogUploadService;
 import com.neuralarc.service.LogArchiveService;
 import com.neuralarc.service.LogUploadStatusStore;
@@ -114,6 +115,8 @@ public class TradingFrame extends JFrame {
     private final JLabel paperUnrealizedSummary = new JLabel("Paper Unrealized P&L Total: -");
     private final JLabel headerTotalsSeparator = new JLabel("|");
     private final JLabel liveUnrealizedSummary = new JLabel("Live Unrealized P&L Total: -");
+    private final JToggleButton paperViewButton = new JToggleButton("Paper");
+    private final JToggleButton liveViewButton = new JToggleButton("Live");
     private final JLabel positionSectionTitle = new JLabel("Position");
     private final JLabel rulesSectionTitle = new JLabel("Rules Triggered");
     private final JLabel statusBar = new JLabel("Broker: Not connected");
@@ -130,6 +133,10 @@ public class TradingFrame extends JFrame {
     private static final Color STATUS_OK = new Color(34, 139, 34);
     private static final Color STATUS_WARN = new Color(180, 100, 0);
     private static final Color STATUS_ERR = new Color(180, 30, 30);
+    private static final Color PAPER_HEADER_BG = new Color(35, 35, 45);
+    private static final Color PAPER_STATUS_BG = new Color(35, 35, 45);
+    private static final Color LIVE_HEADER_BG = new Color(45, 32, 34);
+    private static final Color LIVE_STATUS_BG = new Color(44, 30, 32);
     private static final Color UPDATE_FLASH_BG = new Color(185, 112, 0);
     private static final Color UPDATE_FLASH_BORDER = new Color(255, 184, 65);
     private static final Color CAPTURE_ACTIVE_BG = new Color(210, 52, 38);
@@ -309,9 +316,14 @@ public class TradingFrame extends JFrame {
     private final JButton tradeHistoryGroupByButton = new JButton("Group By Menu: Symbol");
     private final JPanel currentStrategiesSearchPanel = createGridSearchPanel("Search stocks:", currentStrategiesSearchField);
     private final JPanel tradeHistorySearchPanel = createGridSearchPanel("Search stocks:", tradeHistorySearchField);
+    private JPanel headerPanel;
+    private JPanel statusBarPanel;
     private TableRowSorter<StrategyGridTableModel> strategySorter;
     private TableRowSorter<HistoryGridTableModel> filledOrdersSorter;
     private TradeHistoryGroupBy tradeHistoryGroupBy = TradeHistoryGroupBy.SYMBOL;
+    private StrategyMode selectedViewMode = StrategyMode.PAPER;
+    private boolean updatingModeButtons;
+    private boolean liveModeConfirmedThisSession;
 
     private TradingApi tradingApi;
     private AnalyticsPublisher analyticsPublisher;
@@ -352,8 +364,6 @@ public class TradingFrame extends JFrame {
     private final TradingRuntimeSupport tradingRuntimeSupport;
     private final StrategyActionsController strategyActionsController;
     private final TradeStreamLifecycleCoordinator tradeStreamLifecycleCoordinator;
-    private volatile String lastStreamApiKey = "";
-    private volatile String lastStreamApiSecret = "";
     private volatile boolean streamReconnectAvailable;
     private volatile boolean streamRecoverySyncPending;
     private volatile boolean showStreamReconnectFailureDialog;
@@ -478,7 +488,11 @@ public class TradingFrame extends JFrame {
         });
         portfolioCaptureController = new PortfolioCaptureController(
                 new PortfolioCaptureController.Gateway() {
-                    @Override public List<ManagedStrategy> strategies() { return strategies; }
+                    @Override public List<ManagedStrategy> strategies() {
+                        return strategies.stream()
+                                .filter(TradingFrame.this::includeInCurrentStrategiesTab)
+                                .toList();
+                    }
                     @Override
                     public StrategyService.StrategyCreationResult sellPosition(
                             ManagedStrategy entry,
@@ -852,7 +866,7 @@ public class TradingFrame extends JFrame {
                 currentBrokerType = brokerType;
                 connectionOk = true;
                 refreshStrategyRuntimeServices(apiKey, apiSecret, mode);
-                startTradingEventStreamIfConfigured(apiKey, apiSecret);
+                restartTradingEventStreamForSelectedMode();
                 setStatus("Connected - broker " + brokerType.name() + " ready.", STATUS_OK);
                 updateHeaderModeStatus(brokerType);
                 updateStatusBar();
@@ -942,8 +956,8 @@ public class TradingFrame extends JFrame {
         strategyPollingTimer.setInitialDelay(1000);
         strategyPollingTimer.start();
 
-        JPanel headerPanel = new JPanel(new BorderLayout());
-        headerPanel.setBackground(new Color(35, 35, 45));
+        headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(PAPER_HEADER_BG);
         headerPanel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(200, 200, 210)),
                 new EmptyBorder(6, 8, 6, 8)
@@ -959,6 +973,7 @@ public class TradingFrame extends JFrame {
 
         JPanel headerInfoPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         headerInfoPanel.setOpaque(false);
+        headerInfoPanel.add(createModeSwitchPanel());
         headerInfoPanel.add(headerStatus);
         headerInfoPanel.add(paperUnrealizedSummary);
         headerInfoPanel.add(headerTotalsSeparator);
@@ -1223,9 +1238,7 @@ public class TradingFrame extends JFrame {
         filledOrdersSorter.setComparator(7, (left, right) -> compareHistoryNumericCells(left, right));
         filledOrdersSorter.setComparator(8, (left, right) -> compareHistoryNumericCells(left, right));
         filledOrdersSorter.setComparator(9, (left, right) -> compareHistoryNumericCells(left, right));
-        for (int column = 0; column < HistoryGridTableModel.COLUMNS.length; column++) {
-            filledOrdersSorter.setSortable(column, column == 0); // Only Symbol is sortable in Trade History.
-        }
+        configureTradeHistorySorting();
         configureFilledOrdersColumnWidths();
         applyTradeHistoryRowFilter();
         filledOrdersTable.setRowSorter(filledOrdersSorter);
@@ -1349,6 +1362,9 @@ public class TradingFrame extends JFrame {
                 () -> UpdateCheckSupport.checkForUpdates(this, footerActionsButton, userActionLog)));
         footerActionsMenu.add(createStatusMenuItem("Legal Disclosure", "icons/legal-disclosure.svg",
                 () -> showLegalDisclosureDialog(false)));
+        footerActionsMenu.addSeparator();
+        footerActionsMenu.add(createStatusMenuItem("Uninstall NeuralArc", "icons/delete.svg",
+                this::confirmAndScheduleUninstall));
         footerActionsButton.addActionListener(e -> {
             if (updateAvailableNoticeActive) {
                 clearUpdateAvailableNotice();
@@ -1398,8 +1414,8 @@ public class TradingFrame extends JFrame {
         rightGbc.insets = new java.awt.Insets(0, 0, 0, 0);
         statusRight.add(faqsButton, rightGbc);
 
-        JPanel statusBarPanel = new JPanel(new BorderLayout());
-        statusBarPanel.setBackground(new Color(35, 35, 45));
+        statusBarPanel = new JPanel(new BorderLayout());
+        statusBarPanel.setBackground(PAPER_STATUS_BG);
         statusBarPanel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(200, 200, 210)),
                 new EmptyBorder(4, 14, 4, 14)
@@ -1448,9 +1464,13 @@ public class TradingFrame extends JFrame {
         installCopyPopup(positionSection, positionSummary);
         JPanel rulesSection = createDetailSection(rulesSectionTitle, ruleState);
 
-        JPanel detailSectionsPanel = new JPanel(new GridLayout(0, 1, 0, 8));
+        JPanel detailSectionsPanel = new JPanel();
+        detailSectionsPanel.setLayout(new BoxLayout(detailSectionsPanel, BoxLayout.Y_AXIS));
         detailSectionsPanel.setOpaque(false);
+        positionSection.setAlignmentX(Component.LEFT_ALIGNMENT);
+        rulesSection.setAlignmentX(Component.LEFT_ALIGNMENT);
         detailSectionsPanel.add(positionSection);
+        detailSectionsPanel.add(Box.createVerticalStrut(8));
         detailSectionsPanel.add(rulesSection);
 
         JPanel statusPanel = new JPanel(new BorderLayout(0, 10));
@@ -1501,6 +1521,158 @@ public class TradingFrame extends JFrame {
         setLocationRelativeTo(null);
         startBackgroundUpdateAvailabilityCheck();
         SwingUtilities.invokeLater(portfolioCaptureController::restoreIfNeeded);
+        applyViewModeTheme();
+    }
+
+
+    private JPanel createModeSwitchPanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        panel.setOpaque(false);
+        ButtonGroup group = new ButtonGroup();
+        configureModeToggle(paperViewButton, StrategyMode.PAPER, "Show and operate only on Alpaca Paper data.");
+        configureModeToggle(liveViewButton, StrategyMode.LIVE, "Show and operate only on Alpaca Live data.");
+        group.add(paperViewButton);
+        group.add(liveViewButton);
+        panel.add(paperViewButton);
+        panel.add(liveViewButton);
+        syncModeToggleSelection();
+        return panel;
+    }
+
+    private void configureModeToggle(JToggleButton button, StrategyMode mode, String tooltip) {
+        button.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        button.setFocusPainted(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setToolTipText(TooltipStyler.text(tooltip));
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(90, 94, 108), 1),
+                new EmptyBorder(3, 10, 3, 10)
+        ));
+        button.addActionListener(event -> switchViewMode(mode));
+    }
+
+    private void switchViewMode(StrategyMode requestedMode) {
+        if (updatingModeButtons) {
+            return;
+        }
+        StrategyMode safeMode = requestedMode == null ? StrategyMode.PAPER : requestedMode;
+        if (safeMode == selectedViewMode) {
+            syncModeToggleSelection();
+            return;
+        }
+        if (safeMode == StrategyMode.LIVE && !confirmLiveViewSwitch()) {
+            syncModeToggleSelection();
+            return;
+        }
+        selectedViewMode = safeMode;
+        selectedStrategyId = null;
+        syncModeToggleSelection();
+        applyViewModeTheme();
+        refreshStrategyTableData();
+        updateSelectedStrategy();
+        refreshPanels();
+        updateStatusBar();
+        updateHeaderModeStatus(currentBrokerType);
+        restartTradingEventStreamForSelectedMode();
+        userActionLog.completed("Mode Switch", "Viewing " + selectedViewMode.name() + " data.");
+        log("[MODE] Switched app view to " + selectedViewMode.name() + ". Grids and actions are scoped to this mode.");
+    }
+
+    private ApplicationMode selectedApplicationMode() {
+        return selectedViewMode == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER;
+    }
+
+    private String selectedModeLabel() {
+        return selectedViewMode == StrategyMode.LIVE ? "Live" : "Paper";
+    }
+
+    private String savedApiKeyForSelectedMode() {
+        return settingsDialog.savedApiKey(selectedApplicationMode());
+    }
+
+    private String savedApiSecretForSelectedMode() {
+        return settingsDialog.savedApiSecret(selectedApplicationMode());
+    }
+
+    private void restartTradingEventStreamForSelectedMode() {
+        String apiKey = savedApiKeyForSelectedMode();
+        String apiSecret = savedApiSecretForSelectedMode();
+        startTradingEventStreamIfConfigured(apiKey, apiSecret);
+    }
+
+    private boolean confirmLiveViewSwitch() {
+        if (liveModeConfirmedThisSession) {
+            return true;
+        }
+        if (!AppMetadata.liveTradingEnabled()) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Live trading is disabled in application configuration.",
+                    "Live Mode Disabled",
+                    JOptionPane.WARNING_MESSAGE
+            );
+            return false;
+        }
+        if (settingsDialog.savedApiKey(ApplicationMode.LIVE).isBlank()
+                || settingsDialog.savedApiSecret(ApplicationMode.LIVE).isBlank()) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Live Alpaca credentials are required before switching to Live view.",
+                    "Live Credentials Required",
+                    JOptionPane.WARNING_MESSAGE
+            );
+            return false;
+        }
+        String message = "<html><body style='width:360px'>"
+                + "<b>Switch to LIVE mode?</b><br><br>"
+                + "All grids, portfolio totals, history, and actions will show and operate only on Live strategies. "
+                + "Orders submitted while Live is selected can affect real funds."
+                + "</body></html>";
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                message,
+                "Confirm Live Mode",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        liveModeConfirmedThisSession = choice == JOptionPane.YES_OPTION;
+        return liveModeConfirmedThisSession;
+    }
+
+    private void syncModeToggleSelection() {
+        updatingModeButtons = true;
+        paperViewButton.setSelected(selectedViewMode == StrategyMode.PAPER);
+        liveViewButton.setSelected(selectedViewMode == StrategyMode.LIVE);
+        updatingModeButtons = false;
+        styleModeToggle(paperViewButton, selectedViewMode == StrategyMode.PAPER, false);
+        styleModeToggle(liveViewButton, selectedViewMode == StrategyMode.LIVE, true);
+    }
+
+    private void styleModeToggle(JToggleButton button, boolean selected, boolean live) {
+        if (selected) {
+            button.setOpaque(true);
+            button.setContentAreaFilled(true);
+            button.setForeground(Color.WHITE);
+            button.setBackground(live ? new Color(183, 28, 28) : new Color(25, 118, 210));
+        } else {
+            button.setOpaque(true);
+            button.setContentAreaFilled(true);
+            button.setForeground(new Color(205, 210, 220));
+            button.setBackground(new Color(55, 58, 70));
+        }
+    }
+
+    private void applyViewModeTheme() {
+        boolean live = selectedViewMode == StrategyMode.LIVE;
+        if (headerPanel != null) {
+            headerPanel.setBackground(live ? LIVE_HEADER_BG : PAPER_HEADER_BG);
+        }
+        if (statusBarPanel != null) {
+            statusBarPanel.setBackground(live ? LIVE_STATUS_BG : PAPER_STATUS_BG);
+        }
+        styleModeToggle(paperViewButton, selectedViewMode == StrategyMode.PAPER, false);
+        styleModeToggle(liveViewButton, selectedViewMode == StrategyMode.LIVE, true);
+        repaint();
     }
 
     private void applyUiPolish() {
@@ -1905,6 +2077,66 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    private void confirmAndScheduleUninstall() {
+        userActionLog.started("Uninstall NeuralArc");
+        AppUninstallService uninstallService = new AppUninstallService();
+        AppUninstallService.UninstallPlan plan = uninstallService.createPlan();
+        if (plan.os() == AppUninstallService.OperatingSystem.UNSUPPORTED) {
+            userActionLog.failed("Uninstall NeuralArc", "Unsupported operating system.");
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Automatic uninstall is not supported on this operating system.",
+                    "Uninstall NeuralArc",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return;
+        }
+
+        String message = "<html><body style='width:420px'>"
+                + "<b>Uninstall NeuralArc from this computer?</b><br><br>"
+                + "This will close NeuralArc and remove the application files, local settings, logs, saved strategies, "
+                + "trade history, and shortcuts for this user.<br><br>"
+                + "<b>Detected OS:</b> " + plan.os() + "<br>"
+                + "<b>Application:</b> " + escapeHtml(plan.installDirectory() == null ? "Not detected" : plan.installDirectory().toString()) + "<br>"
+                + "<b>Local data:</b> " + escapeHtml(plan.appDataDirectory().toString()) + "<br><br>"
+                + "This does not close or delete your Alpaca account. Broker-side orders or positions should be reviewed before uninstalling."
+                + "</body></html>";
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                message,
+                "Uninstall NeuralArc",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (choice != JOptionPane.YES_OPTION) {
+            userActionLog.canceled("Uninstall NeuralArc");
+            return;
+        }
+
+        try {
+            Path script = uninstallService.scheduleUninstall(plan);
+            log("[UNINSTALL] Scheduled uninstall. " + plan.summary() + " script=" + script);
+            userActionLog.completed("Uninstall NeuralArc", "Uninstall scheduled. Closing application.");
+            JOptionPane.showMessageDialog(
+                    this,
+                    "NeuralArc will close now. The uninstaller will continue in the background.",
+                    "Uninstall Scheduled",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+            shutdownAllStrategies();
+            dispose();
+            System.exit(0);
+        } catch (Exception ex) {
+            userActionLog.failed("Uninstall NeuralArc", ex.getMessage());
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Failed to start uninstall: " + ex.getMessage(),
+                    "Uninstall Failed",
+                    JOptionPane.ERROR_MESSAGE
+            );
+        }
+    }
+
     private void openSubmitBugDialog() {
         SubmitBugDialog dialog = new SubmitBugDialog(
                 this,
@@ -2130,7 +2362,7 @@ public class TradingFrame extends JFrame {
         LuckySimulationPlacementController controller = new LuckySimulationPlacementController(new LuckySimulationPlacementController.Gateway() {
             @Override public com.neuralarc.service.StrategyRepository repository() { return strategyRepository; }
             @Override public StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy) {
-                return createStrategy(strategy, StrategyMode.PAPER);
+                return createStrategy(strategy, config.reentryMode());
             }
             @Override public StrategyService.StrategyCreationResult createStrategy(Strategy strategy, StrategyMode targetMode) {
                 StrategyService service = strategyServiceForMode(targetMode);
@@ -2869,8 +3101,11 @@ public class TradingFrame extends JFrame {
             return;
         }
 
-        HttpAlpacaMarketDataApi marketDataApi = connectionOk && !runtimeApiKey.isBlank()
-                ? new HttpAlpacaMarketDataApi(runtimeApiKey, runtimeApiSecret) : null;
+        String selectedApiKey = savedApiKeyForSelectedMode();
+        String selectedApiSecret = savedApiSecretForSelectedMode();
+        HttpAlpacaMarketDataApi marketDataApi = !selectedApiKey.isBlank() && !selectedApiSecret.isBlank()
+                ? new HttpAlpacaMarketDataApi(selectedApiKey, selectedApiSecret)
+                : null;
         StrategyDialog dialog = new StrategyDialog(
                 this,
                 null,
@@ -2886,7 +3121,7 @@ public class TradingFrame extends JFrame {
             return;
         }
 
-        StrategyMode targetMode = settingsDialog.appliedApplicationMode() == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER;
+        StrategyMode targetMode = selectedViewMode;
         boolean allowDuplicateSymbols = settingsDialog.appliedAllowDuplicateSymbolStrategies();
         if (DuplicateSymbolPolicy.wouldBeDuplicate(config.symbol(), targetMode, strategyRepository.findAll(), allowDuplicateSymbols)) {
             userActionLog.failed("Add New Stock Strategy", "An active or paused strategy for " + config.symbol() + " already exists.");
@@ -2902,7 +3137,18 @@ public class TradingFrame extends JFrame {
                 config,
                 targetMode
         );
-        StrategyService.StrategyCreationResult creationResult = strategyService.createAndActivate(strategy);
+        StrategyService modeAwareService = strategyServiceForMode(targetMode);
+        if (modeAwareService == null) {
+            userActionLog.failed("Add New Stock Strategy", targetMode + " broker client is not configured.");
+            JOptionPane.showMessageDialog(
+                    this,
+                    selectedModeLabel() + " Alpaca credentials are required before adding a " + selectedModeLabel() + " strategy.",
+                    selectedModeLabel() + " Credentials Required",
+                    JOptionPane.WARNING_MESSAGE
+            );
+            return;
+        }
+        StrategyService.StrategyCreationResult creationResult = modeAwareService.createAndActivate(strategy);
         if (!creationResult.success()) {
             JOptionPane.showMessageDialog(
                     this,
@@ -2917,7 +3163,7 @@ public class TradingFrame extends JFrame {
         log("[" + config.symbol() + "] Initial order submitted. rule=BASE_BUY, price=$"
                 + strategy.baseBuyLimitPrice().toPlainString()
                 + ", clientOrderId=" + creationResult.clientOrderId());
-        userActionLog.completed("Add New Stock Strategy", config.symbol() + " initial limit buy submitted.");
+        userActionLog.completed("Add New Stock Strategy", config.symbol() + " " + selectedModeLabel() + " initial limit buy submitted.");
         JOptionPane.showMessageDialog(
                 this,
                 "Initial Alpaca limit buy submitted successfully.\nOrder ID: " + creationResult.alpacaOrderId(),
@@ -2938,14 +3184,14 @@ public class TradingFrame extends JFrame {
     private void openLuckyTrendingStocksDialog() {
         userActionLog.started("I Am Feeling Lucky");
         log("[I Am Feeling Lucky] Button clicked.");
-        ApplicationMode mode = settingsDialog.appliedApplicationMode();
-        String apiKey = runtimeApiKey.isBlank() ? settingsDialog.savedApiKey(mode) : runtimeApiKey;
-        String apiSecret = runtimeApiSecret.isBlank() ? settingsDialog.savedApiSecret(mode) : runtimeApiSecret;
+        StrategyMode targetMode = selectedViewMode;
+        String apiKey = savedApiKeyForSelectedMode();
+        String apiSecret = savedApiSecretForSelectedMode();
         if (apiKey.isBlank() || apiSecret.isBlank()) {
             userActionLog.failed("I Am Feeling Lucky", "Alpaca credentials are required.");
             JOptionPane.showMessageDialog(
                     this,
-                    "Please complete Settings with Alpaca credentials before using I Am Feeling Lucky.",
+                    "Please complete Settings with " + selectedModeLabel() + " Alpaca credentials before using I Am Feeling Lucky.",
                     "Alpaca Credentials Required",
                     JOptionPane.WARNING_MESSAGE
             );
@@ -3024,7 +3270,7 @@ public class TradingFrame extends JFrame {
             }
             boolean allowDuplicates = settingsDialog.appliedAllowDuplicateSymbolStrategies();
             if (DuplicateSymbolPolicy.wouldBeDuplicate(
-                    config.symbol(), StrategyMode.PAPER, strategyRepository.findAll(), allowDuplicates)) {
+                    config.symbol(), targetMode, strategyRepository.findAll(), allowDuplicates)) {
                 JOptionPane.showMessageDialog(TradingFrame.this,
                         "An active or paused strategy for this symbol already exists.",
                         "Duplicate Symbol",
@@ -3033,13 +3279,21 @@ public class TradingFrame extends JFrame {
             }
             Strategy strategy = Strategy.fromConfig(
                     UUID.randomUUID().toString(),
-                    luckyStrategyName(selection, config.symbol()),
+                    luckyStrategyName(selection, config.symbol(), targetMode),
                     config,
-                    StrategyMode.PAPER
+                    targetMode
             );
-            strategy.setLastEvent(luckyEntrySourceEvent(selection, strategy.baseBuyLimitPrice()));
+            strategy.setLastEvent(luckyEntrySourceEvent(selection, strategy.baseBuyLimitPrice(), targetMode));
+            StrategyService service = strategyServiceForMode(targetMode);
+            if (service == null) {
+                JOptionPane.showMessageDialog(TradingFrame.this,
+                        selectedModeLabel() + " Alpaca credentials are required before starting this strategy.",
+                        selectedModeLabel() + " Credentials Required",
+                        JOptionPane.WARNING_MESSAGE);
+                return;
+            }
             StrategyService.StrategyCreationResult creationResult =
-                    strategyServiceForMode(StrategyMode.PAPER).createAndActivate(strategy);
+                    service.createAndActivate(strategy);
             if (!creationResult.success()) {
                 JOptionPane.showMessageDialog(TradingFrame.this,
                         "Failed to start strategy: " + creationResult.error(),
@@ -3047,14 +3301,14 @@ public class TradingFrame extends JFrame {
                         JOptionPane.ERROR_MESSAGE);
                 return;
             }
-            log("[I Am Feeling Lucky] " + config.symbol() + " paper strategy created from review dialog.");
-            userActionLog.completed("I Am Feeling Lucky Review", config.symbol() + " paper strategy added.");
+            log("[I Am Feeling Lucky] " + config.symbol() + " " + targetMode + " strategy created from review dialog.");
+            userActionLog.completed("I Am Feeling Lucky Review", config.symbol() + " " + selectedModeLabel() + " strategy added.");
             syncStrategiesFromRepository();
             refreshStrategyTableData();
             updateStatusBar();
             refreshPanels();
             JOptionPane.showMessageDialog(TradingFrame.this,
-                    config.symbol() + " paper strategy created successfully.",
+                    config.symbol() + " " + selectedModeLabel() + " strategy created successfully.",
                     "Strategy Added",
                     JOptionPane.INFORMATION_MESSAGE);
         };
@@ -3063,28 +3317,31 @@ public class TradingFrame extends JFrame {
                 new TrendingStocksService(new HttpAlpacaScreenerClient(apiKey, apiSecret)),
                 marketDataApi,
                 this::placeLuckySimulationStrategies,
-                this::log
+                this::log,
+                targetMode
         );
         dialog.setReviewHandler(reviewHandler);
         dialog.setVisible(true);
     }
 
-    private String luckyEntrySourceEvent(LuckySimulationSelection selection, BigDecimal baseBuyLimitPrice) {
+    private String luckyEntrySourceEvent(LuckySimulationSelection selection, BigDecimal baseBuyLimitPrice, StrategyMode mode) {
         String stockReason = selection.stock().reason() == null || selection.stock().reason().isBlank()
                 ? "lucky-simulation"
                 : selection.stock().reason();
         String basePrice = baseBuyLimitPrice == null
                 ? "-"
                 : baseBuyLimitPrice.toPlainString();
-        return "Alpaca Paper mode from I Am Feeling Lucky. Selected "
+        String modeLabel = mode == StrategyMode.LIVE ? "Alpaca Live" : "Alpaca Paper";
+        return modeLabel + " mode from I Am Feeling Lucky. Selected "
                 + selection.selectedRecommendationType().name()
                 + ". Source " + stockReason
                 + ". Base limit buy $" + basePrice
                 + ".";
     }
 
-    private String luckyStrategyName(LuckySimulationSelection selection, String symbol) {
-        return "I_AM_FEELING_LUCKY_" + luckySourceToken(selection) + ": " + symbol + " Paper";
+    private String luckyStrategyName(LuckySimulationSelection selection, String symbol, StrategyMode mode) {
+        return "I_AM_FEELING_LUCKY_" + luckySourceToken(selection) + ": " + symbol + " "
+                + (mode == StrategyMode.LIVE ? "Live" : "Paper");
     }
 
     private String luckySourceToken(LuckySimulationSelection selection) {
@@ -3101,17 +3358,25 @@ public class TradingFrame extends JFrame {
     }
 
     private void placeLuckySimulationStrategies(List<LuckySimulationSelection> selections) {
+        StrategyMode targetMode = selectedViewMode;
         LuckySimulationPlacementController controller = new LuckySimulationPlacementController(new LuckySimulationPlacementController.Gateway() {
             @Override public com.neuralarc.service.StrategyRepository repository() { return strategyRepository; }
             @Override public StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy) {
-                return strategyServiceForMode(StrategyMode.PAPER).createAndActivate(strategy);
+                return createStrategy(strategy, targetMode);
+            }
+            @Override public StrategyService.StrategyCreationResult createStrategy(Strategy strategy, StrategyMode requestedMode) {
+                StrategyService service = strategyServiceForMode(requestedMode);
+                if (service == null) {
+                    return StrategyService.StrategyCreationResult.failed("Strategy service is not configured for " + requestedMode);
+                }
+                return service.createAndActivate(strategy);
             }
             @Override public boolean confirmReplaceWaitingPaperStrategy(String symbol) {
                 int choice = JOptionPane.showConfirmDialog(
                         TradingFrame.this,
-                        "A paper strategy already exists for " + symbol
+                        "A " + selectedModeLabel().toLowerCase(Locale.ROOT) + " strategy already exists for " + symbol
                                 + " with a limit buy waiting to fill.\n\nReplace it with the new one?",
-                        "Paper Strategy Exists",
+                        selectedModeLabel() + " Strategy Exists",
                         JOptionPane.YES_NO_OPTION,
                         JOptionPane.WARNING_MESSAGE
                 );
@@ -3121,7 +3386,7 @@ public class TradingFrame extends JFrame {
             @Override public int defaultStrategyPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
             @Override public boolean defaultRepeatCycleAfterProfitExitEnabled() { return settingsDialog.appliedDefaultRepeatCycleAfterProfitExitEnabled(); }
             @Override public boolean defaultResubmitOnExpiryEnabled() { return settingsDialog.appliedDefaultResubmitOnExpiryEnabled(); }
-            @Override public void cancelAndDeletePaperStrategy(String strategyId) { strategyServiceForMode(StrategyMode.PAPER).delete(strategyId); }
+            @Override public void cancelAndDeletePaperStrategy(String strategyId) { strategyServiceForMode(targetMode).delete(strategyId); }
             @Override public void afterPlacement() {
                 syncStrategiesFromRepository();
                 refreshStrategyTableData();
@@ -3129,7 +3394,7 @@ public class TradingFrame extends JFrame {
                 refreshPanels();
             }
             @Override public void log(String message) { TradingFrame.this.log(message); }
-        });
+        }, targetMode);
         LuckySimulationPlacementController.PlacementResult result = controller.place(selections);
         if (result.canceled()) {
             return;
@@ -3177,7 +3442,18 @@ public class TradingFrame extends JFrame {
         updatedStrategy.setLatestOrderStatus(entry.strategy.latestOrderStatus());
         updatedStrategy.setLatestAlpacaOrderId(entry.strategy.latestAlpacaOrderId());
         updatedStrategy.setLastError(entry.strategy.lastError());
-        Optional<Strategy> updatedResult = strategyService.updateStrategy(updatedStrategy);
+        StrategyService modeAwareService = strategyServiceForMode(entry.strategy.mode());
+        if (modeAwareService == null) {
+            userActionLog.failed("Edit Strategy " + entry.strategy.symbol(), entry.strategy.mode() + " broker client is not configured.");
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Broker client is not configured for this strategy mode.",
+                    "Strategy Update Failed",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return;
+        }
+        Optional<Strategy> updatedResult = modeAwareService.updateStrategy(updatedStrategy);
         if (updatedResult.isEmpty()) {
             userActionLog.failed("Edit Strategy " + entry.strategy.symbol(), "Strategy service rejected the update.");
             JOptionPane.showMessageDialog(
@@ -3497,17 +3773,21 @@ public class TradingFrame extends JFrame {
         StrategyPnlTotalsCalculator.Totals totals = strategyPnlTotalsCalculator.calculate(
                 strategies,
                 entry -> includeInCurrentStrategiesTab(entry)
+                        && entry.strategy.mode() == selectedViewMode
                         && (query.isBlank() || matchesStockSymbol(entry.strategy.symbol(), query)),
                 this::realizedPnlForStrategy
         );
-        paperUnrealizedSummary.setText("Paper P&L (Unrealized/Realized): "
-                + Monetary.round(totals.paperUnrealized()).toPlainString()
-                + " / "
-                + Monetary.round(totals.paperRealized()).toPlainString());
-        liveUnrealizedSummary.setText("Live P&L (Unrealized/Realized): "
-                + Monetary.round(totals.liveUnrealized()).toPlainString()
-                + " / "
-                + Monetary.round(totals.liveRealized()).toPlainString());
+        if (selectedViewMode == StrategyMode.LIVE) {
+            liveUnrealizedSummary.setText("LIVE P&L (Unrealized/Realized): "
+                    + Monetary.round(totals.liveUnrealized()).toPlainString()
+                    + " / "
+                    + Monetary.round(totals.liveRealized()).toPlainString());
+        } else {
+            paperUnrealizedSummary.setText("Paper P&L (Unrealized/Realized): "
+                    + Monetary.round(totals.paperUnrealized()).toPlainString()
+                    + " / "
+                    + Monetary.round(totals.paperRealized()).toPlainString());
+        }
         applyHeaderTotalsVisibility();
     }
 
@@ -3581,8 +3861,9 @@ public class TradingFrame extends JFrame {
     }
 
     private void applyHeaderTotalsVisibility() {
-        liveUnrealizedSummary.setVisible(true);
-        headerTotalsSeparator.setVisible(true);
+        paperUnrealizedSummary.setVisible(selectedViewMode == StrategyMode.PAPER);
+        liveUnrealizedSummary.setVisible(selectedViewMode == StrategyMode.LIVE);
+        headerTotalsSeparator.setVisible(false);
     }
 
     private boolean updateSelectedStrategy() {
@@ -3741,6 +4022,9 @@ public class TradingFrame extends JFrame {
         if (entry == null || entry.strategy == null) {
             return false;
         }
+        if (entry.strategy.mode() != selectedViewMode) {
+            return false;
+        }
         if (entry.strategy.status() == StrategyStatus.FAILED
                 && "invalid".equals(BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus()))) {
             return true;
@@ -3789,6 +4073,9 @@ public class TradingFrame extends JFrame {
     private void refreshFilledOrdersTableData() {
         List<HistoryTablePresenter.HistorySource> sources = new ArrayList<>();
         for (ManagedStrategy entry : strategies) {
+            if (entry.strategy.mode() != selectedViewMode) {
+                continue;
+            }
             List<StrategyOrder> orders = strategyOrderRepository.findByStrategyId(entry.strategy.id());
             sources.add(new HistoryTablePresenter.HistorySource(
                     entry.strategy.symbol(),
@@ -4120,8 +4407,7 @@ public class TradingFrame extends JFrame {
     }
 
     private String connectionModeStatus(BrokerType brokerType) {
-        String mode = settingsDialog.appliedApplicationMode() == ApplicationMode.LIVE ? "Live" : "Paper";
-        return "Broker: Alpaca | Mode: " + mode;
+        return "Broker: Alpaca | Mode: " + selectedModeLabel();
     }
 
     private String gridBrokerModeLabel(Strategy strategy) {
@@ -4195,10 +4481,17 @@ public class TradingFrame extends JFrame {
     }
 
     private void configureFilledOrdersColumnWidths() {
-        setTableColumnWidth(6, 50, 44, 64);
-        setTableColumnWidth(7, 72, 62, 86);
-        setTableColumnWidth(8, 72, 62, 86);
-        setTableColumnWidth(9, 88, 76, 108);
+        setTableColumnWidth(0, 70, 52, 90);
+        setTableColumnWidth(1, 88, 68, 110);
+        setTableColumnWidth(2, 96, 76, 120);
+        setFlexibleTableColumnWidth(3, 260, 180, Integer.MAX_VALUE);
+        setTableColumnWidth(4, 48, 40, 58);
+        setTableColumnWidth(5, 88, 70, 112);
+        setTableColumnWidth(6, 44, 34, 54);
+        setTableColumnWidth(7, 64, 52, 76);
+        setTableColumnWidth(8, 64, 52, 76);
+        setFlexibleTableColumnWidth(9, 240, 170, Integer.MAX_VALUE);
+        setTableColumnWidth(10, 200, 170, 240);
     }
 
     private void setTableColumnWidth(int columnIndex, int preferredWidth, int minWidth, int maxWidth) {
@@ -4209,6 +4502,27 @@ public class TradingFrame extends JFrame {
         column.setPreferredWidth(preferredWidth);
         column.setMinWidth(minWidth);
         column.setMaxWidth(maxWidth);
+    }
+
+    private void setFlexibleTableColumnWidth(int columnIndex, int preferredWidth, int minWidth, int maxWidth) {
+        if (columnIndex < 0 || columnIndex >= filledOrdersTable.getColumnModel().getColumnCount()) {
+            return;
+        }
+        javax.swing.table.TableColumn column = filledOrdersTable.getColumnModel().getColumn(columnIndex);
+        column.setPreferredWidth(preferredWidth);
+        column.setMinWidth(minWidth);
+        column.setMaxWidth(maxWidth);
+    }
+
+    private void configureTradeHistorySorting() {
+        if (filledOrdersSorter == null) {
+            return;
+        }
+        boolean symbolSortable = tradeHistoryGroupBy == TradeHistoryGroupBy.SYMBOL;
+        for (int column = 0; column < HistoryGridTableModel.COLUMNS.length; column++) {
+            filledOrdersSorter.setSortable(column, symbolSortable && column == 0);
+        }
+        filledOrdersSorter.setSortKeys(List.of());
     }
 
     private JPanel createTradeHistoryGroupByPanel() {
@@ -4290,6 +4604,7 @@ public class TradingFrame extends JFrame {
         }
         tradeHistoryGroupBy = groupBy;
         tradeHistoryGroupByButton.setText(groupBy == TradeHistoryGroupBy.DATE ? "Group By Menu: Date" : "Group By Menu: Symbol");
+        configureTradeHistorySorting();
         refreshFilledOrdersTableData();
     }
 
@@ -4483,7 +4798,7 @@ public class TradingFrame extends JFrame {
         if (now - lastAvailableFundsFetchAtMillis < AVAILABLE_FUNDS_REFRESH_INTERVAL_MILLIS) {
             return;
         }
-        HttpAlpacaClient client = alpacaClientForMode(settingsDialog.appliedApplicationMode());
+        HttpAlpacaClient client = alpacaClientForMode(selectedApplicationMode());
         if (client == null || !availableFundsFetchInFlight.compareAndSet(false, true)) {
             return;
         }
@@ -4517,12 +4832,12 @@ public class TradingFrame extends JFrame {
 
     private String currentStrategiesHeadingText() {
         long currentCount = strategies.stream().filter(this::includeInCurrentStrategiesTab).count();
-        return "Current Strategies (" + currentCount + ")";
+        return "Current Strategies - " + selectedModeLabel() + " (" + currentCount + ")";
     }
 
     private String tradeHistoryHeadingText() {
         long historyCount = tradeHistoryStockCount();
-        return "Trade History (" + historyCount + ")";
+        return "Trade History - " + selectedModeLabel() + " (" + historyCount + ")";
     }
 
     private Color statusToneColor(StatusBarPresenter.Tone tone) {
@@ -4707,7 +5022,7 @@ public class TradingFrame extends JFrame {
     private void updateHeaderModeStatus(BrokerType brokerType) {
         BrokerType effectiveBroker = brokerType == null ? BrokerType.ALPACA : brokerType;
         headerStatus.setText(connectionModeStatus(effectiveBroker));
-        boolean blinkLiveAlpaca = effectiveBroker == BrokerType.ALPACA && settingsDialog.appliedApplicationMode() == ApplicationMode.LIVE;
+        boolean blinkLiveAlpaca = effectiveBroker == BrokerType.ALPACA && selectedViewMode == StrategyMode.LIVE;
         if (!blinkLiveAlpaca) {
             liveModeBlinkTimer.stop();
             headerStatus.setForeground(HEADER_STATUS_DEFAULT);
@@ -4735,7 +5050,7 @@ public class TradingFrame extends JFrame {
     }
 
     private void toggleLiveHeaderBlink() {
-        if (settingsDialog.appliedApplicationMode() != ApplicationMode.LIVE) {
+        if (selectedViewMode != StrategyMode.LIVE) {
             headerStatus.setForeground(HEADER_STATUS_DEFAULT);
             liveModeBlinkTimer.stop();
             return;
@@ -5201,7 +5516,7 @@ public class TradingFrame extends JFrame {
                     : TooltipStyler.text("Sell is available only when Alpaca shows an open position for this strategy."));
             promoteButton.setToolTipText(actionsViewModel.promoteEnabled()
                     ? TooltipStyler.text("Promote this PAPER strategy to LIVE.")
-                    : TooltipStyler.text("Promote is available only for eligible PAPER strategies during market hours."));
+                    : TooltipStyler.text("Promote is available only for eligible PAPER strategies."));
             deleteButton.setToolTipText(TooltipStyler.text("Delete this strategy from Current Strategies."));
             setBackground(selectionAwareRowColor(isSelected, row));
             return this;
@@ -5397,12 +5712,10 @@ public class TradingFrame extends JFrame {
     }
 
     private void startTradingEventStreamIfConfigured(String apiKey, String apiSecret) {
-        lastStreamApiKey = apiKey == null ? "" : apiKey;
-        lastStreamApiSecret = apiSecret == null ? "" : apiSecret;
         tradeStreamLifecycleCoordinator.start(
                 apiKey,
                 apiSecret,
-                settingsDialog.appliedApplicationMode() == ApplicationMode.LIVE
+                selectedViewMode == StrategyMode.LIVE
         );
     }
 
@@ -5574,13 +5887,9 @@ public class TradingFrame extends JFrame {
     }
 
     private StreamCredentials streamCredentials() {
-        ApplicationMode mode = settingsDialog.appliedApplicationMode();
-        String apiKey = lastStreamApiKey == null || lastStreamApiKey.isBlank()
-                ? settingsDialog.savedApiKey(mode)
-                : lastStreamApiKey;
-        String apiSecret = lastStreamApiSecret == null || lastStreamApiSecret.isBlank()
-                ? settingsDialog.savedApiSecret(mode)
-                : lastStreamApiSecret;
+        ApplicationMode mode = selectedApplicationMode();
+        String apiKey = settingsDialog.savedApiKey(mode);
+        String apiSecret = settingsDialog.savedApiSecret(mode);
         return new StreamCredentials(apiKey, apiSecret);
     }
 

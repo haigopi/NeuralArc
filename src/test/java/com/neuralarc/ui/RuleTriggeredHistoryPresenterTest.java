@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RuleTriggeredHistoryPresenterTest {
@@ -57,6 +58,40 @@ class RuleTriggeredHistoryPresenterTest {
         String label = presenter.buildLabel("Rules: Monitoring next configured rule", List.of(), Instant::toString);
 
         assertTrue(label.equals("Rules: Monitoring next configured rule"));
+    }
+
+    @Test
+    void labelSkipsSupersededFailedRuleWhenLaterStageFillExists() {
+        Instant baseTime = Instant.parse("2026-05-18T14:30:00Z");
+        StrategyOrder failedBaseBuy = order(
+                StrategyStage.BASE_BUY,
+                StrategyOrderSide.BUY,
+                new BigDecimal("100.00"),
+                new BigDecimal("10"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                StrategyOrderStatus.FAILED,
+                baseTime
+        );
+        StrategyOrder filledBaseBuy = order(
+                StrategyStage.BASE_BUY,
+                StrategyOrderSide.BUY,
+                new BigDecimal("99.75"),
+                new BigDecimal("10"),
+                new BigDecimal("10"),
+                new BigDecimal("99.75"),
+                StrategyOrderStatus.FILLED,
+                baseTime.plusSeconds(180)
+        );
+
+        String label = presenter.buildLabel(
+                "Rules: Base Buy Filled",
+                List.of(failedBaseBuy, filledBaseBuy),
+                Instant::toString
+        );
+
+        assertFalse(label.contains("Base Buy failed"));
+        assertTrue(label.contains("Base Buy filled @ $99.75/10"));
     }
 
     private StrategyOrder order(

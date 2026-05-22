@@ -284,6 +284,49 @@ class HistoryTablePresenterTest {
     }
 
     @Test
+    void dateGroupingOrdersRowsByDateAndTimeWithoutSymbolGroupingFirst() {
+        HistoryTablePresenter.HistorySource laterSymbolAlphabeticallyFirst = new HistoryTablePresenter.HistorySource(
+                "AAA",
+                "Paper",
+                "Completed",
+                "Completed",
+                "",
+                Instant.now(),
+                StrategyStatus.COMPLETED,
+                List.of(
+                        filledOrderAt("AAA", StrategyStage.BASE_BUY, StrategyOrderSide.BUY, "1", "100.00", "100.00", "2026-05-06T10:00:00Z"),
+                        filledOrderAt("AAA", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL, "1", "110.00", "110.00", "2026-05-06T14:00:00Z")
+                )
+        );
+        HistoryTablePresenter.HistorySource earlierSymbolAlphabeticallyLast = new HistoryTablePresenter.HistorySource(
+                "ZZZ",
+                "Paper",
+                "Completed",
+                "Completed",
+                "",
+                Instant.now(),
+                StrategyStatus.COMPLETED,
+                List.of(
+                        filledOrderAt("ZZZ", StrategyStage.BASE_BUY, StrategyOrderSide.BUY, "1", "200.00", "200.00", "2026-05-06T10:00:00Z"),
+                        filledOrderAt("ZZZ", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL, "1", "210.00", "210.00", "2026-05-06T12:00:00Z")
+                )
+        );
+
+        List<HistoryTablePresenter.HistoryRow> sellRows = presenter.buildRows(
+                        List.of(earlierSymbolAlphabeticallyLast, laterSymbolAlphabeticallyFirst),
+                        instant -> "t",
+                        TradeHistoryGroupBy.DATE
+                ).stream()
+                .filter(row -> "SELL".equals(row.side()))
+                .toList();
+
+        assertEquals("AAA", sellRows.getFirst().symbol());
+        assertEquals("ZZZ", sellRows.get(1).symbol());
+        assertEquals("2026-05-06", sellRows.getFirst().groupKey());
+        assertEquals("2026-05-06", sellRows.get(1).groupKey());
+    }
+
+    @Test
     void multipleSymbolSubtotalsProduceBottomTotalValueRow() {
         HistoryTablePresenter.HistorySource aapl = new HistoryTablePresenter.HistorySource(
                 "AAPL",

@@ -5,6 +5,7 @@ import com.neuralarc.model.AutoAnalyzeBundle;
 import com.neuralarc.model.LuckySimulationSelection;
 import com.neuralarc.model.LuckyStockAnalysis;
 import com.neuralarc.model.RecommendationType;
+import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyRecommendation;
 import com.neuralarc.model.TrendingStock;
 import com.neuralarc.model.TrendingStockGroups;
@@ -99,12 +100,13 @@ public class LuckyTrendingStocksDialog extends JDialog {
     private final AlpacaMarketDataApi marketDataApi;
     private final Consumer<List<LuckySimulationSelection>> placementHandler;
     private final Consumer<String> logSink;
+    private final StrategyMode targetMode;
     private transient Consumer<LuckySimulationSelection> reviewHandler;
     private final JPanel cardsPanel = new JPanel();
     private final JLabel statusLabel = new JLabel("Loading trending stocks...");
     private final JProgressBar progressBar = new JProgressBar();
     private final JButton refreshButton = new JButton("Refresh");
-    private final JButton placeButton = new JButton("Start Monitoring in Paper Mode");
+    private final JButton placeButton = new JButton();
     private final List<StockCard> cards = new ArrayList<>();
     private volatile boolean loadInFlight;
 
@@ -115,11 +117,23 @@ public class LuckyTrendingStocksDialog extends JDialog {
             Consumer<List<LuckySimulationSelection>> placementHandler,
             Consumer<String> logSink
     ) {
+        this(owner, trendingStocksService, marketDataApi, placementHandler, logSink, StrategyMode.PAPER);
+    }
+
+    public LuckyTrendingStocksDialog(
+            JFrame owner,
+            TrendingStocksService trendingStocksService,
+            AlpacaMarketDataApi marketDataApi,
+            Consumer<List<LuckySimulationSelection>> placementHandler,
+            Consumer<String> logSink,
+            StrategyMode targetMode
+    ) {
         super(owner, "I Am Feeling Lucky - Trending Stocks", true);
         this.trendingStocksService = Objects.requireNonNull(trendingStocksService);
         this.marketDataApi = Objects.requireNonNull(marketDataApi);
         this.placementHandler = Objects.requireNonNull(placementHandler);
         this.logSink = logSink == null ? ignored -> {} : logSink;
+        this.targetMode = targetMode == null ? StrategyMode.PAPER : targetMode;
         buildUi();
         initializeTrendsOnOpen();
     }
@@ -135,7 +149,9 @@ public class LuckyTrendingStocksDialog extends JDialog {
 
         JPanel top = new JPanel(new BorderLayout(8, 6));
         top.setOpaque(false);
-        JLabel description = new JLabel("<html>Review today's top gainers and losers, remove unwanted picks, then start the remaining choices as Alpaca Paper strategies.</html>");
+        JLabel description = new JLabel("<html>Review today's top gainers and losers, remove unwanted picks, then start the remaining choices as Alpaca "
+                + modeLabel()
+                + " strategies.</html>");
         description.setForeground(TEXT_MUTED);
         description.setFont(FontLoader.ui(Font.PLAIN, 11f));
         progressBar.setMinimum(0);
@@ -168,6 +184,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
         statusLabel.setFont(FontLoader.ui(Font.PLAIN, 10f));
         DialogButtonStyles.apply(refreshButton, "icons/refresh.svg");
         refreshButton.addActionListener(ignored -> loadAsync(true, false));
+        placeButton.setText("Start Monitoring in " + modeLabel() + " Mode");
         placeButton.setEnabled(false);
         DialogButtonStyles.apply(placeButton, "icons/apply.svg");
         placeButton.addActionListener(ignored -> placeReviewedStocks());
@@ -187,6 +204,10 @@ public class LuckyTrendingStocksDialog extends JDialog {
         setMinimumSize(new Dimension(700, 560));
         setSize(700, 720);
         setLocationRelativeTo(getOwner());
+    }
+
+    private String modeLabel() {
+        return targetMode == StrategyMode.LIVE ? "Live" : "Paper";
     }
 
     private void initializeTrendsOnOpen() {
@@ -341,7 +362,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
             reviewHandler.accept(selection);
         } else {
             placementHandler.accept(List.of(selection));
-            log("Added " + selection.stock().symbol() + " to paper strategy placement with "
+            log("Added " + selection.stock().symbol() + " to " + modeLabel().toLowerCase() + " strategy placement with "
                     + selection.selectedRecommendationType().name() + " qty=" + selection.buyQuantity() + ".");
         }
     }

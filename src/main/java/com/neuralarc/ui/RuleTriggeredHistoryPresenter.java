@@ -9,7 +9,9 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 final class RuleTriggeredHistoryPresenter {
     String buildLabel(String currentRuleText, List<StrategyOrder> orders, Function<Instant, String> timestampFormatter) {
@@ -38,14 +40,28 @@ final class RuleTriggeredHistoryPresenter {
         if (orders == null || orders.isEmpty()) {
             return List.of();
         }
+        Map<StrategyStage, Instant> latestFilledByStage = orders.stream()
+                .filter(order -> order != null && order.stage() != null && order.status() == StrategyOrderStatus.FILLED)
+                .collect(Collectors.toMap(
+                        StrategyOrder::stage,
+                        order -> order.filledAt() == null ? order.updatedAt() : order.filledAt(),
+                        (left, right) -> left.isAfter(right) ? left : right
+                ));
         return orders.stream()
                 .sorted(Comparator.comparing(StrategyOrder::submittedAt))
-                .flatMap(order -> entriesFor(order, timestampFormatter).stream())
+                .flatMap(order -> entriesFor(order, timestampFormatter, latestFilledByStage).stream())
                 .toList();
     }
 
-    private List<String> entriesFor(StrategyOrder order, Function<Instant, String> timestampFormatter) {
+    private List<String> entriesFor(
+            StrategyOrder order,
+            Function<Instant, String> timestampFormatter,
+            Map<StrategyStage, Instant> latestFilledByStage
+    ) {
         if (order == null) {
+            return List.of();
+        }
+        if (isSupersededFailure(order, latestFilledByStage)) {
             return List.of();
         }
         java.util.ArrayList<String> entries = new java.util.ArrayList<>();
@@ -67,6 +83,26 @@ final class RuleTriggeredHistoryPresenter {
                     + " on " + format(order.updatedAt(), timestampFormatter));
         }
         return entries;
+    }
+
+    private boolean isSupersededFailure(StrategyOrder order, Map<StrategyStage, Instant> latestFilledByStage) {
+        if (order == null || order.stage() == null || latestFilledByStage == null || latestFilledByStage.isEmpty()) {
+            return false;
+        }
+        if (order.status() != StrategyOrderStatus.CANCELED
+                && order.status() != StrategyOrderStatus.REJECTED
+                && order.status() != StrategyOrderStatus.FAILED) {
+            return false;
+        }
+        Instant latestFillAt = latestFilledByStage.get(order.stage());
+        if (latestFillAt == null) {
+            return false;
+        }
+        Instant failedAt = order.updatedAt() == null ? order.submittedAt() : order.updatedAt();
+        if (failedAt == null) {
+            return true;
+        }
+        return !latestFillAt.isBefore(failedAt);
     }
 
     private String stageLabel(StrategyStage stage, StrategyOrderSide side) {

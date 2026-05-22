@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import javax.swing.JOptionPane;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -102,14 +103,15 @@ class StrategyActionsControllerTest {
     }
 
     @Test
-    void previewLivePromotionReturnsEarlyWhenMarketClosed() {
+    void previewLivePromotionStillOpensWhenMarketClosed() {
         FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
         gateway.marketOpen = false;
+        gateway.strategyService = new FakePromotionStrategyService(gateway.entry.strategy());
         StrategyActionsController controller = new StrategyActionsController(gateway);
 
         controller.previewLivePromotion(0);
 
-        assertEquals(0, gateway.previewDialogCalls);
+        assertEquals(1, gateway.previewDialogCalls);
     }
 
     @Test
@@ -235,6 +237,7 @@ class StrategyActionsControllerTest {
         boolean openPosition;
         Optional<SellSubmissionType> sellSelection = Optional.of(SellSubmissionType.LIMIT);
         SellSubmissionType lastSellSubmissionType;
+        StrategyService strategyService;
         int archiveCalls;
         int removeCalls;
 
@@ -252,7 +255,7 @@ class StrategyActionsControllerTest {
         @Override public int toModelRow(int viewRow) { return viewRow; }
         @Override public int strategiesSize() { return 1; }
         @Override public StrategyActionsController.ActionEntry entryAt(int modelRow) { return entry; }
-        @Override public StrategyService strategyService() { return null; }
+        @Override public StrategyService strategyService() { return strategyService; }
         @Override public Optional<Strategy> findStrategyById(String strategyId) { return Optional.empty(); }
         @Override public void refreshStrategyTableRow(int modelRow) { refreshRowCalls++; }
         @Override public void refreshStrategyTableData() { }
@@ -306,6 +309,29 @@ class StrategyActionsControllerTest {
             } finally {
                 onFinally.run();
             }
+        }
+    }
+
+    private static final class FakePromotionStrategyService extends StrategyService {
+        private final Strategy previewStrategy;
+
+        private FakePromotionStrategyService(Strategy previewStrategy) {
+            super(null, null, null, null, null, true, StrategyMode.PAPER);
+            this.previewStrategy = previewStrategy;
+        }
+
+        @Override
+        public LivePromotionPreview previewLivePromotion(String strategyId) {
+            return new LivePromotionPreview(
+                    previewStrategy,
+                    true,
+                    List.of(),
+                    List.of(),
+                    0,
+                    0,
+                    BigDecimal.ZERO,
+                    false
+            );
         }
     }
 }
