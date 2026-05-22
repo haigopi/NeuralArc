@@ -80,9 +80,17 @@ public final class TradeStreamLifecycleCoordinator {
                 + " clientOrderId=" + clientOrderId);
         Optional<String> strategyId = gateway.onTradeUpdate(event);
         if (strategyId.isPresent()) {
+            // Loads the updated position for the matched strategy (background HTTP) and
+            // schedules a targeted UI refresh only when the strategy's mode matches the
+            // current view — avoids cross-mode repaints from live stream events while
+            // the user is on the paper view.
             gateway.refreshDisplayedPositionFromStream(strategyId.get());
         }
         gateway.invokeLater(() -> {
+            // syncStrategiesFromRepository can add or remove entries from the shared
+            // strategies list. refreshStrategyTableContent must always follow so the
+            // table model fires fireTableDataChanged and keeps the TableRowSorter's
+            // cached row-count consistent with the underlying list.
             gateway.syncStrategiesFromRepository();
             gateway.refreshStrategyTableContent();
             gateway.refreshPanels();

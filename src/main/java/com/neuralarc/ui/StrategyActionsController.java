@@ -134,7 +134,8 @@ public final class StrategyActionsController {
         }
 
         actionLog.started("Promote to Live " + entry.strategy().symbol());
-        StrategyService.LivePromotionPreview preview = gateway.strategyService().previewLivePromotion(entry.strategy().id());
+        StrategyService liveService = gateway.liveStrategyService();
+        StrategyService.LivePromotionPreview preview = liveService.previewLivePromotion(entry.strategy().id());
         Position paperPosition = gateway.loadPositionForStrategy(entry.strategy());
         String realizedPnl = Monetary.round(gateway.realizedPnlForStrategy(entry.strategy().id())).toPlainString();
         String unrealizedPnl = Monetary.round(paperPosition.unrealizedPnl()).toPlainString();
@@ -144,7 +145,7 @@ public final class StrategyActionsController {
             return;
         }
 
-        StrategyService.LivePromotionResult result = gateway.strategyService().promotePaperStrategyToLive(entry.strategy().id());
+        StrategyService.LivePromotionResult result = liveService.promotePaperStrategyToLive(entry.strategy().id());
         if (!result.success()) {
             actionLog.failed("Promote to Live " + entry.strategy().symbol(), result.error());
             gateway.showMessage(result.error(), "Live Promotion Failed", JOptionPane.ERROR_MESSAGE);
@@ -356,7 +357,10 @@ public final class StrategyActionsController {
         int toModelRow(int viewRow);
         int strategiesSize();
         ActionEntry entryAt(int modelRow);
+        /** Returns the current-mode strategy service (paper or live per the UI view). */
         StrategyService strategyService();
+        /** Always returns the live-mode strategy service, used exclusively for live promotion. */
+        StrategyService liveStrategyService();
         Optional<Strategy> findStrategyById(String strategyId);
 
         void refreshStrategyTableRow(int modelRow);

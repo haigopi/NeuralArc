@@ -256,6 +256,7 @@ class StrategyActionsControllerTest {
         @Override public int strategiesSize() { return 1; }
         @Override public StrategyActionsController.ActionEntry entryAt(int modelRow) { return entry; }
         @Override public StrategyService strategyService() { return strategyService; }
+        @Override public StrategyService liveStrategyService() { return strategyService; }
         @Override public Optional<Strategy> findStrategyById(String strategyId) { return Optional.empty(); }
         @Override public void refreshStrategyTableRow(int modelRow) { refreshRowCalls++; }
         @Override public void refreshStrategyTableData() { }

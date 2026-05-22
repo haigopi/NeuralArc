@@ -565,6 +565,7 @@ public class TradingFrame extends JFrame {
             }
 
             @Override public StrategyService strategyService() { return strategyService; }
+            @Override public StrategyService liveStrategyService() { return strategyServiceForMode(StrategyMode.LIVE); }
             @Override public Optional<Strategy> findStrategyById(String strategyId) { return strategyRepository.findById(strategyId); }
             @Override public void refreshStrategyTableRow(int modelRow) { TradingFrame.this.refreshStrategyTableRow(modelRow); }
             @Override public void refreshStrategyTableData() { TradingFrame.this.refreshStrategyTableData(); }
@@ -4455,7 +4456,10 @@ public class TradingFrame extends JFrame {
     private JPanel createGridSearchPanel(String labelText, JTextField searchField) {
         JPanel panel = new JPanel(new BorderLayout(8, 0));
         panel.setOpaque(false);
-        panel.setBorder(new EmptyBorder(8, 0, 6, 0));
+        // Horizontal insets (14px) match the bottom status-bar padding so the search
+        // field and the Capture Portfolio button sit at the same visual margin as the
+        // rest of the chrome. Vertical insets match the header bar (6px top/bottom).
+        panel.setBorder(new EmptyBorder(6, 14, 6, 14));
         JPanel searchControls = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         searchControls.setOpaque(false);
         JLabel label = new JLabel(labelText);
@@ -5736,6 +5740,13 @@ public class TradingFrame extends JFrame {
         }
         // Keep stream updates scoped to the matched strategy when duplicate symbols exist.
         entry.setCachedPosition(loadPositionForStrategy(entry.strategy));
+        // Stream events come from the live account. If the user is currently viewing the
+        // other mode (e.g. Paper while a live order filled), there is nothing relevant to
+        // repaint – skip the EDT refresh entirely. The next poll cycle will pick up the
+        // updated state for the visible mode.
+        if (entry.strategy.mode() != selectedViewMode) {
+            return;
+        }
         SwingUtilities.invokeLater(() -> {
             refreshStrategyTableContent();
             if (selectedStrategyId != null && selectedStrategyId.equals(entry.strategy.id())) {

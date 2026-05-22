@@ -7,6 +7,8 @@ import com.neuralarc.model.*;
 import com.neuralarc.util.BrokerOrderStatusUtil;
 import com.neuralarc.util.Monetary;
 
+import org.json.JSONObject;
+import org.json.JSONException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -866,7 +868,7 @@ public class StrategyEngine {
     }
 
     private boolean isRetryableBrokerConnectivityFailure(String normalizedStatus) {
-        return "failed_transport".equals(normalizedStatus) || "api_error".equals(normalizedStatus);
+        return "failed_transport".equals(normalizedStatus);
     }
 
     private boolean hasPendingStage(List<StrategyOrder> orders, StrategyStage stage) {
@@ -958,6 +960,17 @@ public class StrategyEngine {
     private String failureMessage(String rawJson, StrategyStage stage) {
         if (rawJson == null || rawJson.isBlank()) {
             return "Broker rejected " + stage.name() + " order";
+        }
+        try {
+            JSONObject error = new JSONObject(rawJson);
+            String msg = error.optString("message", "").trim();
+            if (!msg.isBlank()) {
+                // Capitalize first letter for display consistency
+                String display = Character.toUpperCase(msg.charAt(0)) + msg.substring(1);
+                return "Broker rejected " + stage.name() + " order: " + display;
+            }
+        } catch (JSONException ignored) {
+            // Fall through to raw JSON fallback
         }
         String compact = rawJson.replace('\n', ' ').replace('\r', ' ').trim();
         if (compact.length() > 220) {
