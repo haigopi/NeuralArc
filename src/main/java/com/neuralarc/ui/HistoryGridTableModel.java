@@ -6,7 +6,7 @@ import java.util.List;
 final class HistoryGridTableModel extends AbstractTableModel {
     static final String[] COLUMNS = {
             "Symbol", "Broker + Mode", "Strategy Status", "Stage", "Side",
-            "Order Status", "Qty", "Fill Price", "Realized P&L", "When"
+            "Order Status", "Qty", "Buy Price", "Fill Price", "Realized P&L", "When"
     };
 
     private final List<HistoryTablePresenter.HistoryRow> rows;
@@ -30,11 +30,11 @@ final class HistoryGridTableModel extends AbstractTableModel {
             case 4 -> row.side();
             case 5 -> row.orderStatus();
             case 6 -> row.quantity();
-            case 7 -> row.fillPrice();
-            case 8 -> row.realizedPnl();
-            case 9 -> row.whenDisplay();
+            case 7 -> row.buyPrice();
+            case 8 -> row.fillPrice();
+            case 9 -> row.realizedPnl();
+            case 10 -> row.whenDisplay();
             default -> "";
         };
     }
 }
-

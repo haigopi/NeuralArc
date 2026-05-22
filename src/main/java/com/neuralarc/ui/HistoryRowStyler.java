@@ -29,7 +29,7 @@ public final class HistoryRowStyler {
                 background,
                 foreground,
                 horizontalAlignment(column),
-                cellBorder(table, viewRow, rowData, rows, palette.groupBorder()),
+                cellBorder(table, viewRow, column, rowData, rows, palette.groupBorder()),
                 blankText,
                 bold,
                 italic
@@ -54,6 +54,7 @@ public final class HistoryRowStyler {
     private Border cellBorder(
             JTable table,
             int viewRow,
+            int column,
             HistoryTablePresenter.HistoryRow rowData,
             List<HistoryTablePresenter.HistoryRow> rows,
             Color groupBorder
@@ -70,17 +71,19 @@ public final class HistoryRowStyler {
                 }
             }
         }
+        int horizontalPadding = isNumericColumn(column) ? 4 : 8;
         return BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(top, 0, 0, 0, groupBorder),
-                new EmptyBorder(6, 8, 6, 8)
+                new EmptyBorder(6, horizontalPadding, 6, horizontalPadding)
         );
     }
 
     private int horizontalAlignment(int column) {
-        return switch (column) {
-            case 6, 7, 8 -> SwingConstants.RIGHT;
-            default -> SwingConstants.LEFT;
-        };
+        return isNumericColumn(column) ? SwingConstants.RIGHT : SwingConstants.LEFT;
+    }
+
+    private boolean isNumericColumn(int column) {
+        return column >= 6 && column <= 9;
     }
 
     private Color backgroundForRow(HistoryTablePresenter.HistoryRow row, Palette palette) {
@@ -139,4 +142,3 @@ public final class HistoryRowStyler {
     ) {
     }
 }
-

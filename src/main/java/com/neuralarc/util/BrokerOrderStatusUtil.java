@@ -38,6 +38,9 @@ public final class BrokerOrderStatusUtil {
         if ("api_error".equals(normalized)) {
             return "Broker API Error";
         }
+        if ("invalid".equals(normalized) || "invalid_local".equals(normalized)) {
+            return "Invalid";
+        }
         String[] parts = normalized.split("_");
         StringBuilder builder = new StringBuilder();
         for (String part : parts) {
@@ -55,4 +58,3 @@ public final class BrokerOrderStatusUtil {
         return builder.isEmpty() ? "-" : builder.toString();
     }
 }
-

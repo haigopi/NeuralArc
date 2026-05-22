@@ -1,17 +1,28 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.api.AlpacaOrderData;
+import com.neuralarc.api.AlpacaPositionData;
 import com.neuralarc.api.HttpAlpacaClient;
 import com.neuralarc.model.ApplicationMode;
 import com.neuralarc.model.BrokerType;
+import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.Position;
 import com.neuralarc.model.Strategy;
+import com.neuralarc.model.StrategyLifecycleState;
+import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
+import com.neuralarc.util.BrokerOrderStatusUtil;
 import com.neuralarc.service.StrategyRepository;
 
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,6 +41,7 @@ final class PortfolioRefreshController {
         void onRefreshFinished();
         void syncStrategies(List<Strategy> strategies);
         void applyPositionSnapshots(Map<String, Position> snapshots);
+        void handleInvalidBrokerMissingStrategies(List<Strategy> invalidStrategies);
         void refreshStrategyTableContent();
         void refreshPanels();
         void updateStatusBar();
@@ -92,19 +104,26 @@ final class PortfolioRefreshController {
         try {
             List<Strategy> stored = strategyRepository.findAll();
             Map<String, Position> snapshots = loadPositionSnapshots(stored);
-            runOnEdt(() -> applySuccessfulRefresh(generation, stored, snapshots));
+            List<Strategy> invalidStrategies = findInvalidBrokerMissingStrategies(stored);
+            runOnEdt(() -> applySuccessfulRefresh(generation, stored, snapshots, invalidStrategies));
         } catch (Exception ex) {
             runOnEdt(() -> applyFailedRefresh(generation, manualTrigger, ex));
         }
     }
 
-    private void applySuccessfulRefresh(int generation, List<Strategy> stored, Map<String, Position> snapshots) {
+    private void applySuccessfulRefresh(
+            int generation,
+            List<Strategy> stored,
+            Map<String, Position> snapshots,
+            List<Strategy> invalidStrategies
+    ) {
         if (generation != refreshGeneration.get()) {
             return;
         }
         try {
             gateway.syncStrategies(stored);
             gateway.applyPositionSnapshots(snapshots);
+            gateway.handleInvalidBrokerMissingStrategies(invalidStrategies);
             gateway.refreshStrategyTableContent();
             gateway.refreshPanels();
             gateway.updateStatusBar();
@@ -186,6 +205,98 @@ final class PortfolioRefreshController {
         return strategy != null
                 && strategy.status() != StrategyStatus.ARCHIVED
                 && strategy.status() != StrategyStatus.STOPPED;
+    }
+
+    private List<Strategy> findInvalidBrokerMissingStrategies(List<Strategy> stored) {
+        if (stored == null || stored.isEmpty() || gateway.brokerType() != BrokerType.ALPACA) {
+            return List.of();
+        }
+        List<Strategy> invalid = new ArrayList<>();
+        invalid.addAll(findInvalidBrokerMissingStrategiesForMode(stored, StrategyMode.PAPER, ApplicationMode.PAPER));
+        invalid.addAll(findInvalidBrokerMissingStrategiesForMode(stored, StrategyMode.LIVE, ApplicationMode.LIVE));
+        return invalid;
+    }
+
+    private List<Strategy> findInvalidBrokerMissingStrategiesForMode(
+            List<Strategy> stored,
+            StrategyMode strategyMode,
+            ApplicationMode applicationMode
+    ) {
+        List<Strategy> candidates = stored.stream()
+                .filter(strategy -> strategy.mode() == strategyMode)
+                .filter(this::isInvalidCandidate)
+                .toList();
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+        HttpAlpacaClient client = gateway.alpacaClientForMode(applicationMode);
+        if (client == null) {
+            return List.of();
+        }
+        Set<String> openOrderSymbols = new LinkedHashSet<>();
+        for (AlpacaOrderData order : client.getOpenOrders()) {
+            if (order.symbol() != null && !order.symbol().isBlank()) {
+                openOrderSymbols.add(order.symbol().toUpperCase(Locale.ROOT));
+            }
+        }
+        Map<String, AlpacaPositionData> positionsBySymbol = new LinkedHashMap<>();
+        for (AlpacaPositionData position : client.getPositions()) {
+            if (position.symbol() != null && !position.symbol().isBlank()) {
+                positionsBySymbol.put(position.symbol().toUpperCase(Locale.ROOT), position);
+            }
+        }
+        List<Strategy> invalid = new ArrayList<>();
+        for (Strategy strategy : candidates) {
+            String symbol = strategy.symbol().toUpperCase(Locale.ROOT);
+            AlpacaPositionData position = positionsBySymbol.get(symbol);
+            boolean hasPosition = position != null && position.exists();
+            boolean hasOpenOrder = openOrderSymbols.contains(symbol);
+            if (!hasPosition && !hasOpenOrder) {
+                invalid.add(strategy);
+            }
+        }
+        return invalid;
+    }
+
+    private boolean isInvalidCandidate(Strategy strategy) {
+        if (strategy == null
+                || strategy.status() == StrategyStatus.ARCHIVED
+                || strategy.status() == StrategyStatus.STOPPED
+                || strategy.status() == StrategyStatus.COMPLETED) {
+            return false;
+        }
+        String normalized = BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus());
+        if ("expired".equals(normalized)) {
+            return false;
+        }
+        if ("invalid".equals(normalized) || "invalid_local".equals(normalized)) {
+            return true;
+        }
+        if (strategy.status() == StrategyStatus.FAILED) {
+            return true;
+        }
+        if ("failed_transport".equals(normalized) || "api_error".equals(normalized) || "failed".equals(normalized)) {
+            return true;
+        }
+        if (("canceled".equals(normalized) || "cancelled".equals(normalized))
+                && isPendingOrCanceledLocalState(strategy.currentState())) {
+            return true;
+        }
+        return strategy.status() == StrategyStatus.PAUSED
+                && (strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED
+                || strategy.pauseReason() == PauseReason.SYSTEM_ERROR)
+                && isPendingOrCanceledLocalState(strategy.currentState());
+    }
+
+    private boolean isPendingOrCanceledLocalState(StrategyLifecycleState state) {
+        return state == StrategyLifecycleState.BASE_BUY_PLACED
+                || state == StrategyLifecycleState.BASE_BUY_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.PAUSED
+                || state == StrategyLifecycleState.FAILED;
     }
 
     private void runOnEdt(Runnable task) {

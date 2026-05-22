@@ -24,7 +24,11 @@ final class PortfolioActionsController {
         StrategyService strategyServiceForMode(StrategyMode mode);
         StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason);
         StrategyService.ArchiveResult deleteLocalTradeHistoryStrategy(String strategyId);
-        StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType);
+        StrategyService.StrategyCreationResult sellPosition(
+                Strategy strategy,
+                SellSubmissionType submissionType,
+                StrategyService.SellExecutionSource executionSource
+        );
         JMenuItem createMenuItem(String text, String iconPath, Runnable action);
         int confirm(Object message, String title, int optionType, int messageType);
         void showMessage(Object message, String title, int messageType);
@@ -76,6 +80,8 @@ final class PortfolioActionsController {
         menu.add(sectionHeader("Lifecycle"));
         menu.add(gateway.createMenuItem("Clean All Expired", "icons/delete.svg",
                 this::handleCleanAllExpired));
+        menu.add(gateway.createMenuItem("Clean Invalid Strategies", "icons/delete.svg",
+                this::handleCleanInvalidStrategies));
         menu.add(gateway.createMenuItem("Clean Trade History", "icons/delete.svg",
                 this::handleCleanTradeHistory));
         menu.add(gateway.createMenuItem("Reposition Expired", "icons/submit.svg",
@@ -293,6 +299,36 @@ final class PortfolioActionsController {
         }.execute();
     }
 
+    private void handleCleanInvalidStrategies() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CLEAN_INVALID;
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                List<String> successes = new ArrayList<>();
+                List<String> failures = new ArrayList<>();
+                for (ManagedStrategy entry : targets) {
+                    StrategyService.ArchiveResult result = gateway.deleteLocalTradeHistoryStrategy(entry.strategy.id());
+                    if (result.success()) {
+                        successes.add(entry.strategy.symbol());
+                    } else {
+                        failures.add(entry.strategy.symbol() + ": " + result.error());
+                    }
+                }
+                return new PortfolioActionsSupport.BatchResult(successes, failures);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
     private void handleRepositionExpired() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.REPOSITION_EXPIRED;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
@@ -430,7 +466,11 @@ final class PortfolioActionsController {
                 List<String> successes = new ArrayList<>();
                 List<String> failures = new ArrayList<>();
                 for (ManagedStrategy entry : targets) {
-                    StrategyService.StrategyCreationResult result = gateway.sellPosition(entry.strategy, submissionType);
+                    StrategyService.StrategyCreationResult result = gateway.sellPosition(
+                            entry.strategy,
+                            submissionType,
+                            StrategyService.SellExecutionSource.PORTFOLIO_ACTION
+                    );
                     if (result.success()) {
                         successes.add(entry.strategy.symbol());
                     } else {

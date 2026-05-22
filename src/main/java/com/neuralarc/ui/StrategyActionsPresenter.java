@@ -90,6 +90,9 @@ public final class StrategyActionsPresenter {
 
     private String failedStatusText(String latestOrderStatus) {
         String normalized = BrokerOrderStatusUtil.normalize(latestOrderStatus);
+        if ("invalid".equals(normalized) || "invalid_local".equals(normalized)) {
+            return "Invalid";
+        }
         return normalized.isBlank() ? "Failed" : BrokerOrderStatusUtil.displayLabel(normalized);
     }
 

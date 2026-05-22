@@ -21,6 +21,8 @@ import java.util.logging.Logger;
 
 public class StrategyService {
     private static final Logger LOGGER = Logger.getLogger(StrategyService.class.getName());
+    public static final String EXIT_SOURCE_JSON_KEY = "neuralarcExitSource";
+    public static final String EXIT_SUBMISSION_TYPE_JSON_KEY = "neuralarcSubmissionType";
 
     private final StrategyRepository strategyRepository;
     private final StrategyOrderRepository orderRepository;
@@ -550,6 +552,14 @@ public class StrategyService {
     }
 
     public StrategyCreationResult closePosition(String strategyId, SellSubmissionType submissionType) {
+        return closePosition(strategyId, submissionType, SellExecutionSource.MANUAL_USER);
+    }
+
+    public StrategyCreationResult closePosition(
+            String strategyId,
+            SellSubmissionType submissionType,
+            SellExecutionSource executionSource
+    ) {
         Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
         if (maybeStrategy.isEmpty()) {
             return StrategyCreationResult.failed("Strategy not found");
@@ -573,6 +583,7 @@ public class StrategyService {
                 ? alpacaClient.submitMarketSellOrder(strategy.symbol(), quantity, clientOrderId)
                 : alpacaClient.submitLimitSellOrder(strategy.symbol(), quantity, latestPrice, clientOrderId);
         Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
+        String enrichedRawJson = withExitMetadata(submitted.rawJson(), executionSource, effectiveType);
         StrategyOrder order = new StrategyOrder(
                 java.util.UUID.randomUUID().toString(),
                 strategy.id(),
@@ -591,7 +602,7 @@ public class StrategyService {
                 submittedAt,
                 Instant.now(),
                 null,
-                submitted.rawJson()
+                enrichedRawJson
         );
         orderRepository.save(order);
         strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
@@ -603,7 +614,7 @@ public class StrategyService {
                 StrategyLifecycleState.SELL_PLACED,
                 StrategyEventType.ORDER_SUBMITTED,
                 effectiveType == SellSubmissionType.MARKET ? "Manual market sell order submitted" : "Manual limit sell order submitted",
-                submitted.rawJson()
+                enrichedRawJson
         );
         return StrategyCreationResult.success(
                 strategy.id(),
@@ -613,6 +624,27 @@ public class StrategyService {
                 submitted.filledQuantity(),
                 submitted.filledAveragePrice()
         );
+    }
+
+    private String withExitMetadata(
+            String rawJson,
+            SellExecutionSource executionSource,
+            SellSubmissionType submissionType
+    ) {
+        try {
+            JSONObject json = rawJson == null || rawJson.isBlank() ? new JSONObject() : new JSONObject(rawJson);
+            json.put(EXIT_SOURCE_JSON_KEY, (executionSource == null ? SellExecutionSource.MANUAL_USER : executionSource).name());
+            json.put(EXIT_SUBMISSION_TYPE_JSON_KEY, (submissionType == null ? SellSubmissionType.LIMIT : submissionType).name());
+            return json.toString();
+        } catch (Exception ignored) {
+            return rawJson == null ? "" : rawJson;
+        }
+    }
+
+    public enum SellExecutionSource {
+        MANUAL_USER,
+        PORTFOLIO_ACTION,
+        PORTFOLIO_CAPTURE
     }
 
     public static String buildClientOrderId(String strategyId, StrategyStage stage) {

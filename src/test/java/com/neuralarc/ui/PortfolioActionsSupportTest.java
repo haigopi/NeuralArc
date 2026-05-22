@@ -296,6 +296,32 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
+    void cleanInvalidTargetsOnlyInvalidFailedRecords() {
+        ManagedStrategy invalid = managed("AAPL", StrategyStatus.FAILED, StrategyLifecycleState.FAILED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        invalid.strategy.setLatestOrderStatus("invalid");
+        ManagedStrategy expired = managed("MSFT", StrategyStatus.FAILED, StrategyLifecycleState.FAILED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        expired.strategy.setLatestOrderStatus("expired");
+        ManagedStrategy active = managed("TSLA", StrategyStatus.ACTIVE, StrategyLifecycleState.BASE_BUY_PLACED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(invalid, expired, active),
+                PortfolioActionsSupport.BulkAction.CLEAN_INVALID
+        );
+
+        assertEquals(List.of("AAPL"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
+    void cleanInvalidResultLabelIsDeleted() {
+        String message = support.buildResultMessage(
+                PortfolioActionsSupport.BulkAction.CLEAN_INVALID,
+                new PortfolioActionsSupport.BatchResult(List.of("AAPL"), List.of())
+        );
+
+        assertTrue(message.contains("Deleted: 1"));
+    }
+
+    @Test
     void cancelPendingLimitSellsTargetsOnlyCancelablePendingSellStrategies() {
         ManagedStrategy cancelableSellPlaced = managed(
                 "AAPL",

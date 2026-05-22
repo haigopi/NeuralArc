@@ -98,6 +98,15 @@ final class PortfolioActionsSupport {
         return entry.strategy.status() == StrategyStatus.ACTIVE && isPendingOrderState(entry.strategy.currentState());
     }
 
+    private static boolean isInvalidLocalRecord(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return false;
+        }
+        String normalized = BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus());
+        return entry.strategy.status() == StrategyStatus.FAILED
+                && ("invalid".equals(normalized) || "invalid_local".equals(normalized));
+    }
+
     private static boolean isPendingOrderState(StrategyLifecycleState state) {
         return state == StrategyLifecycleState.BASE_BUY_PLACED
                 || state == StrategyLifecycleState.BASE_BUY_PARTIALLY_FILLED
@@ -446,6 +455,33 @@ final class PortfolioActionsSupport {
             @Override
             String resultSuccessLabel() {
                 return "Archived";
+            }
+        },
+        CLEAN_INVALID("Clean Invalid Strategies") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return isInvalidLocalRecord(entry);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Delete " + count + " invalid local strategy record(s)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Invalid records no longer match an open Alpaca order or broker position."
+                        + "<br>They will be permanently deleted from local strategy history.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no invalid local strategy records to clean.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Deleted";
             }
         },
         CLEAN_TRADE_HISTORY("Clean Trade History") {

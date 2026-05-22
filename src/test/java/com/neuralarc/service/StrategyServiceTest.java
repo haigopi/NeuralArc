@@ -191,6 +191,30 @@ class StrategyServiceTest {
     }
 
     @Test
+    void closePositionPersistsSellExecutionSourceForTradeHistoryClassification() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("7"), new BigDecimal("8.00"), new BigDecimal("9.50"), "{}"));
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategies.save(strategy);
+
+        StrategyService.StrategyCreationResult result = service.closePosition(
+                strategy.id(),
+                SellSubmissionType.MARKET,
+                StrategyService.SellExecutionSource.PORTFOLIO_CAPTURE
+        );
+
+        assertTrue(result.success());
+        StrategyOrder local = orders.findLatestByStrategyStage(strategy.id(), StrategyStage.MANUAL_EXIT).orElseThrow();
+        assertTrue(local.rawResponseJson().contains("\"" + StrategyService.EXIT_SOURCE_JSON_KEY + "\":\"PORTFOLIO_CAPTURE\""));
+        assertTrue(local.rawResponseJson().contains("\"" + StrategyService.EXIT_SUBMISSION_TYPE_JSON_KEY + "\":\"MARKET\""));
+    }
+
+    @Test
     void closePositionFailsWhenStrategyDoesNotExist() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

@@ -104,6 +104,16 @@ class StrategyActionsPresenterTest {
     }
 
     @Test
+    void failedInvalidStrategyShowsInvalidToggleText() {
+        StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
+                new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.FAILED, false, false, "", true, false, true, "invalid")
+        );
+
+        assertEquals("Invalid", viewModel.toggleText());
+        assertFalse(viewModel.toggleEnabled());
+    }
+
+    @Test
     void pausedStrategyDisablesResumeWhenMarketClosed() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
                 new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.PAUSED, false, false, "", true, true, false)

@@ -303,10 +303,15 @@ public class TradingFrame extends JFrame {
     private final JTabbedPane strategyTabs = new JTabbedPane();
     private final JTextField currentStrategiesSearchField = new JTextField(24);
     private final JTextField tradeHistorySearchField = new JTextField(24);
+    private final JRadioButton profitableSellsFilterButton = new JRadioButton("Profitable Sells");
+    private final JRadioButton lossSellsFilterButton = new JRadioButton("Loss Sells");
+    private final JRadioButton bothSellsFilterButton = new JRadioButton("Both", true);
+    private final JButton tradeHistoryGroupByButton = new JButton("Group By Menu: Symbol");
     private final JPanel currentStrategiesSearchPanel = createGridSearchPanel("Search stocks:", currentStrategiesSearchField);
     private final JPanel tradeHistorySearchPanel = createGridSearchPanel("Search stocks:", tradeHistorySearchField);
     private TableRowSorter<StrategyGridTableModel> strategySorter;
     private TableRowSorter<HistoryGridTableModel> filledOrdersSorter;
+    private TradeHistoryGroupBy tradeHistoryGroupBy = TradeHistoryGroupBy.SYMBOL;
 
     private TradingApi tradingApi;
     private AnalyticsPublisher analyticsPublisher;
@@ -400,6 +405,10 @@ public class TradingFrame extends JFrame {
                     @Override public void onRefreshFinished() { setPortfolioRefreshButtonBusy(false); }
                     @Override public void syncStrategies(List<Strategy> strategies) { TradingFrame.this.syncStrategies(strategies); }
                     @Override public void applyPositionSnapshots(Map<String, Position> snapshots) { TradingFrame.this.applyPositionSnapshots(snapshots); }
+                    @Override
+                    public void handleInvalidBrokerMissingStrategies(List<Strategy> invalidStrategies) {
+                        TradingFrame.this.handleInvalidBrokerMissingStrategies(invalidStrategies);
+                    }
                     @Override public void refreshStrategyTableContent() { TradingFrame.this.refreshStrategyTableContent(); }
                     @Override public void refreshPanels() { TradingFrame.this.refreshPanels(); }
                     @Override public void updateStatusBar() { TradingFrame.this.updateStatusBar(); }
@@ -441,8 +450,12 @@ public class TradingFrame extends JFrame {
                 return TradingFrame.this.deleteLocalTradeHistoryStrategy(strategyId);
             }
             @Override
-            public StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType) {
-                return TradingFrame.this.sellPosition(strategy, submissionType);
+            public StrategyService.StrategyCreationResult sellPosition(
+                    Strategy strategy,
+                    SellSubmissionType submissionType,
+                    StrategyService.SellExecutionSource executionSource
+            ) {
+                return TradingFrame.this.sellPosition(strategy, submissionType, executionSource);
             }
             @Override public JMenuItem createMenuItem(String text, String iconPath, Runnable action) { return TradingFrame.this.createStatusMenuItem(text, iconPath, action); }
             @Override public int confirm(Object message, String title, int optionType, int messageType) {
@@ -467,8 +480,12 @@ public class TradingFrame extends JFrame {
                 new PortfolioCaptureController.Gateway() {
                     @Override public List<ManagedStrategy> strategies() { return strategies; }
                     @Override
-                    public StrategyService.StrategyCreationResult sellPosition(ManagedStrategy entry, SellSubmissionType submissionType) {
-                        return TradingFrame.this.sellPosition(entry.strategy, submissionType);
+                    public StrategyService.StrategyCreationResult sellPosition(
+                            ManagedStrategy entry,
+                            SellSubmissionType submissionType,
+                            StrategyService.SellExecutionSource executionSource
+                    ) {
+                        return TradingFrame.this.sellPosition(entry.strategy, submissionType, executionSource);
                     }
                     @Override public int cancelPendingBaseBuys() { return TradingFrame.this.cancelPendingBaseBuysForAutomation(); }
                     @Override public String runLuckyAutomation(PortfolioCaptureConfig config) { return TradingFrame.this.runLuckyAutomation(config); }
@@ -499,7 +516,8 @@ public class TradingFrame extends JFrame {
                     @Override public void log(String message) { TradingFrame.this.log(message); }
                 },
                 new PortfolioCaptureCalculator(),
-                new PortfolioCaptureStateStore(AppMetadata.appDataDirectory().resolve("portfolio-capture-state.json"))
+                new PortfolioCaptureStateStore(AppMetadata.appDataDirectory().resolve("portfolio-capture-state.json")),
+                new PortfolioCaptureHistoryStore(AppMetadata.appDataDirectory().resolve("portfolio-capture-history.json"))
         );
         tradingRuntimeSupport = new TradingRuntimeSupport(
                 strategyRepository,
@@ -1204,9 +1222,11 @@ public class TradingFrame extends JFrame {
         filledOrdersSorter.setComparator(6, (left, right) -> compareHistoryNumericCells(left, right));
         filledOrdersSorter.setComparator(7, (left, right) -> compareHistoryNumericCells(left, right));
         filledOrdersSorter.setComparator(8, (left, right) -> compareHistoryNumericCells(left, right));
+        filledOrdersSorter.setComparator(9, (left, right) -> compareHistoryNumericCells(left, right));
         for (int column = 0; column < HistoryGridTableModel.COLUMNS.length; column++) {
             filledOrdersSorter.setSortable(column, column == 0); // Only Symbol is sortable in Trade History.
         }
+        configureFilledOrdersColumnWidths();
         applyTradeHistoryRowFilter();
         filledOrdersTable.setRowSorter(filledOrdersSorter);
 
@@ -1991,9 +2011,13 @@ public class TradingFrame extends JFrame {
 
     private String captureAutomationCounterText(int loopCount, int pendingCanceled) {
         PortfolioCaptureConfig config = capturePortfolioConfigForUi;
+        PortfolioCaptureHistoryStore.Summary summary = portfolioCaptureController.captureHistorySummary();
         StringBuilder text = new StringBuilder();
         if (config != null && config.continuousLoop()) {
             text.append(" | Loops ").append(loopCount);
+        }
+        if (summary != null && summary.captureCount() > 0) {
+            text.append(" | Capture Total P&L $").append(Monetary.round(summary.actualPnl()));
         }
         if (config != null && config.autoCleanPendingBeforeCycle()) {
             text.append(" | Pending Buy Orders Cancelled ").append(pendingCanceled);
@@ -2002,9 +2026,22 @@ public class TradingFrame extends JFrame {
     }
 
     private String captureAutomationCounterTooltip() {
+        PortfolioCaptureHistoryStore.Summary summary = portfolioCaptureController.captureHistorySummary();
+        String history = summary == null || summary.captureCount() == 0
+                ? ""
+                : " Total capture P&L is cumulative across completed portfolio captures. Captures="
+                + summary.captureCount()
+                + ", stocks captured="
+                + summary.capturedStocks()
+                + ", estimated P&L=$"
+                + Monetary.round(summary.estimatedPnl())
+                + ", actual P&L=$"
+                + Monetary.round(summary.actualPnl())
+                + ".";
         return "Loops is the number of completed continuous capture/re-entry cycles. "
                 + "Pending Buy Orders Cancelled is the number of pending base buy limit orders automatically cancelled "
-                + "by Capture Portfolio cleanup before capture or re-entry.";
+                + "by Capture Portfolio cleanup before capture or re-entry."
+                + history;
     }
 
     private String stripCaptureAutomationCounters(String text) {
@@ -2016,6 +2053,7 @@ public class TradingFrame extends JFrame {
                 " | Loops ",
                 " | Pending Buy Orders Cancelled ",
                 " | Pending Cancelled ",
+                " | Capture Total P&L ",
                 " | State "
         );
         return marker < 0 ? text : text.substring(0, marker);
@@ -2172,12 +2210,26 @@ public class TradingFrame extends JFrame {
                         + "Estimated Profit/Loss: $" + Monetary.round(result.estimatedPnl()) + "<br>"
                         + "Actual Profit/Loss: $" + Monetary.round(result.actualPnl()) + "<br>"
                         + "Execution Variance: $" + Monetary.round(result.executionVariance()) + "<br>"
+                        + portfolioCaptureHistorySummaryHtml()
                         + "Timestamp: " + result.timestamp() + "<br><br>"
                         + (result.failures().isEmpty() ? "" : "<b>Failures:</b><br>" + String.join("<br>", result.failures()))
                         + "</body></html>",
                 "Portfolio Capture Summary",
                 result.failures().isEmpty() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
         userActionLog.completed("Capture Portfolio", "Captured " + result.capturedCount() + " stock(s).");
+    }
+
+    private String portfolioCaptureHistorySummaryHtml() {
+        PortfolioCaptureHistoryStore.Summary summary = portfolioCaptureController.captureHistorySummary();
+        if (summary == null || summary.captureCount() == 0) {
+            return "";
+        }
+        return "<br><b>Cumulative Capture History</b><br>"
+                + "Capture Runs: " + summary.captureCount() + "<br>"
+                + "Stocks Captured: " + summary.capturedStocks() + "<br>"
+                + "Total Estimated P&L: $" + Monetary.round(summary.estimatedPnl()) + "<br>"
+                + "Total Actual P&L: $" + Monetary.round(summary.actualPnl()) + "<br>"
+                + "Total Broker Execution Value: $" + Monetary.round(summary.actualBrokerExecutionValue()) + "<br><br>";
     }
 
     private static Font createBaseFont() {
@@ -2270,13 +2322,21 @@ public class TradingFrame extends JFrame {
     }
 
     private StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType) {
+        return sellPosition(strategy, submissionType, StrategyService.SellExecutionSource.MANUAL_USER);
+    }
+
+    private StrategyService.StrategyCreationResult sellPosition(
+            Strategy strategy,
+            SellSubmissionType submissionType,
+            StrategyService.SellExecutionSource executionSource
+    ) {
         StrategyService modeAwareService = strategyServiceForMode(strategy.mode());
         if (modeAwareService == null) {
             return StrategyService.StrategyCreationResult.failed(
                     "Broker client is not configured for " + strategy.mode().name() + " mode."
             );
         }
-        return modeAwareService.closePosition(strategy.id(), submissionType);
+        return modeAwareService.closePosition(strategy.id(), submissionType, executionSource);
     }
 
     private StrategyService strategyServiceForMode(StrategyMode mode) {
@@ -2622,6 +2682,81 @@ public class TradingFrame extends JFrame {
                 continue;
             }
             entry.setCachedPosition(snapshot);
+        }
+    }
+
+    private void handleInvalidBrokerMissingStrategies(List<Strategy> invalidStrategies) {
+        if (invalidStrategies == null || invalidStrategies.isEmpty()) {
+            return;
+        }
+        List<Strategy> markedInvalid = new ArrayList<>();
+        for (Strategy strategy : invalidStrategies) {
+            if (strategy == null || strategy.id() == null || strategy.id().isBlank()) {
+                continue;
+            }
+            Optional<Strategy> maybePersisted = strategyRepository.findById(strategy.id());
+            if (maybePersisted.isEmpty()) {
+                continue;
+            }
+            Strategy persisted = maybePersisted.get();
+            persisted.setStatus(StrategyStatus.FAILED);
+            persisted.setCurrentState(StrategyLifecycleState.FAILED);
+            persisted.setLatestOrderStatus("invalid");
+            persisted.setLastError("Invalid local strategy: no matching open broker order or broker position was found during portfolio refresh.");
+            persisted.setLastEvent("Marked invalid during portfolio refresh; broker has no matching open order or position.");
+            strategyRepository.save(persisted);
+            markedInvalid.add(persisted);
+            log("[Portfolio Refresh] Marked " + persisted.symbol()
+                    + " invalid because Alpaca has no matching open order or position.");
+        }
+        if (markedInvalid.isEmpty()) {
+            return;
+        }
+        syncStrategiesFromRepository();
+        promptToDeleteInvalidStrategies(markedInvalid);
+    }
+
+    private void promptToDeleteInvalidStrategies(List<Strategy> invalidStrategies) {
+        if (invalidStrategies == null || invalidStrategies.isEmpty()) {
+            return;
+        }
+        String symbols = invalidStrategies.stream()
+                .map(Strategy::symbol)
+                .filter(symbol -> symbol != null && !symbol.isBlank())
+                .limit(8)
+                .collect(Collectors.joining(", "));
+        String ellipsis = invalidStrategies.size() > 8 ? ", ..." : "";
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                "<html><body style='width:380px'>"
+                        + "<b>Delete invalid local strategy record(s)?</b><br><br>"
+                        + "These strategy records no longer match any open Alpaca order or broker position.<br><br>"
+                        + "Symbols: " + symbols + ellipsis + "<br><br>"
+                        + "Delete them locally now so they stop appearing as failed/invalid?"
+                        + "</body></html>",
+                "Invalid Local Strategies",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (choice != JOptionPane.YES_OPTION) {
+            log("[Portfolio Refresh] User kept " + invalidStrategies.size()
+                    + " invalid local strategy record(s) for manual cleanup.");
+            return;
+        }
+        int deleted = 0;
+        List<String> failures = new ArrayList<>();
+        for (Strategy strategy : invalidStrategies) {
+            StrategyService.ArchiveResult result = deleteLocalTradeHistoryStrategy(strategy.id());
+            if (result.success()) {
+                deleted++;
+            } else {
+                failures.add(strategy.symbol() + ": " + result.error());
+            }
+        }
+        syncStrategiesFromRepository();
+        log("[Portfolio Refresh] Deleted " + deleted + " invalid local strategy record(s).");
+        if (!failures.isEmpty()) {
+            log("[Portfolio Refresh] Invalid cleanup failures: " + String.join(" | ", failures));
         }
     }
 
@@ -3606,6 +3741,10 @@ public class TradingFrame extends JFrame {
         if (entry == null || entry.strategy == null) {
             return false;
         }
+        if (entry.strategy.status() == StrategyStatus.FAILED
+                && "invalid".equals(BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus()))) {
+            return true;
+        }
         if (entry.strategy.status() == StrategyStatus.FAILED) {
             return false;
         }
@@ -3663,8 +3802,14 @@ public class TradingFrame extends JFrame {
             ));
         }
         filledOrderRows.clear();
-        filledOrderRows.addAll(historyTablePresenter.buildRows(sources, this::formatTimestampForDisplay));
+        filledOrderRows.addAll(historyTablePresenter.buildRows(
+                sources,
+                this::formatTimestampForDisplay,
+                tradeHistoryGroupBy,
+                selectedTradeHistorySellFilter()
+        ));
         filledOrdersTableModel.fireTableDataChanged();
+        applyTradeHistoryRowFilter();
         refreshTradeHistoryHeading();
         refreshGridSearchVisibility();
     }
@@ -4041,9 +4186,71 @@ public class TradingFrame extends JFrame {
             captureControls.add(capturePortfolioIndicator);
             captureControls.add(capturePortfolioButton);
             panel.add(captureControls, BorderLayout.EAST);
+        } else if (searchField == tradeHistorySearchField) {
+            panel.add(createTradeHistoryGroupByPanel(), BorderLayout.CENTER);
+            panel.add(createTradeHistoryFilterPanel(), BorderLayout.EAST);
         }
         panel.setVisible(false);
         return panel;
+    }
+
+    private void configureFilledOrdersColumnWidths() {
+        setTableColumnWidth(6, 50, 44, 64);
+        setTableColumnWidth(7, 72, 62, 86);
+        setTableColumnWidth(8, 72, 62, 86);
+        setTableColumnWidth(9, 88, 76, 108);
+    }
+
+    private void setTableColumnWidth(int columnIndex, int preferredWidth, int minWidth, int maxWidth) {
+        if (columnIndex < 0 || columnIndex >= filledOrdersTable.getColumnModel().getColumnCount()) {
+            return;
+        }
+        javax.swing.table.TableColumn column = filledOrdersTable.getColumnModel().getColumn(columnIndex);
+        column.setPreferredWidth(preferredWidth);
+        column.setMinWidth(minWidth);
+        column.setMaxWidth(maxWidth);
+    }
+
+    private JPanel createTradeHistoryGroupByPanel() {
+        JPanel groupPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        groupPanel.setOpaque(false);
+        styleTradeHistoryGroupByButton();
+        groupPanel.add(tradeHistoryGroupByButton);
+        return groupPanel;
+    }
+
+    private JPanel createTradeHistoryFilterPanel() {
+        JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        filterPanel.setOpaque(false);
+        JLabel filterLabel = new JLabel("Sell filter:");
+        filterLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        filterPanel.add(filterLabel);
+
+        ButtonGroup filterGroup = new ButtonGroup();
+        configureTradeHistoryFilterButton(profitableSellsFilterButton, filterGroup,
+                "Show only symbols whose completed sell history is profitable.");
+        configureTradeHistoryFilterButton(lossSellsFilterButton, filterGroup,
+                "Show only symbols whose completed sell history closed at a loss.");
+        configureTradeHistoryFilterButton(bothSellsFilterButton, filterGroup,
+                "Show profitable and loss sell groups.");
+
+        filterPanel.add(profitableSellsFilterButton);
+        filterPanel.add(lossSellsFilterButton);
+        filterPanel.add(bothSellsFilterButton);
+        return filterPanel;
+    }
+
+    private void styleTradeHistoryGroupByButton() {
+        tradeHistoryGroupByButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        tradeHistoryGroupByButton.setFocusPainted(false);
+        tradeHistoryGroupByButton.setToolTipText(TooltipStyler.text("Choose how completed trade history rows are grouped."));
+    }
+
+    private void configureTradeHistoryFilterButton(JRadioButton button, ButtonGroup group, String tooltip) {
+        button.setOpaque(false);
+        button.setFont(BASE_FONT.deriveFont(Font.PLAIN, 11f));
+        button.setToolTipText(TooltipStyler.text(tooltip));
+        group.add(button);
     }
 
     private JComponent wrapGridWithSearch(JPanel searchPanel, JComponent grid) {
@@ -4057,6 +4264,33 @@ public class TradingFrame extends JFrame {
     private void wireGridSearchFields() {
         attachSearchListener(currentStrategiesSearchField, this::applyCurrentStrategiesRowFilter);
         attachSearchListener(tradeHistorySearchField, this::applyTradeHistoryRowFilter);
+        tradeHistoryGroupByButton.addActionListener(event -> showTradeHistoryGroupByMenu());
+        profitableSellsFilterButton.addActionListener(event -> refreshFilledOrdersTableData());
+        lossSellsFilterButton.addActionListener(event -> refreshFilledOrdersTableData());
+        bothSellsFilterButton.addActionListener(event -> refreshFilledOrdersTableData());
+    }
+
+    private void showTradeHistoryGroupByMenu() {
+        JPopupMenu menu = new JPopupMenu();
+        ButtonGroup group = new ButtonGroup();
+        JRadioButtonMenuItem bySymbol = new JRadioButtonMenuItem("By Symbol", tradeHistoryGroupBy == TradeHistoryGroupBy.SYMBOL);
+        JRadioButtonMenuItem byDate = new JRadioButtonMenuItem("By Date", tradeHistoryGroupBy == TradeHistoryGroupBy.DATE);
+        group.add(bySymbol);
+        group.add(byDate);
+        bySymbol.addActionListener(event -> updateTradeHistoryGroupBy(TradeHistoryGroupBy.SYMBOL));
+        byDate.addActionListener(event -> updateTradeHistoryGroupBy(TradeHistoryGroupBy.DATE));
+        menu.add(bySymbol);
+        menu.add(byDate);
+        menu.show(tradeHistoryGroupByButton, 0, tradeHistoryGroupByButton.getHeight());
+    }
+
+    private void updateTradeHistoryGroupBy(TradeHistoryGroupBy groupBy) {
+        if (groupBy == null || groupBy == tradeHistoryGroupBy) {
+            return;
+        }
+        tradeHistoryGroupBy = groupBy;
+        tradeHistoryGroupByButton.setText(groupBy == TradeHistoryGroupBy.DATE ? "Group By Menu: Date" : "Group By Menu: Symbol");
+        refreshFilledOrdersTableData();
     }
 
     private void attachSearchListener(JTextField field, Runnable onChange) {
@@ -4135,6 +4369,16 @@ public class TradingFrame extends JFrame {
         });
     }
 
+    private TradeHistorySellFilter selectedTradeHistorySellFilter() {
+        if (profitableSellsFilterButton.isSelected()) {
+            return TradeHistorySellFilter.PROFITABLE_SELLS;
+        }
+        if (lossSellsFilterButton.isSelected()) {
+            return TradeHistorySellFilter.LOSS_SELLS;
+        }
+        return TradeHistorySellFilter.BOTH;
+    }
+
     private boolean matchesStockSymbol(String symbol, String normalizedQuery) {
         if (normalizedQuery == null || normalizedQuery.isBlank()) {
             return true;
@@ -4153,17 +4397,14 @@ public class TradingFrame extends JFrame {
         boolean showCurrentStrategiesSearch = strategies.stream()
                 .filter(this::includeInCurrentStrategiesTab)
                 .count() >= GRID_SEARCH_MIN_STOCK_COUNT;
-        boolean showTradeHistorySearch = tradeHistoryStockCount() >= GRID_SEARCH_MIN_STOCK_COUNT;
+        boolean hasTradeHistoryRows = tradeHistoryStockCount() > 0;
 
         if (!showCurrentStrategiesSearch && !currentStrategiesSearchField.getText().isBlank()) {
             currentStrategiesSearchField.setText("");
         }
-        if (!showTradeHistorySearch && !tradeHistorySearchField.getText().isBlank()) {
-            tradeHistorySearchField.setText("");
-        }
 
         currentStrategiesSearchPanel.setVisible(true);
-        tradeHistorySearchPanel.setVisible(showTradeHistorySearch);
+        tradeHistorySearchPanel.setVisible(hasTradeHistoryRows);
     }
 
     private long tradeHistoryStockCount() {

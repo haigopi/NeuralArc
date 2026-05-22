@@ -11,13 +11,18 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.UUID;
 
 final class PortfolioCaptureController {
     private static final long LOOP_COOLDOWN_MILLIS = 15_000L;
 
     interface Gateway {
         List<ManagedStrategy> strategies();
-        StrategyService.StrategyCreationResult sellPosition(ManagedStrategy entry, SellSubmissionType submissionType);
+        StrategyService.StrategyCreationResult sellPosition(
+                ManagedStrategy entry,
+                SellSubmissionType submissionType,
+                StrategyService.SellExecutionSource executionSource
+        );
         int cancelPendingBaseBuys();
         String runLuckyAutomation(PortfolioCaptureConfig config);
         boolean tradingSessionOpen();
@@ -33,6 +38,7 @@ final class PortfolioCaptureController {
     private final Gateway gateway;
     private final PortfolioCaptureCalculator calculator;
     private final PortfolioCaptureStateStore stateStore;
+    private final PortfolioCaptureHistoryStore historyStore;
     private final AtomicBoolean executing = new AtomicBoolean(false);
     private Timer monitoringTimer;
     private PortfolioCaptureConfig activeConfig;
@@ -42,15 +48,23 @@ final class PortfolioCaptureController {
     private int pendingCanceledCount;
     private volatile boolean emergencyStopRequested;
     private boolean marketClosedPauseLogged;
+    private PortfolioCaptureHistoryStore.Summary captureHistorySummary;
 
     PortfolioCaptureController(
             Gateway gateway,
             PortfolioCaptureCalculator calculator,
-            PortfolioCaptureStateStore stateStore
+            PortfolioCaptureStateStore stateStore,
+            PortfolioCaptureHistoryStore historyStore
     ) {
         this.gateway = gateway;
         this.calculator = calculator;
         this.stateStore = stateStore;
+        this.historyStore = historyStore;
+        this.captureHistorySummary = historyStore.summary();
+    }
+
+    PortfolioCaptureHistoryStore.Summary captureHistorySummary() {
+        return captureHistorySummary;
     }
 
     PortfolioCaptureSnapshot currentSnapshot(PortfolioCaptureConfig config) {
@@ -234,7 +248,11 @@ final class PortfolioCaptureController {
                     failures.add(row.symbol() + ": strategy no longer visible");
                     continue;
                 }
-                StrategyService.StrategyCreationResult result = gateway.sellPosition(entry, SellSubmissionType.MARKET);
+                StrategyService.StrategyCreationResult result = gateway.sellPosition(
+                        entry,
+                        SellSubmissionType.MARKET,
+                        StrategyService.SellExecutionSource.PORTFOLIO_CAPTURE
+                );
                 if (result.success()) {
                     successes.add(row.symbol());
                     BigDecimal actualValue = actualExecutionValue(row, result);
@@ -266,6 +284,7 @@ final class PortfolioCaptureController {
         protected void done() {
             try {
                 PortfolioCaptureExecutionResult result = get();
+                recordCaptureHistory(result, triggerReason, executionConfig);
                 if (targetTriggered) {
                     activeConfig = null;
                     stateStore.clear();
@@ -299,6 +318,37 @@ final class PortfolioCaptureController {
         });
         restartTimer.setRepeats(false);
         restartTimer.start();
+    }
+
+    private void recordCaptureHistory(
+            PortfolioCaptureExecutionResult result,
+            String triggerReason,
+            PortfolioCaptureConfig executionConfig
+    ) {
+        if (result == null || result.capturedCount() <= 0) {
+            return;
+        }
+        int completedLoopNumber = executionConfig != null && executionConfig.continuousLoop()
+                ? loopCount + 1
+                : 0;
+        captureHistorySummary = historyStore.append(new PortfolioCaptureHistoryStore.Entry(
+                UUID.randomUUID().toString(),
+                result.timestamp(),
+                completedLoopNumber,
+                triggerReason,
+                executionConfig == null ? "" : executionConfig.executionFlow().name(),
+                result.capturedCount(),
+                result.totalInvestment(),
+                result.estimatedPortfolioValue(),
+                result.actualBrokerExecutionValue(),
+                result.estimatedPnl(),
+                result.actualPnl(),
+                result.executionVariance()
+        ));
+        gateway.log("[Portfolio Capture] Capture history updated. captures=" + captureHistorySummary.captureCount()
+                + " stocks=" + captureHistorySummary.capturedStocks()
+                + " cumulativeActualPnl=$" + Monetary.round(captureHistorySummary.actualPnl())
+                + " cumulativeEstimatedPnl=$" + Monetary.round(captureHistorySummary.estimatedPnl()));
     }
 
     private void setAutomationState(PortfolioCaptureAutomationState state) {

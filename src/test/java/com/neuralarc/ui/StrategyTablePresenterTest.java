@@ -127,6 +127,18 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void failedInvalidShowsInvalidStatus() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLatestOrderStatus("invalid");
+
+        String label = presenter.displayStatusLabel(strategy, false, false, false);
+
+        assertEquals("Invalid - not found at broker", label);
+    }
+
+    @Test
     void valueAtUsesLastSellPriceAndRealizedPnlForClosedPosition() {
         Position position = new Position("AAPL");
 
@@ -214,6 +226,44 @@ class StrategyTablePresenterTest {
         );
 
         assertEquals("Lucky [Gainers]", entryValue);
+    }
+
+    @Test
+    void entrySourceUsesBrokerSyncedNameWhenPollingOverwritesRemoteSyncEvent() {
+        Strategy strategy = strategy();
+        strategy.setName("MGRT Remote Strategy");
+        strategy.setLastEvent("Order BASE_BUY is ACCEPTED");
+
+        Object entryValue = presenter.valueAt(
+                strategy,
+                new Position("MGRT"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                9,
+                "Limit Base Buy Placed",
+                "Paper"
+        );
+
+        assertEquals("Broker Synced", entryValue);
+    }
+
+    @Test
+    void entrySourceRecognizesReviewedLuckySource() {
+        Strategy strategy = strategy();
+        strategy.setName("I_AM_FEELING_LUCKY_REVIEWED: INFQ.WS Paper");
+        strategy.setLastEvent("Order BASE_BUY is ACCEPTED");
+
+        Object entryValue = presenter.valueAt(
+                strategy,
+                new Position("INFQ.WS"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                9,
+                "Limit Base Buy Placed",
+                "Paper"
+        );
+
+        assertEquals("Lucky [Reviewed]", entryValue);
     }
 
     @Test

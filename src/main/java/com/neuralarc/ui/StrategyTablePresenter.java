@@ -100,6 +100,9 @@ public final class StrategyTablePresenter {
         }
         if (strategy.status() == StrategyStatus.FAILED) {
             String normalized = BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus());
+            if ("invalid".equals(normalized) || "invalid_local".equals(normalized)) {
+                return "Invalid - not found at broker";
+            }
             if ("expired".equals(normalized)) {
                 return "Expired";
             }
@@ -290,21 +293,55 @@ public final class StrategyTablePresenter {
         if (strategy == null) {
             return "";
         }
-        String name = strategy.name() == null ? "" : strategy.name().toLowerCase();
-        String event = strategy.lastEvent() == null ? "" : strategy.lastEvent().toLowerCase();
-        if (event.contains("synced from alpaca remote state")) {
+        String name = normalizedText(strategy.name());
+        String event = normalizedText(strategy.lastEvent());
+        String combined = name + " " + event;
+        if (isLuckySource(combined)) {
+            return luckyEntrySource(combined);
+        }
+        if (isBrokerSyncedSource(combined)) {
             return "Broker Synced";
         }
-        if (name.contains("i_am_feeling_lucky") || event.contains("i am feeling lucky")) {
-            if (name.contains("gainer") || event.contains("gainer")) {
-                return "Lucky [Gainers]";
-            }
-            if (name.contains("loser") || event.contains("loser")) {
-                return "Lucky [Losers]";
-            }
-            return "Lucky";
+        if (isPromotedLiveSource(combined)) {
+            return "Promoted Live";
         }
         return "Manually Added";
+    }
+
+    private String normalizedText(String value) {
+        return value == null ? "" : value.toLowerCase();
+    }
+
+    private boolean isLuckySource(String combined) {
+        return combined.contains("i_am_feeling_lucky")
+                || combined.contains("i am feeling lucky");
+    }
+
+    private String luckyEntrySource(String combined) {
+        if (combined.contains("gainer")) {
+            return "Lucky [Gainers]";
+        }
+        if (combined.contains("loser")) {
+            return "Lucky [Losers]";
+        }
+        if (combined.contains("reviewed")) {
+            return "Lucky [Reviewed]";
+        }
+        return "Lucky";
+    }
+
+    private boolean isBrokerSyncedSource(String combined) {
+        return combined.contains("remote strategy")
+                || combined.contains("synced from alpaca")
+                || combined.contains("remote alpaca")
+                || combined.contains("remote state")
+                || combined.contains("broker direct");
+    }
+
+    private boolean isPromotedLiveSource(String combined) {
+        return combined.contains("promoted live")
+                || combined.contains("promotion to live")
+                || combined.contains("after live promotion");
     }
 
     private String exitSource(Strategy strategy) {
