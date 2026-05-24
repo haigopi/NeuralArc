@@ -101,6 +101,7 @@ class StrategyActionsPresenterTest {
 
         assertEquals("Expired", viewModel.toggleText());
         assertFalse(viewModel.toggleEnabled());
+        assertTrue(viewModel.promoteEnabled());
     }
 
     @Test
@@ -111,6 +112,7 @@ class StrategyActionsPresenterTest {
 
         assertEquals("Invalid", viewModel.toggleText());
         assertFalse(viewModel.toggleEnabled());
+        assertFalse(viewModel.promoteEnabled());
     }
 
     @Test

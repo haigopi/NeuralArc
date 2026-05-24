@@ -104,7 +104,7 @@ public final class StrategyTablePresenter {
                 return "Invalid - not found at broker";
             }
             if ("expired".equals(normalized)) {
-                return "Expired";
+                return expiredStatusLabel(strategy);
             }
         }
         String lifecycle = appendPlacedQuantity(
@@ -130,6 +130,46 @@ public final class StrategyTablePresenter {
             return activeRule.isBlank() ? lifecycle + " - Monitoring next configured rule" : activeRule;
         }
         return lifecycle;
+    }
+
+    private String expiredStatusLabel(Strategy strategy) {
+        String waitingRule = expiredWaitingRuleLabel(strategy);
+        if (waitingRule.isBlank()) {
+            return "Expired";
+        }
+        return "Expired (" + waitingRule + " - waiting to fill)";
+    }
+
+    private String expiredWaitingRuleLabel(Strategy strategy) {
+        StrategyLifecycleState state = strategy.currentState();
+        if (isPendingOrderState(state)) {
+            return formatLifecycleStateForDisplay(state);
+        }
+        String rule = strategy.lastTriggeredRuleType() == null
+                ? ""
+                : strategy.lastTriggeredRuleType().trim().toUpperCase();
+        return switch (rule) {
+            case "BUY_RULE", "BASE_BUY" -> formatLifecycleStateForDisplay(StrategyLifecycleState.BASE_BUY_PLACED);
+            case "LOSS_BUY_RULE", "BUY_LIMIT_1" -> formatLifecycleStateForDisplay(StrategyLifecycleState.BUY_LIMIT_1_PLACED);
+            case "LOSS_INVESTMENT_BUY_RULE", "BUY_LIMIT_2" -> formatLifecycleStateForDisplay(StrategyLifecycleState.BUY_LIMIT_2_PLACED);
+            case "SELL_RULE", "TARGET_SELL" -> formatLifecycleStateForDisplay(StrategyLifecycleState.SELL_PLACED);
+            case "STOP_LOSS_RULE", "STOP_LOSS" -> "Stop Loss Sell";
+            case "PROFIT_EXIT", "ALPACA_TRAILING_STOP" -> "Profit Exit Sell";
+            case "LOSS_EXIT" -> "Loss Exit Sell";
+            case "MANUAL_EXIT", "CLOSE_POSITION" -> "Manual Exit Sell";
+            default -> "";
+        };
+    }
+
+    private boolean isPendingOrderState(StrategyLifecycleState state) {
+        return state == StrategyLifecycleState.BASE_BUY_PLACED
+                || state == StrategyLifecycleState.BASE_BUY_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.SELL_PLACED
+                || state == StrategyLifecycleState.SELL_PARTIALLY_FILLED;
     }
 
     private String resolveActiveRuleLabel(Strategy strategy, Position position) {

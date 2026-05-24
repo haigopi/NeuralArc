@@ -3,7 +3,6 @@ package com.neuralarc.ui;
 import com.neuralarc.model.Position;
 import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.StrategyLifecycleState;
-import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.util.BrokerOrderStatusUtil;
 
@@ -543,8 +542,7 @@ final class PortfolioActionsSupport {
             boolean matches(ManagedStrategy entry) {
                 return entry != null
                         && entry.strategy != null
-                        && entry.strategy.mode() == StrategyMode.PAPER
-                        && (entry.strategy.status() == StrategyStatus.ACTIVE || entry.strategy.status() == StrategyStatus.PAUSED);
+                        && StrategyPromotionEligibility.canPromoteToLive(entry.strategy);
             }
 
             @Override
@@ -560,7 +558,7 @@ final class PortfolioActionsSupport {
 
             @Override
             String emptyMessage() {
-                return "There are no active or paused paper strategies to promote.";
+                return "There are no eligible paper strategies to promote.";
             }
         };
 

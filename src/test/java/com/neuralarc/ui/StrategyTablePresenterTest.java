@@ -127,6 +127,31 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void failedExpiredShowsExpiredStatusWithWaitingBuyRule() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        strategy.setLastTriggeredRuleType("BUY_RULE");
+
+        String label = presenter.displayStatusLabel(strategy, false, false, false);
+
+        assertEquals("Expired (Limit Base Buy Placed - waiting to fill)", label);
+    }
+
+    @Test
+    void failedExpiredShowsExpiredStatusWithWaitingLifecycleWhenStillPresent() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.BUY_LIMIT_1_PLACED);
+        strategy.setLatestOrderStatus("expired");
+
+        String label = presenter.displayStatusLabel(strategy, false, false, false);
+
+        assertEquals("Expired (Limit Buy 1 Placed - waiting to fill)", label);
+    }
+
+    @Test
     void failedInvalidShowsInvalidStatus() {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.FAILED);

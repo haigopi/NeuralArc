@@ -21,9 +21,12 @@ public final class StrategyActionsPresenter {
         boolean canToggle = actionableToggle
                 && !busy
                 && (status == StrategyStatus.ACTIVE || marketOpenForUi);
-        boolean canPromote = state.paperMode()
-                && (status == StrategyStatus.ACTIVE || status == StrategyStatus.PAUSED)
-                && !busy;
+        boolean canPromote = StrategyPromotionEligibility.canPromoteToLive(
+                status,
+                state.paperMode(),
+                busy,
+                state.latestOrderStatus()
+        );
         boolean canSell = state.hasPosition()
                 && status != StrategyStatus.ARCHIVED
                 && status != StrategyStatus.CREATED

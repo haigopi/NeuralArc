@@ -955,6 +955,41 @@ class StrategyServiceTest {
     }
 
     @Test
+    void promotePaperStrategyToLiveAllowsExpiredFailedPaperStrategy() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(
+                strategies, orders, events, alpaca,
+                new AlwaysOpenMarketHoursService(),
+                true,
+                StrategyMode.LIVE,
+                ApplicationMode.LIVE
+        );
+
+        Strategy paper = baseStrategy("TSLA", 10, new BigDecimal("350.00"));
+        paper.setStatus(StrategyStatus.FAILED);
+        paper.setCurrentState(StrategyLifecycleState.FAILED);
+        paper.setLatestOrderStatus("expired");
+        paper.setMaxCapitalAllowed(new BigDecimal("10000.00"));
+        strategies.save(paper);
+
+        StrategyService.LivePromotionResult result = service.promotePaperStrategyToLive(paper.id());
+
+        assertTrue(result.success());
+        assertEquals(StrategyStatus.ARCHIVED, strategies.findById(paper.id()).orElseThrow().status());
+
+        Strategy live = strategies.findById(result.liveStrategyId()).orElseThrow();
+        assertEquals(StrategyMode.LIVE, live.mode());
+        assertEquals(StrategyStatus.ACTIVE, live.status());
+        assertEquals(StrategyLifecycleState.BASE_BUY_PLACED, live.currentState());
+        assertEquals("TSLA", live.symbol());
+        assertEquals(paper.baseBuyLimitPrice(), live.baseBuyLimitPrice());
+        assertEquals(1, alpaca.submittedOrders.size());
+    }
+
+    @Test
     void promotePaperStrategyToLiveBlocksDuplicateLiveSymbol() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
@@ -984,7 +1019,7 @@ class StrategyServiceTest {
     }
 
     @Test
-    void promotePaperStrategyToLiveBlocksPendingPaperOrders() {
+    void promotePaperStrategyToLiveAllowsPendingPaperOrders() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
         InMemoryEventRepository events = new InMemoryEventRepository();
@@ -1010,10 +1045,14 @@ class StrategyServiceTest {
         StrategyService.LivePromotionPreview preview = service.previewLivePromotion(paper.id());
         StrategyService.LivePromotionResult result = service.promotePaperStrategyToLive(paper.id());
 
-        assertFalse(preview.eligible());
+        assertTrue(preview.eligible());
         assertEquals(1, preview.pendingPaperOrders());
-        assertFalse(result.success());
-        assertTrue(result.error().contains("pending local order"));
+        assertTrue(result.success());
+        assertEquals(StrategyStatus.ARCHIVED, strategies.findById(paper.id()).orElseThrow().status());
+        Strategy live = strategies.findById(result.liveStrategyId()).orElseThrow();
+        assertEquals(StrategyMode.LIVE, live.mode());
+        assertEquals(StrategyLifecycleState.BASE_BUY_PLACED, live.currentState());
+        assertEquals(1, alpaca.submittedOrders.size());
     }
 
     @Test

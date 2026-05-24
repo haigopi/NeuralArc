@@ -103,6 +103,19 @@ class StrategyActionsControllerTest {
     }
 
     @Test
+    void previewLivePromotionOpensForExpiredFailedPaperStrategy() {
+        Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        FakeGateway gateway = new FakeGateway(strategy);
+        gateway.strategyService = new FakePromotionStrategyService(gateway.entry.strategy());
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.previewLivePromotion(0);
+
+        assertEquals(1, gateway.previewDialogCalls);
+    }
+
+    @Test
     void previewLivePromotionStillOpensWhenMarketClosed() {
         FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
         gateway.marketOpen = false;

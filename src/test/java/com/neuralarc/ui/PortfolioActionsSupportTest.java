@@ -366,19 +366,23 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
-    void promoteAllTargetsActiveAndPausedPaperStrategiesOnly() {
+    void promoteAllTargetsActivePausedAndExpiredPaperStrategiesOnly() {
         ManagedStrategy activePaper = managed("AAPL", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
         ManagedStrategy pausedPaper = managed("MSFT", StrategyStatus.PAUSED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy expiredPaper = managed("NVDA", StrategyStatus.FAILED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        expiredPaper.strategy.setLatestOrderStatus("expired");
+        ManagedStrategy failedPaper = managed("AMD", StrategyStatus.FAILED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        failedPaper.strategy.setLatestOrderStatus("api_error");
         ManagedStrategy live = managed("TSLA", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
         live.strategy.setMode(StrategyMode.LIVE);
 
         List<ManagedStrategy> targets = support.filterTargets(
-                List.of(activePaper, pausedPaper, live),
+                List.of(activePaper, pausedPaper, expiredPaper, failedPaper, live),
                 PortfolioActionsSupport.BulkAction.PROMOTE_ALL_TO_LIVE
         );
 
-        assertEquals(2, targets.size());
-        assertEquals(List.of("AAPL", "MSFT"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+        assertEquals(3, targets.size());
+        assertEquals(List.of("AAPL", "MSFT", "NVDA"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
     }
 
     @Test

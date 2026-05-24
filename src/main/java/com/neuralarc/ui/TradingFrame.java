@@ -17,7 +17,6 @@ import com.neuralarc.service.GitHubReleaseUpdateService;
 import com.neuralarc.service.MarketHoursService;
 import com.neuralarc.service.OnboardingStateStore;
 import com.neuralarc.service.AppSettingsService;
-import com.neuralarc.service.AppUninstallService;
 import com.neuralarc.service.AsyncLogUploadService;
 import com.neuralarc.service.LogArchiveService;
 import com.neuralarc.service.LogUploadStatusStore;
@@ -216,6 +215,8 @@ public class TradingFrame extends JFrame {
 
     private final UserIdentityService identityService = new UserIdentityService();
     private final UserActionLogSupport userActionLog = new UserActionLogSupport(this::log);
+    private final AppUninstallController appUninstallController;
+    private final SupportActionsController supportActionsController;
     private final HistoryTablePresenter historyTablePresenter = new HistoryTablePresenter();
     private final HistoryRowStyler historyRowStyler = new HistoryRowStyler();
     private final MarketStatusPresenter marketStatusPresenter = new MarketStatusPresenter();
@@ -402,6 +403,22 @@ public class TradingFrame extends JFrame {
         setLayout(new BorderLayout());
         ((JComponent) getContentPane()).setBorder(new EmptyBorder(OUTER_PADDING, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
         settingsDialog = new SettingsDialog(this);
+        appUninstallController = new AppUninstallController(
+                this,
+                userActionLog,
+                this::log,
+                this::shutdownAllStrategies,
+                () -> {
+                    dispose();
+                    System.exit(0);
+                }
+        );
+        supportActionsController = new SupportActionsController(
+                this,
+                settingsDialog::getUserEmail,
+                userActionLog,
+                this::log
+        );
         AppDatabase appDatabase = AppDatabase.getInstance();
         strategyRepository = new SqliteStrategyRepository(appDatabase);
         strategyOrderRepository = new SqliteStrategyOrderRepository(appDatabase);
@@ -1346,7 +1363,7 @@ public class TradingFrame extends JFrame {
         styleStatusActionButton(submitFeatureButton);
         submitFeatureButton.addActionListener(e -> {
             userActionLog.started("Request New Feature");
-            openRequestNewFeatureDialog();
+            supportActionsController.openRequestNewFeatureDialog();
         });
 
         JButton contactUsButton = new JButton("Contact Us / Feedback");
@@ -1354,7 +1371,7 @@ public class TradingFrame extends JFrame {
         styleStatusActionButton(contactUsButton);
         contactUsButton.addActionListener(e -> {
             userActionLog.started("Contact Us / Feedback");
-            openContactUsDialog();
+            supportActionsController.openContactUsDialog();
         });
 
         applyButtonIcon(footerActionsButton, "icons/actions.svg", 15);
@@ -1370,9 +1387,9 @@ public class TradingFrame extends JFrame {
         footerActionsMenu.add(createStatusMenuItem("Submit Bug", "icons/submit-bug.svg",
                 this::openSubmitBugDialog));
         footerActionsMenu.add(createStatusMenuItem("Request New Feature", "icons/request-new-feature.svg",
-                () -> openRequestNewFeatureDialog()));
+                supportActionsController::openRequestNewFeatureDialog));
         footerActionsMenu.add(createStatusMenuItem("Contact Us / Feedback", "icons/contact-us.svg",
-                () -> openContactUsDialog()));
+                supportActionsController::openContactUsDialog));
         footerActionsMenu.add(createStatusMenuSeparator());
         footerActionsMenu.add(createStatusMenuHeader("System"));
         footerActionsMenu.add(createStatusMenuItem("Check for Updates", "icons/check-for-updates.svg",
@@ -1381,7 +1398,7 @@ public class TradingFrame extends JFrame {
                 () -> showLegalDisclosureDialog(false)));
         footerActionsMenu.add(createStatusMenuSeparator());
         footerActionsMenu.add(createStatusMenuItem("Uninstall NeuralArc", "icons/delete.svg",
-                this::confirmAndScheduleUninstall));
+                appUninstallController::confirmAndScheduleUninstall));
         footerActionsButton.addActionListener(e -> {
             if (updateAvailableNoticeActive) {
                 clearUpdateAvailableNotice();
@@ -2093,94 +2110,6 @@ public class TradingFrame extends JFrame {
         };
         panel.addMouseListener(handler);
         contentLabel.addMouseListener(handler);
-    }
-
-    private void openRequestNewFeatureDialog() {
-        RequestNewFeatureDialog dialog = new RequestNewFeatureDialog(
-                this,
-                settingsDialog.getUserEmail(),
-                FeedbackEmailService.fromConfiguration()
-        );
-        if (dialog.showDialog()) {
-            log("[Request New Feature] Sent and copied to " + settingsDialog.getUserEmail());
-            userActionLog.completed("Request New Feature", "Request sent.");
-        } else {
-            userActionLog.canceled("Request New Feature");
-        }
-    }
-
-    private void openContactUsDialog() {
-        ContactUsDialog dialog = new ContactUsDialog(
-                this,
-                settingsDialog.getUserEmail(),
-                FeedbackEmailService.fromConfiguration()
-        );
-        if (dialog.showDialog()) {
-            log("[Contact Us / Feedback] Sent and copied to " + settingsDialog.getUserEmail());
-            userActionLog.completed("Contact Us / Feedback", "Message sent.");
-        } else {
-            userActionLog.canceled("Contact Us / Feedback");
-        }
-    }
-
-    private void confirmAndScheduleUninstall() {
-        userActionLog.started("Uninstall NeuralArc");
-        AppUninstallService uninstallService = new AppUninstallService();
-        AppUninstallService.UninstallPlan plan = uninstallService.createPlan();
-        if (plan.os() == AppUninstallService.OperatingSystem.UNSUPPORTED) {
-            userActionLog.failed("Uninstall NeuralArc", "Unsupported operating system.");
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Automatic uninstall is not supported on this operating system.",
-                    "Uninstall NeuralArc",
-                    JOptionPane.ERROR_MESSAGE
-            );
-            return;
-        }
-
-        String message = "<html><body style='width:420px'>"
-                + "<b>Uninstall NeuralArc from this computer?</b><br><br>"
-                + "This will close NeuralArc and remove the application files, local settings, logs, saved strategies, "
-                + "trade history, and shortcuts for this user.<br><br>"
-                + "<b>Detected OS:</b> " + plan.os() + "<br>"
-                + "<b>Application:</b> " + escapeHtml(plan.installDirectory() == null ? "Not detected" : plan.installDirectory().toString()) + "<br>"
-                + "<b>Local data:</b> " + escapeHtml(plan.appDataDirectory().toString()) + "<br><br>"
-                + "This does not close or delete your Alpaca account. Broker-side orders or positions should be reviewed before uninstalling."
-                + "</body></html>";
-        int choice = JOptionPane.showConfirmDialog(
-                this,
-                message,
-                "Uninstall NeuralArc",
-                JOptionPane.YES_NO_OPTION,
-                JOptionPane.WARNING_MESSAGE
-        );
-        if (choice != JOptionPane.YES_OPTION) {
-            userActionLog.canceled("Uninstall NeuralArc");
-            return;
-        }
-
-        try {
-            Path script = uninstallService.scheduleUninstall(plan);
-            log("[UNINSTALL] Scheduled uninstall. " + plan.summary() + " script=" + script);
-            userActionLog.completed("Uninstall NeuralArc", "Uninstall scheduled. Closing application.");
-            JOptionPane.showMessageDialog(
-                    this,
-                    "NeuralArc will close now. The uninstaller will continue in the background.",
-                    "Uninstall Scheduled",
-                    JOptionPane.INFORMATION_MESSAGE
-            );
-            shutdownAllStrategies();
-            dispose();
-            System.exit(0);
-        } catch (Exception ex) {
-            userActionLog.failed("Uninstall NeuralArc", ex.getMessage());
-            JOptionPane.showMessageDialog(
-                    this,
-                    "Failed to start uninstall: " + ex.getMessage(),
-                    "Uninstall Failed",
-                    JOptionPane.ERROR_MESSAGE
-            );
-        }
     }
 
     private void openSubmitBugDialog() {
@@ -4198,7 +4127,7 @@ public class TradingFrame extends JFrame {
             return false;
         }
         if (entry.strategy.status() == StrategyStatus.FAILED) {
-            if ("invalid".equals(BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus()))) {
+            if (includeFailedStrategyInCurrentTab(entry.strategy)) {
                 return true;
             }
             // Keep failed rows visible when there is still open broker exposure.
@@ -4224,6 +4153,15 @@ public class TradingFrame extends JFrame {
         // Keep showing rows that still have live exposure on the broker side.
         return entry.strategy.status() == StrategyStatus.ACTIVE
                 || isWaitingForFill(entry.strategy);
+    }
+
+    static boolean includeFailedStrategyInCurrentTab(Strategy strategy) {
+        if (strategy == null || strategy.status() != StrategyStatus.FAILED) {
+            return false;
+        }
+        String latestOrderStatus = BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus());
+        return "invalid".equals(latestOrderStatus)
+                || "expired".equals(latestOrderStatus);
     }
 
     private boolean hasOpenExposure(ManagedStrategy entry) {

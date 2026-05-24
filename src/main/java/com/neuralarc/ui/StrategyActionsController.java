@@ -127,8 +127,7 @@ public final class StrategyActionsController {
         }
 
         ActionEntry entry = gateway.entryAt(row);
-        if (entry.strategy().mode() != StrategyMode.PAPER
-                || !isPromotionAllowed(entry.strategy().status())) {
+        if (!StrategyPromotionEligibility.canPromoteToLive(entry.strategy())) {
             actionLog.skipped("Promote to Live", "Strategy is not eligible.");
             return;
         }
@@ -416,10 +415,6 @@ public final class StrategyActionsController {
     }
 
     private static boolean isToggleAllowed(StrategyStatus status) {
-        return status == StrategyStatus.ACTIVE || status == StrategyStatus.PAUSED;
-    }
-
-    private static boolean isPromotionAllowed(StrategyStatus status) {
         return status == StrategyStatus.ACTIVE || status == StrategyStatus.PAUSED;
     }
 

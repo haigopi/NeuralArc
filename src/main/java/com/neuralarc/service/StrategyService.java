@@ -451,9 +451,6 @@ public class StrategyService {
         int pendingPaperOrders = (int) orderRepository.findByStrategyId(strategy.id()).stream()
                 .filter(StrategyOrder::isPending)
                 .count();
-        if (pendingPaperOrders > 0) {
-            issues.add("Paper strategy still has " + pendingPaperOrders + " pending local order(s).");
-        }
 
         boolean liveStrategyConflict = strategyRepository.findAll().stream()
                 .filter(existing -> !existing.id().equals(strategy.id()))

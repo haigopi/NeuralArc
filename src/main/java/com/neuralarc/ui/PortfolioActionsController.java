@@ -221,19 +221,20 @@ final class PortfolioActionsController {
             protected PortfolioActionsSupport.BatchResult doInBackground() {
                 List<String> successes = new ArrayList<>();
                 List<String> failures = new ArrayList<>();
-                if (gateway.strategyService() == null) {
+                StrategyService liveService = gateway.strategyServiceForMode(StrategyMode.LIVE);
+                if (liveService == null) {
                     for (ManagedStrategy entry : targets) {
-                        failures.add(entry.strategy.symbol() + ": strategy service is not configured");
+                        failures.add(entry.strategy.symbol() + ": LIVE strategy service is not configured");
                     }
                     return new PortfolioActionsSupport.BatchResult(successes, failures);
                 }
                 for (ManagedStrategy entry : targets) {
-                    StrategyService.LivePromotionPreview preview = gateway.strategyService().previewLivePromotion(entry.strategy.id());
+                    StrategyService.LivePromotionPreview preview = liveService.previewLivePromotion(entry.strategy.id());
                     if (!preview.eligible()) {
                         failures.add(entry.strategy.symbol() + ": " + String.join(" ", preview.issues()));
                         continue;
                     }
-                    StrategyService.LivePromotionResult result = gateway.strategyService().promotePaperStrategyToLive(entry.strategy.id());
+                    StrategyService.LivePromotionResult result = liveService.promotePaperStrategyToLive(entry.strategy.id());
                     if (result.success()) {
                         successes.add(entry.strategy.symbol());
                     } else {
