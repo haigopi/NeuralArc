@@ -957,6 +957,26 @@
       gap: 10px;
     }
 
+    .mac-help-card {
+      width: min(1080px, 100%);
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: minmax(0, .9fr) minmax(280px, 420px);
+      gap: 18px;
+      align-items: center;
+      text-align: left;
+    }
+
+    .mac-help-card img {
+      width: 100%;
+      max-height: 520px;
+      display: block;
+      object-fit: contain;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
     .footer {
       margin-top: 22px;
       padding: 22px 0 8px;
@@ -995,6 +1015,10 @@
 
       .step-grid,
       .card-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .mac-help-card {
         grid-template-columns: 1fr;
       }
     }
@@ -1286,6 +1310,16 @@ live: manual promotion only</pre>
             </div>
           </section>
         </div>
+        <section class="feature-card mac-help-card">
+          <div>
+            <h3>Mac Blocked the App?</h3>
+            <ul>
+              <li>If macOS prevents NeuralArc from installing or opening, open System Settings and go to Privacy &amp; Security.</li>
+              <li>Under Security, choose Open Anyway for NeuralArc, then confirm the Open prompt.</li>
+            </ul>
+          </div>
+          <img src="./images/mac-help.png" alt="macOS Privacy and Security screen showing the Open Anyway option for NeuralArc">
+        </section>
         <div class="feature-card" style="margin-top: 18px;">
           <h3>What Happens Next</h3>
           <ul>
