@@ -979,8 +979,8 @@
 
     .breeze-garden {
       position: relative;
-      height: 112px;
-      margin: -18px 0 4px;
+      height: 168px;
+      margin: -40px 0 4px;
       overflow: hidden;
       pointer-events: none;
     }
@@ -990,66 +990,103 @@
       position: absolute;
       left: 4%;
       right: 4%;
-      bottom: 20px;
+      bottom: 24px;
       height: 1px;
       background: linear-gradient(90deg, transparent, rgba(124, 246, 196, 0.18), rgba(255, 210, 122, 0.12), transparent);
     }
 
-    .flower {
+    .sprig {
       position: absolute;
       left: var(--x);
-      bottom: 18px;
-      width: var(--size);
-      height: calc(var(--size) * 1.55);
+      bottom: 22px;
+      width: 52px;
+      height: var(--height);
       transform-origin: 50% 100%;
-      animation: breeze var(--speed) ease-in-out infinite;
+      animation: stemBreeze var(--speed) ease-in-out infinite;
       animation-delay: var(--delay);
-      opacity: .78;
+      opacity: .82;
     }
 
-    .flower::before {
+    .sprig::before {
       content: "";
       position: absolute;
       left: 50%;
       bottom: 0;
-      width: 2px;
-      height: 68%;
+      width: 3px;
+      height: 100%;
       border-radius: 999px;
-      background: rgba(144, 190, 109, 0.48);
-      transform: translateX(-50%);
+      background: linear-gradient(180deg, rgba(187, 225, 140, 0.62), rgba(95, 170, 128, 0.36));
+      transform: translateX(-50%) rotate(var(--stem-lean));
+      transform-origin: 50% 100%;
     }
 
-    .flower-head {
+    .sprig-leaf {
       position: absolute;
-      left: 50%;
-      top: 0;
-      width: var(--size);
-      height: var(--size);
-      transform: translateX(-50%);
-      animation: flowerNod calc(var(--speed) * .9) ease-in-out infinite;
+      bottom: var(--bottom);
+      width: 18px;
+      height: 9px;
+      border-radius: 999px 999px 999px 0;
+      background: rgba(159, 218, 160, 0.38);
+      transform-origin: 100% 50%;
+    }
+
+    .sprig-leaf.left {
+      left: 7px;
+      transform: rotate(22deg);
+    }
+
+    .sprig-leaf.right {
+      right: 7px;
+      transform: scaleX(-1) rotate(22deg);
+    }
+
+    .sprig-bloom {
+      position: absolute;
+      width: var(--bloom-size);
+      height: var(--bloom-size);
+      animation: bloomFlutter calc(var(--speed) * .72) ease-in-out infinite;
       animation-delay: var(--delay);
     }
 
-    .flower-head::before,
-    .flower-head::after,
+    .sprig-bloom.left {
+      left: 4px;
+      top: var(--top);
+      transform-origin: 140% 120%;
+    }
+
+    .sprig-bloom.right {
+      right: 4px;
+      top: var(--top);
+      transform-origin: -40% 120%;
+    }
+
+    .sprig-bloom.top {
+      left: 50%;
+      top: -2px;
+      transform: translateX(-50%);
+      transform-origin: 50% 140%;
+    }
+
+    .sprig-bloom::before,
+    .sprig-bloom::after,
     .petal {
       content: "";
       position: absolute;
       left: 50%;
       top: 50%;
-      width: 42%;
-      height: 58%;
+      width: 46%;
+      height: 62%;
       border-radius: 999px 999px 760px 760px;
       background: var(--petal);
       transform-origin: 50% 92%;
-      box-shadow: 0 0 12px rgba(255, 255, 255, 0.06);
+      box-shadow: 0 0 14px rgba(255, 255, 255, 0.08);
     }
 
-    .flower-head::before {
+    .sprig-bloom::before {
       transform: translate(-50%, -88%) rotate(0deg);
     }
 
-    .flower-head::after {
+    .sprig-bloom::after {
       transform: translate(-50%, -88%) rotate(144deg);
     }
 
@@ -1065,7 +1102,7 @@
       transform: translate(-50%, -88%) rotate(288deg);
     }
 
-    .flower-center {
+    .bloom-center {
       position: absolute;
       left: 50%;
       top: 50%;
@@ -1077,15 +1114,15 @@
       box-shadow: 0 0 10px rgba(255, 226, 152, 0.14);
     }
 
-    @keyframes breeze {
-      0%, 100% { transform: rotate(-2deg) translateX(0); }
-      45% { transform: rotate(5deg) translateX(3px); }
-      70% { transform: rotate(1deg) translateX(-1px); }
+    @keyframes stemBreeze {
+      0%, 100% { transform: rotate(-6deg) translateX(0); }
+      38% { transform: rotate(9deg) translateX(8px); }
+      68% { transform: rotate(2deg) translateX(-3px); }
     }
 
-    @keyframes flowerNod {
-      0%, 100% { transform: translateX(-50%) rotate(1deg); }
-      50% { transform: translateX(-50%) rotate(-4deg); }
+    @keyframes bloomFlutter {
+      0%, 100% { rotate: -7deg; }
+      50% { rotate: 8deg; }
     }
 
     .footer {
@@ -1187,11 +1224,11 @@
       }
 
       .breeze-garden {
-        height: 86px;
-        margin-top: -8px;
+        height: 124px;
+        margin-top: -20px;
       }
 
-      .flower:nth-child(even) {
+      .sprig:nth-child(even) {
         display: none;
       }
 
@@ -1204,8 +1241,8 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .flower,
-      .flower-head {
+      .sprig,
+      .sprig-bloom {
         animation: none;
       }
     }
@@ -1470,13 +1507,48 @@ live: manual promotion only</pre>
     </main>
 
     <div class="breeze-garden" aria-hidden="true">
-      <span class="flower" style="--x: 8%; --size: 24px; --petal: rgba(255, 182, 193, 0.82); --speed: 4.8s; --delay: -.6s;"><span class="flower-head"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="flower-center"></span></span></span>
-      <span class="flower" style="--x: 18%; --size: 18px; --petal: rgba(196, 222, 255, 0.78); --speed: 5.6s; --delay: -1.4s;"><span class="flower-head"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="flower-center"></span></span></span>
-      <span class="flower" style="--x: 31%; --size: 22px; --petal: rgba(218, 202, 255, 0.76); --speed: 5.1s; --delay: -2.2s;"><span class="flower-head"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="flower-center"></span></span></span>
-      <span class="flower" style="--x: 45%; --size: 16px; --petal: rgba(255, 221, 174, 0.82); --speed: 6.2s; --delay: -.9s;"><span class="flower-head"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="flower-center"></span></span></span>
-      <span class="flower" style="--x: 58%; --size: 25px; --petal: rgba(183, 236, 219, 0.78); --speed: 5.4s; --delay: -1.8s;"><span class="flower-head"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="flower-center"></span></span></span>
-      <span class="flower" style="--x: 72%; --size: 19px; --petal: rgba(246, 196, 216, 0.78); --speed: 4.9s; --delay: -2.7s;"><span class="flower-head"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="flower-center"></span></span></span>
-      <span class="flower" style="--x: 86%; --size: 23px; --petal: rgba(209, 239, 184, 0.78); --speed: 5.9s; --delay: -1.1s;"><span class="flower-head"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="flower-center"></span></span></span>
+      <span class="sprig" style="--x: 7%; --height: 132px; --stem-lean: -2deg; --petal: rgba(255, 182, 193, 0.84); --bloom-size: 22px; --speed: 5.2s; --delay: -.6s;">
+        <span class="sprig-leaf left" style="--bottom: 34px;"></span><span class="sprig-leaf right" style="--bottom: 70px;"></span>
+        <span class="sprig-bloom left" style="--top: 62px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+        <span class="sprig-bloom right" style="--top: 34px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+        <span class="sprig-bloom top"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+      </span>
+      <span class="sprig" style="--x: 20%; --height: 110px; --stem-lean: 2deg; --petal: rgba(196, 222, 255, 0.8); --bloom-size: 18px; --speed: 6s; --delay: -1.4s;">
+        <span class="sprig-leaf left" style="--bottom: 26px;"></span><span class="sprig-leaf right" style="--bottom: 58px;"></span>
+        <span class="sprig-bloom left" style="--top: 52px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+        <span class="sprig-bloom right" style="--top: 25px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+        <span class="sprig-bloom top"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+      </span>
+      <span class="sprig" style="--x: 33%; --height: 146px; --stem-lean: -1deg; --petal: rgba(218, 202, 255, 0.82); --bloom-size: 21px; --speed: 5.5s; --delay: -2.2s;">
+        <span class="sprig-leaf left" style="--bottom: 42px;"></span><span class="sprig-leaf right" style="--bottom: 78px;"></span>
+        <span class="sprig-bloom left" style="--top: 74px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+        <span class="sprig-bloom right" style="--top: 42px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+        <span class="sprig-bloom top"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+      </span>
+      <span class="sprig" style="--x: 47%; --height: 118px; --stem-lean: 1deg; --petal: rgba(255, 221, 174, 0.84); --bloom-size: 17px; --speed: 6.4s; --delay: -.9s;">
+        <span class="sprig-leaf left" style="--bottom: 32px;"></span><span class="sprig-leaf right" style="--bottom: 64px;"></span>
+        <span class="sprig-bloom left" style="--top: 58px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+        <span class="sprig-bloom right" style="--top: 31px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+        <span class="sprig-bloom top"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+      </span>
+      <span class="sprig" style="--x: 61%; --height: 140px; --stem-lean: -2deg; --petal: rgba(183, 236, 219, 0.82); --bloom-size: 23px; --speed: 5.7s; --delay: -1.8s;">
+        <span class="sprig-leaf left" style="--bottom: 38px;"></span><span class="sprig-leaf right" style="--bottom: 76px;"></span>
+        <span class="sprig-bloom left" style="--top: 69px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+        <span class="sprig-bloom right" style="--top: 38px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+        <span class="sprig-bloom top"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+      </span>
+      <span class="sprig" style="--x: 75%; --height: 116px; --stem-lean: 2deg; --petal: rgba(246, 196, 216, 0.82); --bloom-size: 18px; --speed: 5.1s; --delay: -2.7s;">
+        <span class="sprig-leaf left" style="--bottom: 29px;"></span><span class="sprig-leaf right" style="--bottom: 63px;"></span>
+        <span class="sprig-bloom left" style="--top: 55px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+        <span class="sprig-bloom right" style="--top: 29px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+        <span class="sprig-bloom top"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+      </span>
+      <span class="sprig" style="--x: 88%; --height: 136px; --stem-lean: -1deg; --petal: rgba(209, 239, 184, 0.82); --bloom-size: 22px; --speed: 6.1s; --delay: -1.1s;">
+        <span class="sprig-leaf left" style="--bottom: 36px;"></span><span class="sprig-leaf right" style="--bottom: 73px;"></span>
+        <span class="sprig-bloom left" style="--top: 67px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+        <span class="sprig-bloom right" style="--top: 36px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+        <span class="sprig-bloom top"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
+      </span>
     </div>
 
     <footer class="footer">
