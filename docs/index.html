@@ -208,6 +208,11 @@
       box-shadow: var(--shadow);
     }
 
+    .hero:has(.download-menu.is-open),
+    .hero.menu-open {
+      overflow: visible;
+    }
+
     .hero::before {
       content: "";
       position: absolute;
@@ -336,7 +341,7 @@
     }
 
     .download-menu.is-open {
-      z-index: 1000;
+      z-index: 9999;
     }
 
     .download-toggle {
@@ -361,7 +366,7 @@
       position: absolute;
       top: calc(100% + 10px);
       left: 0;
-      z-index: 1001;
+      z-index: 10000;
       min-width: 240px;
       padding: 8px;
       border-radius: 16px;
@@ -1619,6 +1624,10 @@ live: manual promotion only</pre>
           if (toggle) {
             toggle.setAttribute("aria-expanded", "false");
           }
+          const hero = menu.closest(".hero");
+          if (hero) {
+            hero.classList.remove("menu-open");
+          }
         });
       };
 
@@ -1630,6 +1639,19 @@ live: manual promotion only</pre>
           closeMenus();
           menu.classList.toggle("is-open", !isOpen);
           toggle.setAttribute("aria-expanded", String(!isOpen));
+          const hero = menu.closest(".hero");
+          if (hero) {
+            hero.classList.toggle("menu-open", !isOpen);
+          }
+        });
+      });
+
+      document.querySelectorAll('[data-download-platform="windows"], [data-download-platform="linux"]').forEach((link) => {
+        link.addEventListener("click", (event) => {
+          event.preventDefault();
+          const platform = link.dataset.downloadPlatform === "windows" ? "Windows" : "Linux";
+          window.alert(`The ${platform} build is not yet published. Please try the Mac download or check back soon.`);
+          closeMenus();
         });
       });
 
