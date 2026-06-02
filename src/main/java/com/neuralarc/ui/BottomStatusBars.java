@@ -25,8 +25,8 @@ final class BottomStatusBars {
     private static final String STATUS_CARD_FULL = "full";
     private static final String STATUS_CARD_COMPACT = "compact";
     private static final String INLINE_GROUP_SEPARATOR = " · ";
-    private static final String GROUP_SEPARATOR = " || ";
-    private static final String COMPACT_SEPARATOR = " || ";
+    private static final String GROUP_SEPARATOR = "|";
+    private static final String COMPACT_SEPARATOR = "|";
 
     private final Font baseFont;
     private final Color accentColor;
