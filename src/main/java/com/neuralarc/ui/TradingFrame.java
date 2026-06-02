@@ -72,6 +72,8 @@ import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
@@ -130,6 +132,8 @@ public class TradingFrame extends JFrame {
     private final JLabel investedValueStatus = new JLabel("Invested Value: -");
     private final JLabel cpuUsageStatus = new JLabel("CPU: -");
     private final JLabel memoryUsageStatus = new JLabel("Memory: -");
+    private final JLabel compactStatusSummary = new JLabel("Broker: Not connected | Market: Unknown");
+    private final JButton statusDetailsButton = new JButton("Details");
     private final JLabel headerStatus = new JLabel("Status: waiting for settings");
     private static final Color STATUS_OK = new Color(34, 139, 34);
     private static final Color STATUS_WARN = new Color(180, 100, 0);
@@ -325,7 +329,7 @@ public class TradingFrame extends JFrame {
     private final JPanel currentStrategiesSearchPanel = createGridSearchPanel("Search stocks:", currentStrategiesSearchField);
     private final JPanel tradeHistorySearchPanel = createGridSearchPanel("Search stocks:", tradeHistorySearchField);
     private JPanel headerPanel;
-    private JPanel statusBarPanel;
+    private BottomStatusBars bottomStatusBars;
     private TableRowSorter<StrategyGridTableModel> strategySorter;
     private TableRowSorter<HistoryGridTableModel> filledOrdersSorter;
     private TradeHistoryGroupBy tradeHistoryGroupBy = TradeHistoryGroupBy.SYMBOL;
@@ -1316,25 +1320,21 @@ public class TradingFrame extends JFrame {
         streamStatus.setForeground(BOTTOM_STATUS_ACCENT);
         streamStatus.setVerticalAlignment(SwingConstants.CENTER);
         streamStatus.setBorder(new EmptyBorder(0, 12, 0, 0));
-        streamStatus.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                if (streamReconnectAvailable) {
-                    reconnectTradeStreamFromStatusBar();
-                }
-            }
-        });
+        streamStatus.setHorizontalAlignment(SwingConstants.LEFT);
         marketValueStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         marketValueStatus.setForeground(BOTTOM_STATUS_MARKET_VALUE);
         marketValueStatus.setVerticalAlignment(SwingConstants.CENTER);
+        marketValueStatus.setHorizontalAlignment(SwingConstants.LEFT);
         marketValueStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
         availableFundsStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         availableFundsStatus.setForeground(BOTTOM_STATUS_MARKET_VALUE);
         availableFundsStatus.setVerticalAlignment(SwingConstants.CENTER);
+        availableFundsStatus.setHorizontalAlignment(SwingConstants.LEFT);
         availableFundsStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
         investedValueStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         investedValueStatus.setForeground(BOTTOM_STATUS_MARKET_VALUE);
         investedValueStatus.setVerticalAlignment(SwingConstants.CENTER);
+        investedValueStatus.setHorizontalAlignment(SwingConstants.LEFT);
         investedValueStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
         cpuUsageStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         cpuUsageStatus.setForeground(BOTTOM_STATUS_ACCENT);
@@ -1344,6 +1344,13 @@ public class TradingFrame extends JFrame {
         memoryUsageStatus.setForeground(BOTTOM_STATUS_ACCENT);
         memoryUsageStatus.setVerticalAlignment(SwingConstants.CENTER);
         memoryUsageStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
+        compactStatusSummary.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        compactStatusSummary.setForeground(BOTTOM_STATUS_ACCENT);
+        compactStatusSummary.setVerticalAlignment(SwingConstants.CENTER);
+        compactStatusSummary.setHorizontalAlignment(SwingConstants.LEFT);
+        compactStatusSummary.setBorder(new EmptyBorder(0, 2, 0, 6));
+        applyButtonIcon(statusDetailsButton, "icons/actions.svg", 14);
+        styleStatusActionButton(statusDetailsButton);
 
         JButton faqsButton = new JButton("Faqs");
         applyButtonIcon(faqsButton, "icons/faqs.svg", 15);
@@ -1425,25 +1432,11 @@ public class TradingFrame extends JFrame {
         appLabel.setVerticalAlignment(SwingConstants.CENTER);
         appLabel.setBorder(new EmptyBorder(0, 12, 0, 8));
 
-        JPanel statusLeft = new JPanel(new GridBagLayout());
-        statusLeft.setOpaque(false);
-        GridBagConstraints leftGbc = new GridBagConstraints();
-        leftGbc.gridy = 0;
-        leftGbc.anchor = GridBagConstraints.CENTER;
-        int statusColumn = 0;
-        statusColumn = addStatusSegment(statusLeft, leftGbc, statusColumn, createStatusSegment(statusBar), true);
-        statusColumn = addStatusSegment(statusLeft, leftGbc, statusColumn, createStatusSegment(marketStatus), true);
-        statusColumn = addStatusSegment(statusLeft, leftGbc, statusColumn, createStatusSegment(statusStrategyCount), true);
-        statusColumn = addStatusSegment(statusLeft, leftGbc, statusColumn, createStatusSegment(streamStatus), true);
-        statusColumn = addStatusSegment(statusLeft, leftGbc, statusColumn, createPortfolioValueSegment(), true);
-        statusColumn = addStatusSegment(statusLeft, leftGbc, statusColumn, createCpuMemorySegment(), true);
-        addStatusSegment(statusLeft, leftGbc, statusColumn, createStatusSegment(pollingSummary), false);
-
         JPanel statusRight = new JPanel(new GridBagLayout());
         statusRight.setOpaque(false);
         GridBagConstraints rightGbc = new GridBagConstraints();
         rightGbc.gridy = 0;
-        rightGbc.anchor = GridBagConstraints.CENTER;
+        rightGbc.anchor = GridBagConstraints.WEST;
         rightGbc.insets = new java.awt.Insets(0, 0, 0, 10);
         rightGbc.gridx = 0;
         statusRight.add(appLabel, rightGbc);
@@ -1453,14 +1446,27 @@ public class TradingFrame extends JFrame {
         rightGbc.insets = new java.awt.Insets(0, 0, 0, 0);
         statusRight.add(faqsButton, rightGbc);
 
-        statusBarPanel = new JPanel(new BorderLayout());
-        statusBarPanel.setBackground(PAPER_STATUS_BG);
-        statusBarPanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(200, 200, 210)),
-                new EmptyBorder(4, 14, 4, 14)
-        ));
-        statusBarPanel.add(statusLeft, BorderLayout.WEST);
-        statusBarPanel.add(statusRight, BorderLayout.EAST);
+        bottomStatusBars = new BottomStatusBars(
+                BASE_FONT,
+                BOTTOM_STATUS_ACCENT,
+                PAPER_STATUS_BG,
+                statusBar,
+                marketStatus,
+                streamStatus,
+                pollingSummary,
+                cpuUsageStatus,
+                memoryUsageStatus,
+                statusStrategyCount,
+                availableFundsStatus,
+                marketValueStatus,
+                investedValueStatus,
+                compactStatusSummary,
+                statusDetailsButton,
+                statusRight,
+                () -> streamReconnectAvailable,
+                this::reconnectTradeStreamFromStatusBar
+        );
+        bottomStatusBars.applyModeBackground(PAPER_STATUS_BG);
         // ───────────────────────────────────────────────────────────────────────
 
         eventLog.setEditable(false);
@@ -1524,7 +1530,11 @@ public class TradingFrame extends JFrame {
         JPanel southWrapper = new JPanel(new BorderLayout());
         southWrapper.setBorder(new EmptyBorder(8, 0, 0, 0));
         southWrapper.add(statusPanel, BorderLayout.CENTER);
-        southWrapper.add(statusBarPanel, BorderLayout.SOUTH);
+        JPanel footerBars = new JPanel(new BorderLayout());
+        footerBars.setOpaque(false);
+        footerBars.add(bottomStatusBars.portfolioBarPanel(), BorderLayout.NORTH);
+        footerBars.add(bottomStatusBars.mainBarPanel(), BorderLayout.SOUTH);
+        southWrapper.add(footerBars, BorderLayout.SOUTH);
         add(southWrapper, BorderLayout.SOUTH);
 
         wireEvents();
@@ -1714,8 +1724,8 @@ public class TradingFrame extends JFrame {
         if (headerPanel != null) {
             headerPanel.setBackground(live ? LIVE_HEADER_BG : PAPER_HEADER_BG);
         }
-        if (statusBarPanel != null) {
-            statusBarPanel.setBackground(live ? LIVE_STATUS_BG : PAPER_STATUS_BG);
+        if (bottomStatusBars != null) {
+            bottomStatusBars.applyModeBackground(live ? LIVE_STATUS_BG : PAPER_STATUS_BG);
         }
         styleModeToggle(paperViewButton, selectedViewMode == StrategyMode.PAPER, false);
         styleModeToggle(liveViewButton, selectedViewMode == StrategyMode.LIVE, true);
@@ -4913,9 +4923,11 @@ public class TradingFrame extends JFrame {
             memoryUsageStatus.setText(statusBarViewModel.memoryText());
             statusBar.setText(statusBarViewModel.brokerText());
             statusBar.setForeground(statusToneColor(statusBarViewModel.brokerTone()));
+            bottomStatusBars.updateCompactSummaryAndDetails(statusBarViewModel, availableFundsText);
             luckyButton.setEnabled(settingsDialog.hasRequiredSettings());
             refreshTradeHistoryHeading();
             refreshGridSearchVisibility();
+            bottomStatusBars.updateLayoutMode();
             refreshAvailableFundsAsync();
         });
     }
@@ -4982,89 +4994,6 @@ public class TradingFrame extends JFrame {
         };
     }
 
-    private JPanel createStatusSegment(JComponent component) {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setOpaque(false);
-        panel.setBorder(new EmptyBorder(2, 4, 2, 4));
-        panel.add(component, BorderLayout.CENTER);
-        return panel;
-    }
-
-    private int addStatusSegment(
-            JPanel statusPanel,
-            GridBagConstraints constraints,
-            int column,
-            JComponent segment,
-            boolean separatorAfter
-    ) {
-        constraints.gridx = column;
-        constraints.insets = new java.awt.Insets(0, 0, 0, 0);
-        statusPanel.add(segment, constraints);
-        if (!separatorAfter) {
-            return column + 1;
-        }
-        constraints.gridx = column + 1;
-        statusPanel.add(createStatusSeparator(), constraints);
-        return column + 2;
-    }
-
-    private JLabel createStatusSeparator() {
-        JLabel separator = new JLabel("|");
-        separator.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
-        separator.setForeground(new Color(92, 92, 108));
-        separator.setHorizontalAlignment(SwingConstants.CENTER);
-        separator.setBorder(new EmptyBorder(0, 8, 0, 8));
-        return separator;
-    }
-
-    private JPanel createPortfolioValueSegment() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setOpaque(false);
-        panel.setBorder(new EmptyBorder(2, 4, 2, 4));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridy = 0;
-        gbc.anchor = GridBagConstraints.CENTER;
-        gbc.gridx = 0;
-        gbc.insets = new java.awt.Insets(0, 0, 0, 6);
-        panel.add(availableFundsStatus, gbc);
-        gbc.gridx = 1;
-        gbc.insets = new java.awt.Insets(0, 0, 0, 6);
-        panel.add(createInlineStatusSeparator(), gbc);
-        gbc.gridx = 2;
-        panel.add(marketValueStatus, gbc);
-        gbc.gridx = 3;
-        panel.add(createInlineStatusSeparator(), gbc);
-        gbc.gridx = 4;
-        gbc.insets = new java.awt.Insets(0, 0, 0, 0);
-        panel.add(investedValueStatus, gbc);
-        return panel;
-    }
-
-    private JPanel createCpuMemorySegment() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setOpaque(false);
-        panel.setBorder(new EmptyBorder(2, 4, 2, 4));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridy = 0;
-        gbc.anchor = GridBagConstraints.CENTER;
-        gbc.gridx = 0;
-        gbc.insets = new java.awt.Insets(0, 0, 0, 5);
-        panel.add(cpuUsageStatus, gbc);
-        gbc.gridx = 1;
-        gbc.insets = new java.awt.Insets(0, 0, 0, 5);
-        panel.add(createInlineStatusSeparator(), gbc);
-        gbc.gridx = 2;
-        gbc.insets = new java.awt.Insets(0, 0, 0, 0);
-        panel.add(memoryUsageStatus, gbc);
-        return panel;
-    }
-
-    private JLabel createInlineStatusSeparator() {
-        JLabel separator = new JLabel("|");
-        separator.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
-        separator.setForeground(new Color(95, 95, 110));
-        return separator;
-    }
 
     private String formatMarketValueText() {
         return systemMetricsPresenter.formatMarketValueText(strategies);
