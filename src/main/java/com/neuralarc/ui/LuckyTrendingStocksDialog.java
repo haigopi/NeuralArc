@@ -42,6 +42,7 @@ import java.awt.GridLayout;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.DayOfWeek;
 import java.time.ZoneId;
@@ -95,12 +96,35 @@ public class LuckyTrendingStocksDialog extends JDialog {
 
     private static LoadResult cachedTrendResult;
     private static Instant cachedTrendLoadedAt;
+    private static final List<DiversifiedStock> TOP_20_DIVERSIFIED_STOCKS = List.of(
+            new DiversifiedStock("MSFT", "Microsoft Corporation", "Diversified top 20 - technology"),
+            new DiversifiedStock("AAPL", "Apple Inc.", "Diversified top 20 - technology"),
+            new DiversifiedStock("NVDA", "NVIDIA Corporation", "Diversified top 20 - technology"),
+            new DiversifiedStock("AMZN", "Amazon.com, Inc.", "Diversified top 20 - technology"),
+            new DiversifiedStock("GOOGL", "Alphabet Inc.", "Diversified top 20 - communication services"),
+            new DiversifiedStock("META", "Meta Platforms, Inc.", "Diversified top 20 - communication services"),
+            new DiversifiedStock("AVGO", "Broadcom Inc.", "Diversified top 20 - technology"),
+            new DiversifiedStock("ORCL", "Oracle Corporation", "Diversified top 20 - technology"),
+            new DiversifiedStock("BRK.B", "Berkshire Hathaway Inc.", "Diversified top 20 - financials"),
+            new DiversifiedStock("JPM", "JPMorgan Chase & Co.", "Diversified top 20 - financials"),
+            new DiversifiedStock("V", "Visa Inc.", "Diversified top 20 - financials"),
+            new DiversifiedStock("MA", "Mastercard Incorporated", "Diversified top 20 - financials"),
+            new DiversifiedStock("JNJ", "Johnson & Johnson", "Diversified top 20 - healthcare"),
+            new DiversifiedStock("UNH", "UnitedHealth Group Incorporated", "Diversified top 20 - healthcare"),
+            new DiversifiedStock("LLY", "Eli Lilly and Company", "Diversified top 20 - healthcare"),
+            new DiversifiedStock("TSLA", "Tesla, Inc.", "Diversified top 20 - consumer discretionary"),
+            new DiversifiedStock("WMT", "Walmart Inc.", "Diversified top 20 - consumer staples"),
+            new DiversifiedStock("PG", "The Procter & Gamble Company", "Diversified top 20 - consumer staples"),
+            new DiversifiedStock("XOM", "Exxon Mobil Corporation", "Diversified top 20 - energy"),
+            new DiversifiedStock("CAT", "Caterpillar Inc.", "Diversified top 20 - industrials")
+    );
 
     private final TrendingStocksService trendingStocksService;
     private final AlpacaMarketDataApi marketDataApi;
     private final Consumer<List<LuckySimulationSelection>> placementHandler;
     private final Consumer<String> logSink;
     private final StrategyMode targetMode;
+    private final StrategyUniverse universe;
     private transient Consumer<LuckySimulationSelection> reviewHandler;
     private final JPanel cardsPanel = new JPanel();
     private final JLabel statusLabel = new JLabel("Loading trending stocks...");
@@ -128,12 +152,27 @@ public class LuckyTrendingStocksDialog extends JDialog {
             Consumer<String> logSink,
             StrategyMode targetMode
     ) {
-        super(owner, "I Am Feeling Lucky - Trending Stocks", true);
+        this(owner, trendingStocksService, marketDataApi, placementHandler, logSink, targetMode, StrategyUniverse.VOLATILE);
+    }
+
+    public LuckyTrendingStocksDialog(
+            JFrame owner,
+            TrendingStocksService trendingStocksService,
+            AlpacaMarketDataApi marketDataApi,
+            Consumer<List<LuckySimulationSelection>> placementHandler,
+            Consumer<String> logSink,
+            StrategyMode targetMode,
+            StrategyUniverse universe
+    ) {
+        super(owner, "I Am Feeling Lucky - " + (universe == StrategyUniverse.DIVERSIFIED_TOP_20
+                ? "Top 20 Diversified Stocks"
+                : "Volatile Strategy"), true);
         this.trendingStocksService = Objects.requireNonNull(trendingStocksService);
         this.marketDataApi = Objects.requireNonNull(marketDataApi);
         this.placementHandler = Objects.requireNonNull(placementHandler);
         this.logSink = logSink == null ? ignored -> {} : logSink;
         this.targetMode = targetMode == null ? StrategyMode.PAPER : targetMode;
+        this.universe = universe == null ? StrategyUniverse.VOLATILE : universe;
         buildUi();
         initializeTrendsOnOpen();
     }
@@ -149,9 +188,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
 
         JPanel top = new JPanel(new BorderLayout(8, 6));
         top.setOpaque(false);
-        JLabel description = new JLabel("<html>Review today's top gainers and losers, remove unwanted picks, then start the remaining choices as Alpaca "
-                + modeLabel()
-                + " strategies.</html>");
+        JLabel description = new JLabel(dialogDescriptionHtml());
         description.setForeground(TEXT_MUTED);
         description.setFont(FontLoader.ui(Font.PLAIN, 11f));
         progressBar.setMinimum(0);
@@ -179,7 +216,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
 
         JPanel bottom = new JPanel(new BorderLayout(8, 0));
         bottom.setOpaque(false);
-        statusLabel.setText("Click Refresh to load today's trending stocks.");
+        statusLabel.setText(initialStatusText());
         statusLabel.setForeground(TEXT_MUTED);
         statusLabel.setFont(FontLoader.ui(Font.PLAIN, 10f));
         DialogButtonStyles.apply(refreshButton, "icons/refresh.svg");
@@ -211,6 +248,10 @@ public class LuckyTrendingStocksDialog extends JDialog {
     }
 
     private void initializeTrendsOnOpen() {
+        if (universe == StrategyUniverse.DIVERSIFIED_TOP_20) {
+            loadAsync(false, false);
+            return;
+        }
         CachedDailyTrends cached = readCachedTrendsWithinTtl();
         boolean marketOpenAutoRefresh = cached != null && shouldAutoRefreshAfterMarketOpen(cached.loadedAt());
         if (cached != null && cached.result() != null) {
@@ -229,52 +270,14 @@ public class LuckyTrendingStocksDialog extends JDialog {
             return;
         }
         loadInFlight = true;
-        log((forceRefresh ? "Force refresh" : "Auto load") + " started for trending stocks.");
+        log((forceRefresh ? "Force refresh" : "Auto load") + " started for " + sourceLogLabel() + ".");
         SwingWorker<LoadResult, Void> worker = new SwingWorker<>() {
             @Override
             protected LoadResult doInBackground() throws Exception {
                 setProgress(5);
-                TrendingStockGroups groups = trendingStocksService.topGainersAndLosers(10);
-                if (groups.empty()) {
-                    setProgress(100);
-                    return new LoadResult(List.of(), List.of());
-                }
-                List<TrendingStock> stocks = new ArrayList<>();
-                stocks.addAll(groups.gainers());
-                stocks.addAll(groups.losers());
-                log("Top movers selected. gainers=" + groups.gainers().stream().map(TrendingStock::symbol).toList()
-                        + " losers=" + groups.losers().stream().map(TrendingStock::symbol).toList());
-                ExecutorService executor = Executors.newFixedThreadPool(Math.min(4, stocks.size()), runnable -> {
-                    Thread thread = new Thread(runnable, "neuralarc-lucky-analysis");
-                    thread.setDaemon(true);
-                    return thread;
-                });
-                try {
-                    List<Callable<LuckyStockAnalysis>> gainerTasks = groups.gainers().stream()
-                            .<Callable<LuckyStockAnalysis>>map(stock -> () -> analyze(stock))
-                            .toList();
-                    List<Callable<LuckyStockAnalysis>> loserTasks = groups.losers().stream()
-                            .<Callable<LuckyStockAnalysis>>map(stock -> () -> analyze(stock))
-                            .toList();
-                    List<LuckyStockAnalysis> gainers = new ArrayList<>();
-                    int total = gainerTasks.size() + loserTasks.size();
-                    int completed = 0;
-                    for (var future : executor.invokeAll(gainerTasks)) {
-                        gainers.add(future.get());
-                        completed++;
-                        setProgress(percent(completed, total));
-                    }
-                    List<LuckyStockAnalysis> losers = new ArrayList<>();
-                    for (var future : executor.invokeAll(loserTasks)) {
-                        losers.add(future.get());
-                        completed++;
-                        setProgress(percent(completed, total));
-                    }
-                    setProgress(100);
-                    return new LoadResult(gainers, losers);
-                } finally {
-                    executor.shutdownNow();
-                }
+                return universe == StrategyUniverse.DIVERSIFIED_TOP_20
+                        ? loadDiversifiedTop20(value -> setProgress(value))
+                        : loadVolatileTopMovers(value -> setProgress(value));
             }
 
             @Override
@@ -284,14 +287,16 @@ public class LuckyTrendingStocksDialog extends JDialog {
                 progressBar.setVisible(false);
                 try {
                     LoadResult result = get();
-                    cacheResult(result);
+                    if (universe == StrategyUniverse.VOLATILE) {
+                        cacheResult(result);
+                    }
                     render(result);
                 } catch (Exception ex) {
                     LOGGER.log(Level.WARNING, "I Am Feeling Lucky failed", ex);
-                    statusLabel.setText("Failed to load trending stocks: " + message(ex));
+                    statusLabel.setText("Failed to load " + sourceDisplayName().toLowerCase() + ": " + message(ex));
                     JOptionPane.showMessageDialog(
                             LuckyTrendingStocksDialog.this,
-                            "Failed to load trending stocks: " + message(ex),
+                            "Failed to load " + sourceDisplayName().toLowerCase() + ": " + message(ex),
                             "I Am Feeling Lucky",
                             JOptionPane.ERROR_MESSAGE
                     );
@@ -299,14 +304,16 @@ public class LuckyTrendingStocksDialog extends JDialog {
             }
         };
         progressBar.setVisible(true);
-        progressBar.setString("Loading trending stocks...");
+        progressBar.setString("Loading " + sourceDisplayName().toLowerCase() + "...");
         progressBar.setValue(0);
         refreshButton.setEnabled(false);
         placeButton.setEnabled(false);
         if (marketOpenAutoRefresh) {
-            statusLabel.setText("Auto-refreshing trending stocks for market open...");
+            statusLabel.setText("Auto-refreshing volatile movers for market open...");
         } else {
-            statusLabel.setText(forceRefresh ? "Refreshing trending stocks..." : "Loading trending stocks...");
+            statusLabel.setText(forceRefresh
+                    ? "Refreshing " + sourceDisplayName().toLowerCase() + "..."
+                    : "Loading " + sourceDisplayName().toLowerCase() + "...");
         }
         worker.addPropertyChangeListener(event -> {
             if ("progress".equals(event.getPropertyName())) {
@@ -334,19 +341,157 @@ public class LuckyTrendingStocksDialog extends JDialog {
         cardsPanel.removeAll();
         cards.clear();
         if (result == null || (result.gainers().isEmpty() && result.losers().isEmpty())) {
-            statusLabel.setText("No trending stocks were returned by Alpaca.");
+            statusLabel.setText("No stocks were returned for " + sourceDisplayName().toLowerCase() + ".");
             placeButton.setEnabled(false);
             revalidate();
             repaint();
             return;
         }
-        addGroup("Top 10 Gainers (" + result.gainers().size() + ")", result.gainers(), SECTION_GAINERS_BG, SECTION_GAINERS_BORDER);
+        addGroup(result.primaryTitle() + " (" + result.gainers().size() + ")", result.gainers(), SECTION_GAINERS_BG, SECTION_GAINERS_BORDER);
         cardsPanel.add(Box.createVerticalStrut(6));
-        addGroup("Top 10 Losers (" + result.losers().size() + ")", result.losers(), SECTION_LOSERS_BG, SECTION_LOSERS_BORDER);
-        statusLabel.setText("Review " + cards.size() + " stock(s), choose quantity/term for each, then start paper monitoring.");
+        addGroup(result.secondaryTitle() + " (" + result.losers().size() + ")", result.losers(), SECTION_LOSERS_BG, SECTION_LOSERS_BORDER);
+        statusLabel.setText("Review " + cards.size() + " stock(s), choose quantity/term for each, then start " + modeLabel().toLowerCase() + " monitoring.");
         placeButton.setEnabled(cards.stream().anyMatch(StockCard::placeable));
         revalidate();
         repaint();
+    }
+
+    private LoadResult loadVolatileTopMovers(ProgressCallback progressCallback) throws Exception {
+        TrendingStockGroups groups = trendingStocksService.topGainersAndLosers(10);
+        if (groups.empty()) {
+            progressCallback.set(100);
+            return new LoadResult(List.of(), List.of(), "Top 10 Gainers", "Top 10 Losers");
+        }
+        List<TrendingStock> stocks = new ArrayList<>();
+        stocks.addAll(groups.gainers());
+        stocks.addAll(groups.losers());
+        log("Top movers selected. gainers=" + groups.gainers().stream().map(TrendingStock::symbol).toList()
+                + " losers=" + groups.losers().stream().map(TrendingStock::symbol).toList());
+        return analyzeGroupedStocks(groups.gainers(), groups.losers(), "Top 10 Gainers", "Top 10 Losers", progressCallback);
+    }
+
+    private LoadResult loadDiversifiedTop20(ProgressCallback progressCallback) throws Exception {
+        List<TrendingStock> stocks = buildDiversifiedStocks();
+        List<TrendingStock> firstTen = stocks.subList(0, Math.min(10, stocks.size()));
+        List<TrendingStock> secondTen = stocks.subList(Math.min(10, stocks.size()), stocks.size());
+        log("Diversified stocks selected. symbols=" + stocks.stream().map(TrendingStock::symbol).toList());
+        return analyzeGroupedStocks(
+                firstTen,
+                secondTen,
+                "Top 20 Diversified Stocks - Set A",
+                "Top 20 Diversified Stocks - Set B",
+                progressCallback
+        );
+    }
+
+    private LoadResult analyzeGroupedStocks(
+            List<TrendingStock> firstGroup,
+            List<TrendingStock> secondGroup,
+            String firstTitle,
+            String secondTitle,
+            ProgressCallback progressCallback
+    ) throws Exception {
+        int taskCount = firstGroup.size() + secondGroup.size();
+        if (taskCount <= 0) {
+            return new LoadResult(List.of(), List.of(), firstTitle, secondTitle);
+        }
+        ExecutorService executor = Executors.newFixedThreadPool(Math.min(4, taskCount), runnable -> {
+            Thread thread = new Thread(runnable, "neuralarc-lucky-analysis");
+            thread.setDaemon(true);
+            return thread;
+        });
+        try {
+            List<Callable<LuckyStockAnalysis>> firstTasks = firstGroup.stream()
+                    .<Callable<LuckyStockAnalysis>>map(stock -> () -> analyze(stock))
+                    .toList();
+            List<Callable<LuckyStockAnalysis>> secondTasks = secondGroup.stream()
+                    .<Callable<LuckyStockAnalysis>>map(stock -> () -> analyze(stock))
+                    .toList();
+            List<LuckyStockAnalysis> firstAnalyses = new ArrayList<>();
+            int completed = 0;
+            for (var future : executor.invokeAll(firstTasks)) {
+                firstAnalyses.add(future.get());
+                completed++;
+                progressCallback.set(percent(completed, taskCount));
+            }
+            List<LuckyStockAnalysis> secondAnalyses = new ArrayList<>();
+            for (var future : executor.invokeAll(secondTasks)) {
+                secondAnalyses.add(future.get());
+                completed++;
+                progressCallback.set(percent(completed, taskCount));
+            }
+            progressCallback.set(100);
+            return new LoadResult(firstAnalyses, secondAnalyses, firstTitle, secondTitle);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private List<TrendingStock> buildDiversifiedStocks() {
+        List<TrendingStock> stocks = new ArrayList<>();
+        for (DiversifiedStock entry : TOP_20_DIVERSIFIED_STOCKS) {
+            BigDecimal latestPrice = latestPriceForSymbol(entry.symbol());
+            stocks.add(new TrendingStock(
+                    entry.symbol(),
+                    entry.companyName(),
+                    latestPrice,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    entry.reason(),
+                    BigDecimal.ZERO
+            ));
+        }
+        return stocks;
+    }
+
+    private BigDecimal latestPriceForSymbol(String symbol) {
+        try {
+            List<com.neuralarc.model.MarketBar> bars = marketDataApi.getIntradayBars(
+                    symbol,
+                    LocalDate.now().minusDays(5),
+                    LocalDate.now(),
+                    15
+            );
+            if (bars == null || bars.isEmpty()) {
+                return BigDecimal.ZERO;
+            }
+            return bars.get(bars.size() - 1).close();
+        } catch (Exception ex) {
+            log("Price fetch fallback used for " + symbol + ": " + message(ex));
+            return BigDecimal.ZERO;
+        }
+    }
+
+    static List<String> diversifiedTop20Symbols() {
+        return TOP_20_DIVERSIFIED_STOCKS.stream().map(DiversifiedStock::symbol).toList();
+    }
+
+    private String sourceDisplayName() {
+        return universe == StrategyUniverse.DIVERSIFIED_TOP_20
+                ? "Top 20 diversified stocks"
+                : "trending volatile stocks";
+    }
+
+    private String sourceLogLabel() {
+        return universe == StrategyUniverse.DIVERSIFIED_TOP_20
+                ? "Top 20 diversified stocks"
+                : "trending volatile movers";
+    }
+
+    private String initialStatusText() {
+        return universe == StrategyUniverse.DIVERSIFIED_TOP_20
+                ? "Click Refresh to load the curated top 20 diversified stocks."
+                : "Click Refresh to load today's trending stocks.";
+    }
+
+    private String dialogDescriptionHtml() {
+        if (universe == StrategyUniverse.DIVERSIFIED_TOP_20) {
+            return "<html>Review curated diversified large-cap stocks, compare high-risk short-term and other recommendations, "
+                    + "then start selected choices as Alpaca " + modeLabel() + " strategies.</html>";
+        }
+        return "<html>Review today's top gainers and losers, remove unwanted picks, then start the remaining choices as Alpaca "
+                + modeLabel() + " strategies.</html>";
     }
 
     private void addToCurrentStrategy(StockCard card) {
@@ -568,9 +713,18 @@ public class LuckyTrendingStocksDialog extends JDialog {
             TrendingStock stock = analysis.stock();
             JPanel panel = new JPanel(new BorderLayout(0, 6));
             panel.setOpaque(false);
-            JLabel metrics = new JLabel("Price: $" + stock.latestPrice().toPlainString()
-                    + "  Change: " + stock.dailyChangePercent().toPlainString() + "%"
-                    + "  Vol: " + stock.volume().toPlainString(), JLabel.CENTER);
+            String price = stock.latestPrice() == null || stock.latestPrice().compareTo(BigDecimal.ZERO) <= 0
+                    ? "-"
+                    : "$" + stock.latestPrice().toPlainString();
+            String change = stock.dailyChangePercent() == null || stock.dailyChangePercent().compareTo(BigDecimal.ZERO) == 0
+                    ? "-"
+                    : stock.dailyChangePercent().toPlainString() + "%";
+            String volume = stock.volume() == null || stock.volume().compareTo(BigDecimal.ZERO) == 0
+                    ? "-"
+                    : stock.volume().toPlainString();
+            JLabel metrics = new JLabel("Price: " + price
+                    + "  Change: " + change
+                    + "  Vol: " + volume, JLabel.CENTER);
             metrics.setFont(FontLoader.ui(Font.BOLD, 11f));
             metrics.setForeground(TEXT_PRIMARY);
 
@@ -612,9 +766,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
             panel.setBorder(new EmptyBorder(6, 6, 6, 6));
             addPair(panel, "Recommendation:", recommendation.recommendationAction().name());
             addPair(panel, "Confidence:", recommendation.confidenceScore() + "%");
-            addPair(panel, "Base limit buy:", usablePrice(recommendation.baseBuyPrice())
-                    ? money(recommendation.baseBuyPrice())
-                    : "Not available");
+            addPair(panel, "Base limit buy:", baseLimitBuyDisplay(recommendation));
             addPair(panel, "Target sell:", money(recommendation.sellPrice()));
             addPair(panel, "Stop loss:", money(recommendation.stopLossPrice()));
             addPair(panel, "Generated:", DISPLAY_FMT.format(analysis.analysis().result().analyzedAt()));
@@ -698,6 +850,13 @@ public class LuckyTrendingStocksDialog extends JDialog {
         return value == null ? "-" : "$" + value.toPlainString();
     }
 
+    static String baseLimitBuyDisplay(StrategyRecommendation recommendation) {
+        if (recommendation == null || !usablePrice(recommendation.baseBuyPrice())) {
+            return "Not available";
+        }
+        return money(recommendation.baseBuyPrice());
+    }
+
     private static boolean usablePrice(BigDecimal value) {
         return value != null && value.compareTo(BigDecimal.ZERO) > 0;
     }
@@ -706,7 +865,24 @@ public class LuckyTrendingStocksDialog extends JDialog {
         return value == null ? "" : value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
-    private record LoadResult(List<LuckyStockAnalysis> gainers, List<LuckyStockAnalysis> losers) {}
+    private record LoadResult(
+            List<LuckyStockAnalysis> gainers,
+            List<LuckyStockAnalysis> losers,
+            String primaryTitle,
+            String secondaryTitle
+    ) {}
+
+    private record DiversifiedStock(String symbol, String companyName, String reason) {}
+
+    @FunctionalInterface
+    private interface ProgressCallback {
+        void set(int value);
+    }
+
+    public enum StrategyUniverse {
+        VOLATILE,
+        DIVERSIFIED_TOP_20
+    }
 
     private record CachedDailyTrends(LoadResult result, Instant loadedAt) {}
 }

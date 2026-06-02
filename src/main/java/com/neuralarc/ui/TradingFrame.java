@@ -112,6 +112,8 @@ public class TradingFrame extends JFrame {
     private static final DateTimeFormatter RULE_TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM d yyyy, h:mm a");
     private static final DateTimeFormatter NEXT_OPEN_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM d yyyy h:mm a z");
     private static final int GRID_SEARCH_MIN_STOCK_COUNT = 9;
+    private static final String LUCKY_MENU_VOLATILE = "Volatile Strategy";
+    private static final String LUCKY_MENU_DIVERSIFIED = "Top 20 Diversified Stocks";
 
     private final JLabel positionSummary = new JLabel("Position: -");
     private final JLabel ruleState = new JLabel("Rules: -");
@@ -194,7 +196,8 @@ public class TradingFrame extends JFrame {
     private static final Color HEADER_STATUS_LIVE_ACTIVE_DIM = Color.WHITE;
     private final JTextPane eventLog = new JTextPane();
     private final JButton addStrategyButton = new JButton("Add New Stock Strategy");
-    private final JButton luckyButton = new JButton("I Am Feeling Lucky");
+    private final JButton luckyButton = new JButton("Lucky Strategies");
+    private final JPopupMenu luckyStrategiesMenu = new JPopupMenu();
     private final JButton portfolioActionsButton = new JButton("Portfolio Actions");
     private final JButton settingsButton = new JButton("Settings");
     private final JButton legalDisclosureButton = new JButton("Legal Disclosure");
@@ -1530,10 +1533,7 @@ public class TradingFrame extends JFrame {
         JPanel southWrapper = new JPanel(new BorderLayout());
         southWrapper.setBorder(new EmptyBorder(8, 0, 0, 0));
         southWrapper.add(statusPanel, BorderLayout.CENTER);
-        JPanel footerBars = new JPanel(new BorderLayout());
-        footerBars.setOpaque(false);
-        footerBars.add(bottomStatusBars.portfolioBarPanel(), BorderLayout.NORTH);
-        footerBars.add(bottomStatusBars.mainBarPanel(), BorderLayout.SOUTH);
+        JPanel footerBars = composeFooterBars(bottomStatusBars.portfolioBarPanel(), bottomStatusBars.mainBarPanel());
         southWrapper.add(footerBars, BorderLayout.SOUTH);
         add(southWrapper, BorderLayout.SOUTH);
 
@@ -1753,7 +1753,7 @@ public class TradingFrame extends JFrame {
         ));
         capturePortfolioButton.setToolTipText(capturePortfolioDefaultTooltip());
         luckyButton.setToolTipText(TooltipStyler.text(
-                "Find today's top trending Alpaca stocks, auto-analyze them, and add reviewed picks as local paper simulations.",
+                "Open strategy picker: Volatile Strategy or Top 20 Diversified Stocks. Both run Auto Analyze with high-risk short-term review tabs.",
                 320
         ));
         luckyButton.setEnabled(false);
@@ -2460,7 +2460,7 @@ public class TradingFrame extends JFrame {
 
     private void wireEvents() {
         addStrategyButton.addActionListener(e -> addStrategy());
-        luckyButton.addActionListener(e -> openLuckyTrendingStocksDialog());
+        luckyButton.addActionListener(e -> showLuckyStrategiesMenu());
         refreshPortfolioButton.addActionListener(e -> portfolioRefreshController.refresh(true));
         capturePortfolioButton.addActionListener(e -> openPortfolioCaptureDialog());
         portfolioActionsButton.addActionListener(e -> portfolioActionsController.showMenu(portfolioActionsButton));
@@ -2471,6 +2471,7 @@ public class TradingFrame extends JFrame {
         configureButtonShortcut(luckyButton, KeyEvent.VK_L,
                 KeyStroke.getKeyStroke(KeyEvent.VK_L, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
                 "feelingLucky");
+        configureLuckyStrategiesMenu();
         configureButtonShortcut(refreshPortfolioButton, KeyEvent.VK_R,
                 KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
                 "refreshPortfolio");
@@ -2517,6 +2518,38 @@ public class TradingFrame extends JFrame {
             }
         }
         return -1;
+    }
+
+    private void configureLuckyStrategiesMenu() {
+        luckyStrategiesMenu.removeAll();
+        luckyStrategiesMenu.setBackground(new Color(46, 49, 60));
+        luckyStrategiesMenu.setOpaque(true);
+        luckyStrategiesMenu.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(70, 76, 90), 1, true),
+                new EmptyBorder(4, 4, 4, 4)
+        ));
+        luckyStrategiesMenu.add(createStatusMenuHeader("Lucky Strategies"));
+        luckyStrategiesMenu.add(createStatusMenuItem(
+                LUCKY_MENU_VOLATILE,
+                "icons/lucky.svg",
+                () -> openLuckyTrendingStocksDialog(LuckyTrendingStocksDialog.StrategyUniverse.VOLATILE)
+        ));
+        luckyStrategiesMenu.add(createStatusMenuItem(
+                LUCKY_MENU_DIVERSIFIED,
+                "icons/portfolio.svg",
+                () -> openLuckyTrendingStocksDialog(LuckyTrendingStocksDialog.StrategyUniverse.DIVERSIFIED_TOP_20)
+        ));
+    }
+
+    static List<String> luckyStrategyMenuLabels() {
+        return List.of(LUCKY_MENU_VOLATILE, LUCKY_MENU_DIVERSIFIED);
+    }
+
+    private void showLuckyStrategiesMenu() {
+        if (!luckyButton.isEnabled()) {
+            return;
+        }
+        luckyStrategiesMenu.show(luckyButton, 0, luckyButton.getHeight());
     }
 
     private void togglePauseResume(int viewRow) {
@@ -3298,16 +3331,23 @@ public class TradingFrame extends JFrame {
     }
 
     private void openLuckyTrendingStocksDialog() {
-        userActionLog.started("I Am Feeling Lucky");
-        log("[I Am Feeling Lucky] Button clicked.");
+        openLuckyTrendingStocksDialog(LuckyTrendingStocksDialog.StrategyUniverse.VOLATILE);
+    }
+
+    private void openLuckyTrendingStocksDialog(LuckyTrendingStocksDialog.StrategyUniverse universe) {
+        String actionName = universe == LuckyTrendingStocksDialog.StrategyUniverse.DIVERSIFIED_TOP_20
+                ? "Lucky Strategies: Top 20 Diversified Stocks"
+                : "Lucky Strategies: Volatile Strategy";
+        userActionLog.started(actionName);
+        log("[I Am Feeling Lucky] Menu action clicked. source=" + universe);
         StrategyMode targetMode = selectedViewMode;
         String apiKey = savedApiKeyForSelectedMode();
         String apiSecret = savedApiSecretForSelectedMode();
         if (apiKey.isBlank() || apiSecret.isBlank()) {
-            userActionLog.failed("I Am Feeling Lucky", "Alpaca credentials are required.");
+            userActionLog.failed(actionName, "Alpaca credentials are required.");
             JOptionPane.showMessageDialog(
                     this,
-                    "Please complete Settings with " + selectedModeLabel() + " Alpaca credentials before using I Am Feeling Lucky.",
+                    "Please complete Settings with " + selectedModeLabel() + " Alpaca credentials before using Lucky Strategies.",
                     "Alpaca Credentials Required",
                     JOptionPane.WARNING_MESSAGE
             );
@@ -3418,7 +3458,7 @@ public class TradingFrame extends JFrame {
                 return;
             }
             log("[I Am Feeling Lucky] " + config.symbol() + " " + targetMode + " strategy created from review dialog.");
-            userActionLog.completed("I Am Feeling Lucky Review", config.symbol() + " " + selectedModeLabel() + " strategy added.");
+            userActionLog.completed(actionName + " Review", config.symbol() + " " + selectedModeLabel() + " strategy added.");
             syncStrategiesFromRepository();
             refreshStrategyTableData();
             updateStatusBar();
@@ -3434,7 +3474,8 @@ public class TradingFrame extends JFrame {
                 marketDataApi,
                 this::placeLuckySimulationStrategies,
                 this::log,
-                targetMode
+                targetMode,
+                universe
         );
         dialog.setReviewHandler(reviewHandler);
         dialog.setVisible(true);
@@ -4177,6 +4218,14 @@ public class TradingFrame extends JFrame {
         String latestOrderStatus = BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus());
         return "invalid".equals(latestOrderStatus)
                 || "expired".equals(latestOrderStatus);
+    }
+
+    static JPanel composeFooterBars(JPanel portfolioBarPanel, JPanel mainBarPanel) {
+        JPanel footerBars = new JPanel(new BorderLayout());
+        footerBars.setOpaque(false);
+        footerBars.add(portfolioBarPanel, BorderLayout.NORTH);
+        footerBars.add(mainBarPanel, BorderLayout.SOUTH);
+        return footerBars;
     }
 
     private boolean hasOpenExposure(ManagedStrategy entry) {

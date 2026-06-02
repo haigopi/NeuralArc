@@ -8,11 +8,14 @@ import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
 import org.junit.jupiter.api.Test;
 
+import java.awt.BorderLayout;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
+import javax.swing.JPanel;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TradingFrameRestoreSelectionGuardTest {
@@ -32,6 +35,18 @@ class TradingFrameRestoreSelectionGuardTest {
     void blocksSelectingFirstRowWhenNoStrategies() {
         assertFalse(TradingFrame.canSelectFirstRestoredRow(0, 4));
         assertFalse(TradingFrame.canSelectFirstRestoredRow(0, 0));
+    }
+
+    @Test
+    void composesFooterBarsWithThinPortfolioBarAboveMainStatusBar() {
+        JPanel portfolioBar = new JPanel();
+        JPanel mainBar = new JPanel();
+
+        JPanel footerBars = TradingFrame.composeFooterBars(portfolioBar, mainBar);
+        BorderLayout layout = (BorderLayout) footerBars.getLayout();
+
+        assertSame(portfolioBar, layout.getLayoutComponent(BorderLayout.NORTH));
+        assertSame(mainBar, layout.getLayoutComponent(BorderLayout.SOUTH));
     }
 
     @Test

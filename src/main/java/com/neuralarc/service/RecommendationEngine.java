@@ -157,6 +157,12 @@ public class RecommendationEngine {
             baseAdjustmentReason += " Final adjustment applied to keep base buy price at or below current price.";
             warning = appendWarning(warning, "Base buy price was capped at current price.");
         }
+        BasePriceGuardResult clampedToLowestTouch = clampBasePriceToLowestTouched(baseBuyPrice, twoWeekBars);
+        if (clampedToLowestTouch.adjusted()) {
+            baseBuyPrice = clampedToLowestTouch.price();
+            baseAdjustmentReason += " Final adjustment applied to align with the lowest touched price in the last 2 weeks.";
+            warning = appendWarning(warning, "Base buy price was clamped to the lowest touched price in the last 2 weeks.");
+        }
 
         baseBuyPrice = floorPrice(baseBuyPrice);
         behaviorAdjustedBasePrice = floorPrice(behaviorAdjustedBasePrice);
@@ -263,6 +269,7 @@ public class RecommendationEngine {
         }
 
         List<MarketBar> twoWeekBars = tail(prices, Math.min(prices.size(), 14));
+        List<MarketBar> twoDayBars = tail(prices, Math.min(prices.size(), 2));
         Optional<BigDecimal> twoWeekLow = indicators.calculateLow(twoWeekBars);
         Optional<BigDecimal> twoWeekHigh = indicators.calculateHigh(twoWeekBars);
         Optional<BigDecimal> avgVolume = indicators.calculateAverageVolume(twoWeekBars, Math.min(10, twoWeekBars.size()));
@@ -323,6 +330,12 @@ public class RecommendationEngine {
             baseBuyPrice = floorPrice(cappedAtCurrent.price());
             baseAdjustmentReason += " Final adjustment applied to keep base buy price at or below current price.";
             warning = appendWarning(warning, "Base buy price was capped at current price.");
+        }
+        BasePriceGuardResult clampedToLowestTouch = clampBasePriceToLowestTouched(baseBuyPrice, twoDayBars);
+        if (clampedToLowestTouch.adjusted()) {
+            baseBuyPrice = floorPrice(clampedToLowestTouch.price());
+            baseAdjustmentReason += " Final adjustment applied to align with the lowest touched price in the last 2 days.";
+            warning = appendWarning(warning, "Base buy price was clamped to the lowest touched price in the last 2 days.");
         }
 
         BigDecimal buy1 = floorPrice(baseBuyPrice.subtract(atr.get().multiply(HALF)));
@@ -409,6 +422,7 @@ public class RecommendationEngine {
         }
 
         List<MarketBar> sixMonthBars = tail(prices, Math.min(prices.size(), 126));
+        List<MarketBar> oneMonthBars = tail(prices, Math.min(prices.size(), 21));
         List<MarketBar> oneYearBars = tail(prices, Math.min(prices.size(), 252));
         Optional<BigDecimal> sixMonthLow = indicators.calculateLow(sixMonthBars);
         Optional<BigDecimal> sixMonthHigh = indicators.calculateHigh(sixMonthBars);
@@ -523,6 +537,12 @@ public class RecommendationEngine {
             adjustedBaseBuyPrice = cappedAtCurrent.price();
             baseAdjustmentReason += " Final adjustment applied to keep base buy price at or below current price.";
             warningMessage = appendWarning(warningMessage, "Adjusted base buy price was capped at current price.");
+        }
+        BasePriceGuardResult clampedToLowestTouch = clampBasePriceToLowestTouched(adjustedBaseBuyPrice, oneMonthBars);
+        if (clampedToLowestTouch.adjusted()) {
+            adjustedBaseBuyPrice = clampedToLowestTouch.price();
+            baseAdjustmentReason += " Final adjustment applied to align with the lowest touched price in the last 1 month.";
+            warningMessage = appendWarning(warningMessage, "Adjusted base buy price was clamped to the lowest touched price in the last 1 month.");
         }
 
         adjustedBaseBuyPrice = floorPrice(adjustedBaseBuyPrice);
@@ -716,6 +736,17 @@ public class RecommendationEngine {
             return new BasePriceGuardResult(basePrice, false);
         }
         return new BasePriceGuardResult(Monetary.round(currentPrice), true);
+    }
+
+    private BasePriceGuardResult clampBasePriceToLowestTouched(BigDecimal basePrice, List<MarketBar> lookbackBars) {
+        if (!validPrice(basePrice) || lookbackBars == null || lookbackBars.isEmpty()) {
+            return new BasePriceGuardResult(basePrice, false);
+        }
+        Optional<BigDecimal> lowestTouched = indicators.calculateLow(lookbackBars);
+        if (lowestTouched.isEmpty() || !validPrice(lowestTouched.get()) || basePrice.compareTo(lowestTouched.get()) <= 0) {
+            return new BasePriceGuardResult(basePrice, false);
+        }
+        return new BasePriceGuardResult(Monetary.round(lowestTouched.get()), true);
     }
 
     private RecommendationAction actionForShortTerm(int confidence) {

@@ -54,7 +54,8 @@ class RecommendationEngineTest {
                 "AAPL", bars, new BigDecimal("218.00"), new BigDecimal("218.00"));
 
         assertEquals(ShortTermMarketMode.SHORT_TERM_BREAKOUT, recommendation.shortTermMarketMode());
-        assertEquals(new BigDecimal("218.00"), recommendation.baseBuyPrice());
+        assertEquals(new BigDecimal("208.00"), recommendation.baseBuyPrice());
+        assertTrue(recommendation.warningMessage().contains("last 2 weeks"));
     }
 
     @Test
@@ -66,7 +67,8 @@ class RecommendationEngineTest {
 
         assertEquals(ShortTermMarketMode.OVEREXTENDED, recommendation.shortTermMarketMode());
         assertEquals(RecommendationAction.WATCH, recommendation.recommendationAction());
-        assertEquals(recommendation.behaviorAdjustedBasePrice(), recommendation.baseBuyPrice());
+        assertEquals(new BigDecimal("208.00"), recommendation.baseBuyPrice());
+        assertTrue(recommendation.warningMessage().contains("last 2 weeks"));
     }
 
     @Test
@@ -231,7 +233,41 @@ class RecommendationEngineTest {
                 "AAPL", bars, new BigDecimal("190.00"), new BigDecimal("190.00"));
 
         assertEquals(MarketMode.BREAKOUT, recommendation.marketMode());
-        assertEquals(new BigDecimal("190.00"), recommendation.adjustedBaseBuyPrice());
+        assertEquals(new BigDecimal("158.00"), recommendation.adjustedBaseBuyPrice());
+        assertTrue(recommendation.warningMessage().contains("last 1 month"));
+    }
+
+    @Test
+    void highRiskShortTermClampsBaseToLowestTouchedPriceInLastTwoDays() {
+        List<MarketBar> bars = highRiskTwoWeekOnlyBars();
+
+        StrategyRecommendation recommendation = engine.generateHighRiskShortTermRecommendation(
+                "AAPL", bars, new BigDecimal("113.00"), new BigDecimal("113.00"));
+
+        assertEquals(new BigDecimal("104.00"), recommendation.baseBuyPrice());
+        assertTrue(recommendation.warningMessage().contains("last 2 days"));
+    }
+
+    @Test
+    void shortTermClampsBaseToLowestTouchedPriceInLastTwoWeeks() {
+        List<MarketBar> bars = shortTermBreakoutBars(new BigDecimal("1800.00"));
+
+        StrategyRecommendation recommendation = engine.generateShortTermRecommendation(
+                "AAPL", bars, new BigDecimal("218.00"), new BigDecimal("218.00"));
+
+        assertEquals(lowestLowFromTail(bars, 14), recommendation.baseBuyPrice());
+        assertTrue(recommendation.warningMessage().contains("last 2 weeks"));
+    }
+
+    @Test
+    void longTermClampsBaseToLowestTouchedPriceInLastOneMonth() {
+        List<MarketBar> bars = breakoutBars(new BigDecimal("190.00"), new BigDecimal("120.00"), new BigDecimal("100.00"));
+
+        StrategyRecommendation recommendation = engine.generateLongTermRecommendation(
+                "AAPL", bars, new BigDecimal("190.00"), new BigDecimal("190.00"));
+
+        assertEquals(lowestLowFromTail(bars, 21), recommendation.adjustedBaseBuyPrice());
+        assertTrue(recommendation.warningMessage().contains("last 1 month"));
     }
 
     @Test
@@ -479,6 +515,17 @@ class RecommendationEngineTest {
 
     private MarketBar bar(LocalDate date, BigDecimal open, BigDecimal high, BigDecimal low, BigDecimal close, BigDecimal volume) {
         return new MarketBar("AAPL", date + "T00:00:00Z", open, high, low, close, volume);
+    }
+
+    private BigDecimal lowestLowFromTail(List<MarketBar> bars, int count) {
+        int from = Math.max(0, bars.size() - Math.max(1, count));
+        BigDecimal lowest = bars.get(from).low();
+        for (int i = from + 1; i < bars.size(); i++) {
+            if (bars.get(i).low().compareTo(lowest) < 0) {
+                lowest = bars.get(i).low();
+            }
+        }
+        return lowest.setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     private void assertRiskBand(BigDecimal baseBuy, BigDecimal buy1, BigDecimal buy2, BigDecimal stopLoss) {
