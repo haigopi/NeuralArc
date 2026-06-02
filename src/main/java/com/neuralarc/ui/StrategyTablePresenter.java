@@ -167,8 +167,7 @@ public final class StrategyTablePresenter {
                 || state == StrategyLifecycleState.BUY_LIMIT_1_PLACED
                 || state == StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED
                 || state == StrategyLifecycleState.BUY_LIMIT_2_PLACED
-                || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED
-                || state == StrategyLifecycleState.SELL_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED             || state == StrategyLifecycleState.SELL_PLACED
                 || state == StrategyLifecycleState.SELL_PARTIALLY_FILLED;
     }
 
@@ -303,8 +302,7 @@ public final class StrategyTablePresenter {
             BigDecimal lastSellPrice,
             BigDecimal realizedPnl,
             int columnIndex,
-            String statusLabel,
-            String brokerModeLabel
+            String statusLabel
     ) {
         if (columnIndex >= 2 && columnIndex <= 6) {
             return switch (columnIndex) {
@@ -320,12 +318,24 @@ public final class StrategyTablePresenter {
             case 0 -> strategy.symbol();
             case 1 -> statusLabel;
             case 7 -> strategy.pollingIntervalSeconds();
-            case 8 -> brokerModeLabel;
             case 9 -> entrySource(strategy);
             case 10 -> exitSource(strategy);
             case 11 -> statusLabel;
             default -> "";
         };
+    }
+
+    // Backward-compatible overload used by older tests/call sites; broker mode is no longer a grid column.
+    public Object valueAt(
+            Strategy strategy,
+            Position position,
+            BigDecimal lastSellPrice,
+            BigDecimal realizedPnl,
+            int columnIndex,
+            String statusLabel,
+            String brokerModeLabel
+    ) {
+        return valueAt(strategy, position, lastSellPrice, realizedPnl, columnIndex, statusLabel);
     }
 
 

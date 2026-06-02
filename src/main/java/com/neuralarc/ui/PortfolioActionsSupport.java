@@ -50,6 +50,13 @@ final class PortfolioActionsSupport {
         return false;
     }
 
+    private static boolean isResumeEligible(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return false;
+        }
+        return entry.strategy.status() == StrategyStatus.PAUSED;
+    }
+
     private static boolean isEligibleForManualSell(ManagedStrategy entry) {
         if (entry == null || entry.strategy == null) {
             return false;
@@ -358,6 +365,33 @@ final class PortfolioActionsSupport {
     }
 
     enum BulkAction {
+        RESUME_ALL("Resume All") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return isResumeEligible(entry);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Resume " + count + " paused/canceled strategy(ies)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Matching paused strategies will be resumed for monitoring/execution using their mode-specific service."
+                        + "<br>For market-closed suppression, strategies are resumed with safe market-close behavior.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no paused or canceled strategies to resume.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Resumed";
+            }
+        },
         CANCEL_PENDING_LIMIT_BUYS("Cancel All Pending Limit Buys") {
             @Override
             boolean matches(ManagedStrategy entry) {

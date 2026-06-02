@@ -241,7 +241,6 @@ public class TradingFrame extends JFrame {
     private final StrategyGridTableModel strategyTableModel = new StrategyGridTableModel(
             strategies,
             this::displayStatusLabel,
-            this::gridBrokerModeLabel,
             strategyTablePresenter
     );
     private final HistoryGridTableModel filledOrdersTableModel = new HistoryGridTableModel(filledOrderRows);
@@ -254,7 +253,13 @@ public class TradingFrame extends JFrame {
                 return null;
             }
             int modelRow = convertRowIndexToModel(viewRow);
-            if (modelRow < 0 || modelRow >= strategies.size() || viewCol != 6) {
+            if (modelRow < 0 || modelRow >= strategies.size()) {
+                return null;
+            }
+            if (viewCol == 10) {
+                return actionTooltipForHover(viewRow, event.getX());
+            }
+            if (viewCol != 6) {
                 return null;
             }
             Strategy strategy = strategies.get(modelRow).strategy;
@@ -1113,19 +1118,19 @@ public class TradingFrame extends JFrame {
         strategyTable.setDefaultRenderer(Number.class, statusRowRenderer);
         strategyTable.getColumnModel().getColumn(5).setCellRenderer(new UnrealizedPnLRenderer());
         strategyTable.getColumnModel().getColumn(7).setCellRenderer(new PollingBarRenderer());
-        strategyTable.getColumnModel().getColumn(11).setCellRenderer(new ActionsRenderer());
+        strategyTable.getColumnModel().getColumn(10).setCellRenderer(new ActionsRenderer());
         strategyTable.getColumnModel().getColumn(0).setPreferredWidth(72);
         strategyTable.getColumnModel().getColumn(0).setMinWidth(58);
         strategyTable.getColumnModel().getColumn(6).setPreferredWidth(300);
         strategyTable.getColumnModel().getColumn(6).setMinWidth(260);
         strategyTable.getColumnModel().getColumn(7).setPreferredWidth(170);
         strategyTable.getColumnModel().getColumn(7).setMinWidth(150);
-        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(130);
-        strategyTable.getColumnModel().getColumn(9).setMinWidth(110);
-        strategyTable.getColumnModel().getColumn(10).setPreferredWidth(140);
-        strategyTable.getColumnModel().getColumn(10).setMinWidth(120);
-        strategyTable.getColumnModel().getColumn(11).setPreferredWidth(780);
-        strategyTable.getColumnModel().getColumn(11).setMinWidth(720);
+        strategyTable.getColumnModel().getColumn(8).setPreferredWidth(130);
+        strategyTable.getColumnModel().getColumn(8).setMinWidth(110);
+        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(140);
+        strategyTable.getColumnModel().getColumn(9).setMinWidth(120);
+        strategyTable.getColumnModel().getColumn(10).setPreferredWidth(520);
+        strategyTable.getColumnModel().getColumn(10).setMinWidth(430);
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
         // Using mousePressed (not mouseClicked) gives instant response — mouseClicked only fires
@@ -1145,14 +1150,14 @@ public class TradingFrame extends JFrame {
                     strategyTable.setRowSelectionInterval(viewRow, viewRow);
                 }
 
-                // Dispatch the action buttons (column 11 only) via five equal zones.
+                // Dispatch the action buttons (column 10 only) via five equal zones.
                 // Use invokeLater so the action runs AFTER ALL mousePressed handlers
                 // (ours + BasicTableUI) have finished — this is critical because:
                 //   • BasicTableUI fires its own mousePressed AFTER ours (LIFO order).
                 //   • Without deferral, dialogs opened here block BasicTableUI from
                 //     ever running, leaving the table in a broken state on first click.
                 if (e.getButton() != java.awt.event.MouseEvent.BUTTON1) return;
-                if (viewRow < 0 || viewRow >= strategies.size() || viewCol != 11) return;
+                if (viewRow < 0 || viewRow >= strategies.size() || viewCol != 10) return;
                 java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, viewCol, false);
                 int xInCell  = e.getX() - cellRect.x;
                 int section  = Math.max(1, cellRect.width / 5);
@@ -1191,7 +1196,7 @@ public class TradingFrame extends JFrame {
                 // an actual data row — NOT over the empty viewport space below the rows.
                 int viewRow = strategyTable.rowAtPoint(e.getPoint());
                 int viewCol = strategyTable.columnAtPoint(e.getPoint());
-                if (viewRow >= 0 && viewCol == 11) {
+                if (viewRow >= 0 && viewCol == 10) {
                     strategyTable.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
                 } else {
                     strategyTable.setCursor(java.awt.Cursor.getDefaultCursor());
@@ -1220,7 +1225,7 @@ public class TradingFrame extends JFrame {
             return leftValue.compareTo(rightValue);
         });
         strategySorter.setSortable(7, false); // Polling countdown bar column — not sortable
-        strategySorter.setSortable(11, false); // Actions button column — not sortable
+        strategySorter.setSortable(10, false); // Actions button column — not sortable
         applyCurrentStrategiesRowFilter();
         strategyTable.setRowSorter(strategySorter);
         strategyTable.getTableHeader().addMouseListener(new MouseAdapter() {
@@ -5578,11 +5583,11 @@ public class TradingFrame extends JFrame {
     }
 
     private final class ActionsRenderer extends JPanel implements TableCellRenderer {
-        private final JButton editButton = new JButton("Edit");
+        private final JButton editButton = new JButton();
         private final JButton toggleButton = new JButton();
-        private final JButton sellButton = new JButton("Sell");
+        private final JButton sellButton = new JButton();
         private final JButton promoteButton = new JButton("Promote to Live");
-        private final JButton deleteButton = new JButton("Delete");
+        private final JButton deleteButton = new JButton();
 
         private ActionsRenderer() {
             super(new GridLayout(1, 5, 6, 0));
@@ -5592,11 +5597,11 @@ public class TradingFrame extends JFrame {
             applyButtonIcon(sellButton, "icons/submit.svg", 12);
             applyButtonIcon(promoteButton, "icons/add-stock-strategy.svg", 13);
             applyButtonIcon(deleteButton, "icons/delete.svg", 13);
-            styleCompactActionButton(editButton, new Color(63, 81, 181));
-            styleActionButton(toggleButton, new Color(198, 40, 40));
-            styleCompactActionButton(sellButton, new Color(230, 81, 0));
+            styleIconOnlyActionButton(editButton, new Color(63, 81, 181));
+            styleIconOnlyActionButton(toggleButton, new Color(198, 40, 40));
+            styleIconOnlyActionButton(sellButton, new Color(230, 81, 0));
             styleActionButton(promoteButton, new Color(25, 118, 210));
-            styleActionButton(deleteButton, new Color(156, 39, 39));
+            styleIconOnlyActionButton(deleteButton, new Color(156, 39, 39));
             add(editButton);
             add(toggleButton);
             add(sellButton);
@@ -5608,30 +5613,18 @@ public class TradingFrame extends JFrame {
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
             int modelRow = table.convertRowIndexToModel(row);
             ManagedStrategy strategy = strategies.get(modelRow);
-            StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = strategyActionsPresenter.present(
-                    new StrategyActionsPresenter.StrategyActionsState(
-                            strategy.strategy.status(),
-                            strategy.strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED
-                                    || strategy.strategy.pauseReason() == PauseReason.USER_PAUSED,
-                            strategy.isPauseResumeBusy(),
-                            strategy.pauseResumeBusyText(),
-                            strategy.strategy.mode() == StrategyMode.PAPER,
-                            strategy.cachedPosition().getTotalShares() > 0,
-                            isMarketOpenForUi(),
-                            strategy.strategy.latestOrderStatus()
-                    )
-            );
-            toggleButton.setText(actionsViewModel.toggleText());
+            StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = actionViewModelFor(strategy);
+            toggleButton.setText("");
             String toggleIconPath = actionsViewModel.toggleIconPath();
             String currentToggleIconPath = (String) toggleButton.getClientProperty("toggleIconPath");
             if (currentToggleIconPath == null || !currentToggleIconPath.equals(toggleIconPath)) {
                 applyButtonIcon(toggleButton, toggleIconPath, 13);
                 toggleButton.putClientProperty("toggleIconPath", toggleIconPath);
             }
-            styleActionButton(toggleButton, actionsViewModel.toggleColor());
+            styleIconOnlyActionButton(toggleButton, actionsViewModel.toggleColor());
             toggleButton.setEnabled(actionsViewModel.toggleEnabled());
             sellButton.setEnabled(actionsViewModel.sellEnabled());
-            styleCompactActionButton(sellButton, actionsViewModel.sellColor());
+            styleIconOnlyActionButton(sellButton, actionsViewModel.sellColor());
             promoteButton.setEnabled(actionsViewModel.promoteEnabled());
             styleActionButton(promoteButton, actionsViewModel.promoteColor());
             editButton.setToolTipText(TooltipStyler.text("Edit strategy rules, limits, and settings."));
@@ -5648,6 +5641,53 @@ public class TradingFrame extends JFrame {
             setBackground(selectionAwareRowColor(isSelected, row));
             return this;
         }
+    }
+
+    private StrategyActionsPresenter.StrategyActionsViewModel actionViewModelFor(ManagedStrategy strategy) {
+        return strategyActionsPresenter.present(
+                new StrategyActionsPresenter.StrategyActionsState(
+                        strategy.strategy.status(),
+                        strategy.strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED
+                                || strategy.strategy.pauseReason() == PauseReason.USER_PAUSED,
+                        strategy.isPauseResumeBusy(),
+                        strategy.pauseResumeBusyText(),
+                        strategy.strategy.mode() == StrategyMode.PAPER,
+                        strategy.cachedPosition().getTotalShares() > 0,
+                        isMarketOpenForUi(),
+                        strategy.strategy.latestOrderStatus()
+                )
+        );
+    }
+
+    private String actionTooltipForHover(int viewRow, int mouseX) {
+        int modelRow = strategyTable.convertRowIndexToModel(viewRow);
+        if (modelRow < 0 || modelRow >= strategies.size()) {
+            return null;
+        }
+        ManagedStrategy strategy = strategies.get(modelRow);
+        StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = actionViewModelFor(strategy);
+        java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, 10, false);
+        int xInCell = mouseX - cellRect.x;
+        int section = Math.max(1, cellRect.width / 5);
+        if (xInCell < section) {
+            return TooltipStyler.text("Edit strategy rules, limits, and settings.");
+        }
+        if (xInCell < section * 2) {
+            return actionsViewModel.toggleEnabled()
+                    ? TooltipStyler.text("Run the shown action for this strategy: " + actionsViewModel.toggleText() + ".")
+                    : TooltipStyler.text("This action is currently unavailable for this strategy state.");
+        }
+        if (xInCell < section * 3) {
+            return actionsViewModel.sellEnabled()
+                    ? TooltipStyler.text("Sell the open position for this strategy.")
+                    : TooltipStyler.text("Sell is available only when Alpaca shows an open position for this strategy.");
+        }
+        if (xInCell < section * 4) {
+            return actionsViewModel.promoteEnabled()
+                    ? TooltipStyler.text("Promote this PAPER strategy to LIVE.")
+                    : TooltipStyler.text("Promote is available only for eligible PAPER strategies.");
+        }
+        return TooltipStyler.text("Delete this strategy from Current Strategies.");
     }
 
 
@@ -5823,6 +5863,17 @@ public class TradingFrame extends JFrame {
         button.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(background.darker(), 1, true),
                 new EmptyBorder(1, 3, 1, 3)
+        ));
+    }
+
+    private void styleIconOnlyActionButton(JButton button, Color background) {
+        styleCompactActionButton(button, background);
+        button.setMargin(new java.awt.Insets(2, 2, 2, 2));
+        button.setIconTextGap(0);
+        button.setHorizontalTextPosition(SwingConstants.CENTER);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(background.darker(), 1, true),
+                new EmptyBorder(2, 2, 2, 2)
         ));
     }
 

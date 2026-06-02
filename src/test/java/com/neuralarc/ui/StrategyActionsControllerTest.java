@@ -45,15 +45,15 @@ class StrategyActionsControllerTest {
     }
 
     @Test
-    void togglePauseResumeReturnsEarlyForPausedStrategyWhenMarketClosed() {
+    void togglePauseResumeRunsForPausedStrategyWhenMarketClosed() {
         FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.PAUSED));
         gateway.marketOpen = false;
         StrategyActionsController controller = new StrategyActionsController(gateway);
 
         controller.togglePauseResume(0);
 
-        assertEquals(0, gateway.backgroundTasksRun);
-        assertEquals(0, gateway.refreshRowCalls);
+        assertEquals(1, gateway.backgroundTasksRun);
+        assertEquals(2, gateway.refreshRowCalls);
     }
 
     @Test

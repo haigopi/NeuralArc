@@ -116,13 +116,13 @@ class StrategyActionsPresenterTest {
     }
 
     @Test
-    void pausedStrategyDisablesResumeWhenMarketClosed() {
+    void pausedStrategyKeepsResumeEnabledWhenMarketClosed() {
         StrategyActionsPresenter.StrategyActionsViewModel viewModel = presenter.present(
                 new StrategyActionsPresenter.StrategyActionsState(StrategyStatus.PAUSED, false, false, "", true, true, false)
         );
 
         assertEquals("Resume", viewModel.toggleText());
-        assertFalse(viewModel.toggleEnabled());
+        assertTrue(viewModel.toggleEnabled());
     }
 
     @Test

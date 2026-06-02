@@ -36,10 +36,6 @@ public final class StrategyActionsController {
         }
 
         boolean wasPaused = entry.isPaused();
-        if (wasPaused && !gateway.marketOpenForUi()) {
-            actionLog.skipped("Place Limit Buy Again", "Market is closed for " + entry.strategy().symbol() + ".");
-            return;
-        }
         if (!wasPaused && !confirmCancel(entry.strategy())) {
             actionLog.canceled("Cancel Strategy " + entry.strategy().symbol());
             return;

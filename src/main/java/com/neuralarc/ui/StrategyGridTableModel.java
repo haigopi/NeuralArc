@@ -1,7 +1,5 @@
 package com.neuralarc.ui;
 
-import com.neuralarc.model.Strategy;
-
 import javax.swing.table.AbstractTableModel;
 import java.util.List;
 import java.util.function.Function;
@@ -9,28 +7,25 @@ import java.util.function.Function;
 final class StrategyGridTableModel extends AbstractTableModel {
     static final String[] COLUMNS = {
             "Shares", "Symbol", "Avg Cost", "Stock Price", "Market Value", "P&L",
-            "Status", "Polling", "Broker + Mode", "Entry Source", "Exit Source", "Actions"
+            "Status", "Polling", "Entry Source", "Exit Source", "Actions"
     };
 
     // Maps the grid column order to the presenter column contract used by StrategyTablePresenter.
     private static final int[] MODEL_TO_PRESENTER_COLUMN_INDEX = {
-            2, 0, 3, 4, 5, 6, 1, 7, 8, 9, 10, 11
+            2, 0, 3, 4, 5, 6, 1, 7, 9, 10, 11
     };
 
     private final List<ManagedStrategy> strategies;
     private final Function<ManagedStrategy, String> statusLabelFn;
-    private final Function<Strategy, String> brokerModeLabelFn;
     private final StrategyTablePresenter strategyTablePresenter;
 
     StrategyGridTableModel(
             List<ManagedStrategy> strategies,
             Function<ManagedStrategy, String> statusLabelFn,
-            Function<Strategy, String> brokerModeLabelFn,
             StrategyTablePresenter strategyTablePresenter
     ) {
         this.strategies = strategies;
         this.statusLabelFn = statusLabelFn;
-        this.brokerModeLabelFn = brokerModeLabelFn;
         this.strategyTablePresenter = strategyTablePresenter;
     }
 
@@ -48,8 +43,7 @@ final class StrategyGridTableModel extends AbstractTableModel {
                 entry.cachedLastSellPrice(),
                 entry.cachedRealizedPnl(),
                 presenterColumnIndex(columnIndex),
-                statusLabel,
-                brokerModeLabelFn.apply(entry.strategy)
+                statusLabel
         );
     }
 

@@ -403,6 +403,24 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
+    void resumeAllTargetsPausedAndManualCanceledStrategies() {
+        ManagedStrategy userPaused = managed("AAPL", StrategyStatus.PAUSED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        userPaused.strategy.setPauseReason(PauseReason.USER_PAUSED);
+        ManagedStrategy manualCanceled = managed("MSFT", StrategyStatus.PAUSED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        manualCanceled.strategy.setPauseReason(PauseReason.MANUAL_LIMIT_BUY_CANCELED);
+        ManagedStrategy autoPaused = managed("NVDA", StrategyStatus.PAUSED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        autoPaused.strategy.setPauseReason(PauseReason.AUTO_MARKET_CLOSED);
+        ManagedStrategy active = managed("TSLA", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(userPaused, manualCanceled, autoPaused, active),
+                PortfolioActionsSupport.BulkAction.RESUME_ALL
+        );
+
+        assertEquals(List.of("AAPL", "MSFT", "NVDA"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
     void bulkActionConfirmationUsesSpecificDescription() {
         String message = support.buildConfirmationMessage(
                 PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_BUYS,
@@ -453,6 +471,16 @@ class PortfolioActionsSupportTest {
         );
 
         assertTrue(message.contains("Archived: 2"));
+    }
+
+    @Test
+    void resumeAllResultMessageUsesResumedLabel() {
+        String message = support.buildResultMessage(
+                PortfolioActionsSupport.BulkAction.RESUME_ALL,
+                new PortfolioActionsSupport.BatchResult(List.of("AAPL", "MSFT"), List.of())
+        );
+
+        assertTrue(message.contains("Resumed: 2"));
     }
 
     @Test

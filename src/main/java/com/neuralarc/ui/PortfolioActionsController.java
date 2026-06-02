@@ -80,6 +80,8 @@ final class PortfolioActionsController {
                 this::handleCancelAllPendingLimitSells));
         menu.add(sectionSeparator());
         menu.add(sectionHeader("Lifecycle"));
+        menu.add(gateway.createMenuItem("Resume All", "icons/submit.svg",
+                this::handleResumeAll));
         menu.add(gateway.createMenuItem("Clean All Expired", "icons/delete.svg",
                 this::handleCleanAllExpired));
         menu.add(gateway.createMenuItem("Clean Invalid Strategies", "icons/delete.svg",
@@ -239,6 +241,41 @@ final class PortfolioActionsController {
                         successes.add(entry.strategy.symbol());
                     } else {
                         failures.add(entry.strategy.symbol() + ": " + result.error());
+                    }
+                }
+                return new PortfolioActionsSupport.BatchResult(successes, failures);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    private void handleResumeAll() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.RESUME_ALL;
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                List<String> successes = new ArrayList<>();
+                List<String> failures = new ArrayList<>();
+                for (ManagedStrategy entry : targets) {
+                    StrategyService modeAwareService = gateway.strategyServiceForMode(entry.strategy.mode());
+                    if (modeAwareService == null) {
+                        failures.add(entry.strategy.symbol() + ": broker client is not configured for " + entry.strategy.mode().name());
+                        continue;
+                    }
+                    try {
+                        modeAwareService.resume(entry.strategy.id());
+                        successes.add(entry.strategy.symbol());
+                    } catch (Exception ex) {
+                        failures.add(entry.strategy.symbol() + ": " + ex.getMessage());
                     }
                 }
                 return new PortfolioActionsSupport.BatchResult(successes, failures);
