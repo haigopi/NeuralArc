@@ -4,6 +4,7 @@ import com.neuralarc.api.AlpacaClient;
 import com.neuralarc.api.AlpacaPositionData;
 import com.neuralarc.model.*;
 import com.neuralarc.util.BrokerOrderStatusUtil;
+import com.neuralarc.util.Monetary;
 import org.json.JSONObject;
 
 import java.math.BigDecimal;
@@ -487,6 +488,10 @@ public class StrategyService {
     }
 
     public LivePromotionResult promotePaperStrategyToLive(String strategyId) {
+        return promotePaperStrategyToLive(strategyId, null);
+    }
+
+    public LivePromotionResult promotePaperStrategyToLive(String strategyId, LivePromotionEdits edits) {
         LivePromotionPreview preview = previewLivePromotion(strategyId);
         if (!preview.exists()) {
             return LivePromotionResult.failed(preview.issues().isEmpty() ? "Strategy not found." : preview.issues().getFirst());
@@ -494,9 +499,28 @@ public class StrategyService {
         if (!preview.eligible()) {
             return LivePromotionResult.failed(String.join(" ", preview.issues()));
         }
+
+        if (edits != null) {
+            String validationError = validatePromotionEdits(edits, preview.strategy());
+            if (validationError != null) {
+                return LivePromotionResult.failed(validationError);
+            }
+        }
+
         Strategy paperStrategy = preview.strategy();
 
-        Strategy liveStrategy = liveStrategyPromotionFactory.cloneFromPaper(paperStrategy);
+        LivePromotionEdits normalizedEdits = edits == null
+                ? null
+                : new LivePromotionEdits(
+                        Monetary.round(edits.baseBuyPrice()),
+                        edits.baseBuyQty(),
+                        edits.buyLevel1Price() != null ? Monetary.round(edits.buyLevel1Price()) : null,
+                        edits.buyLevel1Qty(),
+                        edits.buyLevel2Price() != null ? Monetary.round(edits.buyLevel2Price()) : null,
+                        edits.buyLevel2Qty(),
+                        Monetary.round(edits.targetSellPrice())
+                );
+        Strategy liveStrategy = liveStrategyPromotionFactory.cloneFromPaper(paperStrategy, normalizedEdits);
         StrategyCreationResult creationResult = createAndActivate(liveStrategy);
         if (!creationResult.success()) {
             return LivePromotionResult.failed(creationResult.error());
@@ -509,6 +533,56 @@ public class StrategyService {
                 creationResult.alpacaOrderId(),
                 creationResult.clientOrderId()
         );
+    }
+
+    private String validatePromotionEdits(LivePromotionEdits edits, Strategy paperStrategy) {
+        if (edits.baseBuyPrice() == null || edits.baseBuyPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            return "Base buy price must be greater than zero for live promotion.";
+        }
+        if (edits.baseBuyQty() != null && edits.baseBuyQty() <= 0) {
+            return "Base buy quantity must be greater than zero for live promotion.";
+        }
+
+        if (paperStrategy.lossBuyLevelsEnabled()) {
+            BigDecimal level1Price = edits.buyLevel1Price() != null
+                    ? edits.buyLevel1Price() : paperStrategy.buyLimit1Price();
+            BigDecimal level2Price = edits.buyLevel2Price() != null
+                    ? edits.buyLevel2Price() : paperStrategy.buyLimit2Price();
+
+            if (level1Price.compareTo(BigDecimal.ZERO) <= 0) {
+                return "Buy Level 1 price must be greater than zero.";
+            }
+            if (level1Price.compareTo(edits.baseBuyPrice()) >= 0) {
+                return "Buy Level 1 price must be less than base buy price.";
+            }
+            if (edits.buyLevel1Qty() != null && edits.buyLevel1Qty() <= 0) {
+                return "Buy Level 1 quantity must be greater than zero.";
+            }
+            if (level2Price.compareTo(BigDecimal.ZERO) <= 0) {
+                return "Buy Level 2 price must be greater than zero.";
+            }
+            if (level2Price.compareTo(level1Price) >= 0) {
+                return "Buy Level 2 price must be less than Buy Level 1 price.";
+            }
+            if (edits.buyLevel2Qty() != null && edits.buyLevel2Qty() <= 0) {
+                return "Buy Level 2 quantity must be greater than zero.";
+            }
+        }
+
+        if (edits.targetSellPrice() == null) {
+            return "Target sell price is required for live promotion.";
+        }
+        if (paperStrategy.targetSellEnabled()) {
+            if (edits.targetSellPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                return "Target sell price must be greater than zero when target sell is enabled.";
+            }
+            if (edits.targetSellPrice().compareTo(edits.baseBuyPrice()) < 0) {
+                return "Target sell price must be greater than or equal to base buy price when target sell is enabled.";
+            }
+        } else if (edits.targetSellPrice().compareTo(BigDecimal.ZERO) < 0) {
+            return "Target sell price cannot be negative.";
+        }
+        return null;
     }
 
     public List<Strategy> syncRemoteStrategies() {
@@ -1017,6 +1091,21 @@ public class StrategyService {
 
         public static LivePromotionResult failed(String error) {
             return new LivePromotionResult(false, null, null, null, null, error == null ? "Unknown error" : error);
+        }
+    }
+
+    public record LivePromotionEdits(
+            BigDecimal baseBuyPrice,
+            Integer baseBuyQty,
+            BigDecimal buyLevel1Price,
+            Integer buyLevel1Qty,
+            BigDecimal buyLevel2Price,
+            Integer buyLevel2Qty,
+            BigDecimal targetSellPrice
+    ) {
+        /** Convenience constructor for the price-only path used in older tests. */
+        public LivePromotionEdits(BigDecimal baseBuyPrice, BigDecimal targetSellPrice) {
+            this(baseBuyPrice, null, null, null, null, null, targetSellPrice);
         }
     }
 

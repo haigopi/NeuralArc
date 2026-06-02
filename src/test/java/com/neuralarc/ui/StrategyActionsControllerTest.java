@@ -20,6 +20,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class StrategyActionsControllerTest {
     @Test
@@ -125,6 +126,36 @@ class StrategyActionsControllerTest {
         controller.previewLivePromotion(0);
 
         assertEquals(1, gateway.previewDialogCalls);
+    }
+
+    @Test
+    void previewLivePromotionPassesEditedPricesToPromotionService() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        FakePromotionStrategyService service = new FakePromotionStrategyService(gateway.entry.strategy());
+        gateway.strategyService = service;
+        gateway.promotionDialogResult = new StrategyActionsController.PromotionDialogResult(
+                true,
+                false,
+                new BigDecimal("8.25"),
+                12,
+                new BigDecimal("6.75"),
+                6,
+                new BigDecimal("5.50"),
+                4,
+                new BigDecimal("10.75")
+        );
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.previewLivePromotion(0);
+
+        assertTrue(service.promoteCalled);
+        assertEquals(new BigDecimal("8.25"), service.lastEdits.baseBuyPrice());
+        assertEquals(12, service.lastEdits.baseBuyQty());
+        assertEquals(new BigDecimal("6.75"), service.lastEdits.buyLevel1Price());
+        assertEquals(6, service.lastEdits.buyLevel1Qty());
+        assertEquals(new BigDecimal("5.50"), service.lastEdits.buyLevel2Price());
+        assertEquals(4, service.lastEdits.buyLevel2Qty());
+        assertEquals(new BigDecimal("10.75"), service.lastEdits.targetSellPrice());
     }
 
     @Test
@@ -253,6 +284,12 @@ class StrategyActionsControllerTest {
         StrategyService strategyService;
         int archiveCalls;
         int removeCalls;
+        StrategyActionsController.PromotionDialogResult promotionDialogResult =
+                new StrategyActionsController.PromotionDialogResult(false, false,
+                        new BigDecimal("8.00"), 10,
+                        new BigDecimal("7.00"), 5,
+                        new BigDecimal("6.50"), 5,
+                        new BigDecimal("10.00"));
 
         private FakeGateway(Strategy strategy) {
             this.entry = new StrategyActionsController.ActionEntry() {
@@ -310,7 +347,7 @@ class StrategyActionsControllerTest {
         @Override public void showMessage(String message, String title, int messageType) { }
         @Override public StrategyActionsController.PromotionDialogResult showLivePromotionDialog(StrategyService.LivePromotionPreview preview, String realizedPnl, String unrealizedPnl) {
             previewDialogCalls++;
-            return new StrategyActionsController.PromotionDialogResult(false, false);
+            return promotionDialogResult;
         }
         @Override
         public void runBackgroundTask(StrategyActionsController.ThrowingRunnable background, Runnable onSuccess, java.util.function.Consumer<Exception> onFailure, Runnable onFinally) {
@@ -328,6 +365,8 @@ class StrategyActionsControllerTest {
 
     private static final class FakePromotionStrategyService extends StrategyService {
         private final Strategy previewStrategy;
+        private boolean promoteCalled;
+        private StrategyService.LivePromotionEdits lastEdits;
 
         private FakePromotionStrategyService(Strategy previewStrategy) {
             super(null, null, null, null, null, true, StrategyMode.PAPER);
@@ -346,6 +385,13 @@ class StrategyActionsControllerTest {
                     BigDecimal.ZERO,
                     false
             );
+        }
+
+        @Override
+        public LivePromotionResult promotePaperStrategyToLive(String strategyId, LivePromotionEdits edits) {
+            promoteCalled = true;
+            lastEdits = edits;
+            return LivePromotionResult.success(strategyId, "live-id", "alpaca-id", "client-id");
         }
     }
 }

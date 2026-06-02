@@ -140,7 +140,18 @@ public final class StrategyActionsController {
             return;
         }
 
-        StrategyService.LivePromotionResult result = liveService.promotePaperStrategyToLive(entry.strategy().id());
+        StrategyService.LivePromotionResult result = liveService.promotePaperStrategyToLive(
+                entry.strategy().id(),
+                new StrategyService.LivePromotionEdits(
+                        dialogResult.baseBuyPrice(),
+                        dialogResult.baseBuyQty(),
+                        dialogResult.buyLevel1Price(),
+                        dialogResult.buyLevel1Qty(),
+                        dialogResult.buyLevel2Price(),
+                        dialogResult.buyLevel2Qty(),
+                        dialogResult.targetSellPrice()
+                )
+        );
         if (!result.success()) {
             actionLog.failed("Promote to Live " + entry.strategy().symbol(), result.error());
             gateway.showMessage(result.error(), "Live Promotion Failed", JOptionPane.ERROR_MESSAGE);
@@ -407,7 +418,17 @@ public final class StrategyActionsController {
         );
     }
 
-    public record PromotionDialogResult(boolean proceed, boolean closePaperPositions) {
+    public record PromotionDialogResult(
+            boolean proceed,
+            boolean closePaperPositions,
+            BigDecimal baseBuyPrice,
+            int baseBuyQty,
+            BigDecimal buyLevel1Price,
+            int buyLevel1Qty,
+            BigDecimal buyLevel2Price,
+            int buyLevel2Qty,
+            BigDecimal targetSellPrice
+    ) {
     }
 
     private static boolean isToggleAllowed(StrategyStatus status) {

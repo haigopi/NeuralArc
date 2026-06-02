@@ -24,8 +24,9 @@ final class BottomStatusBars {
     private static final int COMPACT_THRESHOLD_PX = 1280;
     private static final String STATUS_CARD_FULL = "full";
     private static final String STATUS_CARD_COMPACT = "compact";
-    private static final String GROUPED_STATUS_SEPARATOR = ".";
-    private static final String COMPACT_SEPARATOR = " . ";
+    private static final String INLINE_GROUP_SEPARATOR = " · ";
+    private static final String GROUP_SEPARATOR = " || ";
+    private static final String COMPACT_SEPARATOR = " || ";
 
     private final Font baseFont;
     private final Color accentColor;
@@ -166,11 +167,9 @@ final class BottomStatusBars {
         gbc.gridy = 0;
         gbc.anchor = GridBagConstraints.WEST;
         int column = 0;
-        column = addStatusSegment(panel, gbc, column, createStatusSegment(statusBar), true);
-        column = addStatusSegment(panel, gbc, column, createStatusSegment(marketStatus), true);
-        column = addStatusSegment(panel, gbc, column, createStatusSegment(streamStatus), true);
-        column = addStatusSegment(panel, gbc, column, createCpuMemorySegment(), true);
-        addStatusSegment(panel, gbc, column, createStatusSegment(pollingSummary), false);
+        column = addStatusSegment(panel, gbc, column, createStatusGroup(statusBar, marketStatus, streamStatus), true);
+        column = addStatusSegment(panel, gbc, column, createStatusGroup(cpuUsageStatus, memoryUsageStatus), true);
+        addStatusSegment(panel, gbc, column, createStatusGroup(pollingSummary), false);
         return panel;
     }
 
@@ -181,7 +180,7 @@ final class BottomStatusBars {
         gbc.gridy = 0;
         gbc.anchor = GridBagConstraints.WEST;
         int column = 0;
-        column = addStatusSegment(panel, gbc, column, createStatusSegment(statusStrategyCount), true);
+        column = addStatusSegment(panel, gbc, column, createStatusGroup(statusStrategyCount), true);
         addStatusSegment(panel, gbc, column, createPortfolioValueSegment(), false);
         return panel;
     }
@@ -203,11 +202,27 @@ final class BottomStatusBars {
         return panel;
     }
 
-    private JPanel createStatusSegment(JComponent component) {
+    private JPanel createStatusGroup(JComponent... components) {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setOpaque(false);
         panel.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
-        panel.add(component, BorderLayout.CENTER);
+
+        JPanel content = new JPanel(new GridBagLayout());
+        content.setOpaque(false);
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridy = 0;
+        gbc.anchor = GridBagConstraints.WEST;
+        for (int i = 0; i < components.length; i++) {
+            gbc.gridx = i * 2;
+            gbc.insets = new java.awt.Insets(0, i == 0 ? 0 : 2, 0, 0);
+            content.add(components[i], gbc);
+            if (i < components.length - 1) {
+                gbc.gridx = i * 2 + 1;
+                gbc.insets = new java.awt.Insets(0, 6, 0, 6);
+                content.add(createInlineStatusSeparator(), gbc);
+            }
+        }
+        panel.add(content, BorderLayout.CENTER);
         return panel;
     }
 
@@ -225,16 +240,16 @@ final class BottomStatusBars {
             return column + 1;
         }
         constraints.gridx = column + 1;
+        constraints.insets = new java.awt.Insets(0, 8, 0, 8);
         statusPanel.add(createStatusSeparator(), constraints);
         return column + 2;
     }
 
-    private JLabel createStatusSeparator() {
-        JLabel separator = new JLabel(GROUPED_STATUS_SEPARATOR);
+    private JComponent createStatusSeparator() {
+        JLabel separator = new JLabel(GROUP_SEPARATOR);
         separator.setFont(baseFont.deriveFont(Font.BOLD, 11f));
-        separator.setForeground(new Color(92, 92, 108));
+        separator.setForeground(new Color(86, 92, 108));
         separator.setHorizontalAlignment(SwingConstants.CENTER);
-        separator.setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 8));
         return separator;
     }
 
@@ -260,28 +275,10 @@ final class BottomStatusBars {
         return panel;
     }
 
-    private JPanel createCpuMemorySegment() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setOpaque(false);
-        panel.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridy = 0;
-        gbc.anchor = GridBagConstraints.WEST;
-        gbc.gridx = 0;
-        gbc.insets = new java.awt.Insets(0, 0, 0, 5);
-        panel.add(cpuUsageStatus, gbc);
-        gbc.gridx = 1;
-        panel.add(createInlineStatusSeparator(), gbc);
-        gbc.gridx = 2;
-        gbc.insets = new java.awt.Insets(0, 0, 0, 0);
-        panel.add(memoryUsageStatus, gbc);
-        return panel;
-    }
-
     private JLabel createInlineStatusSeparator() {
-        JLabel separator = new JLabel(GROUPED_STATUS_SEPARATOR);
+        JLabel separator = new JLabel(INLINE_GROUP_SEPARATOR);
         separator.setFont(baseFont.deriveFont(Font.BOLD, 11f));
-        separator.setForeground(new Color(95, 95, 110));
+        separator.setForeground(new Color(102, 108, 122));
         return separator;
     }
 

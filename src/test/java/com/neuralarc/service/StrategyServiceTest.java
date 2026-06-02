@@ -955,6 +955,119 @@ class StrategyServiceTest {
     }
 
     @Test
+    void promotePaperStrategyToLiveAppliesEditedBaseBuyAndTargetSellPrices() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(
+                strategies, orders, events, alpaca,
+                new AlwaysOpenMarketHoursService(),
+                true,
+                StrategyMode.LIVE,
+                ApplicationMode.LIVE
+        );
+
+        Strategy paper = baseStrategy("TSLA", 10, new BigDecimal("350.00"));
+        paper.setStatus(StrategyStatus.ACTIVE);
+        paper.setCurrentState(StrategyLifecycleState.VALIDATED);
+        paper.setTargetSellEnabled(true);
+        paper.setTargetSellPrice(new BigDecimal("365.00"));
+        paper.setMaxCapitalAllowed(new BigDecimal("10000.00"));
+        strategies.save(paper);
+
+        StrategyService.LivePromotionResult result = service.promotePaperStrategyToLive(
+                paper.id(),
+                new StrategyService.LivePromotionEdits(new BigDecimal("351.25"), 12,
+                        null, null, null, null, new BigDecimal("366.75"))
+        );
+
+        assertTrue(result.success());
+        Strategy live = strategies.findById(result.liveStrategyId()).orElseThrow();
+        assertEquals(new BigDecimal("351.25"), live.baseBuyLimitPrice());
+        assertEquals(12, live.baseBuyQuantity());
+        assertEquals(new BigDecimal("366.75"), live.targetSellPrice());
+    }
+
+    @Test
+    void promotePaperStrategyToLiveAppliesEditedLossBuyLevelPricesAndQuantities() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(
+                strategies, orders, events, alpaca,
+                new AlwaysOpenMarketHoursService(),
+                true,
+                StrategyMode.LIVE,
+                ApplicationMode.LIVE
+        );
+
+        Strategy paper = baseStrategy("TSLA", 10, new BigDecimal("350.00"));
+        paper.setStatus(StrategyStatus.ACTIVE);
+        paper.setCurrentState(StrategyLifecycleState.VALIDATED);
+        paper.setLossBuyLevelsEnabled(true);
+        paper.setBuyLimit1Price(new BigDecimal("320.00"));
+        paper.setBuyLimit1Quantity(5);
+        paper.setBuyLimit2Price(new BigDecimal("290.00"));
+        paper.setBuyLimit2Quantity(5);
+        paper.setTargetSellEnabled(true);
+        paper.setTargetSellPrice(new BigDecimal("365.00"));
+        paper.setMaxCapitalAllowed(new BigDecimal("10000.00"));
+        strategies.save(paper);
+
+        StrategyService.LivePromotionEdits edits = new StrategyService.LivePromotionEdits(
+                new BigDecimal("348.00"), 8,
+                new BigDecimal("315.00"), 6,
+                new BigDecimal("282.00"), 4,
+                new BigDecimal("366.00")
+        );
+        StrategyService.LivePromotionResult result = service.promotePaperStrategyToLive(paper.id(), edits);
+
+        assertTrue(result.success());
+        Strategy live = strategies.findById(result.liveStrategyId()).orElseThrow();
+        assertEquals(new BigDecimal("348.00"), live.baseBuyLimitPrice());
+        assertEquals(8, live.baseBuyQuantity());
+        assertEquals(new BigDecimal("315.00"), live.buyLimit1Price());
+        assertEquals(6, live.buyLimit1Quantity());
+        assertEquals(new BigDecimal("282.00"), live.buyLimit2Price());
+        assertEquals(4, live.buyLimit2Quantity());
+        assertEquals(new BigDecimal("366.00"), live.targetSellPrice());
+        // maxTotalQuantity = 8 + 6 + 4 = 18
+        assertEquals(18, live.maxTotalQuantity());
+    }
+
+    @Test
+    void promotePaperStrategyToLiveAllowsZeroTargetSellWhenDisabled() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(
+                strategies, orders, events, alpaca,
+                new AlwaysOpenMarketHoursService(),
+                true,
+                StrategyMode.LIVE,
+                ApplicationMode.LIVE
+        );
+
+        Strategy paper = baseStrategy("TSLA", 10, new BigDecimal("350.00"));
+        paper.setTargetSellEnabled(false);
+        paper.setTargetSellPrice(BigDecimal.ZERO);
+        paper.setMaxCapitalAllowed(new BigDecimal("10000.00"));
+        strategies.save(paper);
+
+        StrategyService.LivePromotionResult result = service.promotePaperStrategyToLive(
+                paper.id(),
+                new StrategyService.LivePromotionEdits(new BigDecimal("349.50"), BigDecimal.ZERO)
+        );
+
+        assertTrue(result.success());
+        Strategy live = strategies.findById(result.liveStrategyId()).orElseThrow();
+        assertEquals(BigDecimal.ZERO.setScale(2), live.targetSellPrice());
+    }
+
+    @Test
     void promotePaperStrategyToLiveAllowsExpiredFailedPaperStrategy() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

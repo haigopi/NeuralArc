@@ -189,6 +189,8 @@ public class TradingFrame extends JFrame {
     private static final int STREAM_RECONNECT_BASE_DELAY_MILLIS = 2 * 60 * 1000;
     private static final int STREAM_RECONNECT_MAX_DELAY_MILLIS = 30 * 60 * 1000;
     private static final int STREAM_RECONNECT_RESET_HOUR = 6;
+    /** Gap between polling ticks that indicates the system was suspended (slept). */
+    private static final long WAKE_GAP_DETECTION_MS = 30_000L;
     private static final Color HEADER_STATUS_DEFAULT = new Color(220, 220, 255);
     private static final Color HEADER_STATUS_LIVE_ALERT = new Color(255, 82, 82);
     private static final Color HEADER_STATUS_LIVE_ALERT_DIM = new Color(255, 205, 210);
@@ -386,6 +388,8 @@ public class TradingFrame extends JFrame {
     private Timer streamReconnectRetryTimer;
     private int streamReconnectAttempt;
     private LocalDate lastStreamBackoffResetDate;
+    /** Wall-clock millis of the last polling tick. Used to detect system-sleep gaps. EDT-only. */
+    private long lastPollingTickMillis;
     private final ConnectionLifecycleCoordinator connectionLifecycleCoordinator;
     private AsyncLogUploadService asyncLogUploadService;
 
@@ -706,7 +710,17 @@ public class TradingFrame extends JFrame {
             ) {
                 LivePromotionDialog dialog = new LivePromotionDialog(TradingFrame.this, preview, realizedPnl, unrealizedPnl);
                 boolean proceed = dialog.showDialog();
-                return new StrategyActionsController.PromotionDialogResult(proceed, dialog.shouldClosePaperPositions());
+                return new StrategyActionsController.PromotionDialogResult(
+                        proceed,
+                        dialog.shouldClosePaperPositions(),
+                        dialog.baseBuyPrice(),
+                        dialog.baseBuyQty(),
+                        dialog.buyLevel1Price(),
+                        dialog.buyLevel1Qty(),
+                        dialog.buyLevel2Price(),
+                        dialog.buyLevel2Qty(),
+                        dialog.targetSellPrice()
+                );
             }
 
             @Override
@@ -2813,6 +2827,7 @@ public class TradingFrame extends JFrame {
     }
 
     private void triggerPollingCycle() {
+        detectAndHandleWakeFromSleep();
         if (strategyPollingService == null || !shouldRunPollingCycleNow() || !pollingCycleInFlight.compareAndSet(false, true)) {
             return;
         }
@@ -2853,6 +2868,46 @@ public class TradingFrame extends JFrame {
                 });
             }
         });
+    }
+
+    /**
+     * Called at the top of every polling tick to detect a system-sleep gap.
+     * If the gap between ticks exceeds {@link #WAKE_GAP_DETECTION_MS} the system was likely
+     * suspended. We reset the stream-reconnect backoff so the next retry fires at minimum
+     * delay rather than the current (potentially multi-minute) exponential ceiling.
+     * Must be called on the EDT.
+     */
+    private void detectAndHandleWakeFromSleep() {
+        long now = System.currentTimeMillis();
+        long lastTick = lastPollingTickMillis;
+        lastPollingTickMillis = now;
+        if (lastTick > 0 && now - lastTick > WAKE_GAP_DETECTION_MS) {
+            long gapSeconds = (now - lastTick) / 1000;
+            handleWakeFromSleep(gapSeconds);
+        }
+    }
+
+    /**
+     * Handles recovery after a detected system-sleep gap.
+     * <ul>
+     *   <li>Resets the stream reconnect backoff counter so the reconnect fires at
+     *       minimum delay instead of the accumulated exponential delay.</li>
+     *   <li>If the stream has already detected its error and flagged itself as
+     *       reconnect-available, triggers an immediate reconnect attempt.</li>
+     *   <li>Strategy polling recovers automatically: all active strategies will be
+     *       "due" on the next cycle because their {@code lastPolledAt} timestamps are
+     *       stale relative to the current time.</li>
+     * </ul>
+     * Must be called on the EDT.
+     */
+    private void handleWakeFromSleep(long gapSeconds) {
+        log("[WAKE] System resumed after ~" + gapSeconds + "s gap. Resetting stream reconnect backoff.");
+        resetTradeStreamReconnectBackoff("system wake after " + gapSeconds + "s");
+        // If the stream has already flagged a connection error, reconnect immediately
+        // instead of waiting for the (now-cancelled) backoff timer.
+        if (streamReconnectAvailable) {
+            attemptAutoTradeStreamReconnect();
+        }
     }
 
     private void logStartupMarketClosedRepairAudit(StrategyPollingService.MarketClosedAutoRepairSummary summary) {
