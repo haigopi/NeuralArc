@@ -43,6 +43,9 @@ final class PortfolioCaptureStateStore {
                     StrategyMode.valueOf(json.optString("reentryMode", StrategyMode.PAPER.name())),
                     Math.max(1, json.optInt("reentryQuantity", 1)),
                     RecommendationType.valueOf(json.optString("reentryRecommendationType", RecommendationType.SHORT_TERM.name())),
+                    PortfolioCaptureLuckyStrategy.valueOf(json.optString(
+                            "reentryLuckyStrategy",
+                            PortfolioCaptureLuckyStrategy.VOLATILE.name())),
                     json.optBoolean("autoCleanPendingBeforeCycle", false)
             );
             Instant lastTimestamp = parseInstant(json.optString("lastMonitoringTimestamp", ""));
@@ -68,6 +71,7 @@ final class PortfolioCaptureStateStore {
             json.put("reentryMode", state.config().reentryMode().name());
             json.put("reentryQuantity", state.config().reentryQuantity());
             json.put("reentryRecommendationType", state.config().reentryRecommendationType().name());
+            json.put("reentryLuckyStrategy", state.config().reentryLuckyStrategy().name());
             json.put("autoCleanPendingBeforeCycle", state.config().autoCleanPendingBeforeCycle());
             json.put("lastMonitoringTimestamp", state.lastMonitoringTimestamp() == null ? "" : state.lastMonitoringTimestamp().toString());
             json.put("lastCalculatedPortfolioValue", state.lastCalculatedPortfolioValue());

@@ -47,6 +47,7 @@ class BottomStatusBarsLayoutTest {
         assertEquals(SwingConstants.LEFT, fixture.availableFundsStatus.getHorizontalAlignment());
         assertEquals(SwingConstants.LEFT, fixture.marketValueStatus.getHorizontalAlignment());
         assertEquals(SwingConstants.LEFT, fixture.investedValueStatus.getHorizontalAlignment());
+        assertEquals(SwingConstants.LEFT, fixture.baseBuyPendingStatus.getHorizontalAlignment());
         assertEquals(SwingConstants.LEFT, fixture.compactStatusSummary.getHorizontalAlignment());
     }
 
@@ -116,6 +117,7 @@ class BottomStatusBarsLayoutTest {
         private final JLabel availableFundsStatus = new JLabel("Funds Available: $1000");
         private final JLabel marketValueStatus = new JLabel("Market Value: $1200");
         private final JLabel investedValueStatus = new JLabel("Invested Value: $900");
+        private final JLabel baseBuyPendingStatus = new JLabel("Base Buy Pending Total: $500");
         private final JLabel compactStatusSummary = new JLabel("Broker: Connected");
         private final JButton statusDetailsButton = new JButton("Details");
         private final BottomStatusBars bars;
@@ -137,6 +139,7 @@ class BottomStatusBarsLayoutTest {
                     availableFundsStatus,
                     marketValueStatus,
                     investedValueStatus,
+                    baseBuyPendingStatus,
                     compactStatusSummary,
                     statusDetailsButton,
                     statusRight,
@@ -151,4 +154,3 @@ class BottomStatusBarsLayoutTest {
         }
     }
 }
-

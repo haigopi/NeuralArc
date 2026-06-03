@@ -132,6 +132,7 @@ public class TradingFrame extends JFrame {
     private final JLabel availableFundsStatus = new JLabel("Funds Available: -");
     private final JLabel marketValueStatus = new JLabel("Market Value: -");
     private final JLabel investedValueStatus = new JLabel("Invested Value: -");
+    private final JLabel baseBuyPendingStatus = new JLabel("Base Buy Pending Total: 0.00");
     private final JLabel cpuUsageStatus = new JLabel("CPU: -");
     private final JLabel memoryUsageStatus = new JLabel("Memory: -");
     private final JLabel compactStatusSummary = new JLabel("Broker: Not connected | Market: Unknown");
@@ -367,8 +368,8 @@ public class TradingFrame extends JFrame {
     private String runtimeApiSecret = "";
     private volatile HttpAlpacaClient paperModeClient;
     private volatile HttpAlpacaClient liveModeClient;
+    private final AvailableFundsStatusState availableFundsStatusState = new AvailableFundsStatusState();
     private volatile String availableFundsText = "Funds Available: -";
-    private volatile long lastAvailableFundsFetchAtMillis;
     private final AtomicBoolean availableFundsFetchInFlight = new AtomicBoolean(false);
     private static final long AVAILABLE_FUNDS_REFRESH_INTERVAL_MILLIS = 30000L;
     private volatile long lastBatchGridPriceRefreshAtMillis;
@@ -1353,6 +1354,11 @@ public class TradingFrame extends JFrame {
         investedValueStatus.setVerticalAlignment(SwingConstants.CENTER);
         investedValueStatus.setHorizontalAlignment(SwingConstants.LEFT);
         investedValueStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
+        baseBuyPendingStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        baseBuyPendingStatus.setForeground(BOTTOM_STATUS_MARKET_VALUE);
+        baseBuyPendingStatus.setVerticalAlignment(SwingConstants.CENTER);
+        baseBuyPendingStatus.setHorizontalAlignment(SwingConstants.LEFT);
+        baseBuyPendingStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
         cpuUsageStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         cpuUsageStatus.setForeground(BOTTOM_STATUS_ACCENT);
         cpuUsageStatus.setVerticalAlignment(SwingConstants.CENTER);
@@ -1477,6 +1483,7 @@ public class TradingFrame extends JFrame {
                 availableFundsStatus,
                 marketValueStatus,
                 investedValueStatus,
+                baseBuyPendingStatus,
                 compactStatusSummary,
                 statusDetailsButton,
                 statusRight,
@@ -1629,6 +1636,7 @@ public class TradingFrame extends JFrame {
         }
         selectedViewMode = safeMode;
         selectedStrategyId = null;
+        applyAvailableFundsTextForMode(selectedApplicationMode());
         syncModeToggleSelection();
         applyViewModeTheme();
         ViewModeSwitchRefreshFlow.apply(
@@ -2341,18 +2349,16 @@ public class TradingFrame extends JFrame {
         }
         log("[Portfolio Capture] Auto re-entry started. mode=" + config.reentryMode()
                 + " quantity=" + config.reentryQuantity()
-                + " term=" + config.reentryRecommendationType());
+                + " term=" + config.reentryRecommendationType()
+                + " luckyStrategy=" + config.reentryLuckyStrategy());
         HttpAlpacaMarketDataApi marketDataApi = new HttpAlpacaMarketDataApi(apiKey, apiSecret);
-        TrendingStockGroups groups;
+        List<TrendingStock> stocks = new ArrayList<>();
         try {
-            groups = new TrendingStocksService(new HttpAlpacaScreenerClient(apiKey, apiSecret)).topGainersAndLosers(10);
+            stocks.addAll(portfolioCaptureLuckyStocks(config, apiKey, apiSecret, marketDataApi));
         } catch (Exception ex) {
             log("[Portfolio Capture] Auto re-entry failed to fetch I Am Feeling Lucky stocks: " + ex.getMessage());
-            return "Skipped: unable to fetch trending stocks.";
+            return "Skipped: unable to fetch lucky stocks.";
         }
-        List<TrendingStock> stocks = new ArrayList<>();
-        stocks.addAll(groups.gainers());
-        stocks.addAll(groups.losers());
         AutoAnalyzeService analyzeService = new AutoAnalyzeService(marketDataApi);
         List<LuckySimulationSelection> selections = new ArrayList<>();
         for (TrendingStock stock : stocks) {
@@ -2393,6 +2399,48 @@ public class TradingFrame extends JFrame {
         log("[Portfolio Capture] Auto re-entry generated positions. created=" + result.created()
                 + " replaced=" + result.replaced() + " skipped=" + result.skipped());
         return controller.summaryMessage(result).replace('\n', ' ');
+    }
+
+    private List<TrendingStock> portfolioCaptureLuckyStocks(
+            PortfolioCaptureConfig config,
+            String apiKey,
+            String apiSecret,
+            HttpAlpacaMarketDataApi marketDataApi
+    ) throws Exception {
+        if (config.reentryLuckyStrategy() == PortfolioCaptureLuckyStrategy.DIVERSIFIED_TOP_20) {
+            List<TrendingStock> stocks = LuckyTrendingStocksDialog.diversifiedTop20Stocks(
+                    symbol -> latestPriceForPortfolioCaptureAutomation(symbol, marketDataApi)
+            );
+            log("[Portfolio Capture] Auto re-entry using Top 20 Diversified Stocks. symbols="
+                    + stocks.stream().map(TrendingStock::symbol).toList());
+            return stocks;
+        }
+        TrendingStockGroups groups = new TrendingStocksService(new HttpAlpacaScreenerClient(apiKey, apiSecret)).topGainersAndLosers(10);
+        List<TrendingStock> stocks = new ArrayList<>();
+        stocks.addAll(groups.gainers());
+        stocks.addAll(groups.losers());
+        log("[Portfolio Capture] Auto re-entry using Volatile Strategy. gainers="
+                + groups.gainers().stream().map(TrendingStock::symbol).toList()
+                + " losers=" + groups.losers().stream().map(TrendingStock::symbol).toList());
+        return stocks;
+    }
+
+    private BigDecimal latestPriceForPortfolioCaptureAutomation(String symbol, HttpAlpacaMarketDataApi marketDataApi) {
+        try {
+            List<MarketBar> bars = marketDataApi.getIntradayBars(
+                    symbol,
+                    LocalDate.now().minusDays(5),
+                    LocalDate.now(),
+                    15
+            );
+            if (bars == null || bars.isEmpty()) {
+                return BigDecimal.ZERO;
+            }
+            return bars.get(bars.size() - 1).close();
+        } catch (Exception ex) {
+            log("[Portfolio Capture] Price fetch fallback used for " + symbol + ": " + ex.getMessage());
+            return BigDecimal.ZERO;
+        }
     }
 
     private void setCapturePortfolioBusy(boolean busy) {
@@ -4990,6 +5038,7 @@ public class TradingFrame extends JFrame {
         String memoryText = formatMemoryUsageText();
         String marketValueText = formatMarketValueText();
         String investedValueText = formatInvestedValueText();
+        String baseBuyPendingTotalText = formatBaseBuyPendingTotalText();
         StrategyPollingService.PollCycleSnapshot pollSnapshot = strategyPollingService == null
                 ? null
                 : strategyPollingService.lastPollCycleSnapshot();
@@ -5023,6 +5072,7 @@ public class TradingFrame extends JFrame {
             availableFundsStatus.setText(availableFundsText);
             marketValueStatus.setText(statusBarViewModel.marketValueText());
             investedValueStatus.setText(investedValueText);
+            baseBuyPendingStatus.setText(baseBuyPendingTotalText);
             cpuUsageStatus.setText(statusBarViewModel.cpuText());
             memoryUsageStatus.setText(statusBarViewModel.memoryText());
             statusBar.setText(statusBarViewModel.brokerText());
@@ -5037,31 +5087,47 @@ public class TradingFrame extends JFrame {
     }
 
     private void refreshAvailableFundsAsync() {
+        ApplicationMode requestMode = selectedApplicationMode();
         if (!connectionOk || connectionRetryPending) {
-            availableFundsText = "Funds Available: -";
-            availableFundsStatus.setText(availableFundsText);
+            availableFundsText = availableFundsStatusState.clear(requestMode);
+            applyAvailableFundsTextForMode(requestMode);
             return;
         }
         long now = System.currentTimeMillis();
-        if (now - lastAvailableFundsFetchAtMillis < AVAILABLE_FUNDS_REFRESH_INTERVAL_MILLIS) {
+        if (!availableFundsStatusState.shouldFetch(requestMode, now, AVAILABLE_FUNDS_REFRESH_INTERVAL_MILLIS)) {
             return;
         }
-        HttpAlpacaClient client = alpacaClientForMode(selectedApplicationMode());
-        if (client == null || !availableFundsFetchInFlight.compareAndSet(false, true)) {
+        HttpAlpacaClient client = alpacaClientForMode(requestMode);
+        if (client == null) {
+            availableFundsText = availableFundsStatusState.clear(requestMode);
+            applyAvailableFundsTextForMode(requestMode);
             return;
         }
-        lastAvailableFundsFetchAtMillis = now;
+        if (!availableFundsFetchInFlight.compareAndSet(false, true)) {
+            return;
+        }
+        availableFundsStatusState.markFetchStarted(requestMode, now);
         uiPollingExecutor.execute(() -> {
+            String updatedText = null;
             try {
-                String updatedText = client.getAvailableFunds()
-                        .map(value -> "Funds Available: $" + value.toPlainString())
-                        .orElse("Funds Available: -");
-                availableFundsText = updatedText;
-                SwingUtilities.invokeLater(() -> availableFundsStatus.setText(updatedText));
+                updatedText = availableFundsStatusState.update(requestMode, client.getAvailableFunds());
             } finally {
                 availableFundsFetchInFlight.set(false);
             }
+            String textForUi = updatedText;
+            SwingUtilities.invokeLater(() -> {
+                if (selectedApplicationMode() == requestMode) {
+                    availableFundsText = textForUi;
+                    availableFundsStatus.setText(textForUi);
+                }
+                updateStatusBar();
+            });
         });
+    }
+
+    private void applyAvailableFundsTextForMode(ApplicationMode mode) {
+        availableFundsText = availableFundsStatusState.textFor(mode);
+        availableFundsStatus.setText(availableFundsText);
     }
 
     private void refreshCurrentStrategiesHeading() {
@@ -5100,11 +5166,19 @@ public class TradingFrame extends JFrame {
 
 
     private String formatMarketValueText() {
-        return systemMetricsPresenter.formatMarketValueText(strategies);
+        return systemMetricsPresenter.formatMarketValueText(strategies, selectedViewMode);
     }
 
     private String formatInvestedValueText() {
-        return systemMetricsPresenter.formatInvestedValueText(strategies);
+        return systemMetricsPresenter.formatInvestedValueText(strategies, selectedViewMode);
+    }
+
+    private String formatBaseBuyPendingTotalText() {
+        return systemMetricsPresenter.formatBaseBuyPendingTotalText(
+                strategies,
+                strategyOrderRepository::findByStrategyId,
+                selectedViewMode
+        );
     }
 
     private int compareNumericCells(Object left, Object right) {

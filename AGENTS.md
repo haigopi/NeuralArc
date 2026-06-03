@@ -22,23 +22,38 @@
 ## Current architecture map
 - Main window and UI orchestration:
   - `src/main/java/com/neuralarc/ui/TradingFrame.java`
+  - `src/main/java/com/neuralarc/ui/TradingRuntimeSupport.java`
+  - `src/main/java/com/neuralarc/ui/StrategyActionsController.java`
+  - `src/main/java/com/neuralarc/ui/PortfolioActionsController.java`
+  - `src/main/java/com/neuralarc/ui/PortfolioCaptureController.java`
+  - `src/main/java/com/neuralarc/ui/TradeStreamLifecycleCoordinator.java`
+  - `src/main/java/com/neuralarc/ui/ConnectionLifecycleCoordinator.java`
 - App startup and look-and-feel bootstrap:
   - `src/main/java/com/neuralarc/NeuralArc.java`
 - Settings and operator configuration:
   - `src/main/java/com/neuralarc/ui/SettingsDialog.java`
   - `src/main/java/com/neuralarc/service/AppSettingsService.java`
+  - `src/main/java/com/neuralarc/db/AppDatabase.java`
 - Polling and strategy execution path:
   - `src/main/java/com/neuralarc/service/StrategyPollingService.java`
   - `src/main/java/com/neuralarc/service/StrategyEngine.java`
   - `src/main/java/com/neuralarc/service/StrategyService.java`
 - Strategy persistence:
-  - `src/main/java/com/neuralarc/service/FileStrategyRepository.java`
-  - `src/main/java/com/neuralarc/service/FileStrategyOrderRepository.java`
-  - `src/main/java/com/neuralarc/service/FileStrategyExecutionEventRepository.java`
+  - `src/main/java/com/neuralarc/db/AppDatabase.java`
+  - `src/main/java/com/neuralarc/db/SqliteStrategyRepository.java`
+  - `src/main/java/com/neuralarc/db/SqliteStrategyOrderRepository.java`
+  - `src/main/java/com/neuralarc/db/SqliteStrategyExecutionEventRepository.java`
+  - legacy compatibility helpers still exist in:
+    - `src/main/java/com/neuralarc/service/FileStrategyRepository.java`
+    - `src/main/java/com/neuralarc/service/FileStrategyOrderRepository.java`
+    - `src/main/java/com/neuralarc/service/FileStrategyExecutionEventRepository.java`
 - Broker and market data boundary:
   - `src/main/java/com/neuralarc/api/TradingApi.java`
   - `src/main/java/com/neuralarc/api/TradingApiFactory.java`
+  - `src/main/java/com/neuralarc/api/AlpacaTradingApi.java`
   - `src/main/java/com/neuralarc/api/HttpAlpacaClient.java`
+  - `src/main/java/com/neuralarc/api/AlpacaMarketDataApi.java`
+  - `src/main/java/com/neuralarc/api/HttpAlpacaMarketDataApi.java`
   - `src/main/java/com/neuralarc/api/AlpacaTradingWebSocketClient.java`
 - Market-hours and session logic:
   - `src/main/java/com/neuralarc/service/MarketHoursService.java`
@@ -50,6 +65,7 @@
 ## Runtime model to preserve
 - The app is snapshot-driven at the UI layer.
 - Rendering should prefer cached strategy snapshots, not live broker calls from table renderers or label formatting.
+- Runtime wiring for broker clients and mode-specific services should go through `TradingRuntimeSupport`.
 - Strategy polling and stream handling happen off the Swing EDT.
 - Swing EDT is for:
   - painting
@@ -86,13 +102,14 @@
 - Streaming order updates must stay idempotent and must continue to reconcile safely with polling.
 
 ## Persistence standards
-- File-backed repositories are now memory-cached with debounced flush behavior.
-- Preserve the on-disk JSON schema unless a migration is intentional.
-- Repository reads in hot paths should prefer in-memory indexes.
+- Primary persistence is SQLite (`~/.neuralarc/neuralarc.db`) via `AppDatabase` and `Sqlite*Repository` classes.
+- `AppSettingsService` migrates legacy `~/.neuralarc/*.properties` files into SQLite; keep migration behavior backward compatible.
+- Schema evolution is append-only through `AppDatabase.applyMigrations()`; add a new migration entry instead of editing existing ones.
+- Repository hot paths should keep using in-memory caches/indexes (`Sqlite*Repository` cache + invalidation model).
 - If adding new persisted fields:
   - make reads backward compatible
   - provide sensible defaults for missing fields
-- Avoid full-file parse/rewrite patterns in new code.
+- Avoid reintroducing full-file parse/rewrite persistence patterns in new runtime code.
 
 ## Project-specific conventions
 - Monetary values use `BigDecimal`.
@@ -126,12 +143,14 @@
   - `./gradlew test`
 - Launch app with:
   - `./gradlew run`
+- Build and release automation scripts live under `scripts/` (`build-all.sh`, `release-all.sh`, `package-macos.sh`, `package-windows.ps1`).
 - When changing:
   - strategy execution logic: update the relevant strategy/service tests
   - market-hours behavior: update `MarketHoursService` tests
   - recommendation logic: update recommendation/apply tests
   - persistence behavior: update repository/settings tests
   - UI state mapping: add targeted tests where practical, and verify manually if Swing behavior is involved
+  - connection or stream lifecycle behavior: update `ConnectionLifecycleCoordinatorTest` and/or `TradeStreamLifecycleCoordinatorTest`
 
 ## Privacy and integration constraints
 - Never log or publish API keys or secrets.

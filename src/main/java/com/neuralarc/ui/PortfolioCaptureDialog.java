@@ -15,14 +15,19 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
+import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
+import javax.swing.border.TitledBorder;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Frame;
@@ -36,7 +41,10 @@ import java.util.function.Function;
 
 final class PortfolioCaptureDialog extends JDialog {
     private static final Color MUTED = new Color(120, 124, 135);
-    private static final String DISCLAIMER = "<html><body style='width:520px'>"
+    private static final Font UI_FONT = FontLoader.ui(Font.PLAIN, 11f);
+    private static final Font UI_BOLD_FONT = FontLoader.ui(Font.BOLD, 11f);
+    private static final Font DESCRIPTION_FONT = FontLoader.ui(Font.PLAIN, 10f);
+    private static final String DISCLAIMER = "<html><body style='width:460px'>"
             + "<b>Disclaimer:</b><br>"
             + "All portfolio capture actions execute using live market orders at the marketplace.<br>"
             + "Final execution prices depend on real-time market conditions, bid/ask spread, liquidity, slippage, and broker execution timing.<br>"
@@ -53,23 +61,25 @@ final class PortfolioCaptureDialog extends JDialog {
     private final Timer refreshTimer;
 
     private final JRadioButton captureNow = new JRadioButton("Capture Now", true);
-    private final JRadioButton captureTarget = new JRadioButton("Capture When Target Is Reached");
+    private final JRadioButton captureTarget = new JRadioButton("Capture At Target");
     private final JRadioButton percentTarget = new JRadioButton("Profit Percent", true);
     private final JRadioButton amountTarget = new JRadioButton("Profit Amount");
     private final JTextField percentField = new JTextField("5", 8);
     private final JTextField amountField = new JTextField("500", 8);
-    private final JCheckBox includeLosses = new JCheckBox("Include losses while calculating net portfolio profit/loss", true);
+    private final JCheckBox includeLosses = new JCheckBox("Include losses in net P/L", true);
     private final JTextField intervalField = new JTextField("1", 5);
-    private final JCheckBox activeOnly = new JCheckBox("Include only active strategies", true);
-    private final JRadioButton executeOnce = new JRadioButton("Execute Once And Stop", true);
-    private final JRadioButton reenterOnce = new JRadioButton("Execute Capture Then Re-Enter Once");
+    private final JCheckBox activeOnly = new JCheckBox("Active strategies only", true);
+    private final JRadioButton executeOnce = new JRadioButton("Execute once", true);
+    private final JRadioButton reenterOnce = new JRadioButton("Capture, then re-enter once");
     private final JRadioButton continuousLoop = new JRadioButton("Continuous Automated Loop");
-    private final JRadioButton paperMode = new JRadioButton("Paper Trading Mode", true);
-    private final JRadioButton liveMode = new JRadioButton("Live Trading Mode");
+    private final JRadioButton paperMode = new JRadioButton("Paper mode", true);
+    private final JRadioButton liveMode = new JRadioButton("Live mode");
     private final JSpinner reentryQuantity = new JSpinner(new SpinnerNumberModel(1, 1, 100000, 1));
     private final JComboBox<RecommendationType> reentryTerm = new JComboBox<>(RecommendationType.values());
-    private final JCheckBox autoCleanPending = new JCheckBox("Auto clean pending positions before every new capture cycle");
-    private final JCheckBox acknowledgement = new JCheckBox("I understand that market execution prices and final broker values may vary.");
+    private final JComboBox<PortfolioCaptureLuckyStrategy> reentryLuckyStrategy =
+            new JComboBox<>(PortfolioCaptureLuckyStrategy.values());
+    private final JCheckBox autoCleanPending = new JCheckBox("Auto-clean pending base buys before each cycle");
+    private final JCheckBox acknowledgement = new JCheckBox("I understand execution prices may vary.");
     private final JButton saveButton = new JButton("Save");
     private final JButton deactivateButton = new JButton("Deactivate Monitoring");
     private final JLabel investmentValue = new JLabel("-");
@@ -96,10 +106,10 @@ final class PortfolioCaptureDialog extends JDialog {
         this.monitoringActive = monitoringActive;
         this.refreshTimer = new Timer(1000, ignored -> refreshMetrics());
         buildUi();
+        applyCompactFonts(getContentPane());
         refreshMetrics();
         updateEnabledState();
-        pack();
-        setMinimumSize(getPreferredSize());
+        DialogSizing.packAndFit(this, 640, 480);
         setLocationRelativeTo(owner);
     }
 
@@ -111,8 +121,9 @@ final class PortfolioCaptureDialog extends JDialog {
     }
 
     private void buildUi() {
-        JPanel content = new JPanel(new BorderLayout(0, 12));
-        content.setBorder(new EmptyBorder(14, 16, 14, 16));
+        JPanel content = new JPanel(new BorderLayout(0, 8));
+        content.setOpaque(false);
+        content.setBorder(new EmptyBorder(10, 12, 10, 12));
         content.add(modeSection(), BorderLayout.NORTH);
 
         JPanel center = new JPanel(new GridBagLayout());
@@ -130,7 +141,14 @@ final class PortfolioCaptureDialog extends JDialog {
         center.add(postAutomationSection(), gbc);
         gbc.gridy++;
         center.add(disclaimerSection(), gbc);
-        content.add(center, BorderLayout.CENTER);
+        JScrollPane centerScroll = new JScrollPane(center);
+        centerScroll.setBorder(BorderFactory.createEmptyBorder());
+        centerScroll.setOpaque(false);
+        centerScroll.getViewport().setOpaque(false);
+        centerScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        centerScroll.getVerticalScrollBar().setUnitIncrement(16);
+        centerScroll.setPreferredSize(DialogSizing.preferredViewportSize(center, 560, 360, 640, 560));
+        content.add(centerScroll, BorderLayout.CENTER);
         content.add(buttonBar(), BorderLayout.SOUTH);
         setContentPane(content);
 
@@ -155,6 +173,7 @@ final class PortfolioCaptureDialog extends JDialog {
         reenterOnce.addActionListener(e -> updateEnabledState());
         continuousLoop.addActionListener(e -> updateEnabledState());
         acknowledgement.addActionListener(e -> updateEnabledState());
+        setBackground(getOwner() == null ? getBackground() : getOwner().getBackground());
     }
 
     private JPanel modeSection() {
@@ -199,7 +218,7 @@ final class PortfolioCaptureDialog extends JDialog {
     }
 
     private JPanel advancedPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         panel.setOpaque(false);
         panel.add(new JLabel("Monitoring Interval"));
         panel.add(intervalField);
@@ -227,14 +246,30 @@ final class PortfolioCaptureDialog extends JDialog {
     }
 
     private JPanel reentryOptionsPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        JPanel panel = new JPanel(new GridBagLayout());
         panel.setOpaque(false);
-        panel.add(paperMode);
-        panel.add(liveMode);
-        panel.add(new JLabel("Quantity"));
-        panel.add(reentryQuantity);
-        panel.add(new JLabel("Term"));
-        panel.add(reentryTerm);
+        GridBagConstraints gbc = baseGbc(0);
+        gbc.gridwidth = 2;
+        panel.add(paperMode, gbc);
+        gbc.gridx = 2;
+        panel.add(liveMode, gbc);
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.gridwidth = 1;
+        panel.add(fieldLabel("Lucky strategy"), gbc);
+        gbc.gridx = 1;
+        gbc.gridwidth = 3;
+        panel.add(reentryLuckyStrategy, gbc);
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.gridwidth = 1;
+        panel.add(fieldLabel("Quantity"), gbc);
+        gbc.gridx = 1;
+        panel.add(reentryQuantity, gbc);
+        gbc.gridx = 2;
+        panel.add(fieldLabel("Term"), gbc);
+        gbc.gridx = 3;
+        panel.add(reentryTerm, gbc);
         return panel;
     }
 
@@ -250,6 +285,7 @@ final class PortfolioCaptureDialog extends JDialog {
 
     private JPanel buttonBar() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        panel.setOpaque(false);
         JButton cancel = new JButton("Cancel");
         cancel.addActionListener(e -> dispose());
         deactivateButton.setVisible(monitoringActive);
@@ -345,6 +381,7 @@ final class PortfolioCaptureDialog extends JDialog {
                 paperMode.isSelected() ? StrategyMode.PAPER : StrategyMode.LIVE,
                 (Integer) reentryQuantity.getValue(),
                 (RecommendationType) reentryTerm.getSelectedItem(),
+                selectedLuckyStrategy(),
                 autoCleanPending.isSelected()
         ));
     }
@@ -366,6 +403,7 @@ final class PortfolioCaptureDialog extends JDialog {
         liveMode.setEnabled(reentryEnabled);
         reentryQuantity.setEnabled(reentryEnabled);
         reentryTerm.setEnabled(reentryEnabled);
+        reentryLuckyStrategy.setEnabled(reentryEnabled);
         autoCleanPending.setEnabled(targetMode);
         saveButton.setText(targetMode ? "Activate Monitoring" : "Capture Now");
         saveButton.setEnabled(acknowledgement.isSelected());
@@ -404,6 +442,7 @@ final class PortfolioCaptureDialog extends JDialog {
                 paperMode.isSelected() ? StrategyMode.PAPER : StrategyMode.LIVE,
                 (Integer) reentryQuantity.getValue(),
                 (RecommendationType) reentryTerm.getSelectedItem(),
+                selectedLuckyStrategy(),
                 autoCleanPending.isSelected()
         );
     }
@@ -421,8 +460,16 @@ final class PortfolioCaptureDialog extends JDialog {
                 paperMode.isSelected() ? StrategyMode.PAPER : StrategyMode.LIVE,
                 (Integer) reentryQuantity.getValue(),
                 (RecommendationType) reentryTerm.getSelectedItem(),
+                selectedLuckyStrategy(),
                 autoCleanPending.isSelected()
         );
+    }
+
+    private PortfolioCaptureLuckyStrategy selectedLuckyStrategy() {
+        Object selected = reentryLuckyStrategy.getSelectedItem();
+        return selected instanceof PortfolioCaptureLuckyStrategy strategy
+                ? strategy
+                : PortfolioCaptureLuckyStrategy.VOLATILE;
     }
 
     private PortfolioCaptureExecutionFlow selectedExecutionFlow() {
@@ -446,9 +493,15 @@ final class PortfolioCaptureDialog extends JDialog {
     private JPanel section(String title) {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setOpaque(false);
+        TitledBorder titleBorder = BorderFactory.createTitledBorder(
+                BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(190, 194, 202)),
+                title
+        );
+        titleBorder.setTitleFont(UI_BOLD_FONT);
+        titleBorder.setTitleColor(new Color(70, 75, 85));
         panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createTitledBorder(title),
-                new EmptyBorder(8, 10, 10, 10)
+                titleBorder,
+                new EmptyBorder(5, 6, 7, 6)
         ));
         return panel;
     }
@@ -464,7 +517,7 @@ final class PortfolioCaptureDialog extends JDialog {
     private void addMetric(JPanel panel, String label, JLabel value, int row) {
         GridBagConstraints gbc = baseGbc(row);
         JLabel name = new JLabel(label);
-        name.setFont(FontLoader.ui(Font.BOLD, 12f));
+        name.setFont(UI_BOLD_FONT);
         panel.add(name, gbc);
         gbc.gridx = 1;
         gbc.anchor = GridBagConstraints.EAST;
@@ -486,8 +539,40 @@ final class PortfolioCaptureDialog extends JDialog {
     private JLabel description(String text) {
         JLabel label = new JLabel(text);
         label.setForeground(MUTED);
-        label.setFont(FontLoader.ui(Font.PLAIN, 11f));
+        label.setFont(DESCRIPTION_FONT);
         return label;
+    }
+
+    private JLabel fieldLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setFont(UI_BOLD_FONT);
+        return label;
+    }
+
+    private void applyCompactFonts(Component component) {
+        if (component == null) {
+            return;
+        }
+        if (component instanceof JLabel label && label.getFont() != DESCRIPTION_FONT) {
+            label.setFont(UI_FONT);
+        } else if (!(component instanceof JLabel)) {
+            component.setFont(UI_FONT);
+        }
+        if (component instanceof JSpinner spinner) {
+            spinner.setPreferredSize(new Dimension(72, 24));
+        }
+        if (component instanceof JTextField field) {
+            Dimension preferred = field.getPreferredSize();
+            field.setPreferredSize(new Dimension(Math.min(92, preferred.width), 24));
+        }
+        if (component instanceof JComboBox<?> comboBox) {
+            comboBox.setPreferredSize(new Dimension(Math.min(180, comboBox.getPreferredSize().width), 24));
+        }
+        if (component instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                applyCompactFonts(child);
+            }
+        }
     }
 
     private String money(BigDecimal value) {

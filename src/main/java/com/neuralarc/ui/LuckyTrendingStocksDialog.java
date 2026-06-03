@@ -55,6 +55,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -428,9 +429,13 @@ public class LuckyTrendingStocksDialog extends JDialog {
     }
 
     private List<TrendingStock> buildDiversifiedStocks() {
+        return diversifiedTop20Stocks(this::latestPriceForSymbol);
+    }
+
+    static List<TrendingStock> diversifiedTop20Stocks(Function<String, BigDecimal> latestPriceLookup) {
         List<TrendingStock> stocks = new ArrayList<>();
         for (DiversifiedStock entry : TOP_20_DIVERSIFIED_STOCKS) {
-            BigDecimal latestPrice = latestPriceForSymbol(entry.symbol());
+            BigDecimal latestPrice = latestPriceLookup == null ? BigDecimal.ZERO : latestPriceLookup.apply(entry.symbol());
             stocks.add(new TrendingStock(
                     entry.symbol(),
                     entry.companyName(),

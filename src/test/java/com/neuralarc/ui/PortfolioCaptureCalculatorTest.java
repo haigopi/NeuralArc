@@ -85,6 +85,7 @@ class PortfolioCaptureCalculatorTest {
                 StrategyMode.PAPER,
                 1,
                 RecommendationType.SHORT_TERM,
+                PortfolioCaptureLuckyStrategy.VOLATILE,
                 false
         );
     }

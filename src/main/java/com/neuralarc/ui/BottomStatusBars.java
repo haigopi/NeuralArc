@@ -25,8 +25,8 @@ final class BottomStatusBars {
     private static final String STATUS_CARD_FULL = "full";
     private static final String STATUS_CARD_COMPACT = "compact";
     private static final String INLINE_GROUP_SEPARATOR = " · ";
-    private static final String GROUP_SEPARATOR = "|";
-    private static final String COMPACT_SEPARATOR = "|";
+    private static final String GROUP_SEPARATOR = ".";
+    private static final String COMPACT_SEPARATOR = " . ";
 
     private final Font baseFont;
     private final Color accentColor;
@@ -40,6 +40,7 @@ final class BottomStatusBars {
     private final JLabel availableFundsStatus;
     private final JLabel marketValueStatus;
     private final JLabel investedValueStatus;
+    private final JLabel baseBuyPendingStatus;
     private final JLabel compactStatusSummary;
     private final JButton statusDetailsButton;
 
@@ -62,6 +63,7 @@ final class BottomStatusBars {
             JLabel availableFundsStatus,
             JLabel marketValueStatus,
             JLabel investedValueStatus,
+            JLabel baseBuyPendingStatus,
             JLabel compactStatusSummary,
             JButton statusDetailsButton,
             JPanel statusRight,
@@ -80,6 +82,7 @@ final class BottomStatusBars {
         this.availableFundsStatus = availableFundsStatus;
         this.marketValueStatus = marketValueStatus;
         this.investedValueStatus = investedValueStatus;
+        this.baseBuyPendingStatus = baseBuyPendingStatus;
         this.compactStatusSummary = compactStatusSummary;
         this.statusDetailsButton = statusDetailsButton;
 
@@ -270,8 +273,13 @@ final class BottomStatusBars {
         gbc.gridx = 3;
         panel.add(createInlineStatusSeparator(), gbc);
         gbc.gridx = 4;
-        gbc.insets = new java.awt.Insets(0, 0, 0, 0);
+        gbc.insets = new java.awt.Insets(0, 0, 0, 6);
         panel.add(investedValueStatus, gbc);
+        gbc.gridx = 5;
+        panel.add(createInlineStatusSeparator(), gbc);
+        gbc.gridx = 6;
+        gbc.insets = new java.awt.Insets(0, 0, 0, 0);
+        panel.add(baseBuyPendingStatus, gbc);
         return panel;
     }
 
@@ -288,7 +296,8 @@ final class BottomStatusBars {
         String funds = availableFundsText == null || availableFundsText.isBlank()
                 ? "Funds: -"
                 : availableFundsText.replace("Funds Available:", "Funds");
-        return broker + COMPACT_SEPARATOR + market + COMPACT_SEPARATOR + funds;
+        return broker + COMPACT_SEPARATOR + market + COMPACT_SEPARATOR + funds
+                + COMPACT_SEPARATOR + stripHtmlTags(baseBuyPendingStatus.getText());
     }
 
     private String statusBarDetailsHtml(StatusBarPresenter.StatusBarViewModel model) {
@@ -300,6 +309,7 @@ final class BottomStatusBars {
                 + "<br><b>Funds</b>: " + escapeHtml(stripHtmlTags(availableFundsStatus.getText()))
                 + "<br><b>Market Value</b>: " + escapeHtml(stripHtmlTags(marketValueStatus.getText()))
                 + "<br><b>Invested Value</b>: " + escapeHtml(stripHtmlTags(investedValueStatus.getText()))
+                + "<br><b>Base Buy Pending Total</b>: " + escapeHtml(stripHtmlTags(baseBuyPendingStatus.getText()))
                 + "<br><b>CPU</b>: " + escapeHtml(stripHtmlTags(cpuUsageStatus.getText()))
                 + "<br><b>Memory</b>: " + escapeHtml(stripHtmlTags(memoryUsageStatus.getText()));
     }
@@ -352,8 +362,8 @@ final class BottomStatusBars {
         availableFundsStatus.setHorizontalAlignment(SwingConstants.LEFT);
         marketValueStatus.setHorizontalAlignment(SwingConstants.LEFT);
         investedValueStatus.setHorizontalAlignment(SwingConstants.LEFT);
+        baseBuyPendingStatus.setHorizontalAlignment(SwingConstants.LEFT);
         compactStatusSummary.setHorizontalAlignment(SwingConstants.LEFT);
         statusBar.setForeground(accentColor);
     }
 }
-

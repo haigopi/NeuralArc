@@ -102,6 +102,7 @@ final class PortfolioCaptureController {
                 + " flow=" + config.executionFlow()
                 + " reentryMode=" + config.reentryMode()
                 + " reentryTerm=" + config.reentryRecommendationType()
+                + " luckyStrategy=" + config.reentryLuckyStrategy()
                 + " reentryQty=" + config.reentryQuantity());
     }
 
