@@ -982,154 +982,66 @@
       background: rgba(255, 255, 255, 0.04);
     }
 
-    .breeze-garden {
+    .matrix-rain {
       position: relative;
-      height: 168px;
-      margin: -40px 0 4px;
+      height: 190px;
+      margin: -28px 0 4px;
       overflow: hidden;
       pointer-events: none;
+      border-radius: 0 0 30px 30px;
+      background:
+        linear-gradient(180deg, rgba(3, 10, 16, 0), rgba(3, 10, 16, 0.58) 24%, rgba(3, 10, 16, 0.95) 100%),
+        radial-gradient(circle at 50% 0%, rgba(124, 246, 196, 0.09), transparent 46%);
+      -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 20%, black 86%, transparent 100%);
+      mask-image: linear-gradient(180deg, transparent 0%, black 20%, black 86%, transparent 100%);
     }
 
-    .breeze-garden::before {
+    .matrix-rain::before {
       content: "";
       position: absolute;
-      left: 4%;
-      right: 4%;
-      bottom: 24px;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(124, 246, 196, 0.18), rgba(255, 210, 122, 0.12), transparent);
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(124, 246, 196, 0.05) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(143, 217, 255, 0.04) 1px, transparent 1px);
+      background-size: 54px 100%, 100% 32px;
+      opacity: .28;
     }
 
-    .sprig {
+    .matrix-column {
       position: absolute;
       left: var(--x);
-      bottom: 22px;
-      width: 52px;
-      height: var(--height);
-      transform-origin: 50% 100%;
-      animation: stemBreeze var(--speed) ease-in-out infinite;
+      top: -126%;
+      width: 1ch;
+      color: rgba(124, 246, 196, 0.78);
+      font: 700 var(--size) / .92 "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      letter-spacing: .04em;
+      text-align: center;
+      overflow-wrap: anywhere;
+      word-break: break-all;
+      text-shadow:
+        0 0 8px rgba(124, 246, 196, 0.72),
+        0 0 18px rgba(124, 246, 196, 0.24);
+      opacity: var(--alpha);
+      animation: matrixFall var(--speed) linear infinite;
       animation-delay: var(--delay);
-      opacity: .82;
+      filter: blur(var(--blur, 0px));
     }
 
-    .sprig::before {
-      content: "";
-      position: absolute;
-      left: calc(50% - 18px);
-      bottom: 0;
-      width: 38px;
-      height: 100%;
-      border-left: 3px solid rgba(142, 205, 137, 0.52);
-      border-radius: 52% 0 0 48%;
-      background: none;
-      transform: rotate(var(--stem-lean)) skewX(var(--stem-curve, 0deg));
-      transform-origin: 50% 100%;
-      filter: drop-shadow(1px 0 0 rgba(187, 225, 140, 0.12));
+    .matrix-column::first-letter {
+      color: rgba(220, 255, 237, 0.98);
+      text-shadow:
+        0 0 8px rgba(255, 255, 255, 0.8),
+        0 0 18px rgba(124, 246, 196, 0.72);
     }
 
-    .sprig-leaf {
-      position: absolute;
-      bottom: var(--bottom);
-      width: 18px;
-      height: 9px;
-      border-radius: 999px 999px 999px 0;
-      background: rgba(159, 218, 160, 0.38);
-      transform-origin: 100% 50%;
+    .matrix-column.dim {
+      color: rgba(143, 217, 255, 0.38);
+      text-shadow: 0 0 10px rgba(143, 217, 255, 0.18);
     }
 
-    .sprig-leaf.left {
-      left: 7px;
-      transform: rotate(22deg);
-    }
-
-    .sprig-leaf.right {
-      right: 7px;
-      transform: scaleX(-1) rotate(22deg);
-    }
-
-    .sprig-bloom {
-      position: absolute;
-      width: var(--bloom-size);
-      height: var(--bloom-size);
-      animation: bloomFlutter calc(var(--speed) * .72) ease-in-out infinite;
-      animation-delay: var(--delay);
-    }
-
-    .sprig-bloom.left {
-      left: 4px;
-      top: var(--top);
-      transform-origin: 140% 120%;
-    }
-
-    .sprig-bloom.right {
-      right: 4px;
-      top: var(--top);
-      transform-origin: -40% 120%;
-    }
-
-    .sprig-bloom.top {
-      left: 50%;
-      top: -2px;
-      transform: translateX(-50%);
-      transform-origin: 50% 140%;
-    }
-
-    .sprig-bloom::before,
-    .sprig-bloom::after,
-    .petal {
-      content: "";
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 46%;
-      height: 62%;
-      border-radius: 999px 999px 760px 760px;
-      background: var(--petal);
-      transform-origin: 50% 92%;
-      box-shadow: 0 0 14px rgba(255, 255, 255, 0.08);
-    }
-
-    .sprig-bloom::before {
-      transform: translate(-50%, -88%) rotate(0deg);
-    }
-
-    .sprig-bloom::after {
-      transform: translate(-50%, -88%) rotate(144deg);
-    }
-
-    .petal:nth-child(1) {
-      transform: translate(-50%, -88%) rotate(72deg);
-    }
-
-    .petal:nth-child(2) {
-      transform: translate(-50%, -88%) rotate(216deg);
-    }
-
-    .petal:nth-child(3) {
-      transform: translate(-50%, -88%) rotate(288deg);
-    }
-
-    .bloom-center {
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 28%;
-      height: 28%;
-      border-radius: 50%;
-      background: rgba(255, 226, 152, 0.92);
-      transform: translate(-50%, -50%);
-      box-shadow: 0 0 10px rgba(255, 226, 152, 0.14);
-    }
-
-    @keyframes stemBreeze {
-      0%, 100% { transform: rotate(-6deg) translateX(0); }
-      38% { transform: rotate(9deg) translateX(8px); }
-      68% { transform: rotate(2deg) translateX(-3px); }
-    }
-
-    @keyframes bloomFlutter {
-      0%, 100% { rotate: -7deg; }
-      50% { rotate: 8deg; }
+    @keyframes matrixFall {
+      from { transform: translateY(-18%); }
+      to { transform: translateY(238%); }
     }
 
     .footer {
@@ -1230,12 +1142,12 @@
         height: 200px;
       }
 
-      .breeze-garden {
-        height: 124px;
-        margin-top: -20px;
+      .matrix-rain {
+        height: 142px;
+        margin-top: -18px;
       }
 
-      .sprig:nth-child(even) {
+      .matrix-column:nth-child(even) {
         display: none;
       }
 
@@ -1248,9 +1160,9 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .sprig,
-      .sprig-bloom {
+      .matrix-column {
         animation: none;
+        top: 0;
       }
     }
   </style>
@@ -1316,19 +1228,19 @@ live: manual promotion only</pre>
       </section>
 
       <section class="cluster-grid screen--cluster">
-        <article class="panel panel--heroish trust" id="trust-privacy">
+        <article class="panel panel--heroish trust" id="trust-privacy" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
           <span class="section-chip">Private by Design</span>
           <h2>Keep your workflow yours.</h2>
           <a class="button-secondary panel-button learn-more-trigger" href="#" data-dialog-topic="trust" aria-haspopup="dialog" aria-controls="learn-more-dialog">Learn more</a>
         </article>
 
-        <article class="panel panel--heroish automation" id="automation-velocity">
+        <article class="panel panel--heroish automation" id="automation-velocity" data-aos="fade-up" data-aos-delay="80" data-aos-duration="900" data-aos-easing="ease-out-cubic">
           <span class="section-chip">Move Faster with Automation</span>
           <h2>Go from setup to action with less friction.</h2>
           <a class="button-secondary panel-button learn-more-trigger" href="#" data-dialog-topic="automation" aria-haspopup="dialog" aria-controls="learn-more-dialog">Learn more</a>
         </article>
 
-        <article class="panel panel--heroish risk" id="autonomous-risk">
+        <article class="panel panel--heroish risk" id="autonomous-risk" data-aos="fade-up" data-aos-delay="160" data-aos-duration="900" data-aos-easing="ease-out-cubic">
           <span class="section-chip">Autonomous &amp; Risk</span>
           <h2>Let the system carry the routine.</h2>
           <a class="button-secondary panel-button learn-more-trigger" href="#" data-dialog-topic="risk" aria-haspopup="dialog" aria-controls="learn-more-dialog">Learn more</a>
@@ -1336,18 +1248,18 @@ live: manual promotion only</pre>
       </section>
 
       <section class="rest-grid screen--rest">
-        <article class="panel">
+        <article class="panel" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
           <span class="section-chip">Built for Everyday Operators</span>
           <h2>Designed to be usable, not intimidating.</h2>
           <div class="card-grid">
-            <section class="info-card">
+            <section class="info-card" data-aos="fade-up" data-aos-delay="80" data-aos-duration="800">
               <h3>For Basic Computer Knowledge</h3>
               <ul>
                 <li>You do not need to be a software engineer to use the app carefully.</li>
                 <li>If you can install an app and read settings clearly, you can get started.</li>
               </ul>
             </section>
-            <section class="info-card">
+            <section class="info-card" data-aos="fade-up" data-aos-delay="140" data-aos-duration="800">
               <h3>What You Still Need</h3>
               <ul>
                 <li>Be comfortable copying API keys and reviewing strategy values.</li>
@@ -1357,18 +1269,18 @@ live: manual promotion only</pre>
           </div>
         </article>
 
-        <article class="panel">
+        <article class="panel" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
           <span class="section-chip">Security</span>
           <h2>All sensitive details protected. No Exceptions.</h2>
           <div class="card-grid">
-            <section class="info-card">
+            <section class="info-card" data-aos="fade-up" data-aos-delay="80" data-aos-duration="800">
               <h3>Credentials Stay Local</h3>
               <ul>
                 <li>Saved credentials remain on the user's machine for normal operation encrypted.</li>
                 <li>The app never share any secrets as part of telemetry nor the user details.</li>
               </ul>
             </section>
-            <section class="info-card">
+            <section class="info-card" data-aos="fade-up" data-aos-delay="140" data-aos-duration="800">
               <h3>Protected at Rest</h3>
               <ul>
                 <li>Local encryption mechanics reduce casual exposure of saved credentials.</li>
@@ -1378,47 +1290,47 @@ live: manual promotion only</pre>
           </div>
         </article>
 
-        <article class="panel product-preview" style="grid-column: 1 / -1;">
+        <article class="panel product-preview" style="grid-column: 1 / -1;" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
           <span class="section-chip">Product Preview</span>
           <h2>Set the gauradrails. Keep the machine running.</h2>
           <p class="panel-intro panel-intro--wide">Connect Alpaca, tune the strategy, and let NeuralArc keep watching the market from your own desktop. It turns your setup into a disciplined, profit-focused operator console while you stay in control.</p>
           <div class="preview-grid">
-            <article class="preview-card">
+            <article class="preview-card" data-aos="fade-up" data-aos-delay="60" data-aos-duration="800">
               <div class="preview-visual"><img src="./images/workflow-dashboard.png" alt="NeuralArc current strategies dashboard"></div>
               <div class="preview-copy">
                 <h3>Live Strategy Command</h3>
                 <p>Watch active strategies, status, price movement, and P&amp;L in one console. Your machine stays focused on the next rule instead of forcing you to chase every tick.</p>
               </div>
             </article>
-            <article class="preview-card">
+            <article class="preview-card" data-aos="fade-up" data-aos-delay="110" data-aos-duration="800">
               <div class="preview-visual"><img src="./images/workflow-strategy-dialog.png" alt="NeuralArc stock strategy setup dialog"></div>
               <div class="preview-copy">
                 <h3>Rules Before Emotion</h3>
                 <p>Set buy, sell, risk, and repeat behavior before the trade starts. NeuralArc keeps the workflow disciplined when the market starts moving.</p>
               </div>
             </article>
-            <article class="preview-card">
+            <article class="preview-card" data-aos="fade-up" data-aos-delay="160" data-aos-duration="800">
               <div class="preview-visual"><img src="./images/workflow-profit-controls.png" alt="NeuralArc automated profit control settings"></div>
               <div class="preview-copy">
                 <h3>Profit Protection Modes</h3>
                 <p>Choose the automated profit strategy that fits the position. Trigger, stop, and trailing controls are built to protect upside without hiding manual control.</p>
               </div>
             </article>
-            <article class="preview-card">
+            <article class="preview-card" data-aos="fade-up" data-aos-delay="60" data-aos-duration="800">
               <div class="preview-visual"><img src="./images/workflow-portfolio-actions.png" alt="NeuralArc portfolio actions controls"></div>
               <div class="preview-copy">
                 <h3>Operator Actions Ready</h3>
                 <p>Refresh the portfolio, cancel pending buys, or promote strategies when the setup is ready. The app gives you action buttons for real operating moments.</p>
               </div>
             </article>
-            <article class="preview-card">
+            <article class="preview-card" data-aos="fade-up" data-aos-delay="110" data-aos-duration="800">
               <div class="preview-visual"><img src="./images/workflow-current-strategies.png" alt="NeuralArc strategy grid status and actions"></div>
               <div class="preview-copy">
                 <h3>Know What Is Waiting</h3>
                 <p>Each strategy shows the current state and what it is waiting on next. That keeps the desktop running like a trading operations station, not a spreadsheet.</p>
               </div>
             </article>
-            <article class="preview-card">
+            <article class="preview-card" data-aos="fade-up" data-aos-delay="160" data-aos-duration="800">
               <div class="preview-visual"><img src="./images/workflow-settings.png" alt="NeuralArc settings and broker configuration"></div>
               <div class="preview-copy">
                 <h3>Configured Once, Reused Daily</h3>
@@ -1428,32 +1340,32 @@ live: manual promotion only</pre>
           </div>
         </article>
 
-        <article class="panel" style="grid-column: 1 / -1;">
+        <article class="panel" style="grid-column: 1 / -1;" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
           <span class="section-chip">Disclaimer</span>
           <p class="panel-intro panel-intro--wide">NeuralArc is a decision-support and execution utility for personal use. It is not financial advice, not a managed brokerage service, and does not guarantee profit or loss prevention. Simulation should be used first. Live trading must be manually enabled and is used at your own risk.</p>
         </article>
       </section>
 
-      <section class="panel panel--full-screen technology">
+      <section class="panel panel--full-screen technology" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
         <span class="section-chip">Technology</span>
         <h2>Simple on the surface. Serious underneath.</h2>
         <div class="tech-grid">
-          <section class="tech-card">
+          <section class="tech-card" data-aos="fade-up" data-aos-delay="80" data-aos-duration="800">
             <h3>Java Desktop Runtime</h3>
             <p>NeuralArc is written in Java as a high-performance desktop application built for strong local execution on your own machine. It combines responsive UI behavior and long-running strategy monitoring without pushing your workflow into a complicated cloud stack.</p>
           </section>
-          <section class="tech-card">
+          <section class="tech-card" data-aos="fade-up" data-aos-delay="140" data-aos-duration="800">
             <h3>Performance Scales with Usage</h3>
             <p>System usage scales with how many strategies you run, how frequent your polling intervals are, and how many real-time trading events are being processed. NeuralArc uses system resources as needed for responsive performance, while still allowing you to start small.</p>
           </section>
         </div>
       </section>
 
-      <section class="panel panel--full-screen get-started" id="get-started">
+      <section class="panel panel--full-screen get-started" id="get-started" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
         <span class="section-chip">Get Started</span>
         <h2>Get into the app in minutes.</h2>
         <div class="card-grid">
-          <section class="info-card">
+          <section class="info-card" data-aos="fade-up" data-aos-delay="80" data-aos-duration="800">
             <h3>1. Create Your Alpaca Account</h3>
             <ul>
               <li>Create your Alpaca account first for your trading workflow.</li>
@@ -1463,7 +1375,7 @@ live: manual promotion only</pre>
               <a class="button-secondary" href="https://alpaca.markets/" target="_blank" rel="noopener noreferrer">Open Alpaca</a>
             </div>
           </section>
-          <section class="info-card">
+          <section class="info-card" data-aos="fade-up" data-aos-delay="140" data-aos-duration="800">
             <h3>2. Download and Run NeuralArc</h3>
             <ul>
               <li>Open the app and follow the guided first-run setup.</li>
@@ -1481,7 +1393,7 @@ live: manual promotion only</pre>
             </div>
           </section>
         </div>
-        <section class="feature-card mac-help-card">
+        <section class="feature-card mac-help-card" data-aos="fade-up" data-aos-delay="180" data-aos-duration="800">
           <div>
             <h3>Mac Blocked the App?</h3>
             <ul>
@@ -1491,7 +1403,7 @@ live: manual promotion only</pre>
           </div>
           <img src="./images/mac-help.png" alt="macOS Privacy and Security screen showing the Open Anyway option for NeuralArc">
         </section>
-        <div class="feature-card" style="margin-top: 18px;">
+        <div class="feature-card" style="margin-top: 18px;" data-aos="fade-up" data-aos-delay="220" data-aos-duration="800">
           <h3>What Happens Next</h3>
           <ul>
             <li>You begin safely in simulation mode first.</li>
@@ -1500,10 +1412,10 @@ live: manual promotion only</pre>
         </div>
       </section>
 
-      <section class="panel panel--full-screen ai-ready">
+      <section class="panel panel--full-screen ai-ready" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
         <span class="section-chip">NVIDIA AI Ready</span>
         <h2>Prepared for local AI using Jetson Orin Nano Super Developer Kit.</h2>
-        <div class="feature-card" style="margin-top: 18px;">
+        <div class="feature-card" style="margin-top: 18px;" data-aos="fade-up" data-aos-delay="120" data-aos-duration="800">
           <h3>AI Integration Path</h3>
           <ul>
             <li>This path is designed to bring faster on-device intelligence and stronger decision support into your workflow.</li>
@@ -1513,49 +1425,21 @@ live: manual promotion only</pre>
       </section>
     </main>
 
-    <div class="breeze-garden" aria-hidden="true">
-      <span class="sprig" style="--x: 7%; --height: 132px; --stem-lean: -2deg; --stem-curve: -4deg; --petal: rgba(255, 182, 193, 0.84); --bloom-size: 22px; --speed: 5.2s; --delay: -.6s;">
-        <span class="sprig-leaf left" style="--bottom: 34px;"></span><span class="sprig-leaf right" style="--bottom: 70px;"></span>
-        <span class="sprig-bloom left" style="--top: 62px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-        <span class="sprig-bloom right" style="--top: 34px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-        <span class="sprig-bloom top"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-      </span>
-      <span class="sprig" style="--x: 20%; --height: 110px; --stem-lean: 2deg; --stem-curve: 4deg; --petal: rgba(196, 222, 255, 0.8); --bloom-size: 18px; --speed: 6s; --delay: -1.4s;">
-        <span class="sprig-leaf left" style="--bottom: 26px;"></span><span class="sprig-leaf right" style="--bottom: 58px;"></span>
-        <span class="sprig-bloom left" style="--top: 52px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-        <span class="sprig-bloom right" style="--top: 25px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-        <span class="sprig-bloom top"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-      </span>
-      <span class="sprig" style="--x: 33%; --height: 146px; --stem-lean: -1deg; --stem-curve: -3deg; --petal: rgba(218, 202, 255, 0.82); --bloom-size: 21px; --speed: 5.5s; --delay: -2.2s;">
-        <span class="sprig-leaf left" style="--bottom: 42px;"></span><span class="sprig-leaf right" style="--bottom: 78px;"></span>
-        <span class="sprig-bloom left" style="--top: 74px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-        <span class="sprig-bloom right" style="--top: 42px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-        <span class="sprig-bloom top"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-      </span>
-      <span class="sprig" style="--x: 47%; --height: 118px; --stem-lean: 1deg; --stem-curve: 3deg; --petal: rgba(255, 221, 174, 0.84); --bloom-size: 17px; --speed: 6.4s; --delay: -.9s;">
-        <span class="sprig-leaf left" style="--bottom: 32px;"></span><span class="sprig-leaf right" style="--bottom: 64px;"></span>
-        <span class="sprig-bloom left" style="--top: 58px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-        <span class="sprig-bloom right" style="--top: 31px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-        <span class="sprig-bloom top"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-      </span>
-      <span class="sprig" style="--x: 61%; --height: 140px; --stem-lean: -2deg; --stem-curve: -4deg; --petal: rgba(183, 236, 219, 0.82); --bloom-size: 23px; --speed: 5.7s; --delay: -1.8s;">
-        <span class="sprig-leaf left" style="--bottom: 38px;"></span><span class="sprig-leaf right" style="--bottom: 76px;"></span>
-        <span class="sprig-bloom left" style="--top: 69px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-        <span class="sprig-bloom right" style="--top: 38px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-        <span class="sprig-bloom top"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-      </span>
-      <span class="sprig" style="--x: 75%; --height: 116px; --stem-lean: 2deg; --stem-curve: 4deg; --petal: rgba(246, 196, 216, 0.82); --bloom-size: 18px; --speed: 5.1s; --delay: -2.7s;">
-        <span class="sprig-leaf left" style="--bottom: 29px;"></span><span class="sprig-leaf right" style="--bottom: 63px;"></span>
-        <span class="sprig-bloom left" style="--top: 55px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-        <span class="sprig-bloom right" style="--top: 29px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-        <span class="sprig-bloom top"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-      </span>
-      <span class="sprig" style="--x: 88%; --height: 136px; --stem-lean: -1deg; --stem-curve: -3deg; --petal: rgba(209, 239, 184, 0.82); --bloom-size: 22px; --speed: 6.1s; --delay: -1.1s;">
-        <span class="sprig-leaf left" style="--bottom: 36px;"></span><span class="sprig-leaf right" style="--bottom: 73px;"></span>
-        <span class="sprig-bloom left" style="--top: 67px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-        <span class="sprig-bloom right" style="--top: 36px;"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-        <span class="sprig-bloom top"><span class="petal"></span><span class="petal"></span><span class="petal"></span><span class="bloom-center"></span></span>
-      </span>
+    <div class="matrix-rain" aria-hidden="true" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
+      <span class="matrix-column" style="--x: 4%; --size: 1.08rem; --speed: 8.4s; --delay: -3.8s; --alpha: .72;">1010010110011010100110101011001010011010</span>
+      <span class="matrix-column dim" style="--x: 10%; --size: .82rem; --speed: 10.5s; --delay: -6.1s; --alpha: .5; --blur: .2px;">0101101001011010010110100101101001011010</span>
+      <span class="matrix-column" style="--x: 16%; --size: .96rem; --speed: 7.8s; --delay: -1.7s; --alpha: .78;">1100101011010010101101001010110100101011</span>
+      <span class="matrix-column dim" style="--x: 23%; --size: 1.15rem; --speed: 11.2s; --delay: -8.4s; --alpha: .42;">0010110110100101101001011010010110100101</span>
+      <span class="matrix-column" style="--x: 30%; --size: .9rem; --speed: 8.9s; --delay: -5.2s; --alpha: .66;">1011010010110100101101001011010010110100</span>
+      <span class="matrix-column" style="--x: 38%; --size: 1.24rem; --speed: 9.6s; --delay: -2.9s; --alpha: .76;">0110101100101011010110010101101011001010</span>
+      <span class="matrix-column dim" style="--x: 45%; --size: .78rem; --speed: 12.3s; --delay: -9.6s; --alpha: .46; --blur: .3px;">1001011010010110100101101001011010010110</span>
+      <span class="matrix-column" style="--x: 52%; --size: 1.02rem; --speed: 8.1s; --delay: -4.3s; --alpha: .8;">0101101010010110101001011010100101101010</span>
+      <span class="matrix-column dim" style="--x: 60%; --size: .88rem; --speed: 10.9s; --delay: -7.2s; --alpha: .48;">1110010101100101011001010110010101100101</span>
+      <span class="matrix-column" style="--x: 67%; --size: 1.12rem; --speed: 7.5s; --delay: -2.1s; --alpha: .82;">0011010100110101001101010011010100110101</span>
+      <span class="matrix-column dim" style="--x: 74%; --size: .84rem; --speed: 11.8s; --delay: -8.8s; --alpha: .44; --blur: .2px;">0100101110010111001011100101110010111001</span>
+      <span class="matrix-column" style="--x: 82%; --size: 1rem; --speed: 8.7s; --delay: -5.7s; --alpha: .7;">1010110010101100101011001010110010101100</span>
+      <span class="matrix-column" style="--x: 91%; --size: 1.18rem; --speed: 9.9s; --delay: -3.4s; --alpha: .74;">0110011010011001101001100110100110011010</span>
+      <span class="matrix-column dim" style="--x: 97%; --size: .8rem; --speed: 12.8s; --delay: -10.2s; --alpha: .4; --blur: .3px;">1001100101100110010110011001011001100101</span>
     </div>
 
     <footer class="footer">
