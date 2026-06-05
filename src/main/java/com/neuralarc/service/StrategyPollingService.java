@@ -290,6 +290,27 @@ public class StrategyPollingService {
         runPollIfNotInFlight(strategyId, Map.of());
     }
 
+    /**
+     * Dispatches explicit strategy polls on the polling worker pool. Used by recovery
+     * flows that need to refresh multiple strategies without serializing broker I/O.
+     */
+    public int pollStrategiesAsync(List<String> strategyIds) {
+        if (strategyIds == null || strategyIds.isEmpty()) {
+            return 0;
+        }
+        int submitted = 0;
+        Set<String> seen = new LinkedHashSet<>();
+        for (String strategyId : strategyIds) {
+            if (strategyId == null || strategyId.isBlank() || !seen.add(strategyId)) {
+                continue;
+            }
+            if (submitPollTask(strategyId, Map.of())) {
+                submitted++;
+            }
+        }
+        return submitted;
+    }
+
     /** Poll a single strategy using the pre-fetched price cache from the current cycle. */
     void pollStrategy(String strategyId, Map<String, BigDecimal> priceCache) {
         runPollIfNotInFlight(strategyId, priceCache);
@@ -332,6 +353,17 @@ public class StrategyPollingService {
             return false;
         }
         try {
+            pollExecutor.submit(() -> executeMarketClosedOrderStatusRefresh(strategy, now));
+            return true;
+        } catch (RuntimeException ex) {
+            inFlightStrategyIds.remove(strategyId);
+            throw ex;
+        }
+    }
+
+    private void executeMarketClosedOrderStatusRefresh(Strategy strategy, Instant now) {
+        String strategyId = strategy.id();
+        try {
             pollListener.onPollStarted(strategyId);
             strategyEngine.refreshOrderStatuses(strategy);
             strategyRepository.findById(strategyId).ifPresent(updated -> {
@@ -343,12 +375,10 @@ public class StrategyPollingService {
             pollListener.onPollCompleted(strategyId);
             LOGGER.fine(() -> "[POLL][MARKET_CLOSED_STATUS][" + strategy.symbol()
                     + "] Refreshed tracked Alpaca order status while trading was suppressed");
-            return true;
         } catch (Exception ex) {
             eventRepository.save(event(strategyId, StrategyEventType.POLL_ERROR, ex.getMessage(), "{}"));
             pollListener.onPollFailed(strategyId);
             LOGGER.log(Level.WARNING, "Market-closed order status refresh failed for strategy " + strategyId, ex);
-            return false;
         } finally {
             inFlightStrategyIds.remove(strategyId);
         }

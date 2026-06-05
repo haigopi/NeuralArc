@@ -11,7 +11,6 @@ import com.neuralarc.db.SqliteStrategyExecutionEventRepository;
 import com.neuralarc.db.SqliteStrategyOrderRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
 import com.neuralarc.service.AutoAnalyzeResultStore;
-import com.neuralarc.service.AutoAnalyzeService;
 import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.GitHubReleaseUpdateService;
 import com.neuralarc.service.MarketHoursService;
@@ -2371,16 +2370,8 @@ public class TradingFrame extends JFrame {
             log("[Portfolio Capture] Auto re-entry failed to fetch I Am Feeling Lucky stocks: " + ex.getMessage());
             return "Skipped: unable to fetch lucky stocks.";
         }
-        AutoAnalyzeService analyzeService = new AutoAnalyzeService(marketDataApi);
-        List<LuckySimulationSelection> selections = new ArrayList<>();
-        for (TrendingStock stock : stocks) {
-            try {
-                AutoAnalyzeBundle bundle = analyzeService.analyzeBundle(stock.symbol(), 1, 15, stock.latestPrice());
-                selections.add(new LuckySimulationSelection(stock, bundle, config.reentryRecommendationType(), config.reentryQuantity()));
-            } catch (Exception ex) {
-                log("[Portfolio Capture] Auto re-entry skipped " + stock.symbol() + ": " + ex.getMessage());
-            }
-        }
+        List<LuckySimulationSelection> selections = new LuckyPortfolioAutomationService(marketDataApi, this::log)
+                .analyzeSelections(stocks, config.reentryRecommendationType(), config.reentryQuantity());
         LuckySimulationPlacementController controller = new LuckySimulationPlacementController(new LuckySimulationPlacementController.Gateway() {
             @Override public com.neuralarc.service.StrategyRepository repository() { return strategyRepository; }
             @Override public StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy) {
@@ -4662,16 +4653,7 @@ public class TradingFrame extends JFrame {
         if (!settings.autoPausePollingWhenMarketClosed() || !settings.extendedHoursTradingEnabled()) {
             return Map.of();
         }
-        Map<String, Boolean> byId = new LinkedHashMap<>();
-        for (Strategy strategy : stored) {
-            if (strategy == null || strategy.id() == null || strategy.id().isBlank()) {
-                continue;
-            }
-            HttpAlpacaClient client = alpacaClientForStrategyMode(strategy.mode());
-            boolean overnightEligible = client != null && client.supportsOvernightSession(strategy.symbol());
-            byId.put(strategy.id(), overnightEligible);
-        }
-        return byId;
+        return OvernightEligibilityLoader.load(stored, this::alpacaClientForStrategyMode);
     }
 
     private void applyOvernightEligibilitySnapshots(Map<String, Boolean> overnightEligibilityByStrategyId) {
@@ -6130,11 +6112,11 @@ public class TradingFrame extends JFrame {
                     strategyService.syncRemoteStrategies();
                 }
                 if (strategyPollingService != null) {
-                    for (Strategy strategy : strategyRepository.findAll()) {
-                        if (strategy.status() == StrategyStatus.ACTIVE || strategy.status() == StrategyStatus.PAUSED) {
-                            strategyPollingService.pollStrategy(strategy.id());
-                        }
-                    }
+                    int submitted = strategyPollingService.pollStrategiesAsync(strategyRepository.findAll().stream()
+                            .filter(strategy -> strategy.status() == StrategyStatus.ACTIVE || strategy.status() == StrategyStatus.PAUSED)
+                            .map(Strategy::id)
+                            .toList());
+                    tradeLog("[STREAM] Submitted " + submitted + " strategy refresh poll(s) after reconnect.");
                 }
                 List<Strategy> stored = strategyRepository.findAll();
                 Map<String, Position> snapshots = hasStrategiesNeedingBrokerSnapshots(stored)

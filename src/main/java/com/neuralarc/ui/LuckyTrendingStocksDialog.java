@@ -51,9 +51,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.logging.Level;
@@ -396,36 +393,27 @@ public class LuckyTrendingStocksDialog extends JDialog {
         if (taskCount <= 0) {
             return new LoadResult(List.of(), List.of(), firstTitle, secondTitle);
         }
-        ExecutorService executor = Executors.newFixedThreadPool(Math.min(4, taskCount), runnable -> {
-            Thread thread = new Thread(runnable, "neuralarc-lucky-analysis");
-            thread.setDaemon(true);
-            return thread;
-        });
-        try {
-            List<Callable<LuckyStockAnalysis>> firstTasks = firstGroup.stream()
-                    .<Callable<LuckyStockAnalysis>>map(stock -> () -> analyze(stock))
-                    .toList();
-            List<Callable<LuckyStockAnalysis>> secondTasks = secondGroup.stream()
-                    .<Callable<LuckyStockAnalysis>>map(stock -> () -> analyze(stock))
-                    .toList();
-            List<LuckyStockAnalysis> firstAnalyses = new ArrayList<>();
-            int completed = 0;
-            for (var future : executor.invokeAll(firstTasks)) {
-                firstAnalyses.add(future.get());
-                completed++;
-                progressCallback.set(percent(completed, taskCount));
+        record GroupedStock(int groupIndex, TrendingStock stock) {}
+        List<GroupedStock> groupedStocks = new ArrayList<>(taskCount);
+        firstGroup.forEach(stock -> groupedStocks.add(new GroupedStock(0, stock)));
+        secondGroup.forEach(stock -> groupedStocks.add(new GroupedStock(1, stock)));
+        List<LuckyStockAnalysis> firstAnalyses = new ArrayList<>();
+        List<LuckyStockAnalysis> secondAnalyses = new ArrayList<>();
+        List<LuckyStockAnalysis> analyses = LuckyParallelExecutor.mapPreservingOrder(
+                groupedStocks,
+                "neuralarc-lucky-analysis",
+                groupedStock -> analyze(groupedStock.stock()),
+                completed -> progressCallback.set(percent(completed, taskCount))
+        );
+        for (int i = 0; i < groupedStocks.size(); i++) {
+            if (groupedStocks.get(i).groupIndex() == 0) {
+                firstAnalyses.add(analyses.get(i));
+            } else {
+                secondAnalyses.add(analyses.get(i));
             }
-            List<LuckyStockAnalysis> secondAnalyses = new ArrayList<>();
-            for (var future : executor.invokeAll(secondTasks)) {
-                secondAnalyses.add(future.get());
-                completed++;
-                progressCallback.set(percent(completed, taskCount));
-            }
-            progressCallback.set(100);
-            return new LoadResult(firstAnalyses, secondAnalyses, firstTitle, secondTitle);
-        } finally {
-            executor.shutdownNow();
         }
+        progressCallback.set(100);
+        return new LoadResult(firstAnalyses, secondAnalyses, firstTitle, secondTitle);
     }
 
     private List<TrendingStock> buildDiversifiedStocks() {
@@ -433,10 +421,9 @@ public class LuckyTrendingStocksDialog extends JDialog {
     }
 
     static List<TrendingStock> diversifiedTop20Stocks(Function<String, BigDecimal> latestPriceLookup) {
-        List<TrendingStock> stocks = new ArrayList<>();
-        for (DiversifiedStock entry : TOP_20_DIVERSIFIED_STOCKS) {
+        return LuckyParallelExecutor.mapPreservingOrder(TOP_20_DIVERSIFIED_STOCKS, "neuralarc-lucky-price", entry -> {
             BigDecimal latestPrice = latestPriceLookup == null ? BigDecimal.ZERO : latestPriceLookup.apply(entry.symbol());
-            stocks.add(new TrendingStock(
+            return new TrendingStock(
                     entry.symbol(),
                     entry.companyName(),
                     latestPrice,
@@ -445,9 +432,8 @@ public class LuckyTrendingStocksDialog extends JDialog {
                     BigDecimal.ZERO,
                     entry.reason(),
                     BigDecimal.ZERO
-            ));
-        }
-        return stocks;
+            );
+        }, null);
     }
 
     private BigDecimal latestPriceForSymbol(String symbol) {

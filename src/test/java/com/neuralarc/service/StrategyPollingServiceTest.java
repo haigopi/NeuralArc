@@ -509,6 +509,40 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void explicitBatchPollDispatchesStrategiesInParallel() throws Exception {
+        Fixture f = new Fixture();
+        Strategy blocked = f.activeStrategy("AAPL", false);
+        Strategy fast = f.activeStrategy("MSFT", false);
+        Instant blockedBaseline = Instant.now().minusSeconds(60);
+        Instant fastBaseline = Instant.now().minusSeconds(60);
+        blocked.setLastPolledAt(blockedBaseline);
+        fast.setLastPolledAt(fastBaseline);
+        f.strategies.save(blocked);
+        f.strategies.save(fast);
+        f.alpaca.blockOpenOrdersForSymbol(blocked.symbol());
+
+        long startedAt = System.nanoTime();
+        int submitted = f.service.pollStrategiesAsync(List.of(blocked.id(), fast.id()));
+        long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+
+        assertEquals(2, submitted);
+        assertTrue(elapsedMillis < 500, "Batch poll dispatch should not wait for blocked strategy completion");
+        assertTrue(f.alpaca.awaitOpenOrdersBlock(blocked.symbol()), "Blocked strategy should reach the deterministic open-orders gate");
+        f.awaitLastPolledAfter(
+                fast.id(),
+                fastBaseline,
+                "Unblocked strategy should complete while another explicit batch poll is blocked"
+        );
+
+        f.alpaca.releaseBlockedOpenOrders(blocked.symbol());
+        f.awaitLastPolledAfter(
+                blocked.id(),
+                blockedBaseline,
+                "Blocked strategy should finish once its broker call is released"
+        );
+    }
+
+    @Test
     void pollCycleSkipsFailedHistoryStrategies() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
@@ -832,7 +866,7 @@ class StrategyPollingServiceTest {
     }
 
     @Test
-    void marketClosedPollingRefreshesDueWaitingOrderStatusWithoutTradingCalls() {
+    void marketClosedPollingRefreshesDueWaitingOrderStatusWithoutTradingCalls() throws Exception {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
         strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
@@ -877,10 +911,13 @@ class StrategyPollingServiceTest {
         int due = f.service.pollDueStrategies();
 
         assertEquals(0, due);
+        f.awaitTrue(() -> f.alpaca.orderCalls == 1, "Market-closed order status refresh should be dispatched");
         assertEquals(1, f.alpaca.orderCalls);
         assertEquals(0, f.alpaca.positionCalls);
         assertEquals(0, f.alpaca.priceCalls);
         assertEquals(0, f.alpaca.openOrderCalls);
+        f.awaitTrue(() -> f.strategies.findById(strategy.id()).orElseThrow().status() == StrategyStatus.FAILED,
+                "Market-closed order status refresh should reconcile expired status");
         Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
         assertEquals(StrategyStatus.FAILED, updated.status());
         assertEquals(StrategyLifecycleState.FAILED, updated.currentState());
