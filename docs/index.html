@@ -982,7 +982,7 @@
       background: rgba(255, 255, 255, 0.04);
     }
 
-    .matrix-rain {
+    .trading-flow {
       position: relative;
       height: 190px;
       margin: -28px 0 4px;
@@ -990,58 +990,138 @@
       pointer-events: none;
       border-radius: 0 0 30px 30px;
       background:
-        linear-gradient(180deg, rgba(3, 10, 16, 0), rgba(3, 10, 16, 0.58) 24%, rgba(3, 10, 16, 0.95) 100%),
-        radial-gradient(circle at 50% 0%, rgba(124, 246, 196, 0.09), transparent 46%);
+        linear-gradient(180deg, rgba(3, 10, 16, 0), rgba(3, 10, 16, 0.64) 22%, rgba(3, 10, 16, 0.96) 100%),
+        radial-gradient(circle at 18% 28%, rgba(124, 246, 196, 0.16), transparent 34%),
+        radial-gradient(circle at 72% 18%, rgba(255, 158, 199, 0.13), transparent 34%),
+        radial-gradient(circle at 54% 82%, rgba(255, 210, 122, 0.12), transparent 40%);
       -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 20%, black 86%, transparent 100%);
       mask-image: linear-gradient(180deg, transparent 0%, black 20%, black 86%, transparent 100%);
     }
 
-    .matrix-rain::before {
+    .trading-flow::before {
       content: "";
       position: absolute;
       inset: 0;
       background:
         linear-gradient(90deg, rgba(124, 246, 196, 0.05) 1px, transparent 1px),
-        linear-gradient(180deg, rgba(143, 217, 255, 0.04) 1px, transparent 1px);
-      background-size: 54px 100%, 100% 32px;
-      opacity: .28;
+        linear-gradient(180deg, rgba(143, 217, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(110deg, transparent 8%, rgba(124, 246, 196, 0.12) 8.4%, transparent 8.8%, transparent 36%, rgba(255, 210, 122, 0.12) 36.4%, transparent 36.8%, transparent 64%, rgba(255, 158, 199, 0.1) 64.4%, transparent 64.8%);
+      background-size: 58px 100%, 100% 34px, 100% 100%;
+      opacity: .34;
     }
 
-    .matrix-column {
+    .trading-flow::after {
+      content: "";
+      position: absolute;
+      left: 5%;
+      right: 5%;
+      top: 54%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(124, 246, 196, 0.58), rgba(255, 210, 122, 0.42), rgba(255, 158, 199, 0.42), transparent);
+      box-shadow: 0 0 18px rgba(124, 246, 196, 0.24);
+      opacity: .56;
+    }
+
+    .trade-chip {
       position: absolute;
       left: var(--x);
-      top: -126%;
-      width: 1ch;
-      color: rgba(124, 246, 196, 0.78);
-      font: 700 var(--size) / .92 "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
-      letter-spacing: .04em;
-      text-align: center;
-      overflow-wrap: anywhere;
-      word-break: break-all;
+      top: var(--y);
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 10px;
+      border: 1px solid color-mix(in srgb, var(--glow), transparent 48%);
+      border-radius: 999px;
+      background: rgba(8, 20, 32, 0.68);
+      color: var(--glow);
+      font: 800 .78rem / 1 "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      letter-spacing: .06em;
       text-shadow:
-        0 0 8px rgba(124, 246, 196, 0.72),
-        0 0 18px rgba(124, 246, 196, 0.24);
-      opacity: var(--alpha);
-      animation: matrixFall var(--speed) linear infinite;
+        0 0 8px color-mix(in srgb, var(--glow), transparent 12%),
+        0 0 20px color-mix(in srgb, var(--glow), transparent 62%);
+      box-shadow:
+        0 0 16px color-mix(in srgb, var(--glow), transparent 74%),
+        inset 0 0 18px rgba(255, 255, 255, 0.035);
+      animation: tradePulse var(--speed) ease-in-out infinite;
       animation-delay: var(--delay);
-      filter: blur(var(--blur, 0px));
+      opacity: 0;
+      transform: translateY(10px) scale(.96);
+      z-index: 2;
     }
 
-    .matrix-column::first-letter {
-      color: rgba(220, 255, 237, 0.98);
-      text-shadow:
-        0 0 8px rgba(255, 255, 255, 0.8),
-        0 0 18px rgba(124, 246, 196, 0.72);
+    .trade-chip.up::before,
+    .trade-chip.down::before {
+      font-size: .86rem;
     }
 
-    .matrix-column.dim {
-      color: rgba(143, 217, 255, 0.38);
-      text-shadow: 0 0 10px rgba(143, 217, 255, 0.18);
+    .trade-chip.up::before {
+      content: "+";
     }
 
-    @keyframes matrixFall {
-      from { transform: translateY(-18%); }
-      to { transform: translateY(238%); }
+    .trade-chip.down::before {
+      content: "-";
+    }
+
+    .candle {
+      position: absolute;
+      left: var(--x);
+      bottom: 30px;
+      width: 9px;
+      height: var(--h);
+      border-radius: 999px;
+      background: var(--glow);
+      box-shadow:
+        0 0 14px color-mix(in srgb, var(--glow), transparent 24%),
+        0 0 30px color-mix(in srgb, var(--glow), transparent 72%);
+      animation: candleGlow var(--speed) ease-in-out infinite;
+      animation-delay: var(--delay);
+      opacity: 0;
+      z-index: 1;
+    }
+
+    .candle::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: -18px;
+      bottom: -18px;
+      width: 1px;
+      background: color-mix(in srgb, var(--glow), transparent 36%);
+      transform: translateX(-50%);
+    }
+
+    .trend-line {
+      position: absolute;
+      left: var(--x);
+      top: var(--y);
+      width: var(--w);
+      height: 2px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, transparent, var(--glow), transparent);
+      box-shadow: 0 0 18px color-mix(in srgb, var(--glow), transparent 36%);
+      rotate: var(--angle);
+      animation: trendFade var(--speed) ease-in-out infinite;
+      animation-delay: var(--delay);
+      opacity: 0;
+      z-index: 1;
+    }
+
+    @keyframes tradePulse {
+      0%, 100% { opacity: 0; transform: translateY(12px) scale(.96); filter: blur(.2px); }
+      22%, 72% { opacity: .92; transform: translateY(0) scale(1); filter: blur(0); }
+      46% { opacity: .58; transform: translateY(-4px) scale(1.03); }
+    }
+
+    @keyframes candleGlow {
+      0%, 100% { opacity: 0; transform: scaleY(.48); }
+      26%, 74% { opacity: .82; transform: scaleY(1); }
+      50% { opacity: .45; transform: scaleY(.72); }
+    }
+
+    @keyframes trendFade {
+      0%, 100% { opacity: 0; transform: translateX(-20px); }
+      28%, 76% { opacity: .72; transform: translateX(0); }
+      52% { opacity: .34; transform: translateX(18px); }
     }
 
     .footer {
@@ -1142,12 +1222,14 @@
         height: 200px;
       }
 
-      .matrix-rain {
+      .trading-flow {
         height: 142px;
         margin-top: -18px;
       }
 
-      .matrix-column:nth-child(even) {
+      .trade-chip:nth-child(even),
+      .candle:nth-of-type(even),
+      .trend-line:nth-of-type(even) {
         display: none;
       }
 
@@ -1160,9 +1242,12 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .matrix-column {
+      .trade-chip,
+      .candle,
+      .trend-line {
         animation: none;
-        top: 0;
+        opacity: .72;
+        transform: none;
       }
     }
   </style>
@@ -1425,21 +1510,26 @@ live: manual promotion only</pre>
       </section>
     </main>
 
-    <div class="matrix-rain" aria-hidden="true" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
-      <span class="matrix-column" style="--x: 4%; --size: 1.08rem; --speed: 8.4s; --delay: -3.8s; --alpha: .72;">1010010110011010100110101011001010011010</span>
-      <span class="matrix-column dim" style="--x: 10%; --size: .82rem; --speed: 10.5s; --delay: -6.1s; --alpha: .5; --blur: .2px;">0101101001011010010110100101101001011010</span>
-      <span class="matrix-column" style="--x: 16%; --size: .96rem; --speed: 7.8s; --delay: -1.7s; --alpha: .78;">1100101011010010101101001010110100101011</span>
-      <span class="matrix-column dim" style="--x: 23%; --size: 1.15rem; --speed: 11.2s; --delay: -8.4s; --alpha: .42;">0010110110100101101001011010010110100101</span>
-      <span class="matrix-column" style="--x: 30%; --size: .9rem; --speed: 8.9s; --delay: -5.2s; --alpha: .66;">1011010010110100101101001011010010110100</span>
-      <span class="matrix-column" style="--x: 38%; --size: 1.24rem; --speed: 9.6s; --delay: -2.9s; --alpha: .76;">0110101100101011010110010101101011001010</span>
-      <span class="matrix-column dim" style="--x: 45%; --size: .78rem; --speed: 12.3s; --delay: -9.6s; --alpha: .46; --blur: .3px;">1001011010010110100101101001011010010110</span>
-      <span class="matrix-column" style="--x: 52%; --size: 1.02rem; --speed: 8.1s; --delay: -4.3s; --alpha: .8;">0101101010010110101001011010100101101010</span>
-      <span class="matrix-column dim" style="--x: 60%; --size: .88rem; --speed: 10.9s; --delay: -7.2s; --alpha: .48;">1110010101100101011001010110010101100101</span>
-      <span class="matrix-column" style="--x: 67%; --size: 1.12rem; --speed: 7.5s; --delay: -2.1s; --alpha: .82;">0011010100110101001101010011010100110101</span>
-      <span class="matrix-column dim" style="--x: 74%; --size: .84rem; --speed: 11.8s; --delay: -8.8s; --alpha: .44; --blur: .2px;">0100101110010111001011100101110010111001</span>
-      <span class="matrix-column" style="--x: 82%; --size: 1rem; --speed: 8.7s; --delay: -5.7s; --alpha: .7;">1010110010101100101011001010110010101100</span>
-      <span class="matrix-column" style="--x: 91%; --size: 1.18rem; --speed: 9.9s; --delay: -3.4s; --alpha: .74;">0110011010011001101001100110100110011010</span>
-      <span class="matrix-column dim" style="--x: 97%; --size: .8rem; --speed: 12.8s; --delay: -10.2s; --alpha: .4; --blur: .3px;">1001100101100110010110011001011001100101</span>
+    <div class="trading-flow" aria-hidden="true" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
+      <span class="trend-line" style="--x: 6%; --y: 62%; --w: 210px; --angle: -11deg; --glow: #7cf6c4; --speed: 7.6s; --delay: -3.1s;"></span>
+      <span class="trend-line" style="--x: 30%; --y: 38%; --w: 260px; --angle: 8deg; --glow: #ffd27a; --speed: 8.4s; --delay: -5.2s;"></span>
+      <span class="trend-line" style="--x: 64%; --y: 58%; --w: 230px; --angle: -7deg; --glow: #ff9ec7; --speed: 7.9s; --delay: -1.8s;"></span>
+
+      <span class="candle" style="--x: 9%; --h: 64px; --glow: #7cf6c4; --speed: 6.8s; --delay: -2.4s;"></span>
+      <span class="candle" style="--x: 16%; --h: 92px; --glow: #ffd27a; --speed: 7.3s; --delay: -4.8s;"></span>
+      <span class="candle" style="--x: 24%; --h: 52px; --glow: #ff7f8f; --speed: 6.2s; --delay: -1.7s;"></span>
+      <span class="candle" style="--x: 43%; --h: 74px; --glow: #8fd9ff; --speed: 7.7s; --delay: -5.6s;"></span>
+      <span class="candle" style="--x: 52%; --h: 108px; --glow: #7cf6c4; --speed: 6.9s; --delay: -3.5s;"></span>
+      <span class="candle" style="--x: 71%; --h: 68px; --glow: #ff9ec7; --speed: 7.5s; --delay: -2.1s;"></span>
+      <span class="candle" style="--x: 83%; --h: 96px; --glow: #ffd27a; --speed: 6.5s; --delay: -4.2s;"></span>
+      <span class="candle" style="--x: 93%; --h: 58px; --glow: #8fd9ff; --speed: 7.1s; --delay: -1.2s;"></span>
+
+      <span class="trade-chip up" style="--x: 7%; --y: 26%; --glow: #7cf6c4; --speed: 7.2s; --delay: -4.2s;">AAPL 1.8%</span>
+      <span class="trade-chip down" style="--x: 19%; --y: 64%; --glow: #ff7f8f; --speed: 8s; --delay: -2.7s;">RISK 0.6%</span>
+      <span class="trade-chip up" style="--x: 35%; --y: 18%; --glow: #ffd27a; --speed: 7.6s; --delay: -5.5s;">BUY LIMIT</span>
+      <span class="trade-chip up" style="--x: 50%; --y: 56%; --glow: #8fd9ff; --speed: 8.4s; --delay: -3.4s;">STOP ARMED</span>
+      <span class="trade-chip down" style="--x: 66%; --y: 28%; --glow: #ff9ec7; --speed: 7.8s; --delay: -1.5s;">TRAIL 2.0%</span>
+      <span class="trade-chip up" style="--x: 81%; --y: 66%; --glow: #7cf6c4; --speed: 7.1s; --delay: -6.1s;">P/L +$42</span>
     </div>
 
     <footer class="footer">
