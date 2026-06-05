@@ -648,6 +648,7 @@ public class StrategyService {
         if (quantity <= 0) {
             return StrategyCreationResult.failed("No open quantity to close");
         }
+        cancelPendingRemoteOrders(strategy);
         String clientOrderId = buildClientOrderId(strategy.id(), StrategyStage.MANUAL_EXIT);
         SellSubmissionType effectiveType = submissionType == null ? SellSubmissionType.LIMIT : submissionType;
         com.neuralarc.api.AlpacaOrderData submitted = effectiveType == SellSubmissionType.MARKET

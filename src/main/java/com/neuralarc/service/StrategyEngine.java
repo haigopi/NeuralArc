@@ -415,7 +415,7 @@ public class StrategyEngine {
         submitBaseBuy(strategy);
     }
 
-    private void refreshOrderStatuses(Strategy strategy) {
+    void refreshOrderStatuses(Strategy strategy) {
         List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
         for (StrategyOrder order : orders) {
             if (order.alpacaOrderId() == null || order.alpacaOrderId().isBlank() || order.isTerminal()) {

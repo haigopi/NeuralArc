@@ -249,6 +249,61 @@ class StrategyServiceTest {
     }
 
     @Test
+    void closePositionCancelsPendingOrdersBeforeSubmittingManualExit() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("3"), new BigDecimal("8.00"), new BigDecimal("9.25"), "{}"));
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategies.save(strategy);
+        StrategyOrder pendingSell = new StrategyOrder(
+                UUID.randomUUID().toString(),
+                strategy.id(),
+                StrategyStage.TARGET_SELL,
+                "pending-sell",
+                "pending-client",
+                "AAPL",
+                StrategyOrderSide.SELL,
+                StrategyOrderType.LIMIT,
+                new BigDecimal("10.00"),
+                BigDecimal.ZERO,
+                new BigDecimal("3"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                StrategyOrderStatus.SUBMITTED,
+                Instant.now(),
+                Instant.now(),
+                null,
+                "{}"
+        );
+        orders.save(pendingSell);
+        alpaca.openOrders.add(new AlpacaOrderData(
+                "pending-sell",
+                "pending-client",
+                "AAPL",
+                "sell",
+                "limit",
+                new BigDecimal("10.00"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                "new",
+                "{}"
+        ));
+
+        StrategyService.StrategyCreationResult result = service.closePosition(strategy.id());
+
+        assertTrue(result.success());
+        assertEquals(List.of("pending-sell"), alpaca.canceledOrderIds);
+        assertEquals(StrategyOrderStatus.CANCELED, orders.findByAlpacaOrderId("pending-sell").orElseThrow().status());
+        assertEquals(1, alpaca.submittedOrders.size());
+        assertEquals("limit", alpaca.submittedOrders.getFirst().type());
+        assertEquals(new BigDecimal("9.25"), alpaca.submittedOrders.getFirst().limitPrice());
+    }
+
+    @Test
     void pauseCancelsAcceptedOpenOrdersInAlpaca() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

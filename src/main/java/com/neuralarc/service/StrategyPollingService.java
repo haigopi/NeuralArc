@@ -141,6 +141,7 @@ public class StrategyPollingService {
         int totalStrategies = 0;
         int eligibleStrategies = 0;
         int skippedNotDue = 0;
+        int marketClosedStatusRefreshes = 0;
         boolean suppressedForSession = false;
         if (autoPauseForMarketClose) {
             boolean marketOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
@@ -182,6 +183,9 @@ public class StrategyPollingService {
             if (autoPauseForMarketClose && !sessionOpenForStrategy) {
                 skippedNotDue++;
                 suppressedForSession = true;
+                if (refreshOrderStatusWhileMarketClosed(strategy, now)) {
+                    marketClosedStatusRefreshes++;
+                }
                 continue;
             }
             eligibleStrategies++;
@@ -233,6 +237,7 @@ public class StrategyPollingService {
                     + " scanned=" + totalStrategies
                     + " eligible=" + eligibleStrategies
                     + " due=" + dueStrategies
+                    + " statusRefreshes=" + marketClosedStatusRefreshes
                     + " skippedNotDue=" + skippedNotDue);
         }
         lastPollCycleSnapshot = new PollCycleSnapshot(
@@ -314,6 +319,48 @@ public class StrategyPollingService {
 
     private boolean markStrategyInFlight(String strategyId) {
         return strategyId != null && !strategyId.isBlank() && inFlightStrategyIds.add(strategyId);
+    }
+
+    private boolean refreshOrderStatusWhileMarketClosed(Strategy strategy, Instant now) {
+        if (!shouldRefreshOrderStatusWhileMarketClosed(strategy, now)) {
+            return false;
+        }
+        String strategyId = strategy.id();
+        if (!markStrategyInFlight(strategyId)) {
+            LOGGER.fine(() -> "[POLL][MARKET_CLOSED_STATUS][" + strategy.symbol()
+                    + "] Skipping refresh because a poll is already in flight");
+            return false;
+        }
+        try {
+            pollListener.onPollStarted(strategyId);
+            strategyEngine.refreshOrderStatuses(strategy);
+            strategyRepository.findById(strategyId).ifPresent(updated -> {
+                updated.setLastPolledAt(now);
+                strategyRepository.save(updated);
+            });
+            eventRepository.save(event(strategyId, StrategyEventType.POLL_SUCCESS,
+                    "Market-closed order status refresh completed", "{\"strategyId\":\"" + strategyId + "\"}"));
+            pollListener.onPollCompleted(strategyId);
+            LOGGER.fine(() -> "[POLL][MARKET_CLOSED_STATUS][" + strategy.symbol()
+                    + "] Refreshed tracked Alpaca order status while trading was suppressed");
+            return true;
+        } catch (Exception ex) {
+            eventRepository.save(event(strategyId, StrategyEventType.POLL_ERROR, ex.getMessage(), "{}"));
+            pollListener.onPollFailed(strategyId);
+            LOGGER.log(Level.WARNING, "Market-closed order status refresh failed for strategy " + strategyId, ex);
+            return false;
+        } finally {
+            inFlightStrategyIds.remove(strategyId);
+        }
+    }
+
+    private boolean shouldRefreshOrderStatusWhileMarketClosed(Strategy strategy, Instant now) {
+        return strategy != null
+                && strategy.status() == StrategyStatus.ACTIVE
+                && strategy.latestAlpacaOrderId() != null
+                && !strategy.latestAlpacaOrderId().isBlank()
+                && BrokerOrderStatusUtil.isWaitingForFill(strategy.latestOrderStatus())
+                && shouldPoll(strategy, now);
     }
 
     private void executePoll(String strategyId, Map<String, BigDecimal> priceCache) {

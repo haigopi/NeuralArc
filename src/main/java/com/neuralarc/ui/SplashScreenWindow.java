@@ -17,6 +17,7 @@ import java.awt.RenderingHints;
 import java.net.URL;
 
 public class SplashScreenWindow extends JWindow {
+    private static final Dimension SPLASH_SIZE = new Dimension(580, 456);
     private static final Color BACKDROP = new Color(0, 0, 0, 0);
     private static final Color CARD_TOP = new Color(13, 24, 36);
     private static final Color CARD_BOTTOM = new Color(8, 15, 24);
@@ -31,6 +32,7 @@ public class SplashScreenWindow extends JWindow {
         JPanel root = new JPanel(new BorderLayout());
         root.setOpaque(false);
         root.setBorder(new EmptyBorder(22, 22, 22, 22));
+        root.setPreferredSize(SPLASH_SIZE);
 
         JPanel content = new RoundedGradientPanel();
         content.setLayout(new BorderLayout(0, 0));
@@ -79,7 +81,7 @@ public class SplashScreenWindow extends JWindow {
         root.add(content, BorderLayout.CENTER);
         setContentPane(root);
         setAlwaysOnTop(true);
-        setSize(new Dimension(580, 408));
+        pack();
         setLocationRelativeTo(null);
     }
 

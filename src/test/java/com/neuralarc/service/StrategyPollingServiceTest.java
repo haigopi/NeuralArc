@@ -832,6 +832,62 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void marketClosedPollingRefreshesDueWaitingOrderStatusWithoutTradingCalls() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
+        strategy.setLatestOrderStatus("new");
+        strategy.setLatestAlpacaOrderId("ord-expired");
+        strategy.setLastPolledAt(Instant.now().minusSeconds(60));
+        f.strategies.save(strategy);
+        f.orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(),
+                strategy.id(),
+                StrategyStage.BASE_BUY,
+                "ord-expired",
+                "client-expired",
+                "AAPL",
+                StrategyOrderSide.BUY,
+                StrategyOrderType.LIMIT,
+                new BigDecimal("8.00"),
+                BigDecimal.ZERO,
+                new BigDecimal("10"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                StrategyOrderStatus.SUBMITTED,
+                Instant.now(),
+                Instant.now(),
+                null,
+                "{}"
+        ));
+        f.alpaca.orderById.put("ord-expired", new AlpacaOrderData(
+                "ord-expired",
+                "client-expired",
+                "AAPL",
+                "buy",
+                "limit",
+                new BigDecimal("8.00"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                "expired",
+                "{}"
+        ));
+        f.marketHoursService.open = false;
+
+        int due = f.service.pollDueStrategies();
+
+        assertEquals(0, due);
+        assertEquals(1, f.alpaca.orderCalls);
+        assertEquals(0, f.alpaca.positionCalls);
+        assertEquals(0, f.alpaca.priceCalls);
+        assertEquals(0, f.alpaca.openOrderCalls);
+        Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.FAILED, updated.status());
+        assertEquals(StrategyLifecycleState.FAILED, updated.currentState());
+        assertEquals("expired", updated.latestOrderStatus());
+    }
+
+    @Test
     void overnightEligibleSymbolCanPollWhenGlobalSessionIsClosed() throws Exception {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
@@ -998,6 +1054,7 @@ class StrategyPollingServiceTest {
         int positionCalls;
         int priceCalls;
         int openOrderCalls;
+        int orderCalls;
         BigDecimal lastTrailPercent = BigDecimal.ZERO;
         BigDecimal lastTrailPrice = BigDecimal.ZERO;
         String nextLimitSellStatus = "new";
@@ -1074,6 +1131,7 @@ class StrategyPollingServiceTest {
 
         @Override
         public Optional<AlpacaOrderData> getOrder(String orderId) {
+            orderCalls++;
             return Optional.ofNullable(orderById.get(orderId));
         }
 

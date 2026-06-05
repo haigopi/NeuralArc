@@ -15,6 +15,10 @@ import javax.swing.border.EmptyBorder;
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 final class PortfolioActionsController {
     interface Gateway {
@@ -129,33 +133,7 @@ final class PortfolioActionsController {
         new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
-                List<String> successes = new ArrayList<>();
-                List<String> failures = new ArrayList<>();
-                List<String> skipped = new ArrayList<>();
-                if (gateway.strategyService() == null) {
-                    for (ManagedStrategy entry : targets) {
-                        failures.add(entry.strategy.symbol() + ": strategy service is not configured");
-                    }
-                    return new PortfolioActionsSupport.BatchResult(successes, failures);
-                }
-                for (ManagedStrategy entry : targets) {
-                    StrategyService modeAwareService = gateway.strategyServiceForMode(entry.strategy.mode());
-                    if (modeAwareService == null) {
-                        failures.add(entry.strategy.symbol() + ": broker client is not configured for " + entry.strategy.mode().name());
-                        continue;
-                    }
-                    StrategyService.LimitBuyCancelResult result = modeAwareService.cancelPendingLimitBuys(entry.strategy.id());
-                    if (result.success()) {
-                        if (result.canceledCount() > 0) {
-                            successes.add(entry.strategy.symbol() + " (" + result.canceledCount() + ")");
-                        } else {
-                            skipped.add(entry.strategy.symbol() + ": no pending limit buy orders were cancelable");
-                        }
-                    } else {
-                        failures.add(entry.strategy.symbol() + ": " + result.error());
-                    }
-                }
-                return new PortfolioActionsSupport.BatchResult(successes, failures, skipped);
+                return cancelPendingLimitBuyTargets(targets);
             }
 
             @Override
@@ -175,33 +153,7 @@ final class PortfolioActionsController {
         new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
-                List<String> successes = new ArrayList<>();
-                List<String> failures = new ArrayList<>();
-                List<String> skipped = new ArrayList<>();
-                if (gateway.strategyService() == null) {
-                    for (ManagedStrategy entry : targets) {
-                        failures.add(entry.strategy.symbol() + ": strategy service is not configured");
-                    }
-                    return new PortfolioActionsSupport.BatchResult(successes, failures);
-                }
-                for (ManagedStrategy entry : targets) {
-                    StrategyService modeAwareService = gateway.strategyServiceForMode(entry.strategy.mode());
-                    if (modeAwareService == null) {
-                        failures.add(entry.strategy.symbol() + ": broker client is not configured for " + entry.strategy.mode().name());
-                        continue;
-                    }
-                    StrategyService.LimitSellCancelResult result = modeAwareService.cancelPendingLimitSells(entry.strategy.id());
-                    if (result.success()) {
-                        if (result.canceledCount() > 0) {
-                            successes.add(entry.strategy.symbol() + " (" + result.canceledCount() + ")");
-                        } else {
-                            skipped.add(entry.strategy.symbol() + ": no pending limit sell orders were cancelable");
-                        }
-                    } else {
-                        failures.add(entry.strategy.symbol() + ": " + result.error());
-                    }
-                }
-                return new PortfolioActionsSupport.BatchResult(successes, failures, skipped);
+                return cancelPendingLimitSellTargets(targets);
             }
 
             @Override
@@ -221,29 +173,7 @@ final class PortfolioActionsController {
         new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
-                List<String> successes = new ArrayList<>();
-                List<String> failures = new ArrayList<>();
-                StrategyService liveService = gateway.strategyServiceForMode(StrategyMode.LIVE);
-                if (liveService == null) {
-                    for (ManagedStrategy entry : targets) {
-                        failures.add(entry.strategy.symbol() + ": LIVE strategy service is not configured");
-                    }
-                    return new PortfolioActionsSupport.BatchResult(successes, failures);
-                }
-                for (ManagedStrategy entry : targets) {
-                    StrategyService.LivePromotionPreview preview = liveService.previewLivePromotion(entry.strategy.id());
-                    if (!preview.eligible()) {
-                        failures.add(entry.strategy.symbol() + ": " + String.join(" ", preview.issues()));
-                        continue;
-                    }
-                    StrategyService.LivePromotionResult result = liveService.promotePaperStrategyToLive(entry.strategy.id());
-                    if (result.success()) {
-                        successes.add(entry.strategy.symbol());
-                    } else {
-                        failures.add(entry.strategy.symbol() + ": " + result.error());
-                    }
-                }
-                return new PortfolioActionsSupport.BatchResult(successes, failures);
+                return promoteAllToLiveTargets(targets);
             }
 
             @Override
@@ -263,22 +193,7 @@ final class PortfolioActionsController {
         new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
-                List<String> successes = new ArrayList<>();
-                List<String> failures = new ArrayList<>();
-                for (ManagedStrategy entry : targets) {
-                    StrategyService modeAwareService = gateway.strategyServiceForMode(entry.strategy.mode());
-                    if (modeAwareService == null) {
-                        failures.add(entry.strategy.symbol() + ": broker client is not configured for " + entry.strategy.mode().name());
-                        continue;
-                    }
-                    try {
-                        modeAwareService.resume(entry.strategy.id());
-                        successes.add(entry.strategy.symbol());
-                    } catch (Exception ex) {
-                        failures.add(entry.strategy.symbol() + ": " + ex.getMessage());
-                    }
-                }
-                return new PortfolioActionsSupport.BatchResult(successes, failures);
+                return resumeTargets(targets);
             }
 
             @Override
@@ -298,20 +213,7 @@ final class PortfolioActionsController {
         new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
-                List<String> successes = new ArrayList<>();
-                List<String> failures = new ArrayList<>();
-                for (ManagedStrategy entry : targets) {
-                    StrategyService.ArchiveResult result = gateway.archiveStrategy(
-                            entry.strategy.id(),
-                            "Archived by Remove Inactive List portfolio action"
-                    );
-                    if (result.success()) {
-                        successes.add(entry.strategy.symbol());
-                    } else {
-                        failures.add(entry.strategy.symbol() + ": " + result.error());
-                    }
-                }
-                return new PortfolioActionsSupport.BatchResult(successes, failures);
+                return archiveTargets(targets, "Archived by Remove Inactive List portfolio action");
             }
 
             @Override
@@ -331,20 +233,7 @@ final class PortfolioActionsController {
         new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
-                List<String> successes = new ArrayList<>();
-                List<String> failures = new ArrayList<>();
-                for (ManagedStrategy entry : targets) {
-                    StrategyService.ArchiveResult result = gateway.archiveStrategy(
-                            entry.strategy.id(),
-                            "Archived by Clean All Expired portfolio action"
-                    );
-                    if (result.success()) {
-                        successes.add(entry.strategy.symbol());
-                    } else {
-                        failures.add(entry.strategy.symbol() + ": " + result.error());
-                    }
-                }
-                return new PortfolioActionsSupport.BatchResult(successes, failures);
+                return archiveTargets(targets, "Archived by Clean All Expired portfolio action");
             }
 
             @Override
@@ -364,17 +253,7 @@ final class PortfolioActionsController {
         new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
-                List<String> successes = new ArrayList<>();
-                List<String> failures = new ArrayList<>();
-                for (ManagedStrategy entry : targets) {
-                    StrategyService.ArchiveResult result = gateway.deleteLocalTradeHistoryStrategy(entry.strategy.id());
-                    if (result.success()) {
-                        successes.add(entry.strategy.symbol());
-                    } else {
-                        failures.add(entry.strategy.symbol() + ": " + result.error());
-                    }
-                }
-                return new PortfolioActionsSupport.BatchResult(successes, failures);
+                return deleteLocalTradeHistoryTargets(targets);
             }
 
             @Override
@@ -394,22 +273,7 @@ final class PortfolioActionsController {
         new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
-                List<String> successes = new ArrayList<>();
-                List<String> failures = new ArrayList<>();
-                for (ManagedStrategy entry : targets) {
-                    StrategyService modeAwareService = gateway.strategyServiceForMode(entry.strategy.mode());
-                    if (modeAwareService == null) {
-                        failures.add(entry.strategy.symbol() + ": broker client is not configured for " + entry.strategy.mode().name());
-                        continue;
-                    }
-                    StrategyService.StrategyCreationResult result = modeAwareService.repositionExpiredStrategy(entry.strategy.id());
-                    if (result.success()) {
-                        successes.add(entry.strategy.symbol());
-                    } else {
-                        failures.add(entry.strategy.symbol() + ": " + result.error());
-                    }
-                }
-                return new PortfolioActionsSupport.BatchResult(successes, failures);
+                return repositionExpiredTargets(targets);
             }
 
             @Override
@@ -417,6 +281,174 @@ final class PortfolioActionsController {
                 handleBulkActionResult(action, this);
             }
         }.execute();
+    }
+
+    PortfolioActionsSupport.BatchResult repositionExpiredTargets(List<ManagedStrategy> targets) {
+        return runTargetsInParallel(targets, this::repositionExpiredTarget);
+    }
+
+    PortfolioActionsSupport.BatchResult sellTargets(List<ManagedStrategy> targets, SellSubmissionType submissionType) {
+        return runTargetsInParallel(targets, entry -> {
+            StrategyService.StrategyCreationResult result = gateway.sellPosition(
+                    entry.strategy,
+                    submissionType,
+                    StrategyService.SellExecutionSource.PORTFOLIO_ACTION
+            );
+            return result.success()
+                    ? TargetResult.success(entry.strategy.symbol())
+                    : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+        });
+    }
+
+    PortfolioActionsSupport.BatchResult cancelPendingLimitBuyTargets(List<ManagedStrategy> targets) {
+        return runTargetsInParallel(targets, entry -> {
+            StrategyService modeAwareService = modeAwareService(entry);
+            if (modeAwareService == null) {
+                return missingBrokerService(entry);
+            }
+            StrategyService.LimitBuyCancelResult result = modeAwareService.cancelPendingLimitBuys(entry.strategy.id());
+            if (!result.success()) {
+                return TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+            }
+            return result.canceledCount() > 0
+                    ? TargetResult.success(entry.strategy.symbol() + " (" + result.canceledCount() + ")")
+                    : TargetResult.skipped(entry.strategy.symbol() + ": no pending limit buy orders were cancelable");
+        });
+    }
+
+    PortfolioActionsSupport.BatchResult cancelPendingLimitSellTargets(List<ManagedStrategy> targets) {
+        return runTargetsInParallel(targets, entry -> {
+            StrategyService modeAwareService = modeAwareService(entry);
+            if (modeAwareService == null) {
+                return missingBrokerService(entry);
+            }
+            StrategyService.LimitSellCancelResult result = modeAwareService.cancelPendingLimitSells(entry.strategy.id());
+            if (!result.success()) {
+                return TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+            }
+            return result.canceledCount() > 0
+                    ? TargetResult.success(entry.strategy.symbol() + " (" + result.canceledCount() + ")")
+                    : TargetResult.skipped(entry.strategy.symbol() + ": no pending limit sell orders were cancelable");
+        });
+    }
+
+    PortfolioActionsSupport.BatchResult promoteAllToLiveTargets(List<ManagedStrategy> targets) {
+        return runTargetsInParallel(targets, entry -> {
+            StrategyService liveService = gateway.strategyServiceForMode(StrategyMode.LIVE);
+            if (liveService == null) {
+                return TargetResult.failure(entry.strategy.symbol() + ": LIVE strategy service is not configured");
+            }
+            StrategyService.LivePromotionPreview preview = liveService.previewLivePromotion(entry.strategy.id());
+            if (!preview.eligible()) {
+                return TargetResult.failure(entry.strategy.symbol() + ": " + String.join(" ", preview.issues()));
+            }
+            StrategyService.LivePromotionResult result = liveService.promotePaperStrategyToLive(entry.strategy.id());
+            return result.success()
+                    ? TargetResult.success(entry.strategy.symbol())
+                    : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+        });
+    }
+
+    PortfolioActionsSupport.BatchResult resumeTargets(List<ManagedStrategy> targets) {
+        return runTargetsInParallel(targets, entry -> {
+            StrategyService modeAwareService = modeAwareService(entry);
+            if (modeAwareService == null) {
+                return missingBrokerService(entry);
+            }
+            modeAwareService.resume(entry.strategy.id());
+            return TargetResult.success(entry.strategy.symbol());
+        });
+    }
+
+    PortfolioActionsSupport.BatchResult archiveTargets(List<ManagedStrategy> targets, String reason) {
+        return runTargetsInParallel(targets, entry -> {
+            StrategyService.ArchiveResult result = gateway.archiveStrategy(entry.strategy.id(), reason);
+            return result.success()
+                    ? TargetResult.success(entry.strategy.symbol())
+                    : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+        });
+    }
+
+    PortfolioActionsSupport.BatchResult deleteLocalTradeHistoryTargets(List<ManagedStrategy> targets) {
+        return runTargetsInParallel(targets, entry -> {
+            StrategyService.ArchiveResult result = gateway.deleteLocalTradeHistoryStrategy(entry.strategy.id());
+            return result.success()
+                    ? TargetResult.success(entry.strategy.symbol())
+                    : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+        });
+    }
+
+    private PortfolioActionsSupport.BatchResult runTargetsInParallel(
+            List<ManagedStrategy> targets,
+            TargetOperation operation
+    ) {
+        if (targets == null || targets.isEmpty()) {
+            return new PortfolioActionsSupport.BatchResult(List.of(), List.of());
+        }
+        int threadCount = parallelThreadCount(targets.size());
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount, runnable -> {
+            Thread thread = new Thread(runnable, "neuralarc-portfolio-action");
+            thread.setDaemon(true);
+            return thread;
+        });
+        try {
+            List<CompletableFuture<TargetResult>> futures = targets.stream()
+                    .map(entry -> CompletableFuture.supplyAsync(() -> runTarget(entry, operation), executor))
+                    .toList();
+            List<String> successes = new ArrayList<>();
+            List<String> failures = new ArrayList<>();
+            List<String> skipped = new ArrayList<>();
+            for (CompletableFuture<TargetResult> future : futures) {
+                TargetResult result = future.join();
+                switch (result.status()) {
+                    case SUCCESS -> successes.add(result.message());
+                    case FAILURE -> failures.add(result.message());
+                    case SKIPPED -> skipped.add(result.message());
+                }
+            }
+            return new PortfolioActionsSupport.BatchResult(successes, failures, skipped);
+        } finally {
+            executor.shutdownNow();
+            try {
+                if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
+                    gateway.log("[Portfolio Actions] Timed out waiting for parallel workers to stop.");
+                }
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    private TargetResult runTarget(ManagedStrategy entry, TargetOperation operation) {
+        try {
+            return operation.apply(entry);
+        } catch (Exception ex) {
+            return TargetResult.failure(entry.strategy.symbol() + ": " + ex.getMessage());
+        }
+    }
+
+    private TargetResult repositionExpiredTarget(ManagedStrategy entry) {
+        StrategyService modeAwareService = modeAwareService(entry);
+        if (modeAwareService == null) {
+            return missingBrokerService(entry);
+        }
+        StrategyService.StrategyCreationResult result = modeAwareService.repositionExpiredStrategy(entry.strategy.id());
+        return result.success()
+                ? TargetResult.success(entry.strategy.symbol())
+                : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+    }
+
+    private StrategyService modeAwareService(ManagedStrategy entry) {
+        return gateway.strategyServiceForMode(entry.strategy.mode());
+    }
+
+    private TargetResult missingBrokerService(ManagedStrategy entry) {
+        return TargetResult.failure(entry.strategy.symbol() + ": broker client is not configured for "
+                + entry.strategy.mode().name());
+    }
+
+    private int parallelThreadCount(int targetCount) {
+        return Math.min(targetCount, Math.max(2, Math.min(6, Runtime.getRuntime().availableProcessors())));
     }
 
     private void handleCleanTradeHistory() {
@@ -429,17 +461,7 @@ final class PortfolioActionsController {
         new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
-                List<String> successes = new ArrayList<>();
-                List<String> failures = new ArrayList<>();
-                for (ManagedStrategy entry : targets) {
-                    StrategyService.ArchiveResult result = gateway.deleteLocalTradeHistoryStrategy(entry.strategy.id());
-                    if (result.success()) {
-                        successes.add(entry.strategy.symbol());
-                    } else {
-                        failures.add(entry.strategy.symbol() + ": " + result.error());
-                    }
-                }
-                return new PortfolioActionsSupport.BatchResult(successes, failures);
+                return deleteLocalTradeHistoryTargets(targets);
             }
 
             @Override
@@ -518,21 +540,7 @@ final class PortfolioActionsController {
         new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
-                List<String> successes = new ArrayList<>();
-                List<String> failures = new ArrayList<>();
-                for (ManagedStrategy entry : targets) {
-                    StrategyService.StrategyCreationResult result = gateway.sellPosition(
-                            entry.strategy,
-                            submissionType,
-                            StrategyService.SellExecutionSource.PORTFOLIO_ACTION
-                    );
-                    if (result.success()) {
-                        successes.add(entry.strategy.symbol());
-                    } else {
-                        failures.add(entry.strategy.symbol() + ": " + result.error());
-                    }
-                }
-                return new PortfolioActionsSupport.BatchResult(successes, failures);
+                return sellTargets(targets, submissionType);
             }
 
             @Override
@@ -583,5 +591,30 @@ final class PortfolioActionsController {
             return gateway.strategies();
         }
         return gateway.currentStrategies();
+    }
+
+    @FunctionalInterface
+    private interface TargetOperation {
+        TargetResult apply(ManagedStrategy entry) throws Exception;
+    }
+
+    private enum TargetStatus {
+        SUCCESS,
+        FAILURE,
+        SKIPPED
+    }
+
+    private record TargetResult(TargetStatus status, String message) {
+        static TargetResult success(String message) {
+            return new TargetResult(TargetStatus.SUCCESS, message);
+        }
+
+        static TargetResult failure(String message) {
+            return new TargetResult(TargetStatus.FAILURE, message);
+        }
+
+        static TargetResult skipped(String message) {
+            return new TargetResult(TargetStatus.SKIPPED, message);
+        }
     }
 }

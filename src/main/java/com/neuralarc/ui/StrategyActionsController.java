@@ -9,6 +9,7 @@ import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.service.StrategyService;
+import com.neuralarc.util.BrokerOrderStatusUtil;
 import com.neuralarc.util.Monetary;
 
 import javax.swing.JOptionPane;
@@ -188,6 +189,74 @@ public final class StrategyActionsController {
     }
 
     public void sellPosition(int viewRow) {
+        sellPosition(viewRow, null);
+    }
+
+    public void sellPositionAtMarketPlace(int viewRow) {
+        sellPosition(viewRow, SellSubmissionType.LIMIT);
+    }
+
+    public void repositionExpiredStrategy(int viewRow) {
+        int row = gateway.toModelRow(viewRow);
+        if (row < 0 || row >= gateway.strategiesSize()) {
+            return;
+        }
+
+        ActionEntry entry = gateway.entryAt(row);
+        Strategy strategy = entry.strategy();
+        if (!isExpiredRepositionAllowed(strategy)) {
+            actionLog.skipped("Reposition Expired " + strategy.symbol(), "Strategy is not expired.");
+            return;
+        }
+
+        String message = "<html><body style='width:340px'>"
+                + "<b>Reposition expired " + strategy.symbol() + "?</b><br><br>"
+                + "This reactivates the expired strategy and submits a fresh base limit buy order using the existing strategy rules."
+                + "<br><br>Strategies with open positions or open orders are skipped by the service for safety."
+                + "</body></html>";
+        int choice = gateway.confirm(
+                message,
+                "Reposition Expired — " + strategy.symbol(),
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (choice != JOptionPane.YES_OPTION) {
+            actionLog.canceled("Reposition Expired " + strategy.symbol());
+            return;
+        }
+
+        actionLog.started("Reposition Expired " + strategy.symbol());
+        gateway.runBackgroundTask(
+                () -> {
+                    StrategyService.StrategyCreationResult result = gateway.repositionExpiredStrategy(strategy.id());
+                    if (!result.success()) {
+                        throw new IllegalStateException(result.error());
+                    }
+                },
+                () -> {
+                    gateway.findStrategyById(strategy.id()).ifPresent(entry::syncFrom);
+                    gateway.startPollingCountdown(strategy.id());
+                    gateway.log("Expired strategy reposition submitted for symbol " + strategy.symbol());
+                    actionLog.completed("Reposition Expired " + strategy.symbol(), "Fresh base limit buy order submitted.");
+                },
+                ex -> {
+                    actionLog.failed("Reposition Expired " + strategy.symbol(), ex.getMessage());
+                    gateway.showMessage(
+                            "Failed to reposition expired strategy for " + strategy.symbol() + ": " + ex.getMessage(),
+                            "Reposition Failed",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                },
+                () -> {
+                    gateway.refreshStrategyTableRow(row);
+                    gateway.updateSelectedStrategy();
+                    gateway.refreshPanels();
+                    gateway.updateStatusBar();
+                }
+        );
+    }
+
+    private void sellPosition(int viewRow, SellSubmissionType forcedSubmissionType) {
         int row = gateway.toModelRow(viewRow);
         if (row < 0 || row >= gateway.strategiesSize()) {
             return;
@@ -200,17 +269,24 @@ public final class StrategyActionsController {
             return;
         }
 
-        Optional<SellSubmissionType> selection = gateway.chooseSellSubmissionType(strategy);
-        if (selection.isEmpty()) {
-            actionLog.canceled("Sell Position " + strategy.symbol());
-            return;
+        SellSubmissionType submissionType;
+        if (forcedSubmissionType == null) {
+            Optional<SellSubmissionType> selection = gateway.chooseSellSubmissionType(strategy);
+            if (selection.isEmpty()) {
+                actionLog.canceled("Sell Position " + strategy.symbol());
+                return;
+            }
+            submissionType = selection.get();
+        } else {
+            submissionType = forcedSubmissionType;
         }
-        SellSubmissionType submissionType = selection.get();
 
         String restartMessage = strategy.restartAfterExitEnabled()
                 ? "After the position fully closes, the strategy can re-initiate its cycle automatically."
                 : "After the position fully closes, the strategy will remain completed unless you restart it manually.";
-        String executionDetail = submissionType == SellSubmissionType.MARKET
+        String executionDetail = forcedSubmissionType != null
+                ? "This cancels pending Alpaca orders for this position, then submits a prioritized limit sell at the latest broker-visible price."
+                : submissionType == SellSubmissionType.MARKET
                 ? "This submits a manual market sell on Alpaca. Fill price can differ from the latest quote due to market movement."
                 : "This submits a manual limit sell on Alpaca using the latest broker price.";
         String message = "<html><body style='width:340px'>"
@@ -230,6 +306,7 @@ public final class StrategyActionsController {
         }
 
         actionLog.started("Sell Position " + strategy.symbol());
+        gateway.excludeFromPortfolioCaptureIfRunning(strategy.id());
         gateway.runBackgroundTask(
                 () -> {
                     StrategyService.StrategyCreationResult result = gateway.sellPosition(strategy, submissionType);
@@ -239,8 +316,11 @@ public final class StrategyActionsController {
                 },
                 () -> {
                     gateway.findStrategyById(strategy.id()).ifPresent(entry::syncFrom);
-                    gateway.log("Manual " + submissionType.name().toLowerCase() + " sell order submitted for symbol " + strategy.symbol());
-                    actionLog.completed("Sell Position " + strategy.symbol(), "Manual " + submissionType.name().toLowerCase() + " sell order submitted.");
+                    String sellLabel = forcedSubmissionType == null
+                            ? submissionType.name().toLowerCase()
+                            : "market-place priced";
+                    gateway.log("Manual " + sellLabel + " sell order submitted for symbol " + strategy.symbol());
+                    actionLog.completed("Sell Position " + strategy.symbol(), "Manual " + sellLabel + " sell order submitted.");
                 },
                 ex -> {
                     actionLog.failed("Sell Position " + strategy.symbol(), ex.getMessage());
@@ -387,6 +467,8 @@ public final class StrategyActionsController {
         StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason);
         Optional<SellSubmissionType> chooseSellSubmissionType(Strategy strategy);
         StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType);
+        StrategyService.StrategyCreationResult repositionExpiredStrategy(String strategyId);
+        void excludeFromPortfolioCaptureIfRunning(String strategyId);
         BigDecimal realizedPnlForStrategy(String strategyId);
         String closePaperAccountState(Strategy strategy);
 
@@ -437,5 +519,11 @@ public final class StrategyActionsController {
 
     private static boolean isSellAllowed(StrategyStatus status) {
         return status != StrategyStatus.ARCHIVED && status != StrategyStatus.CREATED;
+    }
+
+    private static boolean isExpiredRepositionAllowed(Strategy strategy) {
+        return strategy != null
+                && strategy.status() == StrategyStatus.FAILED
+                && "expired".equals(BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus()));
     }
 }

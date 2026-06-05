@@ -675,6 +675,18 @@ public class TradingFrame extends JFrame {
             public StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType) {
                 return TradingFrame.this.sellPosition(strategy, submissionType);
             }
+            @Override public StrategyService.StrategyCreationResult repositionExpiredStrategy(String strategyId) {
+                StrategyService service = strategyRepository.findById(strategyId)
+                        .map(strategy -> strategyServiceForMode(strategy.mode()))
+                        .orElse(strategyService);
+                if (service == null) {
+                    return StrategyService.StrategyCreationResult.failed("strategy service is not configured");
+                }
+                return service.repositionExpiredStrategy(strategyId);
+            }
+            @Override public void excludeFromPortfolioCaptureIfRunning(String strategyId) {
+                portfolioCaptureController.excludeStrategyFromActiveCapture(strategyId);
+            }
             @Override public BigDecimal realizedPnlForStrategy(String strategyId) { return TradingFrame.this.realizedPnlForStrategy(strategyId); }
             @Override public String closePaperAccountState(Strategy strategy) { return TradingFrame.this.closePaperAccountState(strategy); }
             @Override public void updateHeaderModeStatus(BrokerType brokerType) { TradingFrame.this.updateHeaderModeStatus(brokerType); }
@@ -2620,6 +2632,14 @@ public class TradingFrame extends JFrame {
 
     private void sellStrategy(int viewRow) {
         strategyActionsController.sellPosition(viewRow);
+    }
+
+    private void sellStrategyAtMarketPlace(int viewRow) {
+        strategyActionsController.sellPositionAtMarketPlace(viewRow);
+    }
+
+    private void repositionExpiredStrategy(int viewRow) {
+        strategyActionsController.repositionExpiredStrategy(viewRow);
     }
 
     private void previewLivePromotion(int viewRow) {
@@ -5816,18 +5836,14 @@ public class TradingFrame extends JFrame {
         }
         strategyTable.setRowSelectionInterval(viewRow, viewRow);
         strategyTable.setColumnSelectionInterval(viewCol, viewCol);
-        Object value = strategyTable.getValueAt(viewRow, viewCol);
-        String text = value == null ? "" : value.toString();
-        JPopupMenu popup = new JPopupMenu();
-        JMenuItem copyCell = new JMenuItem("Copy Text to Clipboard");
-        copyCell.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
-        copyCell.addActionListener(e -> copyTextToClipboard(text));
-        popup.add(copyCell);
-        JMenuItem copyRow = new JMenuItem("Copy Row to Clipboard");
-        copyRow.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
-        copyRow.addActionListener(e -> copyTextToClipboard(strategyGridRowText(viewRow)));
-        popup.add(copyRow);
-        popup.show(event.getComponent(), event.getX(), event.getY());
+        new StrategyGridContextMenu(
+                strategyTable,
+                BASE_FONT.deriveFont(Font.PLAIN, 12f),
+                this::strategyGridRowText,
+                this::copyTextToClipboard,
+                this::sellStrategyAtMarketPlace,
+                this::repositionExpiredStrategy
+        ).show(event);
         return true;
     }
 

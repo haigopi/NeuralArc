@@ -220,6 +220,48 @@ class StrategyActionsControllerTest {
     }
 
     @Test
+    void sellAtMarketPlaceSubmitsPricedLimitSellWithoutTypePrompt() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        gateway.openPosition = true;
+        gateway.confirmResult = JOptionPane.YES_OPTION;
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.sellPositionAtMarketPlace(0);
+
+        assertEquals(0, gateway.sellSelectionCalls);
+        assertEquals(1, gateway.confirmCalls);
+        assertEquals(1, gateway.backgroundTasksRun);
+        assertEquals(SellSubmissionType.LIMIT, gateway.lastSellSubmissionType);
+        assertEquals(gateway.entry.strategy().id(), gateway.excludedCaptureStrategyId);
+    }
+
+    @Test
+    void repositionExpiredStrategyUsesExistingServicePath() {
+        Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        FakeGateway gateway = new FakeGateway(strategy);
+        gateway.confirmResult = JOptionPane.YES_OPTION;
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.repositionExpiredStrategy(0);
+
+        assertEquals(1, gateway.confirmCalls);
+        assertEquals(1, gateway.backgroundTasksRun);
+        assertEquals(strategy.id(), gateway.repositionedStrategyId);
+    }
+
+    @Test
+    void repositionExpiredStrategyReturnsEarlyForNonExpiredStrategy() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.repositionExpiredStrategy(0);
+
+        assertEquals(0, gateway.confirmCalls);
+        assertEquals(0, gateway.backgroundTasksRun);
+    }
+
+    @Test
     void deleteCompletedStrategyArchivesWithoutHardDelete() {
         FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.COMPLETED));
         gateway.confirmResult = JOptionPane.YES_OPTION;
@@ -280,7 +322,10 @@ class StrategyActionsControllerTest {
         boolean marketOpen = true;
         boolean openPosition;
         Optional<SellSubmissionType> sellSelection = Optional.of(SellSubmissionType.LIMIT);
+        int sellSelectionCalls;
         SellSubmissionType lastSellSubmissionType;
+        String excludedCaptureStrategyId;
+        String repositionedStrategyId;
         StrategyService strategyService;
         int archiveCalls;
         int removeCalls;
@@ -326,12 +371,21 @@ class StrategyActionsControllerTest {
             archiveCalls++;
             return StrategyService.ArchiveResult.success(strategyId);
         }
-        @Override public Optional<SellSubmissionType> chooseSellSubmissionType(Strategy strategy) { return sellSelection; }
+        @Override public Optional<SellSubmissionType> chooseSellSubmissionType(Strategy strategy) {
+            sellSelectionCalls++;
+            return sellSelection;
+        }
         @Override
         public StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType) {
             lastSellSubmissionType = submissionType;
             return StrategyService.StrategyCreationResult.success(strategy.id(), "ord", "alpaca", "client");
         }
+        @Override
+        public StrategyService.StrategyCreationResult repositionExpiredStrategy(String strategyId) {
+            repositionedStrategyId = strategyId;
+            return StrategyService.StrategyCreationResult.success(strategyId, "ord", "alpaca", "client");
+        }
+        @Override public void excludeFromPortfolioCaptureIfRunning(String strategyId) { excludedCaptureStrategyId = strategyId; }
         @Override public BigDecimal realizedPnlForStrategy(String strategyId) { return BigDecimal.ZERO; }
         @Override public String closePaperAccountState(Strategy strategy) { return ""; }
         @Override public void updateHeaderModeStatus(BrokerType brokerType) { }

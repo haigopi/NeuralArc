@@ -9,7 +9,9 @@ import javax.swing.Timer;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.UUID;
 
@@ -40,6 +42,7 @@ final class PortfolioCaptureController {
     private final PortfolioCaptureStateStore stateStore;
     private final PortfolioCaptureHistoryStore historyStore;
     private final AtomicBoolean executing = new AtomicBoolean(false);
+    private final Set<String> manuallyExcludedStrategyIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private Timer monitoringTimer;
     private PortfolioCaptureConfig activeConfig;
     private PortfolioCaptureSnapshot lastSnapshot = PortfolioCaptureSnapshot.empty();
@@ -129,6 +132,14 @@ final class PortfolioCaptureController {
         return monitoringTimer != null && monitoringTimer.isRunning();
     }
 
+    void excludeStrategyFromActiveCapture(String strategyId) {
+        if (strategyId == null || strategyId.isBlank() || !executing.get()) {
+            return;
+        }
+        manuallyExcludedStrategyIds.add(strategyId);
+        gateway.log("[Portfolio Capture] Excluded manually sold strategy from in-flight capture. strategyId=" + strategyId);
+    }
+
     void executeNow(PortfolioCaptureConfig config) {
         PortfolioCaptureSnapshot snapshot = currentSnapshot(config);
         executeCapture(snapshot, "MANUAL_CAPTURE_NOW", false, config);
@@ -188,6 +199,7 @@ final class PortfolioCaptureController {
             return;
         }
         emergencyStopRequested = false;
+        manuallyExcludedStrategyIds.clear();
         if (targetTriggered && activeConfig != null
                 && (activeConfig.autoStopAfterExecution() || !executionConfig.continuousLoop())) {
             stopTimerOnly();
@@ -230,6 +242,7 @@ final class PortfolioCaptureController {
         protected PortfolioCaptureExecutionResult doInBackground() {
             List<String> successes = new ArrayList<>();
             List<String> failures = new ArrayList<>();
+            Set<String> skippedManualSales = new HashSet<>();
             BigDecimal actualValueTotal = BigDecimal.ZERO;
             BigDecimal actualPnlTotal = BigDecimal.ZERO;
             if (executionConfig.autoCleanPendingBeforeCycle() && !emergencyStopRequested) {
@@ -240,6 +253,12 @@ final class PortfolioCaptureController {
             }
             setAutomationState(PortfolioCaptureAutomationState.CAPTURING);
             for (PortfolioCaptureSnapshot.Row row : snapshot.rows()) {
+                if (manuallyExcludedStrategyIds.contains(row.strategyId())) {
+                    skippedManualSales.add(row.strategyId());
+                    gateway.log("[Portfolio Capture] Skipped " + row.symbol()
+                            + " because it was sold individually while capture was in flight.");
+                    continue;
+                }
                 if (emergencyStopRequested) {
                     failures.add(row.symbol() + ": automation stopped");
                     continue;
@@ -277,8 +296,9 @@ final class PortfolioCaptureController {
                 String reentrySummary = gateway.runLuckyAutomation(executionConfig);
                 gateway.log("[Portfolio Capture] I Am Feeling Lucky automation completed: " + reentrySummary);
             }
-            BigDecimal executionVariance = actualValueTotal.subtract(snapshot.marketValue());
-            return PortfolioCaptureExecutionResult.from(snapshot, successes, failures, actualValueTotal, actualPnlTotal, executionVariance);
+            PortfolioCaptureSnapshot resultSnapshot = withoutRows(snapshot, skippedManualSales);
+            BigDecimal executionVariance = actualValueTotal.subtract(resultSnapshot.marketValue());
+            return PortfolioCaptureExecutionResult.from(resultSnapshot, successes, failures, actualValueTotal, actualPnlTotal, executionVariance);
         }
 
         @Override
@@ -364,6 +384,34 @@ final class PortfolioCaptureController {
             }
         }
         return null;
+    }
+
+    private PortfolioCaptureSnapshot withoutRows(PortfolioCaptureSnapshot snapshot, Set<String> excludedStrategyIds) {
+        if (snapshot == null || excludedStrategyIds == null || excludedStrategyIds.isEmpty()) {
+            return snapshot;
+        }
+        List<PortfolioCaptureSnapshot.Row> rows = snapshot.rows().stream()
+                .filter(row -> !excludedStrategyIds.contains(row.strategyId()))
+                .toList();
+        BigDecimal investment = rows.stream()
+                .map(PortfolioCaptureSnapshot.Row::investment)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal marketValue = rows.stream()
+                .map(PortfolioCaptureSnapshot.Row::marketValue)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal pnl = rows.stream()
+                .map(PortfolioCaptureSnapshot.Row::estimatedPnl)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return new PortfolioCaptureSnapshot(
+                Monetary.round(investment),
+                Monetary.round(marketValue),
+                Monetary.round(pnl),
+                Monetary.round(PortfolioCaptureSnapshot.percent(pnl, investment)),
+                snapshot.targetProgressPercent(),
+                rows.size(),
+                rows,
+                snapshot.calculatedAt()
+        );
     }
 
     private BigDecimal actualExecutionValue(
