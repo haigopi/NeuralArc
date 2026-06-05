@@ -11,9 +11,11 @@ import org.junit.jupiter.api.Test;
 import java.awt.BorderLayout;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import javax.swing.JPanel;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -72,6 +74,40 @@ class TradingFrameRestoreSelectionGuardTest {
         strategy.setLatestOrderStatus("api_error");
 
         assertFalse(TradingFrame.includeFailedStrategyInCurrentTab(strategy));
+    }
+
+    @Test
+    void startupViewModeDefaultsToLiveWhenLiveStrategiesExist() {
+        Strategy paper = failedStrategy();
+        paper.setMode(StrategyMode.PAPER);
+        paper.setStatus(StrategyStatus.ACTIVE);
+        Strategy live = failedStrategy();
+        live.setMode(StrategyMode.LIVE);
+        live.setStatus(StrategyStatus.ACTIVE);
+
+        assertEquals(StrategyMode.LIVE, TradingFrame.startupViewMode(List.of(paper, live)));
+    }
+
+    @Test
+    void startupViewModeDefaultsToPaperWhenNoLiveStrategiesExist() {
+        Strategy paper = failedStrategy();
+        paper.setMode(StrategyMode.PAPER);
+        paper.setStatus(StrategyStatus.ACTIVE);
+
+        assertEquals(StrategyMode.PAPER, TradingFrame.startupViewMode(List.of(paper)));
+        assertEquals(StrategyMode.PAPER, TradingFrame.startupViewMode(List.of()));
+    }
+
+    @Test
+    void startupViewModeIgnoresArchivedAndStoppedLiveHistory() {
+        Strategy archivedLive = failedStrategy();
+        archivedLive.setMode(StrategyMode.LIVE);
+        archivedLive.setStatus(StrategyStatus.ARCHIVED);
+        Strategy stoppedLive = failedStrategy();
+        stoppedLive.setMode(StrategyMode.LIVE);
+        stoppedLive.setStatus(StrategyStatus.STOPPED);
+
+        assertEquals(StrategyMode.PAPER, TradingFrame.startupViewMode(List.of(archivedLive, stoppedLive)));
     }
 
     private Strategy failedStrategy() {

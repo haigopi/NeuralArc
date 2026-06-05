@@ -519,11 +519,13 @@ public class StrategyEngine {
                     : status == StrategyOrderStatus.PARTIALLY_FILLED
                     ? StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED
                     : StrategyLifecycleState.BUY_LIMIT_2_PLACED;
+            case MANUAL_BUY -> strategy.currentState() == null ? StrategyLifecycleState.BASE_BUY_FILLED : strategy.currentState();
             case TARGET_SELL, PROFIT_EXIT, STOP_LOSS, LOSS_EXIT, MANUAL_EXIT, CLOSE_POSITION -> status == StrategyOrderStatus.PARTIALLY_FILLED
                     ? StrategyLifecycleState.SELL_PARTIALLY_FILLED
                     : status == StrategyOrderStatus.FILLED
                     ? StrategyLifecycleState.COMPLETED
                     : StrategyLifecycleState.SELL_PLACED;
+            default -> strategy.currentState() == null ? StrategyLifecycleState.VALIDATED : strategy.currentState();
         };
         StrategyEventType type = status == StrategyOrderStatus.FILLED || status == StrategyOrderStatus.PARTIALLY_FILLED
                 ? StrategyEventType.ORDER_STATUS_UPDATED
@@ -1005,7 +1007,8 @@ public class StrategyEngine {
             case BUY_LIMIT_2 -> "LOSS_INVESTMENT_BUY_RULE";
             case TARGET_SELL -> "SELL_RULE";
             case STOP_LOSS -> "STOP_LOSS_RULE";
-            case LOSS_EXIT, PROFIT_EXIT, MANUAL_EXIT, CLOSE_POSITION -> stage.name();
+            case LOSS_EXIT, PROFIT_EXIT, MANUAL_BUY, MANUAL_EXIT, CLOSE_POSITION -> stage.name();
+            default -> stage.name();
         };
     }
 

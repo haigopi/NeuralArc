@@ -188,6 +188,7 @@ final class RuleTriggeredHistoryPresenter {
             case TARGET_SELL -> "Target Sell";
             case LOSS_EXIT -> "Loss Exit";
             case PROFIT_EXIT -> "Profit Exit";
+            case MANUAL_BUY -> "Manual Buy";
             case MANUAL_EXIT -> "Manual Exit";
             case CLOSE_POSITION -> "Close Position";
         };

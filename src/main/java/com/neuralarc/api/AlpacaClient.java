@@ -9,6 +9,10 @@ import java.util.Optional;
 public interface AlpacaClient {
     AlpacaOrderData submitLimitBuyOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId);
 
+    default AlpacaOrderData submitMarketBuyOrder(String symbol, int quantity, String clientOrderId) {
+        throw new UnsupportedOperationException("Market buy orders are not supported by this broker client");
+    }
+
     AlpacaOrderData submitLimitSellOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId);
 
     AlpacaOrderData submitMarketSellOrder(String symbol, int quantity, String clientOrderId);

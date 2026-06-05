@@ -56,6 +56,23 @@ public class HttpAlpacaClient implements AlpacaClient {
     }
 
     @Override
+    public AlpacaOrderData submitMarketBuyOrder(String symbol, int quantity, String clientOrderId) {
+        JSONObject payload = new JSONObject()
+                .put("symbol", symbol == null ? "" : symbol.toUpperCase())
+                .put("qty", quantity)
+                .put("side", "buy")
+                .put("type", "market")
+                .put("time_in_force", "day")
+                .put("client_order_id", clientOrderId == null ? "" : clientOrderId);
+        String endpoint = tradingBaseUrl + "/v2/orders";
+        HttpRequest request = baseRequest(endpoint)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .build();
+        return executeOrderSubmission(request, payload, endpoint, symbol, clientOrderId, "buy", "market", BigDecimal.ZERO);
+    }
+
+    @Override
     public AlpacaOrderData submitLimitSellOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
         return submitLimitOrder(symbol, quantity, limitPrice, clientOrderId, "sell");
     }

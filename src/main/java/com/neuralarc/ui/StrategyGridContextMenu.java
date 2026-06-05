@@ -14,6 +14,7 @@ final class StrategyGridContextMenu {
     private final Font menuFont;
     private final IntFunction<String> rowTextProvider;
     private final java.util.function.Consumer<String> clipboardWriter;
+    private final IntConsumer buyMoreAtMarketHandler;
     private final IntConsumer sellAtMarketPlaceHandler;
     private final IntConsumer repositionExpiredHandler;
 
@@ -22,6 +23,7 @@ final class StrategyGridContextMenu {
             Font menuFont,
             IntFunction<String> rowTextProvider,
             java.util.function.Consumer<String> clipboardWriter,
+            IntConsumer buyMoreAtMarketHandler,
             IntConsumer sellAtMarketPlaceHandler,
             IntConsumer repositionExpiredHandler
     ) {
@@ -29,6 +31,7 @@ final class StrategyGridContextMenu {
         this.menuFont = menuFont;
         this.rowTextProvider = rowTextProvider;
         this.clipboardWriter = clipboardWriter;
+        this.buyMoreAtMarketHandler = buyMoreAtMarketHandler;
         this.sellAtMarketPlaceHandler = sellAtMarketPlaceHandler;
         this.repositionExpiredHandler = repositionExpiredHandler;
     }
@@ -69,6 +72,9 @@ final class StrategyGridContextMenu {
     private JMenu positionMenu(int viewRow) {
         JMenu position = new JMenu("Position");
         position.setFont(menuFont);
+        JMenuItem buy = item("Buy More at Market Price");
+        buy.addActionListener(e -> buyMoreAtMarketHandler.accept(viewRow));
+        position.add(buy);
         JMenuItem sell = item("Sell at Market-Place");
         sell.addActionListener(e -> sellAtMarketPlaceHandler.accept(viewRow));
         position.add(sell);

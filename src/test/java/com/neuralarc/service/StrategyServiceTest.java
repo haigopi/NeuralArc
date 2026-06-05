@@ -191,6 +191,36 @@ class StrategyServiceTest {
     }
 
     @Test
+    void buyMoreAtMarketSubmitsAndPersistsManualBuyOrderForInputQuantity() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategies.save(strategy);
+
+        StrategyService.StrategyCreationResult result = service.buyMoreAtMarket(strategy.id(), 4);
+
+        assertTrue(result.success());
+        assertEquals(1, alpaca.submittedOrders.size());
+        AlpacaOrderData submitted = alpaca.submittedOrders.getFirst();
+        assertEquals("buy", submitted.side());
+        assertEquals("market", submitted.type());
+        assertTrue(submitted.clientOrderId().contains("-MANUAL_BUY-"));
+        StrategyOrder local = orders.findLatestByStrategyStage(strategy.id(), StrategyStage.MANUAL_BUY).orElseThrow();
+        assertEquals(StrategyOrderSide.BUY, local.side());
+        assertEquals(StrategyOrderType.MARKET, local.orderType());
+        assertTrue(submitted.rawJson().contains("\"qty\":\"4\""));
+        assertEquals(0, new BigDecimal("4").compareTo(local.requestedQuantity()));
+        Strategy stored = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals("MANUAL_BUY", stored.lastTriggeredRuleType());
+        assertEquals(submitted.orderId(), stored.latestAlpacaOrderId());
+    }
+
+    @Test
     void closePositionPersistsSellExecutionSourceForTradeHistoryClassification() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
@@ -1377,6 +1407,15 @@ class StrategyServiceTest {
             }
             counter++;
             AlpacaOrderData order = new AlpacaOrderData("ord-" + counter, clientOrderId, symbol, "buy", "limit", limitPrice, Monetary.zero(), Monetary.zero(), "new", "{\"qty\":\"" + quantity + "\"}");
+            submittedOrders.add(order);
+            openOrders.add(order);
+            return order;
+        }
+
+        @Override
+        public AlpacaOrderData submitMarketBuyOrder(String symbol, int quantity, String clientOrderId) {
+            counter++;
+            AlpacaOrderData order = new AlpacaOrderData("ord-" + counter, clientOrderId, symbol, "buy", "market", Monetary.zero(), Monetary.zero(), Monetary.zero(), "new", "{\"qty\":\"" + quantity + "\"}");
             submittedOrders.add(order);
             openOrders.add(order);
             return order;

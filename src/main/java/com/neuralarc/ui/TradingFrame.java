@@ -96,6 +96,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -189,6 +190,8 @@ public class TradingFrame extends JFrame {
     private static final int STREAM_RECONNECT_BASE_DELAY_MILLIS = 2 * 60 * 1000;
     private static final int STREAM_RECONNECT_MAX_DELAY_MILLIS = 30 * 60 * 1000;
     private static final int STREAM_RECONNECT_RESET_HOUR = 6;
+    private static final int STRATEGY_STOCK_PRICE_COLUMN = 3;
+    private static final long STOCK_PRICE_TOOLTIP_TTL_MILLIS = 30_000L;
     /** Gap between polling ticks that indicates the system was suspended (slept). */
     private static final long WAKE_GAP_DETECTION_MS = 30_000L;
     private static final Color HEADER_STATUS_DEFAULT = new Color(220, 220, 255);
@@ -228,6 +231,8 @@ public class TradingFrame extends JFrame {
     private final SupportActionsController supportActionsController;
     private final HistoryTablePresenter historyTablePresenter = new HistoryTablePresenter();
     private final HistoryRowStyler historyRowStyler = new HistoryRowStyler();
+    private final Map<String, StockPriceTooltipSnapshot> stockPriceTooltipSnapshots = new ConcurrentHashMap<>();
+    private final Set<String> stockPriceTooltipRefreshesInFlight = ConcurrentHashMap.newKeySet();
     private final MarketStatusPresenter marketStatusPresenter = new MarketStatusPresenter();
     private final PollingCellPresenter pollingCellPresenter = new PollingCellPresenter();
     private final StatusBarPresenter statusBarPresenter = new StatusBarPresenter();
@@ -673,6 +678,14 @@ public class TradingFrame extends JFrame {
             @Override
             public StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType) {
                 return TradingFrame.this.sellPosition(strategy, submissionType);
+            }
+            @Override
+            public Optional<Integer> chooseMarketBuyQuantity(Strategy strategy) {
+                return TradingFrame.this.chooseMarketBuyQuantity(strategy);
+            }
+            @Override
+            public StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity) {
+                return TradingFrame.this.buyMoreAtMarket(strategy, quantity);
             }
             @Override public StrategyService.StrategyCreationResult repositionExpiredStrategy(String strategyId) {
                 StrategyService service = strategyRepository.findById(strategyId)
@@ -1215,6 +1228,7 @@ public class TradingFrame extends JFrame {
             @Override
             public void mouseExited(java.awt.event.MouseEvent e) {
                 strategyTable.setCursor(java.awt.Cursor.getDefaultCursor());
+                strategyTable.setToolTipText(null);
             }
 
             @Override
@@ -1234,6 +1248,7 @@ public class TradingFrame extends JFrame {
                 } else {
                     strategyTable.setCursor(java.awt.Cursor.getDefaultCursor());
                 }
+                updateStrategyStockPriceTooltip(viewRow, viewCol);
             }
         });
 
@@ -2629,6 +2644,10 @@ public class TradingFrame extends JFrame {
         strategyActionsController.sellPositionAtMarketPlace(viewRow);
     }
 
+    private void buyMoreAtMarketPrice(int viewRow) {
+        strategyActionsController.buyMoreAtMarketPrice(viewRow);
+    }
+
     private void repositionExpiredStrategy(int viewRow) {
         strategyActionsController.repositionExpiredStrategy(viewRow);
     }
@@ -2665,6 +2684,41 @@ public class TradingFrame extends JFrame {
             );
         }
         return modeAwareService.closePosition(strategy.id(), submissionType, executionSource);
+    }
+
+    private Optional<Integer> chooseMarketBuyQuantity(Strategy strategy) {
+        JSpinner quantitySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 1_000_000, 1));
+        String message = "<html><body style='width:360px'>"
+                + "<b>Buy more shares of " + strategy.symbol() + " at market price</b><br><br>"
+                + "Enter the quantity to buy. This submits an Alpaca market buy order; fill price can differ from the latest quote."
+                + "<br><br>The strategy remains active and the order is recorded in trade history as a manual buy."
+                + "</body></html>";
+        Object[] content = {message, quantitySpinner};
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                content,
+                "Buy More — " + strategy.symbol(),
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (choice != JOptionPane.OK_OPTION) {
+            return Optional.empty();
+        }
+        Object value = quantitySpinner.getValue();
+        if (value instanceof Number number) {
+            return Optional.of(Math.max(1, number.intValue()));
+        }
+        return Optional.empty();
+    }
+
+    private StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity) {
+        StrategyService modeAwareService = strategyServiceForMode(strategy.mode());
+        if (modeAwareService == null) {
+            return StrategyService.StrategyCreationResult.failed(
+                    "Broker client is not configured for " + strategy.mode().name() + " mode."
+            );
+        }
+        return modeAwareService.buyMoreAtMarket(strategy.id(), quantity);
     }
 
     private StrategyService strategyServiceForMode(StrategyMode mode) {
@@ -3039,6 +3093,75 @@ public class TradingFrame extends JFrame {
                 + "s policy=min-with-floor(2s) eligibility=ACTIVE-only");
     }
 
+    private void updateStrategyStockPriceTooltip(int viewRow, int viewCol) {
+        if (viewRow < 0 || viewCol != STRATEGY_STOCK_PRICE_COLUMN) {
+            strategyTable.setToolTipText(null);
+            return;
+        }
+        int modelRow = strategyTable.convertRowIndexToModel(viewRow);
+        if (modelRow < 0 || modelRow >= strategies.size()) {
+            strategyTable.setToolTipText(null);
+            return;
+        }
+        ManagedStrategy entry = strategies.get(modelRow);
+        String cacheKey = stockPriceTooltipCacheKey(entry.strategy);
+        StockPriceTooltipSnapshot snapshot = stockPriceTooltipSnapshots.get(cacheKey);
+        if (snapshot == null || snapshot.stale(STOCK_PRICE_TOOLTIP_TTL_MILLIS)) {
+            scheduleStockPriceTooltipRefresh(entry);
+        }
+        if (snapshot == null) {
+            snapshot = StockPriceTooltipSnapshot.fromBars(
+                    entry.strategy.symbol(),
+                    List.of(),
+                    entry.cachedPosition().getLastPrice()
+            );
+        }
+        strategyTable.setToolTipText(snapshot.tooltipText());
+    }
+
+    private void scheduleStockPriceTooltipRefresh(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null || entry.strategy.symbol() == null || entry.strategy.symbol().isBlank()) {
+            return;
+        }
+        String cacheKey = stockPriceTooltipCacheKey(entry.strategy);
+        if (!stockPriceTooltipRefreshesInFlight.add(cacheKey)) {
+            return;
+        }
+        StrategyMode mode = entry.strategy.mode();
+        String symbol = entry.strategy.symbol();
+        BigDecimal fallbackCurrent = entry.cachedPosition().getLastPrice();
+        uiPollingExecutor.submit(() -> {
+            try {
+                ApplicationMode applicationMode = mode == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER;
+                String apiKey = settingsDialog.savedApiKey(applicationMode);
+                String apiSecret = settingsDialog.savedApiSecret(applicationMode);
+                StockPriceTooltipSnapshot snapshot;
+                if (apiKey.isBlank() || apiSecret.isBlank()) {
+                    snapshot = StockPriceTooltipSnapshot.fromBars(symbol, List.of(), fallbackCurrent);
+                } else {
+                    HttpAlpacaMarketDataApi marketDataApi = new HttpAlpacaMarketDataApi(apiKey, apiSecret);
+                    List<MarketBar> bars = marketDataApi.getIntradayBars(symbol, LocalDate.now(), LocalDate.now(), 5);
+                    snapshot = StockPriceTooltipSnapshot.fromBars(symbol, bars, fallbackCurrent);
+                }
+                stockPriceTooltipSnapshots.put(cacheKey, snapshot);
+            } catch (Exception ex) {
+                stockPriceTooltipSnapshots.put(cacheKey, StockPriceTooltipSnapshot.fromBars(symbol, List.of(), fallbackCurrent));
+                log("[PRICE TOOLTIP] Failed to load intraday price details for " + symbol + ": " + ex.getMessage());
+            } finally {
+                stockPriceTooltipRefreshesInFlight.remove(cacheKey);
+            }
+        });
+    }
+
+    private String stockPriceTooltipCacheKey(Strategy strategy) {
+        if (strategy == null) {
+            return "";
+        }
+        String symbol = strategy.symbol() == null ? "" : strategy.symbol().trim().toUpperCase(Locale.ROOT);
+        StrategyMode mode = strategy.mode() == null ? StrategyMode.PAPER : strategy.mode();
+        return mode.name() + ":" + symbol;
+    }
+
     private Map<String, Position> loadPositionSnapshotsForStrategies(List<Strategy> stored) {
         if (stored == null || stored.isEmpty() || currentBrokerType != BrokerType.ALPACA) {
             return Map.of();
@@ -3310,6 +3433,7 @@ public class TradingFrame extends JFrame {
         for (Strategy strategy : syncedRemoteStrategies) {
             log("[" + strategy.symbol() + "] Synced from Alpaca and resumed locally.");
         }
+        applyStartupViewMode(storedStrategies);
         if (storedStrategies.isEmpty()) {
             refreshPanels();
             updateStatusBar();
@@ -3331,6 +3455,37 @@ public class TradingFrame extends JFrame {
 
     static boolean canSelectFirstRestoredRow(int strategyCount, int visibleRowCount) {
         return strategyCount > 0 && visibleRowCount > 0;
+    }
+
+    private void applyStartupViewMode(List<Strategy> storedStrategies) {
+        StrategyMode startupMode = startupViewMode(storedStrategies);
+        if (startupMode != selectedViewMode) {
+            selectedViewMode = startupMode;
+            selectedStrategyId = null;
+            log("[MODE] Startup default view set to " + selectedViewMode.name()
+                    + " because live strategies " + (startupMode == StrategyMode.LIVE ? "exist." : "do not exist."));
+        }
+        syncModeToggleSelection();
+        applyViewModeTheme();
+        applyAvailableFundsTextForMode(selectedApplicationMode());
+    }
+
+    static StrategyMode startupViewMode(List<Strategy> storedStrategies) {
+        if (storedStrategies != null) {
+            for (Strategy strategy : storedStrategies) {
+                if (isStartupLiveStrategy(strategy)) {
+                    return StrategyMode.LIVE;
+                }
+            }
+        }
+        return StrategyMode.PAPER;
+    }
+
+    private static boolean isStartupLiveStrategy(Strategy strategy) {
+        return strategy != null
+                && strategy.mode() == StrategyMode.LIVE
+                && strategy.status() != StrategyStatus.ARCHIVED
+                && strategy.status() != StrategyStatus.STOPPED;
     }
 
     private void maybePromptForDefaultStrategy() {
@@ -5823,6 +5978,7 @@ public class TradingFrame extends JFrame {
                 BASE_FONT.deriveFont(Font.PLAIN, 12f),
                 this::strategyGridRowText,
                 this::copyTextToClipboard,
+                this::buyMoreAtMarketPrice,
                 this::sellStrategyAtMarketPlace,
                 this::repositionExpiredStrategy
         ).show(event);

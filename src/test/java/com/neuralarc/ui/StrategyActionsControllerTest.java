@@ -236,6 +236,45 @@ class StrategyActionsControllerTest {
     }
 
     @Test
+    void buyMoreAtMarketSubmitsManualBuyForSelectedQuantity() {
+        Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        FakeGateway gateway = new FakeGateway(strategy);
+        gateway.marketBuyQuantity = Optional.of(6);
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.buyMoreAtMarketPrice(0);
+
+        assertEquals(1, gateway.backgroundTasksRun);
+        assertEquals(strategy.id(), gateway.marketBuyStrategyId);
+        assertEquals(6, gateway.marketBuyQuantitySubmitted);
+    }
+
+    @Test
+    void buyMoreAtMarketReturnsEarlyWhenMarketClosed() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        gateway.marketOpen = false;
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.buyMoreAtMarketPrice(0);
+
+        assertEquals(0, gateway.confirmCalls);
+        assertEquals(0, gateway.backgroundTasksRun);
+        assertNull(gateway.marketBuyStrategyId);
+    }
+
+    @Test
+    void buyMoreAtMarketReturnsEarlyWhenQuantityPromptCanceled() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        gateway.marketBuyQuantity = Optional.empty();
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.buyMoreAtMarketPrice(0);
+
+        assertEquals(0, gateway.backgroundTasksRun);
+        assertNull(gateway.marketBuyStrategyId);
+    }
+
+    @Test
     void repositionExpiredStrategyUsesExistingServicePath() {
         Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.FAILED);
         strategy.setLatestOrderStatus("expired");
@@ -325,6 +364,9 @@ class StrategyActionsControllerTest {
         int sellSelectionCalls;
         SellSubmissionType lastSellSubmissionType;
         String excludedCaptureStrategyId;
+        String marketBuyStrategyId;
+        Optional<Integer> marketBuyQuantity = Optional.of(1);
+        int marketBuyQuantitySubmitted;
         String repositionedStrategyId;
         StrategyService strategyService;
         int archiveCalls;
@@ -378,6 +420,16 @@ class StrategyActionsControllerTest {
         @Override
         public StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType) {
             lastSellSubmissionType = submissionType;
+            return StrategyService.StrategyCreationResult.success(strategy.id(), "ord", "alpaca", "client");
+        }
+        @Override
+        public Optional<Integer> chooseMarketBuyQuantity(Strategy strategy) {
+            return marketBuyQuantity;
+        }
+        @Override
+        public StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity) {
+            marketBuyStrategyId = strategy.id();
+            marketBuyQuantitySubmitted = quantity;
             return StrategyService.StrategyCreationResult.success(strategy.id(), "ord", "alpaca", "client");
         }
         @Override

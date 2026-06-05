@@ -8,6 +8,7 @@ public enum StrategyStage {
     TARGET_SELL,
     LOSS_EXIT,
     PROFIT_EXIT,
+    MANUAL_BUY,
     MANUAL_EXIT,
     CLOSE_POSITION
 }

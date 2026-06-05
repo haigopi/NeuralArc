@@ -156,6 +156,7 @@ public final class StrategyTablePresenter {
             case "STOP_LOSS_RULE", "STOP_LOSS" -> "Stop Loss Sell";
             case "PROFIT_EXIT", "ALPACA_TRAILING_STOP" -> "Profit Exit Sell";
             case "LOSS_EXIT" -> "Loss Exit Sell";
+            case "MANUAL_BUY" -> "Manual Market Buy";
             case "MANUAL_EXIT", "CLOSE_POSITION" -> "Manual Exit Sell";
             default -> "";
         };

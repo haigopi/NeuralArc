@@ -196,6 +196,60 @@ public final class StrategyActionsController {
         sellPosition(viewRow, SellSubmissionType.LIMIT);
     }
 
+    public void buyMoreAtMarketPrice(int viewRow) {
+        int row = gateway.toModelRow(viewRow);
+        if (row < 0 || row >= gateway.strategiesSize()) {
+            return;
+        }
+
+        ActionEntry entry = gateway.entryAt(row);
+        Strategy strategy = entry.strategy();
+        if (!isManualBuyAllowed(strategy.status()) || !gateway.marketOpenForUi()) {
+            actionLog.skipped("Buy More " + strategy.symbol(), "Strategy is not active/paused or market is closed.");
+            return;
+        }
+
+        Optional<Integer> quantitySelection = gateway.chooseMarketBuyQuantity(strategy);
+        if (quantitySelection.isEmpty()) {
+            actionLog.canceled("Buy More " + strategy.symbol());
+            return;
+        }
+        int quantity = quantitySelection.get();
+        if (quantity <= 0) {
+            actionLog.skipped("Buy More " + strategy.symbol(), "Quantity must be greater than zero.");
+            return;
+        }
+
+        actionLog.started("Buy More " + strategy.symbol());
+        gateway.runBackgroundTask(
+                () -> {
+                    StrategyService.StrategyCreationResult result = gateway.buyMoreAtMarket(strategy, quantity);
+                    if (!result.success()) {
+                        throw new IllegalStateException(result.error());
+                    }
+                },
+                () -> {
+                    gateway.findStrategyById(strategy.id()).ifPresent(entry::syncFrom);
+                    gateway.log("Manual market buy order submitted for " + quantity + " share(s) of " + strategy.symbol());
+                    actionLog.completed("Buy More " + strategy.symbol(), "Manual market buy order submitted for quantity " + quantity + ".");
+                },
+                ex -> {
+                    actionLog.failed("Buy More " + strategy.symbol(), ex.getMessage());
+                    gateway.showMessage(
+                            "Failed to submit market buy for " + strategy.symbol() + ": " + ex.getMessage(),
+                            "Buy Failed",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                },
+                () -> {
+                    gateway.refreshStrategyTableRow(row);
+                    gateway.updateSelectedStrategy();
+                    gateway.refreshPanels();
+                    gateway.updateStatusBar();
+                }
+        );
+    }
+
     public void repositionExpiredStrategy(int viewRow) {
         int row = gateway.toModelRow(viewRow);
         if (row < 0 || row >= gateway.strategiesSize()) {
@@ -466,6 +520,8 @@ public final class StrategyActionsController {
         boolean hasOpenPosition(Strategy strategy);
         StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason);
         Optional<SellSubmissionType> chooseSellSubmissionType(Strategy strategy);
+        Optional<Integer> chooseMarketBuyQuantity(Strategy strategy);
+        StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity);
         StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType);
         StrategyService.StrategyCreationResult repositionExpiredStrategy(String strategyId);
         void excludeFromPortfolioCaptureIfRunning(String strategyId);
@@ -519,6 +575,10 @@ public final class StrategyActionsController {
 
     private static boolean isSellAllowed(StrategyStatus status) {
         return status != StrategyStatus.ARCHIVED && status != StrategyStatus.CREATED;
+    }
+
+    private static boolean isManualBuyAllowed(StrategyStatus status) {
+        return status == StrategyStatus.ACTIVE || status == StrategyStatus.PAUSED;
     }
 
     private static boolean isExpiredRepositionAllowed(Strategy strategy) {
