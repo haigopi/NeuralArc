@@ -122,6 +122,7 @@ public final class StrategyTablePresenter {
                 && waitingForFill
                 && strategy.latestOrderStatus() != null
                 && !strategy.latestOrderStatus().isBlank()
+                && !isManualBuyLatest(strategy)
                 && !isBrokerUnavailableStatus(normalizedStatus)) {
             return lifecycle + " (" + BrokerOrderStatusUtil.displayLabel(strategy.latestOrderStatus()) + ")";
         }
@@ -160,6 +161,11 @@ public final class StrategyTablePresenter {
             case "MANUAL_EXIT", "CLOSE_POSITION" -> "Manual Exit Sell";
             default -> "";
         };
+    }
+
+    private boolean isManualBuyLatest(Strategy strategy) {
+        return strategy.lastTriggeredRuleType() != null
+                && "MANUAL_BUY".equalsIgnoreCase(strategy.lastTriggeredRuleType().trim());
     }
 
     private boolean isPendingOrderState(StrategyLifecycleState state) {

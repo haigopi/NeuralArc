@@ -405,6 +405,17 @@
       color: var(--accent);
     }
 
+    .download-option.is-upcoming {
+      cursor: not-allowed;
+      color: var(--muted);
+      opacity: .62;
+    }
+
+    .download-option.is-upcoming:hover {
+      background: transparent;
+      color: var(--muted);
+    }
+
     .download-option small {
       color: var(--muted);
       font-size: .76rem;
@@ -1291,9 +1302,9 @@
             <div class="download-menu">
               <button class="button download-toggle" type="button" aria-haspopup="true" aria-expanded="false">Download App</button>
               <div class="download-options" role="menu" aria-label="Download NeuralArc">
-                <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" role="menuitem" data-download-platform="windows">Windows <small>EXE</small></a>
+                <a class="download-option is-upcoming" href="#" aria-disabled="true" role="menuitem" data-download-platform="windows">Windows <small>Upcoming</small></a>
                 <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" role="menuitem" data-download-platform="mac">Mac <small>DMG</small></a>
-                <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" role="menuitem" data-download-platform="linux">Linux <small>DEB</small></a>
+                <a class="download-option is-upcoming" href="#" aria-disabled="true" role="menuitem" data-download-platform="linux">Linux <small>Upcoming</small></a>
               </div>
             </div>
             <a class="button-secondary" href="#get-started">Get Started</a>
@@ -1448,7 +1459,7 @@ live: manual promotion only</pre>
 
       <section class="panel panel--full-screen get-started" id="get-started" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
         <span class="section-chip">Get Started</span>
-        <h2>Get into the app in minutes.</h2>
+        <h2>Get into the product in minutes.</h2>
         <div class="card-grid">
           <section class="info-card" data-aos="fade-up" data-aos-delay="80" data-aos-duration="800">
             <h3>1. Create Your Alpaca Account</h3>
@@ -1470,12 +1481,20 @@ live: manual promotion only</pre>
               <div class="download-menu">
                 <button class="button download-toggle" type="button" aria-haspopup="true" aria-expanded="false">Download NeuralArc</button>
                 <div class="download-options" role="menu" aria-label="Download NeuralArc">
-                  <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" role="menuitem" data-download-platform="windows">Windows <small>EXE</small></a>
+                  <a class="download-option is-upcoming" href="#" aria-disabled="true" role="menuitem" data-download-platform="windows">Windows <small>Upcoming</small></a>
                   <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" role="menuitem" data-download-platform="mac">Mac <small>DMG</small></a>
-                  <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" role="menuitem" data-download-platform="linux">Linux <small>DEB</small></a>
+                  <a class="download-option is-upcoming" href="#" aria-disabled="true" role="menuitem" data-download-platform="linux">Linux <small>Upcoming</small></a>
                 </div>
               </div>
             </div>
+          </section>
+          <section class="info-card" data-aos="fade-up" data-aos-delay="180" data-aos-duration="800">
+            <h3>3. Set Up Keys and Try Strategies</h3>
+            <ul>
+              <li>Copy your Alpaca Paper API keys, put them in Settings, and click Verify Connection.</li>
+              <li>To start with strategies, try Lucky Strategies using Top 20 Diversified Stocks.</li>
+              <li>Stay in paper mode until the workflow feels comfortable, then move to LIVE mode when you are ready to use real funds.</li>
+            </ul>
           </section>
         </div>
         <section class="feature-card mac-help-card" data-aos="fade-up" data-aos-delay="180" data-aos-duration="800">
@@ -1624,7 +1643,7 @@ live: manual promotion only</pre>
         link.addEventListener("click", (event) => {
           event.preventDefault();
           const platform = link.dataset.downloadPlatform === "windows" ? "Windows" : "Linux";
-          window.alert(`The ${platform} build is not yet published. Please try the Mac download or check back soon.`);
+          window.alert(`${platform} downloads are upcoming. NeuralArc currently supports Mac downloads.`);
           closeMenus();
         });
       });
@@ -1654,6 +1673,9 @@ live: manual promotion only</pre>
         .then((release) => {
           const assets = Array.isArray(release.assets) ? release.assets : [];
           document.querySelectorAll("[data-download-platform]").forEach((link) => {
+            if (link.classList.contains("is-upcoming")) {
+              return;
+            }
             const asset = selectAsset(assets, link.dataset.downloadPlatform);
             link.href = asset && asset.browser_download_url ? asset.browser_download_url : (release.html_url || latestReleasePageUrl);
             if (asset && asset.name) {
@@ -1666,6 +1688,9 @@ live: manual promotion only</pre>
         })
         .catch(() => {
           document.querySelectorAll("[data-download-platform]").forEach((link) => {
+            if (link.classList.contains("is-upcoming")) {
+              return;
+            }
             link.href = latestReleasePageUrl;
           });
         });

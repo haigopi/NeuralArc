@@ -250,6 +250,21 @@ class StrategyActionsControllerTest {
     }
 
     @Test
+    void buyMoreAtLimitSubmitsManualLimitBuyForSelectedPriceAndQuantity() {
+        Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        FakeGateway gateway = new FakeGateway(strategy);
+        gateway.limitBuySelection = Optional.of(new ManualLimitBuySelection(5, new BigDecimal("9.25")));
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.buyMoreAtLimitPrice(0);
+
+        assertEquals(1, gateway.backgroundTasksRun);
+        assertEquals(strategy.id(), gateway.limitBuyStrategyId);
+        assertEquals(5, gateway.limitBuyQuantitySubmitted);
+        assertEquals(0, new BigDecimal("9.25").compareTo(gateway.limitBuyPriceSubmitted));
+    }
+
+    @Test
     void buyMoreAtMarketReturnsEarlyWhenMarketClosed() {
         FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
         gateway.marketOpen = false;
@@ -367,6 +382,10 @@ class StrategyActionsControllerTest {
         String marketBuyStrategyId;
         Optional<Integer> marketBuyQuantity = Optional.of(1);
         int marketBuyQuantitySubmitted;
+        String limitBuyStrategyId;
+        Optional<ManualLimitBuySelection> limitBuySelection = Optional.of(new ManualLimitBuySelection(1, new BigDecimal("8.00")));
+        int limitBuyQuantitySubmitted;
+        BigDecimal limitBuyPriceSubmitted;
         String repositionedStrategyId;
         StrategyService strategyService;
         int archiveCalls;
@@ -427,9 +446,21 @@ class StrategyActionsControllerTest {
             return marketBuyQuantity;
         }
         @Override
+        public Optional<ManualLimitBuySelection> chooseLimitBuy(Strategy strategy, BigDecimal currentPrice) {
+            return limitBuySelection;
+        }
+        @Override public BigDecimal currentPriceForStrategy(Strategy strategy) { return new BigDecimal("8.50"); }
+        @Override
         public StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity) {
             marketBuyStrategyId = strategy.id();
             marketBuyQuantitySubmitted = quantity;
+            return StrategyService.StrategyCreationResult.success(strategy.id(), "ord", "alpaca", "client");
+        }
+        @Override
+        public StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice) {
+            limitBuyStrategyId = strategy.id();
+            limitBuyQuantitySubmitted = quantity;
+            limitBuyPriceSubmitted = limitPrice;
             return StrategyService.StrategyCreationResult.success(strategy.id(), "ord", "alpaca", "client");
         }
         @Override

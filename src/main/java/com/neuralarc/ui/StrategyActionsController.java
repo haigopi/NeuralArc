@@ -197,6 +197,14 @@ public final class StrategyActionsController {
     }
 
     public void buyMoreAtMarketPrice(int viewRow) {
+        buyMore(viewRow, BuyMoreType.MARKET);
+    }
+
+    public void buyMoreAtLimitPrice(int viewRow) {
+        buyMore(viewRow, BuyMoreType.LIMIT);
+    }
+
+    private void buyMore(int viewRow, BuyMoreType type) {
         int row = gateway.toModelRow(viewRow);
         if (row < 0 || row >= gateway.strategiesSize()) {
             return;
@@ -209,12 +217,12 @@ public final class StrategyActionsController {
             return;
         }
 
-        Optional<Integer> quantitySelection = gateway.chooseMarketBuyQuantity(strategy);
-        if (quantitySelection.isEmpty()) {
+        Optional<ManualLimitBuySelection> selection = chooseBuyMoreInput(strategy, type);
+        if (selection.isEmpty()) {
             actionLog.canceled("Buy More " + strategy.symbol());
             return;
         }
-        int quantity = quantitySelection.get();
+        int quantity = selection.get().quantity();
         if (quantity <= 0) {
             actionLog.skipped("Buy More " + strategy.symbol(), "Quantity must be greater than zero.");
             return;
@@ -223,20 +231,23 @@ public final class StrategyActionsController {
         actionLog.started("Buy More " + strategy.symbol());
         gateway.runBackgroundTask(
                 () -> {
-                    StrategyService.StrategyCreationResult result = gateway.buyMoreAtMarket(strategy, quantity);
+                    StrategyService.StrategyCreationResult result = type == BuyMoreType.MARKET
+                            ? gateway.buyMoreAtMarket(strategy, quantity)
+                            : gateway.buyMoreAtLimit(strategy, quantity, selection.get().limitPrice());
                     if (!result.success()) {
                         throw new IllegalStateException(result.error());
                     }
                 },
                 () -> {
                     gateway.findStrategyById(strategy.id()).ifPresent(entry::syncFrom);
-                    gateway.log("Manual market buy order submitted for " + quantity + " share(s) of " + strategy.symbol());
-                    actionLog.completed("Buy More " + strategy.symbol(), "Manual market buy order submitted for quantity " + quantity + ".");
+                    String successMessage = manualBuySuccessMessage(type, strategy, quantity, selection.get().limitPrice());
+                    gateway.log(successMessage);
+                    actionLog.completed("Buy More " + strategy.symbol(), successMessage);
                 },
                 ex -> {
                     actionLog.failed("Buy More " + strategy.symbol(), ex.getMessage());
                     gateway.showMessage(
-                            "Failed to submit market buy for " + strategy.symbol() + ": " + ex.getMessage(),
+                            "Failed to submit buy for " + strategy.symbol() + ": " + ex.getMessage(),
                             "Buy Failed",
                             JOptionPane.ERROR_MESSAGE
                     );
@@ -248,6 +259,22 @@ public final class StrategyActionsController {
                     gateway.updateStatusBar();
                 }
         );
+    }
+
+    private Optional<ManualLimitBuySelection> chooseBuyMoreInput(Strategy strategy, BuyMoreType type) {
+        if (type == BuyMoreType.MARKET) {
+            return gateway.chooseMarketBuyQuantity(strategy)
+                    .map(quantity -> new ManualLimitBuySelection(quantity, BigDecimal.ZERO));
+        }
+        return gateway.chooseLimitBuy(strategy, gateway.currentPriceForStrategy(strategy));
+    }
+
+    private String manualBuySuccessMessage(StrategyActionsController.BuyMoreType type, Strategy strategy, int quantity, BigDecimal limitPrice) {
+        if (type == BuyMoreType.MARKET) {
+            return "Manual market buy order submitted for " + quantity + " share(s) of " + strategy.symbol() + ".";
+        }
+        return "Manual limit buy order submitted for " + quantity + " share(s) of " + strategy.symbol()
+                + " at $" + limitPrice.toPlainString() + ".";
     }
 
     public void repositionExpiredStrategy(int viewRow) {
@@ -521,7 +548,10 @@ public final class StrategyActionsController {
         StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason);
         Optional<SellSubmissionType> chooseSellSubmissionType(Strategy strategy);
         Optional<Integer> chooseMarketBuyQuantity(Strategy strategy);
+        Optional<ManualLimitBuySelection> chooseLimitBuy(Strategy strategy, BigDecimal currentPrice);
+        BigDecimal currentPriceForStrategy(Strategy strategy);
         StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity);
+        StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice);
         StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType);
         StrategyService.StrategyCreationResult repositionExpiredStrategy(String strategyId);
         void excludeFromPortfolioCaptureIfRunning(String strategyId);
@@ -567,6 +597,11 @@ public final class StrategyActionsController {
             int buyLevel2Qty,
             BigDecimal targetSellPrice
     ) {
+    }
+
+    private enum BuyMoreType {
+        MARKET,
+        LIMIT
     }
 
     private static boolean isToggleAllowed(StrategyStatus status) {

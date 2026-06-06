@@ -711,7 +711,7 @@ public class SettingsDialog extends JDialog {
             markConnectionStatus(false, "Verification unavailable");
             return;
         }
-        ConnectionResult result = connectionVerifier.apply(new ConnectionRequest(brokerType(), getApiKey(), getApiSecret()));
+        ConnectionResult result = connectionVerifier.apply(new ConnectionRequest(brokerType(), applicationMode(), getApiKey(), getApiSecret()));
         markConnectionStatus(result.connected(), result.message());
     }
 
@@ -786,7 +786,7 @@ public class SettingsDialog extends JDialog {
         return true;
     }
 
-    public record ConnectionRequest(BrokerType brokerType, String apiKey, String apiSecret) {}
+    public record ConnectionRequest(BrokerType brokerType, ApplicationMode applicationMode, String apiKey, String apiSecret) {}
 
     public record ConnectionResult(boolean connected, String message) {}
 

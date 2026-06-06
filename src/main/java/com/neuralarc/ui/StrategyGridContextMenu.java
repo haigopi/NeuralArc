@@ -15,6 +15,7 @@ final class StrategyGridContextMenu {
     private final IntFunction<String> rowTextProvider;
     private final java.util.function.Consumer<String> clipboardWriter;
     private final IntConsumer buyMoreAtMarketHandler;
+    private final IntConsumer buyMoreAtLimitHandler;
     private final IntConsumer sellAtMarketPlaceHandler;
     private final IntConsumer repositionExpiredHandler;
 
@@ -24,6 +25,7 @@ final class StrategyGridContextMenu {
             IntFunction<String> rowTextProvider,
             java.util.function.Consumer<String> clipboardWriter,
             IntConsumer buyMoreAtMarketHandler,
+            IntConsumer buyMoreAtLimitHandler,
             IntConsumer sellAtMarketPlaceHandler,
             IntConsumer repositionExpiredHandler
     ) {
@@ -32,6 +34,7 @@ final class StrategyGridContextMenu {
         this.rowTextProvider = rowTextProvider;
         this.clipboardWriter = clipboardWriter;
         this.buyMoreAtMarketHandler = buyMoreAtMarketHandler;
+        this.buyMoreAtLimitHandler = buyMoreAtLimitHandler;
         this.sellAtMarketPlaceHandler = sellAtMarketPlaceHandler;
         this.repositionExpiredHandler = repositionExpiredHandler;
     }
@@ -75,6 +78,9 @@ final class StrategyGridContextMenu {
         JMenuItem buy = item("Buy More at Market Price");
         buy.addActionListener(e -> buyMoreAtMarketHandler.accept(viewRow));
         position.add(buy);
+        JMenuItem buyLimit = item("Buy More at Limit Price");
+        buyLimit.addActionListener(e -> buyMoreAtLimitHandler.accept(viewRow));
+        position.add(buyLimit);
         JMenuItem sell = item("Sell at Market-Place");
         sell.addActionListener(e -> sellAtMarketPlaceHandler.accept(viewRow));
         position.add(sell);

@@ -13,7 +13,7 @@ import java.awt.Font;
 import java.net.URI;
 
 final class FirstRunOnboardingDialog extends JDialog {
-    private static final String[] STEP_IDS = {"welcome", "alpaca", "strategy"};
+    private static final String[] STEP_IDS = {"welcome", "alpaca", "getStarted", "strategy"};
 
     private final CardLayout cardLayout = new CardLayout();
     private final JPanel cardPanel = new JPanel(cardLayout);
@@ -64,6 +64,20 @@ final class FirstRunOnboardingDialog extends JDialog {
         ), STEP_IDS[0]);
         cardPanel.add(createAlpacaStepPanel(), STEP_IDS[1]);
         cardPanel.add(createStepPanel(
+                "Get Started",
+                """
+                Recommended first path:
+
+                1. Copy your Alpaca Paper API keys
+                2. Put the key and secret in Settings
+                3. Click Verify Connection
+                4. Try Lucky Strategies with Top 20 Diversified Stocks
+                5. Review results in paper mode until the workflow feels comfortable
+
+                Move to LIVE mode and real funds only after you understand the strategy behavior and risk.
+                """
+        ), STEP_IDS[2]);
+        cardPanel.add(createStepPanel(
                 "How to Add Strategies",
                 """
                 After your Alpaca paper credentials are saved:
@@ -74,7 +88,7 @@ final class FirstRunOnboardingDialog extends JDialog {
 
                 You can edit, pause, or later promote a paper strategy to LIVE from the Stock Strategies grid.
                 """
-        ), STEP_IDS[2]);
+        ), STEP_IDS[3]);
         add(cardPanel, BorderLayout.CENTER);
 
         DialogButtonStyles.apply(backButton, "icons/edit.svg");

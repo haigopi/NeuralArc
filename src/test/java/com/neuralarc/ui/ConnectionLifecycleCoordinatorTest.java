@@ -53,6 +53,33 @@ class ConnectionLifecycleCoordinatorTest {
     }
 
     @Test
+    void runConnectionTestConnectedWithRuntimeChangesKeepsModeInSuccessMessage() {
+        FakeGateway gateway = new FakeGateway();
+        gateway.connectionResult = new TradingRuntimeSupport.ConnectionAttemptResult(
+                true,
+                null,
+                "Connected",
+                false,
+                false
+        );
+        ConnectionLifecycleCoordinator coordinator = new ConnectionLifecycleCoordinator(gateway);
+
+        SettingsDialog.ConnectionResult result = coordinator.runConnectionTest(
+                BrokerType.ALPACA,
+                ApplicationMode.LIVE,
+                "key",
+                "secret",
+                true,
+                true
+        );
+
+        assertTrue(result.connected());
+        assertEquals("Connected to ALPACA (LIVE)", result.message());
+        assertEquals("Connected to ALPACA (LIVE)", gateway.markedConnectionMessage);
+        assertTrue(gateway.appliedSuccessfulRuntimeConnection);
+    }
+
+    @Test
     void retryBrokerConnectionIfConfiguredClearsPendingWhenSettingsMissing() {
         FakeGateway gateway = new FakeGateway();
         gateway.connectionRetryPending = true;
@@ -106,4 +133,3 @@ class ConnectionLifecycleCoordinatorTest {
         @Override public void setStatus(String message, Color tone) { }
     }
 }
-

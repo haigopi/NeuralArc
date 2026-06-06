@@ -43,6 +43,19 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void manualBuyPendingStatusDoesNotOverrideFilledBaseBuyNextRuleLabel() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategy.setLastTriggeredRuleType("MANUAL_BUY");
+        strategy.setLatestOrderStatus("pending_new");
+
+        String label = presenter.displayStatusLabel(strategy, false, true, false);
+
+        assertEquals("Base Buy Filled - Monitoring next configured rule", label);
+    }
+
+    @Test
     void profitablePositionPrioritizesSellTriggerActiveRule() {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.ACTIVE);

@@ -49,7 +49,7 @@ public final class ConnectionLifecycleCoordinator {
             gateway.log("Connection test: FAILED (broker not set in Settings)");
             gateway.updateHeaderModeStatus(null);
             gateway.setHeaderStatusText("Status: broker not configured");
-            return new SettingsDialog.ConnectionResult(false, "Broker not configured");
+            return new SettingsDialog.ConnectionResult(false, "Broker not configured (" + mode.name() + ")");
         }
         if (connectionAttempt.liveDisabled()) {
             String message = connectionAttempt.message();
@@ -62,24 +62,23 @@ public final class ConnectionLifecycleCoordinator {
         boolean connected = connectionAttempt.connected();
         gateway.log((manualTrigger ? "Connection test: " : "Auto connection test: ") + (connected ? "SUCCESS" : "FAILED"));
         if (connected) {
+            String message = "Connected to " + brokerType.name() + " (" + mode.name() + ")";
             gateway.setConnectionRetryPending(false);
             gateway.stopConnectionRetryTimer();
-            gateway.markConnectionStatus(true, "Connected to " + brokerType.name() + " (" + mode.name() + ")");
+            gateway.markConnectionStatus(true, message);
             if (applyRuntimeChanges) {
                 gateway.applySuccessfulRuntimeConnection(brokerType, candidateApi, apiKey, apiSecret, mode);
             }
-            if (!applyRuntimeChanges) {
-                return new SettingsDialog.ConnectionResult(true, "Connected to " + brokerType.name() + " (" + mode.name() + ")");
-            }
-            gateway.markConnectionStatus(true, "Connected to " + brokerType.name());
-            return new SettingsDialog.ConnectionResult(true, "Connected to " + brokerType.name());
+            gateway.markConnectionStatus(true, message);
+            return new SettingsDialog.ConnectionResult(true, message);
         }
 
         if (applyRuntimeChanges) {
             gateway.applyFailedRuntimeConnection(brokerType);
         }
-        gateway.markConnectionStatus(false, "Connection failed");
-        return new SettingsDialog.ConnectionResult(false, "Connection failed");
+        String message = "Connection failed (" + mode.name() + ")";
+        gateway.markConnectionStatus(false, message);
+        return new SettingsDialog.ConnectionResult(false, message);
     }
 
     public void scheduleConnectionRetry() {
@@ -129,4 +128,3 @@ public final class ConnectionLifecycleCoordinator {
         void setStatus(String message, Color tone);
     }
 }
-

@@ -38,6 +38,7 @@ public class StrategyService {
     private final LiveStrategyPromotionFactory liveStrategyPromotionFactory;
     private final AppSettingsService appSettingsService;
     private final MarketHoursService marketHoursService;
+    private final ManualBuyOrderSubmitter manualBuyOrderSubmitter;
 
     public StrategyService(
             StrategyRepository strategyRepository,
@@ -93,6 +94,12 @@ public class StrategyService {
         );
         this.pendingLimitOrderCanceler = new PendingLimitOrderCanceler(alpacaClient, orderRepository);
         this.liveStrategyPromotionFactory = new LiveStrategyPromotionFactory();
+        this.manualBuyOrderSubmitter = new ManualBuyOrderSubmitter(
+                strategyRepository,
+                orderRepository,
+                alpacaClient,
+                stateMachine
+        );
     }
 
     public StrategyCreationResult createAndActivate(Strategy strategy) {
@@ -619,60 +626,11 @@ public class StrategyService {
     }
 
     public StrategyCreationResult buyMoreAtMarket(String strategyId, int quantity) {
-        Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
-        if (maybeStrategy.isEmpty()) {
-            return StrategyCreationResult.failed("Strategy not found");
-        }
-        if (quantity <= 0) {
-            return StrategyCreationResult.failed("Quantity must be greater than zero");
-        }
-        Strategy strategy = maybeStrategy.get();
-        if (strategy.status() != StrategyStatus.ACTIVE && strategy.status() != StrategyStatus.PAUSED) {
-            return StrategyCreationResult.failed("Only active or paused strategies can submit a manual market buy");
-        }
-        String clientOrderId = buildClientOrderId(strategy.id(), StrategyStage.MANUAL_BUY);
-        com.neuralarc.api.AlpacaOrderData submitted = alpacaClient.submitMarketBuyOrder(strategy.symbol(), quantity, clientOrderId);
-        Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
-        StrategyOrder order = new StrategyOrder(
-                java.util.UUID.randomUUID().toString(),
-                strategy.id(),
-                StrategyStage.MANUAL_BUY,
-                submitted.orderId(),
-                clientOrderId,
-                strategy.symbol(),
-                StrategyOrderSide.BUY,
-                StrategyOrderType.MARKET,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO,
-                BigDecimal.valueOf(quantity),
-                submitted.filledQuantity(),
-                submitted.filledAveragePrice(),
-                mapOrderStatus(submitted.status()),
-                submittedAt,
-                Instant.now(),
-                null,
-                submitted.rawJson()
-        );
-        orderRepository.save(order);
-        strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
-        strategy.setLatestAlpacaOrderId(order.alpacaOrderId());
-        strategy.setLastTriggeredRuleType("MANUAL_BUY");
-        strategyRepository.save(strategy);
-        stateMachine.transition(
-                strategy,
-                strategy.currentState(),
-                StrategyEventType.ORDER_SUBMITTED,
-                "Manual market buy order submitted",
-                submitted.rawJson()
-        );
-        return StrategyCreationResult.success(
-                strategy.id(),
-                order.id(),
-                order.alpacaOrderId(),
-                order.clientOrderId(),
-                submitted.filledQuantity(),
-                submitted.filledAveragePrice()
-        );
+        return manualBuyOrderSubmitter.submitMarket(strategyId, quantity);
+    }
+
+    public StrategyCreationResult buyMoreAtLimit(String strategyId, int quantity, BigDecimal limitPrice) {
+        return manualBuyOrderSubmitter.submitLimit(strategyId, quantity, limitPrice);
     }
 
     public StrategyCreationResult closePosition(String strategyId) {

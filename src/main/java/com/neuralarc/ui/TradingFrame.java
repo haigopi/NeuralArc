@@ -273,6 +273,9 @@ public class TradingFrame extends JFrame {
             if (viewCol == 10) {
                 return actionTooltipForHover(viewRow, event.getX());
             }
+            if (viewCol == STRATEGY_STOCK_PRICE_COLUMN) {
+                return strategyStockPriceTooltip(viewRow);
+            }
             if (viewCol != 6) {
                 return null;
             }
@@ -684,8 +687,21 @@ public class TradingFrame extends JFrame {
                 return TradingFrame.this.chooseMarketBuyQuantity(strategy);
             }
             @Override
+            public Optional<ManualLimitBuySelection> chooseLimitBuy(Strategy strategy, BigDecimal currentPrice) {
+                return ManualLimitBuyDialog.show(TradingFrame.this, strategy, currentPrice);
+            }
+            @Override
+            public BigDecimal currentPriceForStrategy(Strategy strategy) {
+                ManagedStrategy entry = strategy == null ? null : TradingFrame.this.findStrategyById(strategy.id());
+                return entry == null ? BigDecimal.ZERO : entry.cachedPosition().getLastPrice();
+            }
+            @Override
             public StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity) {
                 return TradingFrame.this.buyMoreAtMarket(strategy, quantity);
+            }
+            @Override
+            public StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice) {
+                return TradingFrame.this.buyMoreAtLimit(strategy, quantity, limitPrice);
             }
             @Override public StrategyService.StrategyCreationResult repositionExpiredStrategy(String strategyId) {
                 StrategyService service = strategyRepository.findById(strategyId)
@@ -1228,7 +1244,6 @@ public class TradingFrame extends JFrame {
             @Override
             public void mouseExited(java.awt.event.MouseEvent e) {
                 strategyTable.setCursor(java.awt.Cursor.getDefaultCursor());
-                strategyTable.setToolTipText(null);
             }
 
             @Override
@@ -1248,9 +1263,9 @@ public class TradingFrame extends JFrame {
                 } else {
                     strategyTable.setCursor(java.awt.Cursor.getDefaultCursor());
                 }
-                updateStrategyStockPriceTooltip(viewRow, viewCol);
             }
         });
+        ToolTipManager.sharedInstance().registerComponent(strategyTable);
 
         // Make table sortable — click column headers to sort
         strategySorter = new TableRowSorter<>(strategyTableModel);
@@ -1588,7 +1603,7 @@ public class TradingFrame extends JFrame {
         updateLegalDisclosureUiState();
         settingsDialog.setConnectionVerifier(request -> runConnectionTest(
                 request.brokerType(),
-                settingsDialog.applicationMode(),
+                request.applicationMode(),
                 request.apiKey(),
                 request.apiSecret(),
                 true,
@@ -2648,6 +2663,10 @@ public class TradingFrame extends JFrame {
         strategyActionsController.buyMoreAtMarketPrice(viewRow);
     }
 
+    private void buyMoreAtLimitPrice(int viewRow) {
+        strategyActionsController.buyMoreAtLimitPrice(viewRow);
+    }
+
     private void repositionExpiredStrategy(int viewRow) {
         strategyActionsController.repositionExpiredStrategy(viewRow);
     }
@@ -2719,6 +2738,16 @@ public class TradingFrame extends JFrame {
             );
         }
         return modeAwareService.buyMoreAtMarket(strategy.id(), quantity);
+    }
+
+    private StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice) {
+        StrategyService modeAwareService = strategyServiceForMode(strategy.mode());
+        if (modeAwareService == null) {
+            return StrategyService.StrategyCreationResult.failed(
+                    "Broker client is not configured for " + strategy.mode().name() + " mode."
+            );
+        }
+        return modeAwareService.buyMoreAtLimit(strategy.id(), quantity, limitPrice);
     }
 
     private StrategyService strategyServiceForMode(StrategyMode mode) {
@@ -3093,15 +3122,13 @@ public class TradingFrame extends JFrame {
                 + "s policy=min-with-floor(2s) eligibility=ACTIVE-only");
     }
 
-    private void updateStrategyStockPriceTooltip(int viewRow, int viewCol) {
-        if (viewRow < 0 || viewCol != STRATEGY_STOCK_PRICE_COLUMN) {
-            strategyTable.setToolTipText(null);
-            return;
+    private String strategyStockPriceTooltip(int viewRow) {
+        if (viewRow < 0) {
+            return null;
         }
         int modelRow = strategyTable.convertRowIndexToModel(viewRow);
         if (modelRow < 0 || modelRow >= strategies.size()) {
-            strategyTable.setToolTipText(null);
-            return;
+            return null;
         }
         ManagedStrategy entry = strategies.get(modelRow);
         String cacheKey = stockPriceTooltipCacheKey(entry.strategy);
@@ -3116,7 +3143,7 @@ public class TradingFrame extends JFrame {
                     entry.cachedPosition().getLastPrice()
             );
         }
-        strategyTable.setToolTipText(snapshot.tooltipText());
+        return snapshot.tooltipText();
     }
 
     private void scheduleStockPriceTooltipRefresh(ManagedStrategy entry) {
@@ -5979,6 +6006,7 @@ public class TradingFrame extends JFrame {
                 this::strategyGridRowText,
                 this::copyTextToClipboard,
                 this::buyMoreAtMarketPrice,
+                this::buyMoreAtLimitPrice,
                 this::sellStrategyAtMarketPlace,
                 this::repositionExpiredStrategy
         ).show(event);

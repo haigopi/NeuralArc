@@ -221,6 +221,36 @@ class StrategyServiceTest {
     }
 
     @Test
+    void buyMoreAtLimitSubmitsAndPersistsManualLimitBuyOrder() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategies.save(strategy);
+
+        StrategyService.StrategyCreationResult result = service.buyMoreAtLimit(strategy.id(), 7, new BigDecimal("8.25"));
+
+        assertTrue(result.success());
+        assertEquals(1, alpaca.submittedOrders.size());
+        AlpacaOrderData submitted = alpaca.submittedOrders.getFirst();
+        assertEquals("buy", submitted.side());
+        assertEquals("limit", submitted.type());
+        assertEquals(0, new BigDecimal("8.25").compareTo(submitted.limitPrice()));
+        StrategyOrder local = orders.findLatestByStrategyStage(strategy.id(), StrategyStage.MANUAL_BUY).orElseThrow();
+        assertEquals(StrategyOrderSide.BUY, local.side());
+        assertEquals(StrategyOrderType.LIMIT, local.orderType());
+        assertEquals(0, new BigDecimal("8.25").compareTo(local.limitPrice()));
+        assertEquals(0, new BigDecimal("7").compareTo(local.requestedQuantity()));
+        Strategy stored = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals("MANUAL_BUY", stored.lastTriggeredRuleType());
+        assertEquals(submitted.orderId(), stored.latestAlpacaOrderId());
+    }
+
+    @Test
     void closePositionPersistsSellExecutionSourceForTradeHistoryClassification() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
