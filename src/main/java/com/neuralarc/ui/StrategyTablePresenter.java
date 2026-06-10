@@ -74,6 +74,7 @@ public final class StrategyTablePresenter {
                 waitingForFill,
                 queueableSessionError,
                 brokerUnavailableActive,
+                null,
                 null
         );
     }
@@ -86,6 +87,28 @@ public final class StrategyTablePresenter {
             boolean queueableSessionError,
             boolean brokerUnavailableActive,
             BigDecimal realizedPnl
+    ) {
+        return displayStatusLabel(
+                strategy,
+                position,
+                marketClosedSuppressed,
+                waitingForFill,
+                queueableSessionError,
+                brokerUnavailableActive,
+                realizedPnl,
+                null
+        );
+    }
+
+    public String displayStatusLabel(
+            Strategy strategy,
+            Position position,
+            boolean marketClosedSuppressed,
+            boolean waitingForFill,
+            boolean queueableSessionError,
+            boolean brokerUnavailableActive,
+            BigDecimal realizedPnl,
+            PendingOrderSummary pendingManualBuy
     ) {
         if (strategy == null) {
             return "";
@@ -149,7 +172,8 @@ public final class StrategyTablePresenter {
                 && !strategy.latestOrderStatus().isBlank()
                 && isManualBuyLatest(strategy)
                 && !isBrokerUnavailableStatus(normalizedStatus)) {
-            return manualBuyPendingLabel(strategy) + " (" + BrokerOrderStatusUtil.displayLabel(strategy.latestOrderStatus()) + ")";
+            return manualBuyPendingLabel(strategy, pendingManualBuy)
+                    + " (" + BrokerOrderStatusUtil.displayLabel(strategy.latestOrderStatus()) + ")";
         }
         if (strategy.status() == StrategyStatus.ACTIVE
                 && waitingForFill
@@ -216,15 +240,34 @@ public final class StrategyTablePresenter {
                 && "MANUAL_BUY".equalsIgnoreCase(strategy.lastTriggeredRuleType().trim());
     }
 
-    private String manualBuyPendingLabel(Strategy strategy) {
+    private String manualBuyPendingLabel(Strategy strategy, PendingOrderSummary pendingManualBuy) {
         String event = strategy.lastEvent() == null ? "" : strategy.lastEvent().toLowerCase();
+        String orderDetails = pendingOrderDetails(pendingManualBuy);
         if (event.contains("limit")) {
-            return "Manual Limit Buy Pending Fill";
+            return "Manual Limit Buy Pending Fill" + orderDetails;
         }
         if (event.contains("market")) {
-            return "Manual Market Buy Pending Fill";
+            return "Manual Market Buy Pending Fill" + orderDetails;
         }
-        return "Manual Buy Pending Fill";
+        return "Manual Buy Pending Fill" + orderDetails;
+    }
+
+    private String pendingOrderDetails(PendingOrderSummary pendingOrder) {
+        if (pendingOrder == null) {
+            return "";
+        }
+        BigDecimal price = pendingOrder.limitPrice();
+        BigDecimal quantity = pendingOrder.quantity();
+        String quantityText = quantity != null && quantity.compareTo(BigDecimal.ZERO) > 0
+                ? "/" + quantity.stripTrailingZeros().toPlainString()
+                : "";
+        if (price != null && price.compareTo(BigDecimal.ZERO) > 0) {
+            return " - @ $" + price.toPlainString() + quantityText;
+        }
+        if (!quantityText.isBlank()) {
+            return " - Qty " + quantityText.substring(1);
+        }
+        return "";
     }
 
     private boolean isPendingOrderState(StrategyLifecycleState state) {
@@ -543,5 +586,12 @@ public final class StrategyTablePresenter {
             return realizedPnl.toPlainString();
         }
         return "-";
+    }
+
+    public record PendingOrderSummary(BigDecimal limitPrice, BigDecimal quantity) {
+        public PendingOrderSummary {
+            limitPrice = Monetary.round(limitPrice == null ? BigDecimal.ZERO : limitPrice);
+            quantity = Monetary.round(quantity == null ? BigDecimal.ZERO : quantity);
+        }
     }
 }

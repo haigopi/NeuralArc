@@ -57,6 +57,29 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void manualLimitBuyPendingStatusShowsPriceAndQuantityWhenAvailable() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategy.setLastTriggeredRuleType("MANUAL_BUY");
+        strategy.setLastEvent("Manual limit buy order submitted");
+        strategy.setLatestOrderStatus("pending_new");
+
+        String label = presenter.displayStatusLabel(
+                strategy,
+                new Position("AAPL"),
+                false,
+                true,
+                false,
+                false,
+                BigDecimal.ZERO,
+                new StrategyTablePresenter.PendingOrderSummary(new BigDecimal("98.75"), new BigDecimal("3"))
+        );
+
+        assertEquals("Manual Limit Buy Pending Fill - @ $98.75/3 (Pending New)", label);
+    }
+
+    @Test
     void manualMarketBuyPendingStatusIsVisibleInGridStatus() {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.ACTIVE);
@@ -68,6 +91,29 @@ class StrategyTablePresenterTest {
         String label = presenter.displayStatusLabel(strategy, false, true, false);
 
         assertEquals("Manual Market Buy Pending Fill (New)", label);
+    }
+
+    @Test
+    void manualMarketBuyPendingStatusShowsQuantityWhenAvailable() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategy.setLastTriggeredRuleType("MANUAL_BUY");
+        strategy.setLastEvent("Manual market buy order submitted");
+        strategy.setLatestOrderStatus("new");
+
+        String label = presenter.displayStatusLabel(
+                strategy,
+                new Position("AAPL"),
+                false,
+                true,
+                false,
+                false,
+                BigDecimal.ZERO,
+                new StrategyTablePresenter.PendingOrderSummary(BigDecimal.ZERO, new BigDecimal("4"))
+        );
+
+        assertEquals("Manual Market Buy Pending Fill - Qty 4 (New)", label);
     }
 
     @Test

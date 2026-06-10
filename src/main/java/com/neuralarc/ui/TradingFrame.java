@@ -4129,7 +4129,8 @@ public class TradingFrame extends JFrame {
                 isWaitingForFill(entry.strategy),
                 entry.strategy.status() == StrategyStatus.FAILED && isQueueableSessionError(entry.strategy.lastError()),
                 !connectionOk || connectionRetryPending,
-                entry.cachedRealizedPnl()
+                entry.cachedRealizedPnl(),
+                entry.cachedPendingManualBuy()
         );
     }
 
@@ -4301,11 +4302,30 @@ public class TradingFrame extends JFrame {
 
     private void refreshStrategyTradeSnapshots() {
         for (ManagedStrategy entry : strategies) {
-            List<StrategyOrder> orders = strategyOrderRepository.findByStrategyId(entry.strategy.id());
-            BigDecimal lastSellPrice = latestFilledSellPrice(orders);
-            BigDecimal realized = realizedPnlForOrders(orders);
-            entry.setTradeSnapshot(lastSellPrice, realized);
+            refreshStrategyTradeSnapshot(entry);
         }
+    }
+
+    private void refreshStrategyTradeSnapshot(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return;
+        }
+        List<StrategyOrder> orders = strategyOrderRepository.findByStrategyId(entry.strategy.id());
+        BigDecimal lastSellPrice = latestFilledSellPrice(orders);
+        BigDecimal realized = realizedPnlForOrders(orders);
+        entry.setTradeSnapshot(lastSellPrice, realized, latestPendingManualBuy(orders));
+    }
+
+    private StrategyTablePresenter.PendingOrderSummary latestPendingManualBuy(List<StrategyOrder> orders) {
+        return orders.stream()
+                .filter(order -> order.stage() == StrategyStage.MANUAL_BUY)
+                .filter(order -> order.side() == StrategyOrderSide.BUY)
+                .filter(StrategyOrder::isPending)
+                .max(Comparator
+                        .comparing(StrategyOrder::updatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(order -> new StrategyTablePresenter.PendingOrderSummary(order.limitPrice(), order.requestedQuantity()))
+                .orElse(null);
     }
 
     private BigDecimal latestFilledSellPrice(List<StrategyOrder> orders) {
@@ -4494,6 +4514,9 @@ public class TradingFrame extends JFrame {
     private void refreshStrategyTableRow(int modelRow) {
         rememberSelectedStrategy();
         preservingSelection = true;
+        if (modelRow >= 0 && modelRow < strategies.size()) {
+            refreshStrategyTradeSnapshot(strategies.get(modelRow));
+        }
         strategyTableModel.fireTableRowsUpdated(modelRow, modelRow);
         preservingSelection = false;
         SwingUtilities.invokeLater(this::restoreSelectedRow);

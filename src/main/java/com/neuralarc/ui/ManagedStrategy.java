@@ -20,6 +20,7 @@ final class ManagedStrategy {
     private Position cachedPosition;
     private BigDecimal cachedLastSellPrice = Monetary.zero();
     private BigDecimal cachedRealizedPnl = Monetary.zero();
+    private StrategyTablePresenter.PendingOrderSummary cachedPendingManualBuy;
     volatile long lastDisplayedPositionFetchAtMillis;
     volatile long pollIntervalMillis;
     volatile long nextPollDueAtMillis;
@@ -142,9 +143,22 @@ final class ManagedStrategy {
         return Monetary.round(cachedRealizedPnl);
     }
 
+    StrategyTablePresenter.PendingOrderSummary cachedPendingManualBuy() {
+        return cachedPendingManualBuy;
+    }
+
     void setTradeSnapshot(BigDecimal lastSellPrice, BigDecimal realizedPnl) {
+        setTradeSnapshot(lastSellPrice, realizedPnl, null);
+    }
+
+    void setTradeSnapshot(
+            BigDecimal lastSellPrice,
+            BigDecimal realizedPnl,
+            StrategyTablePresenter.PendingOrderSummary pendingManualBuy
+    ) {
         this.cachedLastSellPrice = Monetary.round(lastSellPrice);
         this.cachedRealizedPnl = Monetary.round(realizedPnl);
+        this.cachedPendingManualBuy = pendingManualBuy;
     }
 
     boolean shouldRefreshDisplayedPosition() {
