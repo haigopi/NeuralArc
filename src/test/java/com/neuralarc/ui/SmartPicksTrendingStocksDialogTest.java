@@ -14,11 +14,11 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class LuckyTrendingStocksDialogTest {
+class SmartPicksTrendingStocksDialogTest {
 
     @Test
     void diversifiedTop20SymbolsMatchCuratedUniverse() {
-        List<String> symbols = LuckyTrendingStocksDialog.diversifiedTop20Symbols();
+        List<String> symbols = SmartPicksTrendingStocksDialog.diversifiedTop20Symbols();
 
         assertEquals(20, symbols.size());
         assertEquals(20, symbols.stream().distinct().count());
@@ -57,7 +57,7 @@ class LuckyTrendingStocksDialogTest {
         );
 
         assertEquals(new BigDecimal("208.00"), recommendation.baseBuyPrice());
-        assertEquals("$208.00", LuckyTrendingStocksDialog.baseLimitBuyDisplay(recommendation));
+        assertEquals("$208.00", SmartPicksTrendingStocksDialog.baseLimitBuyDisplay(recommendation));
     }
 
     private List<MarketBar> shortTermBreakoutBars(BigDecimal lastVolume) {

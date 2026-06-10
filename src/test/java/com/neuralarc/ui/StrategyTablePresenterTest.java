@@ -296,12 +296,12 @@ class StrategyTablePresenterTest {
                 "Paper"
         );
 
-        assertEquals("Lucky [Gainers]", entryValue);
+        assertEquals("Picks [Gainers]", entryValue);
         assertEquals("Manual Exit", exitValue);
     }
 
     @Test
-    void entrySourceUsesLuckySourceFromNameWhenOrderSubmissionOverwritesLastEvent() {
+    void entrySourceUsesLegacyLuckySourceFromNameWhenOrderSubmissionOverwritesLastEvent() {
         Strategy strategy = strategy();
         strategy.setName("I_AM_FEELING_LUCKY_GAINERS: AAPL Paper");
         strategy.setLastEvent("Stop loss sell submitted");
@@ -316,7 +316,45 @@ class StrategyTablePresenterTest {
                 "Paper"
         );
 
-        assertEquals("Lucky [Gainers]", entryValue);
+        assertEquals("Picks [Gainers]", entryValue);
+    }
+
+    @Test
+    void entrySourceRecognizesSmartPicksNameToken() {
+        Strategy strategy = strategy();
+        strategy.setName("SMART_PICKS_GAINERS: AAPL Paper");
+        strategy.setLastEvent("Stop loss sell submitted");
+
+        Object entryValue = presenter.valueAt(
+                strategy,
+                new Position("AAPL"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                9,
+                "Active",
+                "Paper"
+        );
+
+        assertEquals("Picks [Gainers]", entryValue);
+    }
+
+    @Test
+    void entrySourceRecognizesSmartPicksLastEvent() {
+        Strategy strategy = strategy();
+        strategy.setName("AAPL Paper");
+        strategy.setLastEvent("Alpaca Paper mode from Smart Picks. Source top mover gainer.");
+
+        Object entryValue = presenter.valueAt(
+                strategy,
+                new Position("AAPL"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                9,
+                "Active",
+                "Paper"
+        );
+
+        assertEquals("Picks [Gainers]", entryValue);
     }
 
     @Test
@@ -339,7 +377,7 @@ class StrategyTablePresenterTest {
     }
 
     @Test
-    void entrySourceRecognizesReviewedLuckySource() {
+    void entrySourceRecognizesLegacyReviewedLuckySource() {
         Strategy strategy = strategy();
         strategy.setName("I_AM_FEELING_LUCKY_REVIEWED: INFQ.WS Paper");
         strategy.setLastEvent("Order BASE_BUY is ACCEPTED");
@@ -354,11 +392,11 @@ class StrategyTablePresenterTest {
                 "Paper"
         );
 
-        assertEquals("Lucky [Reviewed]", entryValue);
+        assertEquals("Picks [Reviewed]", entryValue);
     }
 
     @Test
-    void entrySourceShowsLuckyLosersAndExitSourceStaysBlankForBuyRule() {
+    void entrySourceShowsLegacyLuckyLosersAndExitSourceStaysBlankForBuyRule() {
         Strategy strategy = strategy();
         strategy.setName("I_AM_FEELING_LUCKY_LOSERS: TSLA Paper");
         strategy.setLastEvent("Order BASE_BUY is ACCEPTED");
@@ -383,7 +421,7 @@ class StrategyTablePresenterTest {
                 "Paper"
         );
 
-        assertEquals("Lucky [Losers]", entryValue);
+        assertEquals("Picks [Losers]", entryValue);
         assertEquals("", exitValue);
     }
 

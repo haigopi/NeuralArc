@@ -12,11 +12,11 @@ import java.util.function.IntConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-final class LuckyParallelExecutor {
-    private static final Logger LOGGER = Logger.getLogger(LuckyParallelExecutor.class.getName());
+final class SmartPicksParallelExecutor {
+    private static final Logger LOGGER = Logger.getLogger(SmartPicksParallelExecutor.class.getName());
     private static final int MAX_THREADS = 6;
 
-    private LuckyParallelExecutor() {}
+    private SmartPicksParallelExecutor() {}
 
     static <T, R> List<R> mapPreservingOrder(
             List<T> inputs,
@@ -45,13 +45,13 @@ final class LuckyParallelExecutor {
                             }))
                     .toList();
             return futures.stream()
-                    .map(LuckyParallelExecutor::join)
+                    .map(SmartPicksParallelExecutor::join)
                     .toList();
         } finally {
             executor.shutdownNow();
             try {
                 if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
-                    LOGGER.warning("Timed out waiting for lucky parallel workers to stop.");
+                    LOGGER.warning("Timed out waiting for Smart Picks parallel workers to stop.");
                 }
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
@@ -76,7 +76,7 @@ final class LuckyParallelExecutor {
             }
             throw ex;
         } catch (RuntimeException ex) {
-            LOGGER.log(Level.FINE, "Lucky parallel worker failed", ex);
+            LOGGER.log(Level.FINE, "Smart Picks parallel worker failed", ex);
             throw ex;
         }
     }

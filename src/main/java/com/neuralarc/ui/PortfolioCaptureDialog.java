@@ -76,8 +76,8 @@ final class PortfolioCaptureDialog extends JDialog {
     private final JRadioButton liveMode = new JRadioButton("Live mode");
     private final JSpinner reentryQuantity = new JSpinner(new SpinnerNumberModel(1, 1, 100000, 1));
     private final JComboBox<RecommendationType> reentryTerm = new JComboBox<>(RecommendationType.values());
-    private final JComboBox<PortfolioCaptureLuckyStrategy> reentryLuckyStrategy =
-            new JComboBox<>(PortfolioCaptureLuckyStrategy.values());
+    private final JComboBox<PortfolioCaptureSmartPicksStrategy> reentrySmartPicksStrategy =
+            new JComboBox<>(PortfolioCaptureSmartPicksStrategy.values());
     private final JCheckBox autoCleanPending = new JCheckBox("Auto-clean pending base buys before each cycle");
     private final JCheckBox acknowledgement = new JCheckBox("I understand execution prices may vary.");
     private final JButton saveButton = new JButton("Save");
@@ -232,9 +232,9 @@ final class PortfolioCaptureDialog extends JDialog {
         addRadioWithDescription(panel, executeOnce,
                 "Liquidation executes once and monitoring stops afterward.", 0);
         addRadioWithDescription(panel, reenterOnce,
-                "Liquidation executes, I Am Feeling Lucky runs once, then monitoring stops.", 2);
+                "Liquidation executes, Smart Picks runs once, then monitoring stops.", 2);
         addRadioWithDescription(panel, continuousLoop,
-                "Liquidation executes, I Am Feeling Lucky runs automatically, monitoring restarts, and the cycle repeats.", 4);
+                "Liquidation executes, Smart Picks runs automatically, monitoring restarts, and the cycle repeats.", 4);
         GridBagConstraints gbc = baseGbc(6);
         gbc.gridwidth = 2;
         panel.add(reentryOptionsPanel(), gbc);
@@ -256,10 +256,10 @@ final class PortfolioCaptureDialog extends JDialog {
         gbc.gridx = 0;
         gbc.gridy++;
         gbc.gridwidth = 1;
-        panel.add(fieldLabel("Lucky strategy"), gbc);
+        panel.add(fieldLabel("Smart Picks strategy"), gbc);
         gbc.gridx = 1;
         gbc.gridwidth = 3;
-        panel.add(reentryLuckyStrategy, gbc);
+        panel.add(reentrySmartPicksStrategy, gbc);
         gbc.gridx = 0;
         gbc.gridy++;
         gbc.gridwidth = 1;
@@ -381,7 +381,7 @@ final class PortfolioCaptureDialog extends JDialog {
                 paperMode.isSelected() ? StrategyMode.PAPER : StrategyMode.LIVE,
                 (Integer) reentryQuantity.getValue(),
                 (RecommendationType) reentryTerm.getSelectedItem(),
-                selectedLuckyStrategy(),
+                selectedSmartPicksStrategy(),
                 autoCleanPending.isSelected()
         ));
     }
@@ -403,7 +403,7 @@ final class PortfolioCaptureDialog extends JDialog {
         liveMode.setEnabled(reentryEnabled);
         reentryQuantity.setEnabled(reentryEnabled);
         reentryTerm.setEnabled(reentryEnabled);
-        reentryLuckyStrategy.setEnabled(reentryEnabled);
+        reentrySmartPicksStrategy.setEnabled(reentryEnabled);
         autoCleanPending.setEnabled(targetMode);
         saveButton.setText(targetMode ? "Activate Monitoring" : "Liquidate Now");
         saveButton.setEnabled(acknowledgement.isSelected());
@@ -442,7 +442,7 @@ final class PortfolioCaptureDialog extends JDialog {
                 paperMode.isSelected() ? StrategyMode.PAPER : StrategyMode.LIVE,
                 (Integer) reentryQuantity.getValue(),
                 (RecommendationType) reentryTerm.getSelectedItem(),
-                selectedLuckyStrategy(),
+                selectedSmartPicksStrategy(),
                 autoCleanPending.isSelected()
         );
     }
@@ -460,16 +460,16 @@ final class PortfolioCaptureDialog extends JDialog {
                 paperMode.isSelected() ? StrategyMode.PAPER : StrategyMode.LIVE,
                 (Integer) reentryQuantity.getValue(),
                 (RecommendationType) reentryTerm.getSelectedItem(),
-                selectedLuckyStrategy(),
+                selectedSmartPicksStrategy(),
                 autoCleanPending.isSelected()
         );
     }
 
-    private PortfolioCaptureLuckyStrategy selectedLuckyStrategy() {
-        Object selected = reentryLuckyStrategy.getSelectedItem();
-        return selected instanceof PortfolioCaptureLuckyStrategy strategy
+    private PortfolioCaptureSmartPicksStrategy selectedSmartPicksStrategy() {
+        Object selected = reentrySmartPicksStrategy.getSelectedItem();
+        return selected instanceof PortfolioCaptureSmartPicksStrategy strategy
                 ? strategy
-                : PortfolioCaptureLuckyStrategy.VOLATILE;
+                : PortfolioCaptureSmartPicksStrategy.VOLATILE;
     }
 
     private PortfolioCaptureExecutionFlow selectedExecutionFlow() {

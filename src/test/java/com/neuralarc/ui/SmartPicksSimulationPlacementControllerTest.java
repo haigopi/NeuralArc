@@ -2,7 +2,7 @@ package com.neuralarc.ui;
 
 import com.neuralarc.model.AutoAnalyzeBundle;
 import com.neuralarc.model.AutoAnalyzeResult;
-import com.neuralarc.model.LuckySimulationSelection;
+import com.neuralarc.model.SmartPicksSimulationSelection;
 import com.neuralarc.model.MarketMode;
 import com.neuralarc.model.RecommendationAction;
 import com.neuralarc.model.RecommendationType;
@@ -29,13 +29,13 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class LuckySimulationPlacementControllerTest {
+class SmartPicksSimulationPlacementControllerTest {
     @Test
     void startsPaperMonitoringThroughPaperCreationPath() {
         InMemoryRepository repository = new InMemoryRepository();
-        LuckySimulationPlacementController controller = controller(repository, true, false);
+        SmartPicksSimulationPlacementController controller = controller(repository, true, false);
 
-        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
 
         assertEquals(1, result.created());
         Strategy saved = repository.findAll().getFirst();
@@ -44,14 +44,14 @@ class LuckySimulationPlacementControllerTest {
         assertEquals(StrategyStatus.ACTIVE, saved.status());
         assertEquals(10, saved.baseBuyQuantity());
         assertEquals("PAPER_PENDING", saved.latestOrderStatus());
-        assertTrue(saved.name().startsWith("I_AM_FEELING_LUCKY_REVIEWED:"));
+        assertTrue(saved.name().startsWith("SMART_PICKS_REVIEWED:"));
         assertTrue(saved.lastEvent().contains("Alpaca Paper mode"));
     }
 
     @Test
     void startsLiveMonitoringThroughLiveCreationPath() {
         InMemoryRepository repository = new InMemoryRepository();
-        LuckySimulationPlacementController controller = controller(
+        SmartPicksSimulationPlacementController controller = controller(
                 repository,
                 true,
                 false,
@@ -61,7 +61,7 @@ class LuckySimulationPlacementControllerTest {
                 StrategyMode.LIVE
         );
 
-        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
 
         assertEquals(1, result.created());
         Strategy saved = repository.findAll().getFirst();
@@ -74,9 +74,9 @@ class LuckySimulationPlacementControllerTest {
     @Test
     void usesPerSelectionQuantityWhenCreatingStrategy() {
         InMemoryRepository repository = new InMemoryRepository();
-        LuckySimulationPlacementController controller = controller(repository, true, false);
+        SmartPicksSimulationPlacementController controller = controller(repository, true, false);
 
-        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA", 25)));
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA", 25)));
 
         assertEquals(1, result.created());
         Strategy saved = repository.findAll().getFirst();
@@ -86,16 +86,16 @@ class LuckySimulationPlacementControllerTest {
     }
 
     @Test
-    void storesLuckyMoverSourceOnCreatedStrategy() {
+    void storesSmartPicksMoverSourceOnCreatedStrategy() {
         InMemoryRepository repository = new InMemoryRepository();
-        LuckySimulationPlacementController controller = controller(repository, true, false);
+        SmartPicksSimulationPlacementController controller = controller(repository, true, false);
 
-        LuckySimulationPlacementController.PlacementResult result =
+        SmartPicksSimulationPlacementController.PlacementResult result =
                 controller.place(List.of(selection("NVDA", 10, "top mover loser")));
 
         assertEquals(1, result.created());
         Strategy saved = repository.findAll().getFirst();
-        assertTrue(saved.name().startsWith("I_AM_FEELING_LUCKY_LOSERS:"));
+        assertTrue(saved.name().startsWith("SMART_PICKS_LOSERS:"));
         assertTrue(saved.lastEvent().contains("Source top mover loser"));
     }
 
@@ -104,8 +104,8 @@ class LuckySimulationPlacementControllerTest {
         InMemoryRepository repository = new InMemoryRepository();
         repository.save(waitingPaperStrategy("NVDA", "existing-waiting"));
 
-        LuckySimulationPlacementController controller = controller(repository, false, false);
-        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
+        SmartPicksSimulationPlacementController controller = controller(repository, false, false);
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
 
         assertTrue(result.canceled());
         assertEquals(0, result.created());
@@ -119,8 +119,8 @@ class LuckySimulationPlacementControllerTest {
         InMemoryRepository repository = new InMemoryRepository();
         repository.save(waitingPaperStrategy("NVDA", "existing-waiting"));
 
-        LuckySimulationPlacementController controller = controller(repository, true, false);
-        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
+        SmartPicksSimulationPlacementController controller = controller(repository, true, false);
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
 
         assertEquals(0, result.created());
         assertEquals(1, result.replaced());
@@ -131,10 +131,10 @@ class LuckySimulationPlacementControllerTest {
     @Test
     void nonWaitingDuplicateFollowsDuplicatePolicyWhenNotAllowed() {
         InMemoryRepository repository = new InMemoryRepository();
-        LuckySimulationPlacementController controller = controller(repository, true, false);
+        SmartPicksSimulationPlacementController controller = controller(repository, true, false);
         controller.place(List.of(selection("NVDA")));
 
-        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
 
         assertEquals(0, result.created());
         assertEquals(1, result.skipped());
@@ -144,10 +144,10 @@ class LuckySimulationPlacementControllerTest {
     @Test
     void nonWaitingDuplicateAllowsSecondStrategyWhenPolicyAllows() {
         InMemoryRepository repository = new InMemoryRepository();
-        LuckySimulationPlacementController controller = controller(repository, true, true);
+        SmartPicksSimulationPlacementController controller = controller(repository, true, true);
         controller.place(List.of(selection("NVDA")));
 
-        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
 
         assertEquals(1, result.created());
         assertEquals(0, result.skipped());
@@ -157,9 +157,9 @@ class LuckySimulationPlacementControllerTest {
     @Test
     void autoAdjustsBaseLimitWhenRecommendationBasePriceIsAboveCurrentPrice() {
         InMemoryRepository repository = new InMemoryRepository();
-        LuckySimulationPlacementController controller = controller(repository, true, false);
+        SmartPicksSimulationPlacementController controller = controller(repository, true, false);
 
-        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selectionWithBaseAboveCurrent("NVDA", 10)));
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(List.of(selectionWithBaseAboveCurrent("NVDA", 10)));
 
         assertEquals(1, result.created());
         assertEquals(0, result.skipped());
@@ -170,11 +170,11 @@ class LuckySimulationPlacementControllerTest {
     @Test
     void autoAdjustsBaseLimitWhenRecommendationBasePriceEqualsCurrentPrice() {
         InMemoryRepository repository = new InMemoryRepository();
-        LuckySimulationPlacementController controller = controller(repository, true, false);
+        SmartPicksSimulationPlacementController controller = controller(repository, true, false);
 
-        LuckySimulationSelection selection = selectionWithBaseAndCurrent("NVDA", 10,
+        SmartPicksSimulationSelection selection = selectionWithBaseAndCurrent("NVDA", 10,
                 new BigDecimal("120.00"), new BigDecimal("120.00"));
-        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection));
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(List.of(selection));
 
         assertEquals(1, result.created());
         assertEquals(0, result.skipped());
@@ -185,16 +185,16 @@ class LuckySimulationPlacementControllerTest {
     @Test
     void usesStockLatestPriceAsCurrentSourcePriorityForAdjustment() {
         InMemoryRepository repository = new InMemoryRepository();
-        LuckySimulationPlacementController controller = controller(repository, true, false);
+        SmartPicksSimulationPlacementController controller = controller(repository, true, false);
 
-        LuckySimulationSelection selection = selectionWithBaseCurrentAndLatest(
+        SmartPicksSimulationSelection selection = selectionWithBaseCurrentAndLatest(
                 "NVDA",
                 10,
                 new BigDecimal("125.00"),
                 new BigDecimal("130.00"),
                 new BigDecimal("120.00")
         );
-        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection));
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(List.of(selection));
 
         assertEquals(1, result.created());
         assertEquals(0, result.skipped());
@@ -205,16 +205,16 @@ class LuckySimulationPlacementControllerTest {
     @Test
     void fallsBackToRecommendationCurrentWhenStockLatestUnavailable() {
         InMemoryRepository repository = new InMemoryRepository();
-        LuckySimulationPlacementController controller = controller(repository, true, false);
+        SmartPicksSimulationPlacementController controller = controller(repository, true, false);
 
-        LuckySimulationSelection selection = selectionWithBaseCurrentAndLatest(
+        SmartPicksSimulationSelection selection = selectionWithBaseCurrentAndLatest(
                 "NVDA",
                 10,
                 new BigDecimal("125.00"),
                 new BigDecimal("121.00"),
                 BigDecimal.ZERO
         );
-        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection));
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(List.of(selection));
 
         assertEquals(1, result.created());
         assertEquals(0, result.skipped());
@@ -225,9 +225,9 @@ class LuckySimulationPlacementControllerTest {
     @Test
     void appliesGatewayDefaultsForPollingAndCycleBehavior() {
         InMemoryRepository repository = new InMemoryRepository();
-        LuckySimulationPlacementController controller = controller(repository, true, false, 90, true, true);
+        SmartPicksSimulationPlacementController controller = controller(repository, true, false, 90, true, true);
 
-        LuckySimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
 
         assertEquals(1, result.created());
         Strategy saved = repository.findAll().getFirst();
@@ -236,11 +236,11 @@ class LuckySimulationPlacementControllerTest {
         assertTrue(saved.resubmitOnExpiryEnabled());
     }
 
-    private LuckySimulationPlacementController controller(InMemoryRepository repository, boolean replaceChoice, boolean allowDuplicates) {
+    private SmartPicksSimulationPlacementController controller(InMemoryRepository repository, boolean replaceChoice, boolean allowDuplicates) {
         return controller(repository, replaceChoice, allowDuplicates, 60, true, true);
     }
 
-    private LuckySimulationPlacementController controller(
+    private SmartPicksSimulationPlacementController controller(
             InMemoryRepository repository,
             boolean replaceChoice,
             boolean allowDuplicates,
@@ -259,7 +259,7 @@ class LuckySimulationPlacementControllerTest {
         );
     }
 
-    private LuckySimulationPlacementController controller(
+    private SmartPicksSimulationPlacementController controller(
             InMemoryRepository repository,
             boolean replaceChoice,
             boolean allowDuplicates,
@@ -268,7 +268,7 @@ class LuckySimulationPlacementControllerTest {
             boolean defaultResubmitOnExpiry,
             StrategyMode targetMode
     ) {
-        return new LuckySimulationPlacementController(new LuckySimulationPlacementController.Gateway() {
+        return new SmartPicksSimulationPlacementController(new SmartPicksSimulationPlacementController.Gateway() {
             @Override public StrategyRepository repository() { return repository; }
             @Override public StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy) {
                 return createStrategy(strategy, StrategyMode.PAPER);
@@ -312,15 +312,15 @@ class LuckySimulationPlacementControllerTest {
         return strategy;
     }
 
-    private LuckySimulationSelection selection(String symbol) {
+    private SmartPicksSimulationSelection selection(String symbol) {
         return selection(symbol, 10);
     }
 
-    private LuckySimulationSelection selection(String symbol, int quantity) {
+    private SmartPicksSimulationSelection selection(String symbol, int quantity) {
         return selection(symbol, quantity, "");
     }
 
-    private LuckySimulationSelection selection(String symbol, int quantity, String reason) {
+    private SmartPicksSimulationSelection selection(String symbol, int quantity, String reason) {
         StrategyRecommendation recommendation = recommendation(symbol, RecommendationType.SHORT_TERM, new BigDecimal("125.00"));
         AutoAnalyzeBundle bundle = new AutoAnalyzeBundle(
                 result(symbol),
@@ -328,7 +328,7 @@ class LuckySimulationPlacementControllerTest {
                 recommendation(symbol, RecommendationType.HIGH_RISK_SHORT_TERM, new BigDecimal("126.00")),
                 recommendation(symbol, RecommendationType.LONG_TERM, new BigDecimal("120.00"))
         );
-        return new LuckySimulationSelection(
+        return new SmartPicksSimulationSelection(
                 new TrendingStock(symbol, "", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, reason, BigDecimal.TEN),
                 bundle,
                 RecommendationType.SHORT_TERM,
@@ -336,11 +336,11 @@ class LuckySimulationPlacementControllerTest {
         );
     }
 
-    private LuckySimulationSelection selectionWithBaseAboveCurrent(String symbol, int quantity) {
+    private SmartPicksSimulationSelection selectionWithBaseAboveCurrent(String symbol, int quantity) {
         return selectionWithBaseAndCurrent(symbol, quantity, new BigDecimal("125.00"), new BigDecimal("120.00"));
     }
 
-    private LuckySimulationSelection selectionWithBaseAndCurrent(
+    private SmartPicksSimulationSelection selectionWithBaseAndCurrent(
             String symbol,
             int quantity,
             BigDecimal basePrice,
@@ -349,7 +349,7 @@ class LuckySimulationPlacementControllerTest {
         return selectionWithBaseCurrentAndLatest(symbol, quantity, basePrice, currentPrice, BigDecimal.ZERO);
     }
 
-    private LuckySimulationSelection selectionWithBaseCurrentAndLatest(
+    private SmartPicksSimulationSelection selectionWithBaseCurrentAndLatest(
             String symbol,
             int quantity,
             BigDecimal basePrice,
@@ -364,7 +364,7 @@ class LuckySimulationPlacementControllerTest {
                 recommendation(symbol, RecommendationType.HIGH_RISK_SHORT_TERM, basePrice.add(BigDecimal.ONE), currentPrice),
                 recommendation(symbol, RecommendationType.LONG_TERM, basePrice.subtract(BigDecimal.ONE), currentPrice)
         );
-        return new LuckySimulationSelection(
+        return new SmartPicksSimulationSelection(
                 new TrendingStock(symbol, "", latestPrice, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, "", BigDecimal.TEN),
                 bundle,
                 RecommendationType.SHORT_TERM,

@@ -412,8 +412,8 @@ public final class StrategyTablePresenter {
         String name = normalizedText(strategy.name());
         String event = normalizedText(strategy.lastEvent());
         String combined = name + " " + event;
-        if (isLuckySource(combined)) {
-            return luckyEntrySource(combined);
+        if (isSmartPicksSource(combined)) {
+            return smartPicksEntrySource(combined);
         }
         if (isBrokerSyncedSource(combined)) {
             return "Broker Synced";
@@ -428,22 +428,25 @@ public final class StrategyTablePresenter {
         return value == null ? "" : value.toLowerCase();
     }
 
-    private boolean isLuckySource(String combined) {
-        return combined.contains("i_am_feeling_lucky")
+    private boolean isSmartPicksSource(String combined) {
+        return combined.contains("smart_picks")
+                || combined.contains("smart picks")
+                // Legacy strategies persisted before the Smart Picks rename.
+                || combined.contains("i_am_feeling_lucky")
                 || combined.contains("i am feeling lucky");
     }
 
-    private String luckyEntrySource(String combined) {
+    private String smartPicksEntrySource(String combined) {
         if (combined.contains("gainer")) {
-            return "Lucky [Gainers]";
+            return "Picks [Gainers]";
         }
         if (combined.contains("loser")) {
-            return "Lucky [Losers]";
+            return "Picks [Losers]";
         }
         if (combined.contains("reviewed")) {
-            return "Lucky [Reviewed]";
+            return "Picks [Reviewed]";
         }
-        return "Lucky";
+        return "Picks";
     }
 
     private boolean isBrokerSyncedSource(String combined) {

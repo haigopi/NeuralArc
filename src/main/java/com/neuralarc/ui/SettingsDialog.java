@@ -218,7 +218,7 @@ public class SettingsDialog extends JDialog {
         JPanel strategyDefaultsPanel = new JPanel(new GridBagLayout());
         strategyDefaultsPanel.setOpaque(false);
         JLabel strategyDefaultsDescription = mutedDescription(
-                "Default values used when adding a new strategy or creating strategies from I Am Feeling Lucky. "
+                "Default values used when adding a new strategy or creating strategies from Smart Picks. "
                         + "You can still change values in each strategy dialog before saving."
         );
         JPanel strategyDefaultsContent = new JPanel();

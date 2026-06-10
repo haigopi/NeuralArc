@@ -1,6 +1,6 @@
 package com.neuralarc.model;
 
-public record LuckySimulationSelection(
+public record SmartPicksSimulationSelection(
         TrendingStock stock,
         AutoAnalyzeBundle analysis,
         RecommendationType selectedRecommendationType,

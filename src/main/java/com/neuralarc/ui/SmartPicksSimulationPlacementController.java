@@ -1,6 +1,6 @@
 package com.neuralarc.ui;
 
-import com.neuralarc.model.LuckySimulationSelection;
+import com.neuralarc.model.SmartPicksSimulationSelection;
 import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.Strategy;
@@ -25,32 +25,32 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
-public class LuckySimulationPlacementController {
+public class SmartPicksSimulationPlacementController {
     private final Gateway gateway;
     private final StrategyApplyService applyService;
     private final StrategyMode targetMode;
 
-    public LuckySimulationPlacementController(Gateway gateway) {
+    public SmartPicksSimulationPlacementController(Gateway gateway) {
         this(gateway, new StrategyApplyService(), StrategyMode.PAPER);
     }
 
-    public LuckySimulationPlacementController(Gateway gateway, StrategyMode targetMode) {
+    public SmartPicksSimulationPlacementController(Gateway gateway, StrategyMode targetMode) {
         this(gateway, new StrategyApplyService(), targetMode);
     }
 
-    LuckySimulationPlacementController(Gateway gateway, StrategyApplyService applyService) {
+    SmartPicksSimulationPlacementController(Gateway gateway, StrategyApplyService applyService) {
         this(gateway, applyService, StrategyMode.PAPER);
     }
 
-    LuckySimulationPlacementController(Gateway gateway, StrategyApplyService applyService, StrategyMode targetMode) {
+    SmartPicksSimulationPlacementController(Gateway gateway, StrategyApplyService applyService, StrategyMode targetMode) {
         this.gateway = gateway;
         this.applyService = applyService;
         this.targetMode = targetMode == null ? StrategyMode.PAPER : targetMode;
     }
 
-    public PlacementResult place(List<LuckySimulationSelection> selections) {
+    public PlacementResult place(List<SmartPicksSimulationSelection> selections) {
         if (selections == null || selections.isEmpty()) {
-            gateway.log("[I Am Feeling Lucky] No reviewed stocks selected for simulation.");
+            gateway.log("[Smart Picks] No reviewed stocks selected for simulation.");
             return new PlacementResult(0, 0, 0, List.of(), false);
         }
         int created = 0;
@@ -58,20 +58,20 @@ public class LuckySimulationPlacementController {
         int replaced = 0;
         boolean canceled = false;
         List<String> skippedReasons = new ArrayList<>();
-        for (LuckySimulationSelection selection : selections) {
+        for (SmartPicksSimulationSelection selection : selections) {
             StrategyRecommendation recommendation = recommendationFor(selection);
             if (recommendation == null || !recommendation.isApplicable()
                     || recommendation.baseBuyPrice().compareTo(BigDecimal.ZERO) <= 0) {
                 skipped++;
                 skippedReasons.add(selection.stock().symbol() + ": missing valid base limit buy price");
-                gateway.log("[I Am Feeling Lucky] Skipped " + selection.stock().symbol() + ": missing valid base limit buy price.");
+                gateway.log("[Smart Picks] Skipped " + selection.stock().symbol() + ": missing valid base limit buy price.");
                 continue;
             }
             Strategy existing = findExistingStrategy(selection.stock().symbol()).orElse(null);
             Strategy existingForReplace = null;
             if (existing != null && isWaitingForFill(existing)) {
                 if (!gateway.confirmReplaceWaitingPaperStrategy(selection.stock().symbol())) {
-                    gateway.log("[I Am Feeling Lucky] Placement stopped by user for " + selection.stock().symbol() + ".");
+                    gateway.log("[Smart Picks] Placement stopped by user for " + selection.stock().symbol() + ".");
                     canceled = true;
                     break;
                 }
@@ -86,7 +86,7 @@ public class LuckySimulationPlacementController {
                 skipped++;
                 skippedReasons.add(selection.stock().symbol() + ": duplicate symbol policy blocked a new "
                         + modeLabel().toLowerCase(Locale.ROOT) + " strategy");
-                gateway.log("[I Am Feeling Lucky] Skipped " + selection.stock().symbol()
+                gateway.log("[Smart Picks] Skipped " + selection.stock().symbol()
                         + ": duplicate symbol policy blocked a new " + modeLabel().toLowerCase(Locale.ROOT) + " strategy.");
                 continue;
             }
@@ -96,11 +96,11 @@ public class LuckySimulationPlacementController {
             if (!creationResult.success()) {
                 skipped++;
                 skippedReasons.add(selection.stock().symbol() + ": " + creationResult.error());
-                gateway.log("[I Am Feeling Lucky] Skipped " + selection.stock().symbol() + ": " + creationResult.error());
+                gateway.log("[Smart Picks] Skipped " + selection.stock().symbol() + ": " + creationResult.error());
                 continue;
             }
             if (existingForReplace == null) created++; else replaced++;
-            gateway.log("[I Am Feeling Lucky] Started " + targetMode.name() + " monitoring for " + strategy.symbol()
+            gateway.log("[Smart Picks] Started " + targetMode.name() + " monitoring for " + strategy.symbol()
                     + " at base limit $" + strategy.baseBuyLimitPrice().toPlainString()
                     + " qty=" + strategy.baseBuyQuantity()
                     + ". Alpaca " + modeLabel().toLowerCase(Locale.ROOT) + " order id=" + creationResult.alpacaOrderId());
@@ -110,19 +110,19 @@ public class LuckySimulationPlacementController {
     }
 
     private Strategy toStrategy(
-            LuckySimulationSelection selection,
+            SmartPicksSimulationSelection selection,
             StrategyRecommendation recommendation,
             BigDecimal effectiveBaseBuyPrice
     ) {
-        StrategyConfig config = luckySimulationConfig(selection, recommendation);
-        Strategy strategy = Strategy.fromConfig(UUID.randomUUID().toString(), luckyStrategyName(selection), config, targetMode);
+        StrategyConfig config = smartPicksSimulationConfig(selection, recommendation);
+        Strategy strategy = Strategy.fromConfig(UUID.randomUUID().toString(), smartPicksStrategyName(selection), config, targetMode);
         strategy.setBaseBuyLimitPrice(effectiveBaseBuyPrice);
         strategy.setStatus(StrategyStatus.CREATED);
         strategy.setCurrentState(StrategyLifecycleState.CREATED);
         String stockReason = selection.stock().reason() == null || selection.stock().reason().isBlank()
-                ? "lucky-simulation"
+                ? "smart-picks-simulation"
                 : selection.stock().reason();
-        strategy.setLastEvent("Alpaca " + modeLabel() + " mode from I Am Feeling Lucky. Selected "
+        strategy.setLastEvent("Alpaca " + modeLabel() + " mode from Smart Picks. Selected "
                 + selection.selectedRecommendationType().name()
                 + ". Source " + stockReason
                 + ". Base limit buy $" + strategy.baseBuyLimitPrice().toPlainString()
@@ -132,12 +132,12 @@ public class LuckySimulationPlacementController {
         return strategy;
     }
 
-    private BigDecimal effectiveBaseBuyPrice(LuckySimulationSelection selection, StrategyRecommendation recommendation) {
+    private BigDecimal effectiveBaseBuyPrice(SmartPicksSimulationSelection selection, StrategyRecommendation recommendation) {
         BigDecimal recommendedBase = recommendation.baseBuyPrice();
         BigDecimal current = resolveCurrentPrice(selection, recommendation);
-        BigDecimal adjusted = adjustedLuckyPaperBaseBuyPrice(recommendedBase, current);
+        BigDecimal adjusted = adjustedSmartPicksPaperBaseBuyPrice(recommendedBase, current);
         if (adjusted.compareTo(recommendedBase) != 0) {
-            gateway.log("[I Am Feeling Lucky] Adjusted base limit buy for " + selection.stock().symbol()
+            gateway.log("[Smart Picks] Adjusted base limit buy for " + selection.stock().symbol()
                     + " from $" + recommendedBase.toPlainString()
                     + " to $" + adjusted.toPlainString()
                     + " (1% below current $" + current.toPlainString() + ").");
@@ -145,7 +145,7 @@ public class LuckySimulationPlacementController {
         return adjusted;
     }
 
-    static BigDecimal adjustedLuckyPaperBaseBuyPrice(BigDecimal proposedBasePrice, BigDecimal currentPrice) {
+    static BigDecimal adjustedSmartPicksPaperBaseBuyPrice(BigDecimal proposedBasePrice, BigDecimal currentPrice) {
         if (proposedBasePrice == null) {
             return BigDecimal.ZERO;
         }
@@ -157,7 +157,7 @@ public class LuckySimulationPlacementController {
         return proposedBasePrice;
     }
 
-    private BigDecimal resolveCurrentPrice(LuckySimulationSelection selection, StrategyRecommendation recommendation) {
+    private BigDecimal resolveCurrentPrice(SmartPicksSimulationSelection selection, StrategyRecommendation recommendation) {
         BigDecimal latestPrice = selection == null || selection.stock() == null
                 ? null
                 : selection.stock().latestPrice();
@@ -194,7 +194,7 @@ public class LuckySimulationPlacementController {
                 || state == StrategyLifecycleState.SELL_PARTIALLY_FILLED;
     }
 
-    private StrategyConfig luckySimulationConfig(LuckySimulationSelection selection, StrategyRecommendation recommendation) {
+    private StrategyConfig smartPicksSimulationConfig(SmartPicksSimulationSelection selection, StrategyRecommendation recommendation) {
         StrategyApplyService.AppliedStrategyValues values = applyService.applyRecommendationToCurrentStrategy(recommendation);
         int defaultPollingSeconds = Math.max(1, gateway.defaultStrategyPollingSeconds());
         return new StrategyConfig(
@@ -229,7 +229,7 @@ public class LuckySimulationPlacementController {
         );
     }
 
-    private StrategyRecommendation recommendationFor(LuckySimulationSelection selection) {
+    private StrategyRecommendation recommendationFor(SmartPicksSimulationSelection selection) {
         if (selection == null || selection.analysis() == null) {
             return null;
         }
@@ -240,11 +240,11 @@ public class LuckySimulationPlacementController {
         };
     }
 
-    private String luckyStrategyName(LuckySimulationSelection selection) {
-        return "I_AM_FEELING_LUCKY_" + luckySourceToken(selection) + ": " + selection.stock().symbol() + " " + modeLabel();
+    private String smartPicksStrategyName(SmartPicksSimulationSelection selection) {
+        return "SMART_PICKS_" + smartPicksSourceToken(selection) + ": " + selection.stock().symbol() + " " + modeLabel();
     }
 
-    private String luckySourceToken(LuckySimulationSelection selection) {
+    private String smartPicksSourceToken(SmartPicksSimulationSelection selection) {
         String reason = selection == null || selection.stock() == null || selection.stock().reason() == null
                 ? ""
                 : selection.stock().reason().toLowerCase(Locale.ROOT);
