@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew test:*)",
+      "Bash(./gradlew build:*)",
+      "Bash(./gradlew compileJava:*)",
+      "Bash(./gradlew compileTestJava:*)",
+      "Bash(./gradlew check:*)",
+      "Bash(./gradlew clean:*)"
+    ],
+    "deny": [
+      "Read(~/.neuralarc/**)"
+    ]
+  }
+}
