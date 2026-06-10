@@ -6,6 +6,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.SwingConstants;
+import javax.swing.Timer;
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
 import java.awt.Color;
@@ -17,13 +18,20 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import java.util.function.BooleanSupplier;
 
 final class BottomStatusBars {
     private static final int COMPACT_THRESHOLD_PX = 1280;
     private static final String STATUS_CARD_FULL = "full";
     private static final String STATUS_CARD_COMPACT = "compact";
-    private static final String COMPACT_SEPARATOR = "   ";
+    private static final String STATUS_SEPARATOR = " • ";
+    private static final ZoneId MARKET_TIME_ZONE = ZoneId.of("America/New_York");
+    private static final DateTimeFormatter MARKET_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("EEE, MMM d h:mm a 'EST'", Locale.US);
     private static final Color ITEM_LABEL_COLOR = new Color(126, 132, 146);
 
     private final Font baseFont;
@@ -42,6 +50,8 @@ final class BottomStatusBars {
     private final JLabel compactStatusSummary;
     private final JButton statusDetailsButton;
     private final NetworkConnectionStatusIndicator networkConnectionStatus;
+    private final JLabel marketTimeStatus = new JLabel();
+    private final Timer marketTimeTimer;
 
     private final JPanel statusBarPanel;
     private final JPanel portfolioStatusBarPanel;
@@ -86,8 +96,10 @@ final class BottomStatusBars {
         this.compactStatusSummary = compactStatusSummary;
         this.statusDetailsButton = statusDetailsButton;
         this.networkConnectionStatus = new NetworkConnectionStatusIndicator(statusBarPresenter);
+        this.marketTimeTimer = new Timer(30_000, ignored -> updateMarketTimeStatus());
 
         forceLeftAlignment();
+        configureMarketTimeStatus();
 
         this.streamStatus.addMouseListener(new MouseAdapter() {
             @Override
@@ -131,6 +143,8 @@ final class BottomStatusBars {
 
         applyModeBackground(initialBackground);
         updateLayoutMode();
+        updateMarketTimeStatus();
+        marketTimeTimer.start();
     }
 
     JPanel mainBarPanel() {
@@ -166,6 +180,7 @@ final class BottomStatusBars {
     }
 
     void shutdown() {
+        marketTimeTimer.stop();
         networkConnectionStatus.shutdown();
     }
 
@@ -218,17 +233,32 @@ final class BottomStatusBars {
         gbc.gridy = 0;
         gbc.anchor = GridBagConstraints.CENTER;
         gbc.gridx = 0;
+        gbc.insets = new java.awt.Insets(0, 0, 0, 8);
+        panel.add(marketTimeStatus, gbc);
+        gbc.gridx = 1;
         gbc.insets = new java.awt.Insets(0, 0, 0, 0);
         panel.add(networkConnectionStatus.component(), gbc);
         return panel;
     }
 
     private int addStatusItem(JPanel statusPanel, int column, String labelText, JLabel valueLabel) {
+        if (column > 0) {
+            JLabel separator = new JLabel(STATUS_SEPARATOR.trim());
+            separator.setFont(baseFont.deriveFont(Font.PLAIN, 11f));
+            separator.setForeground(ITEM_LABEL_COLOR);
+            GridBagConstraints separatorConstraints = new GridBagConstraints();
+            separatorConstraints.gridx = column;
+            separatorConstraints.gridy = 0;
+            separatorConstraints.anchor = GridBagConstraints.CENTER;
+            separatorConstraints.insets = new java.awt.Insets(0, 10, 0, 8);
+            statusPanel.add(separator, separatorConstraints);
+            column++;
+        }
         GridBagConstraints constraints = new GridBagConstraints();
         constraints.gridx = column;
         constraints.gridy = 0;
         constraints.anchor = GridBagConstraints.WEST;
-        constraints.insets = new java.awt.Insets(0, column == 0 ? 0 : 10, 0, 0);
+        constraints.insets = new java.awt.Insets(0, 0, 0, 0);
         statusPanel.add(createStatusItem(labelText, valueLabel), constraints);
         return column + 1;
     }
@@ -239,7 +269,7 @@ final class BottomStatusBars {
         panel.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
 
         JLabel label = new JLabel(labelText);
-        label.setFont(baseFont.deriveFont(Font.PLAIN, 9f));
+        label.setFont(baseFont.deriveFont(Font.PLAIN, 11f));
         label.setForeground(ITEM_LABEL_COLOR);
         label.setHorizontalAlignment(SwingConstants.LEFT);
 
@@ -256,14 +286,26 @@ final class BottomStatusBars {
         return panel;
     }
 
+    private void configureMarketTimeStatus() {
+        marketTimeStatus.setFont(baseFont.deriveFont(Font.PLAIN, 11f));
+        marketTimeStatus.setForeground(ITEM_LABEL_COLOR);
+        marketTimeStatus.setHorizontalAlignment(SwingConstants.RIGHT);
+        marketTimeStatus.setToolTipText(TooltipStyler.text("Eastern stock market time."));
+        marketTimeStatus.getAccessibleContext().setAccessibleName("Eastern stock market time");
+    }
+
+    private void updateMarketTimeStatus() {
+        marketTimeStatus.setText(ZonedDateTime.now(MARKET_TIME_ZONE).format(MARKET_TIME_FORMATTER));
+    }
+
     private String compactStatusSummaryText(StatusBarPresenter.StatusBarViewModel model, String availableFundsText) {
         String broker = stripHtmlTags(model.brokerText());
         String market = model.marketText();
         String funds = model.availableFundsText() == null || model.availableFundsText().isBlank()
                 ? "-"
                 : model.availableFundsText();
-        return "Broker " + broker + COMPACT_SEPARATOR + "Market " + market + COMPACT_SEPARATOR + "Funds " + funds
-                + COMPACT_SEPARATOR + "Pending " + model.baseBuyPendingText();
+        return "Broker " + broker + STATUS_SEPARATOR + "Market " + market + STATUS_SEPARATOR + "Funds " + funds
+                + STATUS_SEPARATOR + "Pending " + model.baseBuyPendingText();
     }
 
     private String statusBarDetailsHtml(StatusBarPresenter.StatusBarViewModel model) {

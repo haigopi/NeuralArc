@@ -44,6 +44,7 @@ import javax.swing.RowSorter;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableCellRenderer;
+import javax.swing.table.TableColumn;
 import javax.swing.table.TableRowSorter;
 import javax.swing.plaf.basic.BasicProgressBarUI;
 import javax.swing.plaf.basic.BasicButtonUI;
@@ -237,6 +238,7 @@ public class TradingFrame extends JFrame {
     private final PollingCellPresenter pollingCellPresenter = new PollingCellPresenter();
     private final StatusBarPresenter statusBarPresenter = new StatusBarPresenter();
     private final StrategyActionsPresenter strategyActionsPresenter = new StrategyActionsPresenter();
+    private final StrategyGridLayoutPresenter strategyGridLayoutPresenter = new StrategyGridLayoutPresenter();
     private final RuleTriggeredHistoryPresenter ruleTriggeredHistoryPresenter = new RuleTriggeredHistoryPresenter();
     private final StrategyTablePresenter strategyTablePresenter = new StrategyTablePresenter();
     private final StrategyPnlTotalsCalculator strategyPnlTotalsCalculator = new StrategyPnlTotalsCalculator();
@@ -270,7 +272,7 @@ public class TradingFrame extends JFrame {
             if (modelRow < 0 || modelRow >= strategies.size()) {
                 return null;
             }
-            if (viewCol == 10) {
+            if (viewCol == StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX) {
                 return actionTooltipForHover(viewRow, event.getX());
             }
             if (viewCol == STRATEGY_STOCK_PRICE_COLUMN) {
@@ -1180,20 +1182,17 @@ public class TradingFrame extends JFrame {
         strategyTable.setDefaultRenderer(Object.class, statusRowRenderer);
         strategyTable.setDefaultRenderer(Number.class, statusRowRenderer);
         strategyTable.getColumnModel().getColumn(5).setCellRenderer(new UnrealizedPnLRenderer());
-        strategyTable.getColumnModel().getColumn(7).setCellRenderer(new PollingBarRenderer());
-        strategyTable.getColumnModel().getColumn(10).setCellRenderer(new ActionsRenderer());
+        strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.POLLING_COLUMN_INDEX).setCellRenderer(new PollingBarRenderer());
+        strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX).setCellRenderer(new ActionsRenderer());
         strategyTable.getColumnModel().getColumn(0).setPreferredWidth(72);
         strategyTable.getColumnModel().getColumn(0).setMinWidth(58);
         strategyTable.getColumnModel().getColumn(6).setPreferredWidth(300);
         strategyTable.getColumnModel().getColumn(6).setMinWidth(260);
-        strategyTable.getColumnModel().getColumn(7).setPreferredWidth(170);
-        strategyTable.getColumnModel().getColumn(7).setMinWidth(150);
         strategyTable.getColumnModel().getColumn(8).setPreferredWidth(130);
         strategyTable.getColumnModel().getColumn(8).setMinWidth(110);
         strategyTable.getColumnModel().getColumn(9).setPreferredWidth(140);
         strategyTable.getColumnModel().getColumn(9).setMinWidth(120);
-        strategyTable.getColumnModel().getColumn(10).setPreferredWidth(520);
-        strategyTable.getColumnModel().getColumn(10).setMinWidth(430);
+        applyStrategyGridColumnLayout();
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
         // Using mousePressed (not mouseClicked) gives instant response — mouseClicked only fires
@@ -1220,10 +1219,11 @@ public class TradingFrame extends JFrame {
                 //   • Without deferral, dialogs opened here block BasicTableUI from
                 //     ever running, leaving the table in a broken state on first click.
                 if (e.getButton() != java.awt.event.MouseEvent.BUTTON1) return;
-                if (viewRow < 0 || viewRow >= strategies.size() || viewCol != 10) return;
+                if (viewRow < 0 || viewRow >= strategies.size()
+                        || viewCol != StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX) return;
                 ManagedStrategy clickedStrategy = strategies.get(strategyTable.convertRowIndexToModel(viewRow));
                 boolean promoteVisible = actionViewModelFor(clickedStrategy).promoteVisible();
-                int actionCount = promoteVisible ? 5 : 4;
+                int actionCount = strategyGridLayoutPresenter.actionButtonCount(promoteVisible);
                 java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, viewCol, false);
                 int xInCell  = e.getX() - cellRect.x;
                 int section  = Math.max(1, cellRect.width / actionCount);
@@ -1263,7 +1263,7 @@ public class TradingFrame extends JFrame {
                 // an actual data row — NOT over the empty viewport space below the rows.
                 int viewRow = strategyTable.rowAtPoint(e.getPoint());
                 int viewCol = strategyTable.columnAtPoint(e.getPoint());
-                if (viewRow >= 0 && viewCol == 10) {
+                if (viewRow >= 0 && viewCol == StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX) {
                     strategyTable.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
                 } else {
                     strategyTable.setCursor(java.awt.Cursor.getDefaultCursor());
@@ -1292,8 +1292,8 @@ public class TradingFrame extends JFrame {
             }
             return leftValue.compareTo(rightValue);
         });
-        strategySorter.setSortable(7, false); // Polling countdown bar column — not sortable
-        strategySorter.setSortable(10, false); // Actions button column — not sortable
+        strategySorter.setSortable(StrategyGridLayoutPresenter.POLLING_COLUMN_INDEX, false); // Polling countdown bar column — not sortable
+        strategySorter.setSortable(StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX, false); // Actions button column — not sortable
         applyCurrentStrategiesRowFilter();
         strategyTable.setRowSorter(strategySorter);
         strategyTable.getTableHeader().addMouseListener(new MouseAdapter() {
@@ -1798,7 +1798,27 @@ public class TradingFrame extends JFrame {
         }
         styleModeToggle(paperViewButton, selectedViewMode == StrategyMode.PAPER, false);
         styleModeToggle(liveViewButton, selectedViewMode == StrategyMode.LIVE, true);
+        applyStrategyGridColumnLayout();
         repaint();
+    }
+
+    private void applyStrategyGridColumnLayout() {
+        if (strategyTable == null || strategyTable.getColumnModel().getColumnCount() <= StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX) {
+            return;
+        }
+        applyColumnWidth(
+                strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.POLLING_COLUMN_INDEX),
+                strategyGridLayoutPresenter.pollingColumnWidth()
+        );
+        applyColumnWidth(
+                strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX),
+                strategyGridLayoutPresenter.actionsColumnWidth(selectedViewMode == StrategyMode.PAPER)
+        );
+    }
+
+    private void applyColumnWidth(TableColumn column, StrategyGridLayoutPresenter.ColumnWidth width) {
+        column.setPreferredWidth(width.preferred());
+        column.setMinWidth(width.minimum());
     }
 
     private void applyUiPolish() {
@@ -5923,7 +5943,7 @@ public class TradingFrame extends JFrame {
             setOpaque(true);
             applyButtonIcon(editButton, "icons/edit.svg", 12);
             applyButtonIcon(toggleButton, "icons/pause.svg", 13);
-            applyButtonIcon(sellButton, "icons/submit.svg", 12);
+            applyButtonIcon(sellButton, "icons/sell-position.svg", 13);
             applyButtonIcon(promoteButton, "icons/add-stock-strategy.svg", 13);
             applyButtonIcon(deleteButton, "icons/delete.svg", 13);
             styleIconOnlyActionButton(editButton, new Color(63, 81, 181));
@@ -5944,7 +5964,7 @@ public class TradingFrame extends JFrame {
             ManagedStrategy strategy = strategies.get(modelRow);
             StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = actionViewModelFor(strategy);
             removeAll();
-            int actionCount = actionsViewModel.promoteVisible() ? 5 : 4;
+            int actionCount = strategyGridLayoutPresenter.actionButtonCount(actionsViewModel.promoteVisible());
             setLayout(new GridLayout(1, actionCount, 6, 0));
             add(editButton);
             add(toggleButton);
@@ -6006,9 +6026,9 @@ public class TradingFrame extends JFrame {
         }
         ManagedStrategy strategy = strategies.get(modelRow);
         StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = actionViewModelFor(strategy);
-        java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, 10, false);
+        java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX, false);
         int xInCell = mouseX - cellRect.x;
-        int actionCount = actionsViewModel.promoteVisible() ? 5 : 4;
+        int actionCount = strategyGridLayoutPresenter.actionButtonCount(actionsViewModel.promoteVisible());
         int section = Math.max(1, cellRect.width / actionCount);
         if (xInCell < section) {
             return TooltipStyler.text("Edit strategy rules, limits, and settings.");

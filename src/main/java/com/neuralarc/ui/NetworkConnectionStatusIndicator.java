@@ -5,6 +5,7 @@ import com.neuralarc.util.SvgIconLoader;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.net.InetSocketAddress;
@@ -22,11 +23,14 @@ final class NetworkConnectionStatusIndicator {
     private static final long PROBE_INTERVAL_SECONDS = 5L;
     private static final Color ONLINE_COLOR = new Color(108, 201, 168);
     private static final Color OFFLINE_COLOR = new Color(220, 44, 44);
+    private static final Color OFFLINE_DIM_COLOR = new Color(120, 28, 28);
 
     private final JLabel label = new JLabel();
     private final StatusBarPresenter presenter;
     private final ScheduledExecutorService probeExecutor;
     private final AtomicBoolean probeInFlight = new AtomicBoolean(false);
+    private Timer blinkTimer;
+    private boolean blinkOn = true;
     private volatile boolean online = true;
 
     NetworkConnectionStatusIndicator(StatusBarPresenter presenter) {
@@ -51,6 +55,9 @@ final class NetworkConnectionStatusIndicator {
     }
 
     void shutdown() {
+        if (blinkTimer != null) {
+            blinkTimer.stop();
+        }
         probeExecutor.shutdownNow();
     }
 
@@ -112,8 +119,37 @@ final class NetworkConnectionStatusIndicator {
     }
 
     private void applyNetworkStatus(StatusBarPresenter.NetworkStatusViewModel model) {
-        Color color = model.tone() == StatusBarPresenter.Tone.ERR ? OFFLINE_COLOR : ONLINE_COLOR;
-        label.setIcon(SvgIconLoader.load(model.iconPath(), ICON_SIZE, color));
+        if (model.blink()) {
+            startOfflineBlink(model);
+        } else {
+            stopOfflineBlink();
+            renderIcon(model, model.tone() == StatusBarPresenter.Tone.ERR ? OFFLINE_COLOR : ONLINE_COLOR);
+        }
         label.setToolTipText(TooltipStyler.text(model.tooltip()));
+    }
+
+    private void startOfflineBlink(StatusBarPresenter.NetworkStatusViewModel model) {
+        blinkOn = true;
+        renderIcon(model, OFFLINE_COLOR);
+        if (blinkTimer == null) {
+            blinkTimer = new Timer(500, ignored -> {
+                blinkOn = !blinkOn;
+                renderIcon(model, blinkOn ? OFFLINE_COLOR : OFFLINE_DIM_COLOR);
+            });
+        }
+        if (!blinkTimer.isRunning()) {
+            blinkTimer.start();
+        }
+    }
+
+    private void stopOfflineBlink() {
+        if (blinkTimer != null) {
+            blinkTimer.stop();
+        }
+        blinkOn = true;
+    }
+
+    private void renderIcon(StatusBarPresenter.NetworkStatusViewModel model, Color color) {
+        label.setIcon(SvgIconLoader.load(model.iconPath(), ICON_SIZE, color));
     }
 }

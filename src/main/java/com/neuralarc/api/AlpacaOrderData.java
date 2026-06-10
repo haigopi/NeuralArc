@@ -26,7 +26,7 @@ public record AlpacaOrderData(
         side = side == null ? "" : side;
         type = type == null ? "" : type;
         limitPrice = Monetary.round(limitPrice);
-        filledAveragePrice = Monetary.round(filledAveragePrice);
+        filledAveragePrice = normalizeBrokerFillPrice(filledAveragePrice);
         filledQuantity = Monetary.round(filledQuantity);
         status = status == null ? "" : status;
         rawJson = rawJson == null ? "{}" : rawJson;
@@ -53,5 +53,13 @@ public record AlpacaOrderData(
 
     public static AlpacaOrderData transportFailure(String message) {
         return new AlpacaOrderData("", "", "", "", "", Monetary.zero(), Monetary.zero(), Monetary.zero(), "failed_transport", "{\"message\":\"" + Objects.requireNonNullElse(message, "") + "\"}", null);
+    }
+
+    private static BigDecimal normalizeBrokerFillPrice(BigDecimal value) {
+        if (value == null) {
+            return Monetary.zero();
+        }
+        BigDecimal stripped = value.stripTrailingZeros();
+        return stripped.scale() < 2 ? stripped.setScale(2) : stripped;
     }
 }

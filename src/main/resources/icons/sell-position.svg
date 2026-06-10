@@ -1,0 +1,22 @@
+<!--
+tags: [sell, money bag, position, market, trade]
+category: Finance
+version: "1.0"
+-->
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M9 3h6l-2 4h-2z" />
+  <path d="M9 7h6" />
+  <path d="M7.5 9.5c-1.8 1.6-3 4.2-3 6.4c0 3.2 2.5 5.1 7.5 5.1s7.5-1.9 7.5-5.1c0-2.2-1.2-4.8-3-6.4c-1.1-1-2.5-1.5-4.5-1.5s-3.4.5-4.5 1.5z" />
+  <path d="M12 11v6" />
+  <path d="M14.2 12.4c-.5-.5-1.2-.7-2.1-.7c-1.2 0-2 .5-2 1.3c0 .9.8 1.2 2 1.5c1.2.3 2 .6 2 1.5c0 .8-.8 1.3-2.1 1.3c-.9 0-1.7-.3-2.2-.8" />
+</svg>

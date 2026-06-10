@@ -58,7 +58,7 @@ public class StrategyOrder {
         this.stopPrice = Monetary.round(stopPrice);
         this.requestedQuantity = Monetary.round(requestedQuantity);
         this.filledQuantity = Monetary.round(filledQuantity);
-        this.filledAveragePrice = Monetary.round(filledAveragePrice);
+        this.filledAveragePrice = normalizeBrokerFillPrice(filledAveragePrice);
         this.status = Objects.requireNonNull(status, "status");
         this.submittedAt = submittedAt == null ? Instant.now() : submittedAt;
         this.updatedAt = updatedAt == null ? this.submittedAt : updatedAt;
@@ -100,7 +100,7 @@ public class StrategyOrder {
     }
 
     public void setFilledAveragePrice(BigDecimal filledAveragePrice) {
-        this.filledAveragePrice = Monetary.round(filledAveragePrice);
+        this.filledAveragePrice = normalizeBrokerFillPrice(filledAveragePrice);
         this.updatedAt = Instant.now();
     }
 
@@ -134,5 +134,13 @@ public class StrategyOrder {
         return status == StrategyOrderStatus.SUBMITTED
                 || status == StrategyOrderStatus.PENDING
                 || status == StrategyOrderStatus.PARTIALLY_FILLED;
+    }
+
+    private BigDecimal normalizeBrokerFillPrice(BigDecimal value) {
+        if (value == null) {
+            return Monetary.zero();
+        }
+        BigDecimal stripped = value.stripTrailingZeros();
+        return stripped.scale() < 2 ? stripped.setScale(2) : stripped;
     }
 }

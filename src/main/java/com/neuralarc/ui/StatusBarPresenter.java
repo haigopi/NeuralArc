@@ -61,7 +61,7 @@ public final class StatusBarPresenter {
                 NETWORK_ICON_PATH,
                 online ? Tone.OK : Tone.ERR,
                 online ? "Internet connection available" : "Internet connection unavailable",
-                false
+                !online
         );
     }
 

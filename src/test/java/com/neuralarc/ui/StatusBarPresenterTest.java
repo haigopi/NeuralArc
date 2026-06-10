@@ -127,6 +127,6 @@ class StatusBarPresenterTest {
 
         assertEquals(StatusBarPresenter.NETWORK_ICON_PATH, vm.iconPath());
         assertEquals(StatusBarPresenter.Tone.ERR, vm.tone());
-        assertEquals(false, vm.blink());
+        assertEquals(true, vm.blink());
     }
 }

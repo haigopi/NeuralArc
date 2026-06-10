@@ -139,6 +139,41 @@ class RuleTriggeredHistoryPresenterTest {
         assertFalse(label.contains("Base Buy placed @ $100.00/10 on 2026-05-18T14:32:00Z"));
     }
 
+    @Test
+    void buyLimitFillKeepsBrokerAveragePricePrecisionWhenStopLossSoldAtRoundedPrice() {
+        Instant baseTime = Instant.parse("2026-06-10T18:18:42Z");
+        StrategyOrder stopLoss = order(
+                StrategyStage.STOP_LOSS,
+                StrategyOrderSide.SELL,
+                new BigDecimal("9.00"),
+                new BigDecimal("5.00"),
+                new BigDecimal("5.00"),
+                new BigDecimal("9.00"),
+                StrategyOrderStatus.FILLED,
+                baseTime
+        );
+        StrategyOrder buyLimit = order(
+                StrategyStage.BUY_LIMIT_1,
+                StrategyOrderSide.BUY,
+                new BigDecimal("9.79"),
+                new BigDecimal("1.00"),
+                new BigDecimal("1.00"),
+                new BigDecimal("8.998"),
+                StrategyOrderStatus.FILLED,
+                baseTime.plusSeconds(1)
+        );
+
+        String label = presenter.buildLabel(
+                "Rules: Completed @ $9.79",
+                List.of(stopLoss, buyLimit),
+                Instant::toString
+        );
+
+        assertTrue(label.contains("Stop Loss sold @ $9.00/5"));
+        assertTrue(label.contains("Buy Limit 1 filled @ $8.998/1"));
+        assertFalse(label.contains("Buy Limit 1 filled @ $9.00/1"));
+    }
+
     private StrategyOrder order(
             StrategyStage stage,
             StrategyOrderSide side,
