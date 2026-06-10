@@ -212,8 +212,12 @@ public final class StrategyActionsController {
 
         ActionEntry entry = gateway.entryAt(row);
         Strategy strategy = entry.strategy();
-        if (!isManualBuyAllowed(strategy.status()) || !gateway.marketOpenForUi()) {
-            actionLog.skipped("Buy More " + strategy.symbol(), "Strategy is not active/paused or market is closed.");
+        if (!isManualBuyAllowed(strategy.status())) {
+            actionLog.skipped("Buy More " + strategy.symbol(), "Strategy is not active or paused.");
+            return;
+        }
+        if (type == BuyMoreType.MARKET && !gateway.marketOpenForUi()) {
+            actionLog.skipped("Buy More " + strategy.symbol(), "Market buy is unavailable while the market is closed.");
             return;
         }
 

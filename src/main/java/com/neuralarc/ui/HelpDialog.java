@@ -83,7 +83,7 @@ public class HelpDialog extends JDialog {
         {
             "Application - What should I do if Trade Stream shows an error?",
             "Trade Stream is the Alpaca WebSocket connection that delivers order and trade updates.\n\n" +
-            "- If the bottom status bar shows Trade Stream: error, click the Reconnect link beside it.\n" +
+            "- If the bottom status bar Stream item shows error, click the Reconnect link beside it.\n" +
             "- If reconnect fails, the app shows the stream error in a dialog.\n" +
             "- Open Settings, verify Alpaca credentials, and save if the error mentions authorization or missing credentials.\n" +
             "- Check your internet connection if the error looks like a network timeout or dropped connection.\n\n" +

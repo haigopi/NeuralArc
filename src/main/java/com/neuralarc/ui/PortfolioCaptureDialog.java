@@ -46,9 +46,9 @@ final class PortfolioCaptureDialog extends JDialog {
     private static final Font DESCRIPTION_FONT = FontLoader.ui(Font.PLAIN, 10f);
     private static final String DISCLAIMER = "<html><body style='width:460px'>"
             + "<b>Disclaimer:</b><br>"
-            + "All portfolio capture actions execute using live market orders at the marketplace.<br>"
+            + "All portfolio liquidation actions execute using live market orders at the marketplace.<br>"
             + "Final execution prices depend on real-time market conditions, bid/ask spread, liquidity, slippage, and broker execution timing.<br>"
-            + "Exact captured profit/loss numbers shown in the application may slightly vary from broker-reported final values.<br>"
+            + "Exact liquidated profit/loss numbers shown in the application may slightly vary from broker-reported final values.<br>"
             + "During volatile market conditions, executed values may differ from displayed estimated values.<br>"
             + "By proceeding, the user acknowledges and accepts potential execution variances."
             + "</body></html>";
@@ -60,8 +60,8 @@ final class PortfolioCaptureDialog extends JDialog {
     private final boolean monitoringActive;
     private final Timer refreshTimer;
 
-    private final JRadioButton captureNow = new JRadioButton("Capture Now", true);
-    private final JRadioButton captureTarget = new JRadioButton("Capture At Target");
+    private final JRadioButton captureNow = new JRadioButton("Liquidate Now", true);
+    private final JRadioButton captureTarget = new JRadioButton("Liquidate At Target");
     private final JRadioButton percentTarget = new JRadioButton("Profit Percent", true);
     private final JRadioButton amountTarget = new JRadioButton("Profit Amount");
     private final JTextField percentField = new JTextField("5", 8);
@@ -70,7 +70,7 @@ final class PortfolioCaptureDialog extends JDialog {
     private final JTextField intervalField = new JTextField("1", 5);
     private final JCheckBox activeOnly = new JCheckBox("Active strategies only", true);
     private final JRadioButton executeOnce = new JRadioButton("Execute once", true);
-    private final JRadioButton reenterOnce = new JRadioButton("Capture, then re-enter once");
+    private final JRadioButton reenterOnce = new JRadioButton("Liquidate, then re-enter once");
     private final JRadioButton continuousLoop = new JRadioButton("Continuous Automated Loop");
     private final JRadioButton paperMode = new JRadioButton("Paper mode", true);
     private final JRadioButton liveMode = new JRadioButton("Live mode");
@@ -98,7 +98,7 @@ final class PortfolioCaptureDialog extends JDialog {
             Runnable deactivateHandler,
             boolean monitoringActive
     ) {
-        super(owner, "Capture Portfolio", true);
+        super(owner, "Liquidate Portfolio", true);
         this.snapshotSupplier = snapshotSupplier;
         this.captureNowHandler = captureNowHandler;
         this.activateHandler = activateHandler;
@@ -177,11 +177,11 @@ final class PortfolioCaptureDialog extends JDialog {
     }
 
     private JPanel modeSection() {
-        JPanel panel = section("Capture Mode");
+        JPanel panel = section("Liquidation Mode");
         addRadioWithDescription(panel, captureNow,
-                "Capture the portfolio as it is at the current market price.", 0);
+                "Liquidate the portfolio as it is at the current market price.", 0);
         addRadioWithDescription(panel, captureTarget,
-                "Automatically monitor and capture the portfolio once the configured target is reached.", 2);
+                "Automatically monitor and liquidate the portfolio once the configured target is reached.", 2);
         return panel;
     }
 
@@ -228,20 +228,20 @@ final class PortfolioCaptureDialog extends JDialog {
     }
 
     private JPanel postAutomationSection() {
-        JPanel panel = section("Post-Capture Automation");
+        JPanel panel = section("Post-Liquidation Automation");
         addRadioWithDescription(panel, executeOnce,
-                "Capture executes once and monitoring stops afterward.", 0);
+                "Liquidation executes once and monitoring stops afterward.", 0);
         addRadioWithDescription(panel, reenterOnce,
-                "Capture executes, I Am Feeling Lucky runs once, then monitoring stops.", 2);
+                "Liquidation executes, I Am Feeling Lucky runs once, then monitoring stops.", 2);
         addRadioWithDescription(panel, continuousLoop,
-                "Capture executes, I Am Feeling Lucky runs automatically, monitoring restarts, and the cycle repeats.", 4);
+                "Liquidation executes, I Am Feeling Lucky runs automatically, monitoring restarts, and the cycle repeats.", 4);
         GridBagConstraints gbc = baseGbc(6);
         gbc.gridwidth = 2;
         panel.add(reentryOptionsPanel(), gbc);
         gbc.gridy++;
         panel.add(autoCleanPending, gbc);
         gbc.gridy++;
-        panel.add(description("Pending base buy limits will be automatically cancelled before every automated capture cycle."), gbc);
+        panel.add(description("Pending base buy limits will be automatically cancelled before every automated liquidation cycle."), gbc);
         return panel;
     }
 
@@ -309,8 +309,8 @@ final class PortfolioCaptureDialog extends JDialog {
         PortfolioCaptureConfig config = maybeConfig.get();
         int eligibleCount = snapshotSupplier.apply(config).eligibleCount();
         if (config.mode() == PortfolioCaptureMode.CAPTURE_NOW && eligibleCount <= 0) {
-            JOptionPane.showMessageDialog(this, "No eligible portfolio positions are available to capture.",
-                    "Capture Portfolio", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "No eligible portfolio positions are available to liquidate.",
+                    "Liquidate Portfolio", JOptionPane.WARNING_MESSAGE);
             return;
         }
         if (config.mode() == PortfolioCaptureMode.CAPTURE_NOW) {
@@ -321,7 +321,7 @@ final class PortfolioCaptureDialog extends JDialog {
                             + "Final broker execution values may vary slightly from estimated values shown in the application.<br><br>"
                             + DISCLAIMER
                             + "</body></html>",
-                    "Confirm Portfolio Capture",
+                    "Confirm Portfolio Liquidation",
                     JOptionPane.YES_NO_OPTION,
                     JOptionPane.WARNING_MESSAGE
             );
@@ -339,7 +339,7 @@ final class PortfolioCaptureDialog extends JDialog {
     private Optional<PortfolioCaptureConfig> readConfig() {
         if (!acknowledgement.isSelected()) {
             JOptionPane.showMessageDialog(this, "Acknowledge the execution disclaimer before continuing.",
-                    "Capture Portfolio", JOptionPane.WARNING_MESSAGE);
+                    "Liquidate Portfolio", JOptionPane.WARNING_MESSAGE);
             return Optional.empty();
         }
         if (captureNow.isSelected()) {
@@ -350,12 +350,12 @@ final class PortfolioCaptureDialog extends JDialog {
             target = new BigDecimal(percentTarget.isSelected() ? percentField.getText().trim() : amountField.getText().trim());
         } catch (NumberFormatException ex) {
             JOptionPane.showMessageDialog(this, "Enter a valid positive target value.",
-                    "Capture Portfolio", JOptionPane.WARNING_MESSAGE);
+                    "Liquidate Portfolio", JOptionPane.WARNING_MESSAGE);
             return Optional.empty();
         }
         if (target.compareTo(BigDecimal.ZERO) <= 0) {
             JOptionPane.showMessageDialog(this, "Target value must be greater than zero.",
-                    "Capture Portfolio", JOptionPane.WARNING_MESSAGE);
+                    "Liquidate Portfolio", JOptionPane.WARNING_MESSAGE);
             return Optional.empty();
         }
         int interval;
@@ -366,7 +366,7 @@ final class PortfolioCaptureDialog extends JDialog {
         }
         if (interval <= 0) {
             JOptionPane.showMessageDialog(this, "Monitoring interval must be greater than zero.",
-                    "Capture Portfolio", JOptionPane.WARNING_MESSAGE);
+                    "Liquidate Portfolio", JOptionPane.WARNING_MESSAGE);
             return Optional.empty();
         }
         return Optional.of(new PortfolioCaptureConfig(
@@ -405,7 +405,7 @@ final class PortfolioCaptureDialog extends JDialog {
         reentryTerm.setEnabled(reentryEnabled);
         reentryLuckyStrategy.setEnabled(reentryEnabled);
         autoCleanPending.setEnabled(targetMode);
-        saveButton.setText(targetMode ? "Activate Monitoring" : "Capture Now");
+        saveButton.setText(targetMode ? "Activate Monitoring" : "Liquidate Now");
         saveButton.setEnabled(acknowledgement.isSelected());
     }
 

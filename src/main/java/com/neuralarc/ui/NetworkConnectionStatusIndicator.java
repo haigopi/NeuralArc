@@ -1,0 +1,119 @@
+package com.neuralarc.ui;
+
+import com.neuralarc.util.SvgIconLoader;
+
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.SwingUtilities;
+import java.awt.Color;
+import java.awt.Dimension;
+import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
+import java.net.Socket;
+import java.util.Enumeration;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+final class NetworkConnectionStatusIndicator {
+    private static final int ICON_SIZE = 16;
+    private static final int PROBE_TIMEOUT_MILLIS = 1500;
+    private static final long PROBE_INTERVAL_SECONDS = 5L;
+    private static final Color ONLINE_COLOR = new Color(108, 201, 168);
+    private static final Color OFFLINE_COLOR = new Color(220, 44, 44);
+
+    private final JLabel label = new JLabel();
+    private final StatusBarPresenter presenter;
+    private final ScheduledExecutorService probeExecutor;
+    private final AtomicBoolean probeInFlight = new AtomicBoolean(false);
+    private volatile boolean online = true;
+
+    NetworkConnectionStatusIndicator(StatusBarPresenter presenter) {
+        this.presenter = presenter;
+        label.setPreferredSize(new Dimension(24, 20));
+        label.setMinimumSize(new Dimension(24, 20));
+        label.setHorizontalAlignment(JLabel.CENTER);
+        label.setVerticalAlignment(JLabel.CENTER);
+        label.getAccessibleContext().setAccessibleName("Internet connection status");
+        applyNetworkStatus(presenter.presentNetworkStatus(true));
+
+        probeExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "neuralarc-network-status");
+            thread.setDaemon(true);
+            return thread;
+        });
+        probeExecutor.scheduleWithFixedDelay(this::probeNetworkStatus, 0, PROBE_INTERVAL_SECONDS, TimeUnit.SECONDS);
+    }
+
+    JComponent component() {
+        return label;
+    }
+
+    void shutdown() {
+        probeExecutor.shutdownNow();
+    }
+
+    private void probeNetworkStatus() {
+        if (!probeInFlight.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            updateOnlineStatus(hasUsableNetworkInterface() && canOpenInternetSocket());
+        } finally {
+            probeInFlight.set(false);
+        }
+    }
+
+    private boolean hasUsableNetworkInterface() {
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            if (interfaces == null) {
+                return false;
+            }
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface networkInterface = interfaces.nextElement();
+                if (networkInterface.isUp()
+                        && !networkInterface.isLoopback()
+                        && !networkInterface.isVirtual()) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+            return false;
+        }
+        return false;
+    }
+
+    private boolean canOpenInternetSocket() {
+        return canConnect("1.1.1.1", 443) || canConnect("8.8.8.8", 53);
+    }
+
+    private boolean canConnect(String host, int port) {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress(host, port), PROBE_TIMEOUT_MILLIS);
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private void updateOnlineStatus(boolean newOnline) {
+        if (online == newOnline) {
+            return;
+        }
+        online = newOnline;
+        SwingUtilities.invokeLater(this::applyOnlineStatus);
+    }
+
+    private void applyOnlineStatus() {
+        StatusBarPresenter.NetworkStatusViewModel model = presenter.presentNetworkStatus(online);
+        applyNetworkStatus(model);
+    }
+
+    private void applyNetworkStatus(StatusBarPresenter.NetworkStatusViewModel model) {
+        Color color = model.tone() == StatusBarPresenter.Tone.ERR ? OFFLINE_COLOR : ONLINE_COLOR;
+        label.setIcon(SvgIconLoader.load(model.iconPath(), ICON_SIZE, color));
+        label.setToolTipText(TooltipStyler.text(model.tooltip()));
+    }
+}

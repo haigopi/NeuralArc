@@ -43,16 +43,31 @@ class StrategyTablePresenterTest {
     }
 
     @Test
-    void manualBuyPendingStatusDoesNotOverrideFilledBaseBuyNextRuleLabel() {
+    void manualLimitBuyPendingStatusIsVisibleInGridStatus() {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.ACTIVE);
         strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
         strategy.setLastTriggeredRuleType("MANUAL_BUY");
+        strategy.setLastEvent("Manual limit buy order submitted");
         strategy.setLatestOrderStatus("pending_new");
 
         String label = presenter.displayStatusLabel(strategy, false, true, false);
 
-        assertEquals("Base Buy Filled - Monitoring next configured rule", label);
+        assertEquals("Manual Limit Buy Pending Fill (Pending New)", label);
+    }
+
+    @Test
+    void manualMarketBuyPendingStatusIsVisibleInGridStatus() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategy.setLastTriggeredRuleType("MANUAL_BUY");
+        strategy.setLastEvent("Manual market buy order submitted");
+        strategy.setLatestOrderStatus("new");
+
+        String label = presenter.displayStatusLabel(strategy, false, true, false);
+
+        assertEquals("Manual Market Buy Pending Fill (New)", label);
     }
 
     @Test

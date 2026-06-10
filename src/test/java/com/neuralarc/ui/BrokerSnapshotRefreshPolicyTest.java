@@ -38,24 +38,32 @@ class BrokerSnapshotRefreshPolicyTest {
     }
 
     @Test
-    void fallsBackWhenNoActiveEligibleStrategiesExist() {
-        Strategy paused = strategy("a", "AAPL", StrategyStatus.PAUSED, 2);
+    void fallsBackWhenNoRefreshEligibleStrategiesExist() {
+        Strategy archived = strategy("a", "AAPL", StrategyStatus.ARCHIVED, 2);
         Strategy stopped = strategy("b", "MSFT", StrategyStatus.STOPPED, 2);
 
-        long interval = BrokerSnapshotRefreshPolicy.resolveIntervalMillis(List.of(paused, stopped));
+        long interval = BrokerSnapshotRefreshPolicy.resolveIntervalMillis(List.of(archived, stopped));
 
         assertEquals(5_000L, interval);
     }
 
     @Test
-    void eligibilityRequiresActiveStatusAndSymbol() {
+    void eligibilityIncludesCurrentRecordsAndRequiresSymbol() {
         Strategy active = strategy("a", "AAPL", StrategyStatus.ACTIVE, 2);
         Strategy paused = strategy("b", "AAPL", StrategyStatus.PAUSED, 2);
+        Strategy failed = strategy("d", "AAPL", StrategyStatus.FAILED, 2);
+        Strategy completed = strategy("e", "AAPL", StrategyStatus.COMPLETED, 2);
         Strategy blankSymbol = strategy("c", " ", StrategyStatus.ACTIVE, 2);
+        Strategy archived = strategy("f", "AAPL", StrategyStatus.ARCHIVED, 2);
+        Strategy stopped = strategy("g", "AAPL", StrategyStatus.STOPPED, 2);
 
         assertTrue(BrokerSnapshotRefreshPolicy.eligibleForBrokerSnapshot(active));
-        assertFalse(BrokerSnapshotRefreshPolicy.eligibleForBrokerSnapshot(paused));
+        assertTrue(BrokerSnapshotRefreshPolicy.eligibleForBrokerSnapshot(paused));
+        assertTrue(BrokerSnapshotRefreshPolicy.eligibleForBrokerSnapshot(failed));
+        assertTrue(BrokerSnapshotRefreshPolicy.eligibleForBrokerSnapshot(completed));
         assertFalse(BrokerSnapshotRefreshPolicy.eligibleForBrokerSnapshot(blankSymbol));
+        assertFalse(BrokerSnapshotRefreshPolicy.eligibleForBrokerSnapshot(archived));
+        assertFalse(BrokerSnapshotRefreshPolicy.eligibleForBrokerSnapshot(stopped));
     }
 
     private static Strategy strategy(String id, String symbol, StrategyStatus status, int pollingIntervalSeconds) {
@@ -98,4 +106,3 @@ class BrokerSnapshotRefreshPolicyTest {
         return strategy;
     }
 }
-

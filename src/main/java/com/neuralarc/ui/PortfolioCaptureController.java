@@ -79,7 +79,7 @@ final class PortfolioCaptureController {
         stateStore.load().ifPresent(state -> {
             if (state.enabled() && state.config().targetValue().compareTo(BigDecimal.ZERO) > 0) {
                 activateMonitoring(state.config());
-                gateway.log("[Portfolio Capture] Monitoring restored after startup.");
+                gateway.log("[Portfolio Liquidation] Monitoring restored after startup.");
             }
         });
     }
@@ -100,7 +100,7 @@ final class PortfolioCaptureController {
         monitoringTimer.start();
         gateway.onMonitoringChanged(true, lastSnapshot, config);
         setAutomationState(PortfolioCaptureAutomationState.MONITORING);
-        gateway.log("[Portfolio Capture] Monitoring activated. Target "
+        gateway.log("[Portfolio Liquidation] Monitoring activated. Target "
                 + config.targetType() + "=" + Monetary.round(config.targetValue())
                 + " flow=" + config.executionFlow()
                 + " reentryMode=" + config.reentryMode()
@@ -115,7 +115,7 @@ final class PortfolioCaptureController {
         stateStore.clear();
         gateway.onMonitoringChanged(false, lastSnapshot, null);
         setAutomationState(PortfolioCaptureAutomationState.STOPPED);
-        gateway.log("[Portfolio Capture] Monitoring deactivated.");
+        gateway.log("[Portfolio Liquidation] Monitoring deactivated.");
     }
 
     void emergencyStop() {
@@ -125,7 +125,7 @@ final class PortfolioCaptureController {
         stateStore.clear();
         setAutomationState(PortfolioCaptureAutomationState.STOPPED);
         gateway.onMonitoringChanged(false, lastSnapshot, null);
-        gateway.log("[Portfolio Capture] Emergency stop used. Automation stopped.");
+        gateway.log("[Portfolio Liquidation] Emergency stop used. Automation stopped.");
     }
 
     boolean monitoringActive() {
@@ -137,7 +137,7 @@ final class PortfolioCaptureController {
             return;
         }
         manuallyExcludedStrategyIds.add(strategyId);
-        gateway.log("[Portfolio Capture] Excluded manually sold strategy from in-flight capture. strategyId=" + strategyId);
+        gateway.log("[Portfolio Liquidation] Excluded manually sold strategy from in-flight liquidation. strategyId=" + strategyId);
     }
 
     void executeNow(PortfolioCaptureConfig config) {
@@ -155,7 +155,7 @@ final class PortfolioCaptureController {
         }
         if (!gateway.tradingSessionOpen()) {
             if (!marketClosedPauseLogged) {
-                gateway.log("[Portfolio Capture] Monitoring paused because the trading session is closed. Next open="
+                gateway.log("[Portfolio Liquidation] Monitoring paused because the trading session is closed. Next open="
                         + gateway.nextTradingSessionOpenDisplay());
                 marketClosedPauseLogged = true;
             }
@@ -163,7 +163,7 @@ final class PortfolioCaptureController {
             return;
         }
         if (marketClosedPauseLogged) {
-            gateway.log("[Portfolio Capture] Trading session reopened. Monitoring resumed.");
+            gateway.log("[Portfolio Liquidation] Trading session reopened. Monitoring resumed.");
             marketClosedPauseLogged = false;
             setAutomationState(PortfolioCaptureAutomationState.MONITORING);
         }
@@ -191,11 +191,11 @@ final class PortfolioCaptureController {
             PortfolioCaptureConfig executionConfig
     ) {
         if (snapshot == null || snapshot.rows().isEmpty()) {
-            gateway.log("[Portfolio Capture] Skipped. No eligible portfolio rows.");
+            gateway.log("[Portfolio Liquidation] Skipped. No eligible portfolio rows.");
             return;
         }
         if (!executing.compareAndSet(false, true)) {
-            gateway.log("[Portfolio Capture] Duplicate trigger ignored. Capture already in progress.");
+            gateway.log("[Portfolio Liquidation] Duplicate trigger ignored. Liquidation already in progress.");
             return;
         }
         emergencyStopRequested = false;
@@ -206,7 +206,7 @@ final class PortfolioCaptureController {
         }
         gateway.onExecutionStarted();
         setAutomationState(PortfolioCaptureAutomationState.CAPTURING);
-        gateway.log("[Portfolio Capture] Execution started. Trigger=" + triggerReason
+        gateway.log("[Portfolio Liquidation] Execution started. Trigger=" + triggerReason
                 + " estimatedValue=" + Monetary.round(snapshot.marketValue())
                 + " estimatedPnl=" + Monetary.round(snapshot.unrealizedPnl()));
 
@@ -249,14 +249,14 @@ final class PortfolioCaptureController {
                 setAutomationState(PortfolioCaptureAutomationState.CLEANING_PENDING_ORDERS);
                 int canceled = gateway.cancelPendingBaseBuys();
                 pendingCanceledCount += canceled;
-                gateway.log("[Portfolio Capture] Pending base buy cleanup canceled " + canceled + " order(s).");
+                gateway.log("[Portfolio Liquidation] Pending base buy cleanup canceled " + canceled + " order(s).");
             }
             setAutomationState(PortfolioCaptureAutomationState.CAPTURING);
             for (PortfolioCaptureSnapshot.Row row : snapshot.rows()) {
                 if (manuallyExcludedStrategyIds.contains(row.strategyId())) {
                     skippedManualSales.add(row.strategyId());
-                    gateway.log("[Portfolio Capture] Skipped " + row.symbol()
-                            + " because it was sold individually while capture was in flight.");
+                    gateway.log("[Portfolio Liquidation] Skipped " + row.symbol()
+                            + " because it was sold individually while liquidation was in flight.");
                     continue;
                 }
                 if (emergencyStopRequested) {
@@ -291,10 +291,10 @@ final class PortfolioCaptureController {
                 if (executionConfig.autoCleanPendingBeforeCycle()) {
                     int canceled = gateway.cancelPendingBaseBuys();
                     pendingCanceledCount += canceled;
-                    gateway.log("[Portfolio Capture] Pre re-entry pending base buy cleanup canceled " + canceled + " order(s).");
+                    gateway.log("[Portfolio Liquidation] Pre re-entry pending base buy cleanup canceled " + canceled + " order(s).");
                 }
                 String reentrySummary = gateway.runLuckyAutomation(executionConfig);
-                gateway.log("[Portfolio Capture] I Am Feeling Lucky automation completed: " + reentrySummary);
+                gateway.log("[Portfolio Liquidation] I Am Feeling Lucky automation completed: " + reentrySummary);
             }
             PortfolioCaptureSnapshot resultSnapshot = withoutRows(snapshot, skippedManualSales);
             BigDecimal executionVariance = actualValueTotal.subtract(resultSnapshot.marketValue());
@@ -315,7 +315,7 @@ final class PortfolioCaptureController {
                     restartMonitoringAfterCooldown(executionConfig);
                 }
             } catch (Exception ex) {
-                gateway.log("[Portfolio Capture] Execution failed: " + ex.getMessage());
+                gateway.log("[Portfolio Liquidation] Execution failed: " + ex.getMessage());
                 setAutomationState(PortfolioCaptureAutomationState.ERROR);
                 gateway.onExecutionFinished(PortfolioCaptureExecutionResult.from(snapshot, List.of(), List.of(ex.getMessage())), targetTriggered);
             } finally {
@@ -330,10 +330,10 @@ final class PortfolioCaptureController {
     private void restartMonitoringAfterCooldown(PortfolioCaptureConfig config) {
         loopCount++;
         setAutomationState(PortfolioCaptureAutomationState.RESTARTING_MONITORING);
-        gateway.log("[Portfolio Capture] Cooldown started before next loop. seconds=" + (LOOP_COOLDOWN_MILLIS / 1000));
+        gateway.log("[Portfolio Liquidation] Cooldown started before next loop. seconds=" + (LOOP_COOLDOWN_MILLIS / 1000));
         Timer restartTimer = new Timer((int) LOOP_COOLDOWN_MILLIS, ignored -> {
             if (!emergencyStopRequested) {
-                gateway.log("[Portfolio Capture] Restarting continuous monitoring. loop=" + loopCount);
+                gateway.log("[Portfolio Liquidation] Restarting continuous monitoring. loop=" + loopCount);
                 activateMonitoring(config);
             }
         });
@@ -366,7 +366,7 @@ final class PortfolioCaptureController {
                 result.actualPnl(),
                 result.executionVariance()
         ));
-        gateway.log("[Portfolio Capture] Capture history updated. captures=" + captureHistorySummary.captureCount()
+        gateway.log("[Portfolio Liquidation] Liquidation history updated. runs=" + captureHistorySummary.captureCount()
                 + " stocks=" + captureHistorySummary.capturedStocks()
                 + " cumulativeActualPnl=$" + Monetary.round(captureHistorySummary.actualPnl())
                 + " cumulativeEstimatedPnl=$" + Monetary.round(captureHistorySummary.estimatedPnl()));

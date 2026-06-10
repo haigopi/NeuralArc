@@ -122,7 +122,14 @@ public final class StrategyTablePresenter {
                 && waitingForFill
                 && strategy.latestOrderStatus() != null
                 && !strategy.latestOrderStatus().isBlank()
-                && !isManualBuyLatest(strategy)
+                && isManualBuyLatest(strategy)
+                && !isBrokerUnavailableStatus(normalizedStatus)) {
+            return manualBuyPendingLabel(strategy) + " (" + BrokerOrderStatusUtil.displayLabel(strategy.latestOrderStatus()) + ")";
+        }
+        if (strategy.status() == StrategyStatus.ACTIVE
+                && waitingForFill
+                && strategy.latestOrderStatus() != null
+                && !strategy.latestOrderStatus().isBlank()
                 && !isBrokerUnavailableStatus(normalizedStatus)) {
             return lifecycle + " (" + BrokerOrderStatusUtil.displayLabel(strategy.latestOrderStatus()) + ")";
         }
@@ -166,6 +173,17 @@ public final class StrategyTablePresenter {
     private boolean isManualBuyLatest(Strategy strategy) {
         return strategy.lastTriggeredRuleType() != null
                 && "MANUAL_BUY".equalsIgnoreCase(strategy.lastTriggeredRuleType().trim());
+    }
+
+    private String manualBuyPendingLabel(Strategy strategy) {
+        String event = strategy.lastEvent() == null ? "" : strategy.lastEvent().toLowerCase();
+        if (event.contains("limit")) {
+            return "Manual Limit Buy Pending Fill";
+        }
+        if (event.contains("market")) {
+            return "Manual Market Buy Pending Fill";
+        }
+        return "Manual Buy Pending Fill";
     }
 
     private boolean isPendingOrderState(StrategyLifecycleState state) {

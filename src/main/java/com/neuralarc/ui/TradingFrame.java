@@ -124,18 +124,18 @@ public class TradingFrame extends JFrame {
     private final JToggleButton liveViewButton = new JToggleButton("Live");
     private final JLabel positionSectionTitle = new JLabel("Position");
     private final JLabel rulesSectionTitle = new JLabel("Rules Triggered");
-    private final JLabel statusBar = new JLabel("Broker: Not connected");
-    private final JLabel statusStrategyCount = new JLabel("Strategies: Active 0 | Inactive 0");
-    private final JLabel pollingSummary = new JLabel("Strategy Polling: -");
-    private final JLabel marketStatus = new JLabel("Market: Unknown");
-    private final JLabel streamStatus = new JLabel("Trade Stream: idle");
-    private final JLabel availableFundsStatus = new JLabel("Funds Available: -");
-    private final JLabel marketValueStatus = new JLabel("Market Value: -");
-    private final JLabel investedValueStatus = new JLabel("Invested Value: -");
-    private final JLabel baseBuyPendingStatus = new JLabel("Base Buy Pending Total: 0.00");
-    private final JLabel cpuUsageStatus = new JLabel("CPU: -");
-    private final JLabel memoryUsageStatus = new JLabel("Memory: -");
-    private final JLabel compactStatusSummary = new JLabel("Broker: Not connected | Market: Unknown");
+    private final JLabel statusBar = new JLabel("Not connected");
+    private final JLabel statusStrategyCount = new JLabel("Strategies 0  Active 0  Inactive 0  History 0");
+    private final JLabel pollingSummary = new JLabel("Ready");
+    private final JLabel marketStatus = new JLabel("Unknown");
+    private final JLabel streamStatus = new JLabel("idle");
+    private final JLabel availableFundsStatus = new JLabel("-");
+    private final JLabel marketValueStatus = new JLabel("-");
+    private final JLabel investedValueStatus = new JLabel("-");
+    private final JLabel baseBuyPendingStatus = new JLabel("0.00");
+    private final JLabel cpuUsageStatus = new JLabel("-");
+    private final JLabel memoryUsageStatus = new JLabel("-");
+    private final JLabel compactStatusSummary = new JLabel("Broker Not connected   Market Unknown");
     private final JButton statusDetailsButton = new JButton("Details");
     private final JLabel headerStatus = new JLabel("Status: waiting for settings");
     private static final Color STATUS_OK = new Color(34, 139, 34);
@@ -243,7 +243,7 @@ public class TradingFrame extends JFrame {
     private final SystemMetricsPresenter systemMetricsPresenter = new SystemMetricsPresenter();
     private final KillSwitchController killSwitchController;
     private final JButton refreshPortfolioButton = new JButton("Refresh & Reevaluate Portfolio");
-    private final JButton capturePortfolioButton = new JButton("Capture Portfolio");
+    private final JButton capturePortfolioButton = new JButton("Liquidate Portfolio");
     private final JLabel capturePortfolioIndicator = new JLabel("");
     private final JButton footerActionsButton = new JButton("Actions");
     private final JPopupMenu footerActionsMenu = new JPopupMenu();
@@ -449,6 +449,7 @@ public class TradingFrame extends JFrame {
         strategyEventRepository = new SqliteStrategyExecutionEventRepository(appDatabase);
         portfolioRefreshController = new PortfolioRefreshController(
                 strategyRepository,
+                strategyOrderRepository,
                 uiPollingExecutor,
                 new PortfolioRefreshController.Gateway() {
                     @Override public boolean isConnected() { return connectionOk; }
@@ -1212,7 +1213,7 @@ public class TradingFrame extends JFrame {
                     strategyTable.setRowSelectionInterval(viewRow, viewRow);
                 }
 
-                // Dispatch the action buttons (column 10 only) via five equal zones.
+                // Dispatch the action buttons (column 10 only) via equal zones.
                 // Use invokeLater so the action runs AFTER ALL mousePressed handlers
                 // (ours + BasicTableUI) have finished — this is critical because:
                 //   • BasicTableUI fires its own mousePressed AFTER ours (LIFO order).
@@ -1220,12 +1221,16 @@ public class TradingFrame extends JFrame {
                 //     ever running, leaving the table in a broken state on first click.
                 if (e.getButton() != java.awt.event.MouseEvent.BUTTON1) return;
                 if (viewRow < 0 || viewRow >= strategies.size() || viewCol != 10) return;
+                ManagedStrategy clickedStrategy = strategies.get(strategyTable.convertRowIndexToModel(viewRow));
+                boolean promoteVisible = actionViewModelFor(clickedStrategy).promoteVisible();
+                int actionCount = promoteVisible ? 5 : 4;
                 java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, viewCol, false);
                 int xInCell  = e.getX() - cellRect.x;
-                int section  = Math.max(1, cellRect.width / 5);
+                int section  = Math.max(1, cellRect.width / actionCount);
                 final int capturedRow     = viewRow;
                 final int capturedX       = xInCell;
                 final int capturedSection = section;
+                final boolean capturedPromoteVisible = promoteVisible;
                 SwingUtilities.invokeLater(() -> {
                     if (capturedX < capturedSection) {
                         editStrategy(capturedRow);
@@ -1233,7 +1238,7 @@ public class TradingFrame extends JFrame {
                         togglePauseResume(capturedRow);
                     } else if (capturedX < capturedSection * 3) {
                         sellStrategy(capturedRow);
-                    } else if (capturedX < capturedSection * 4) {
+                    } else if (capturedPromoteVisible && capturedX < capturedSection * 4) {
                         previewLivePromotion(capturedRow);
                     } else {
                         deleteStrategy(capturedRow);
@@ -1528,6 +1533,7 @@ public class TradingFrame extends JFrame {
                 compactStatusSummary,
                 statusDetailsButton,
                 statusRight,
+                statusBarPresenter,
                 () -> streamReconnectAvailable,
                 this::reconnectTradeStreamFromStatusBar
         );
@@ -2205,39 +2211,39 @@ public class TradingFrame extends JFrame {
     }
 
     private void openPortfolioCaptureDialog() {
-        userActionLog.started("Capture Portfolio");
+        userActionLog.started("Liquidate Portfolio");
         PortfolioCaptureDialog dialog = new PortfolioCaptureDialog(
                 this,
                 portfolioCaptureController::currentSnapshot,
                 config -> {
-                    userActionLog.started("Capture Portfolio Now");
+                    userActionLog.started("Liquidate Portfolio Now");
                     portfolioCaptureController.executeNow(config);
                 },
                 config -> {
-                    userActionLog.started("Capture Portfolio Monitoring");
+                    userActionLog.started("Liquidate Portfolio Monitoring");
                     portfolioCaptureController.activateMonitoring(config);
-                    userActionLog.completed("Capture Portfolio Monitoring", "Monitoring activated.");
+                    userActionLog.completed("Liquidate Portfolio Monitoring", "Monitoring activated.");
                 },
                 () -> {
                     portfolioCaptureController.emergencyStop();
-                    userActionLog.completed("Capture Portfolio Monitoring", "Monitoring deactivated.");
+                    userActionLog.completed("Liquidate Portfolio Monitoring", "Monitoring deactivated.");
                 },
                 portfolioCaptureController.monitoringActive()
         );
         boolean changed = dialog.showDialog();
         if (!changed) {
-            userActionLog.canceled("Capture Portfolio");
+            userActionLog.canceled("Liquidate Portfolio");
         }
     }
 
     private void updateCapturePortfolioUi(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
         capturePortfolioConfigForUi = active ? config : null;
         if (active) {
-            capturePortfolioButton.setText("Capture Portfolio");
+            capturePortfolioButton.setText("Liquidate Portfolio");
             startCapturePortfolioPulse();
         } else {
             stopCapturePortfolioPulse();
-            capturePortfolioButton.setText("Capture Portfolio");
+            capturePortfolioButton.setText("Liquidate Portfolio");
             capturePortfolioIndicator.setToolTipText(null);
         }
         updateCapturePortfolioIndicator(snapshot, config);
@@ -2259,7 +2265,7 @@ public class TradingFrame extends JFrame {
                 + " | Target " + targetLabel
                 + " | Progress " + Monetary.round(snapshot.targetProgressPercent()) + "%");
         capturePortfolioIndicator.setToolTipText(TooltipStyler.text(
-                "Capture Portfolio monitoring is evaluating current portfolio P&L against the configured target.",
+                "Liquidate Portfolio monitoring is evaluating current portfolio P&L against the configured target.",
                 320
         ));
     }
@@ -2271,16 +2277,16 @@ public class TradingFrame extends JFrame {
             }
             if (state == PortfolioCaptureAutomationState.PAUSED_MARKET_CLOSED) {
                 stopCapturePortfolioPulse();
-                capturePortfolioButton.setText("Capture Portfolio:Auto Paused [Closed Market]");
+                capturePortfolioButton.setText("Liquidate Portfolio:Auto Paused [Closed Market]");
                 capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
                 capturePortfolioIndicator.setToolTipText(TooltipStyler.text(
-                        "Capture Portfolio automation is configured but paused because the market session is closed. "
+                        "Liquidate Portfolio automation is configured but paused because the market session is closed. "
                                 + "It resumes automatically when the configured regular or extended-hours session opens.",
                         360
                 ));
             } else if (portfolioCaptureController.monitoringActive()
                     && state == PortfolioCaptureAutomationState.MONITORING) {
-                capturePortfolioButton.setText("Capture Portfolio");
+                capturePortfolioButton.setText("Liquidate Portfolio");
                 capturePortfolioButton.setToolTipText(capturePortfolioDefaultTooltip());
                 capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_ACTIVE_TEXT);
                 startCapturePortfolioPulse();
@@ -2302,7 +2308,7 @@ public class TradingFrame extends JFrame {
             text.append(" | Loops ").append(loopCount);
         }
         if (summary != null && summary.captureCount() > 0) {
-            text.append(" | Capture Total P&L $").append(Monetary.round(summary.actualPnl()));
+            text.append(" | Liquidation Total P&L $").append(Monetary.round(summary.actualPnl()));
         }
         if (config != null && config.autoCleanPendingBeforeCycle()) {
             text.append(" | Pending Buy Orders Cancelled ").append(pendingCanceled);
@@ -2314,18 +2320,18 @@ public class TradingFrame extends JFrame {
         PortfolioCaptureHistoryStore.Summary summary = portfolioCaptureController.captureHistorySummary();
         String history = summary == null || summary.captureCount() == 0
                 ? ""
-                : " Total capture P&L is cumulative across completed portfolio captures. Captures="
+                : " Total liquidation P&L is cumulative across completed portfolio liquidations. Runs="
                 + summary.captureCount()
-                + ", stocks captured="
+                + ", stocks liquidated="
                 + summary.capturedStocks()
                 + ", estimated P&L=$"
                 + Monetary.round(summary.estimatedPnl())
                 + ", actual P&L=$"
                 + Monetary.round(summary.actualPnl())
                 + ".";
-        return "Loops is the number of completed continuous capture/re-entry cycles. "
+        return "Loops is the number of completed continuous liquidation/re-entry cycles. "
                 + "Pending Buy Orders Cancelled is the number of pending base buy limit orders automatically cancelled "
-                + "by Capture Portfolio cleanup before capture or re-entry."
+                + "by Liquidate Portfolio cleanup before liquidation or re-entry."
                 + history;
     }
 
@@ -2338,7 +2344,7 @@ public class TradingFrame extends JFrame {
                 " | Loops ",
                 " | Pending Buy Orders Cancelled ",
                 " | Pending Cancelled ",
-                " | Capture Total P&L ",
+                " | Liquidation Total P&L ",
                 " | State "
         );
         return marker < 0 ? text : text.substring(0, marker);
@@ -2357,7 +2363,7 @@ public class TradingFrame extends JFrame {
 
     private String capturePortfolioDefaultTooltip() {
         return TooltipStyler.text(
-                "Capture all portfolio profits/losses now, or automatically when the portfolio reaches a target profit.",
+                "Liquidate all portfolio profits/losses now, or automatically when the portfolio reaches a target profit.",
                 340
         );
     }
@@ -2388,7 +2394,7 @@ public class TradingFrame extends JFrame {
         if (apiKey.isBlank() || apiSecret.isBlank()) {
             return "Skipped: Alpaca credentials are required.";
         }
-        log("[Portfolio Capture] Auto re-entry started. mode=" + config.reentryMode()
+        log("[Portfolio Liquidation] Auto re-entry started. mode=" + config.reentryMode()
                 + " quantity=" + config.reentryQuantity()
                 + " term=" + config.reentryRecommendationType()
                 + " luckyStrategy=" + config.reentryLuckyStrategy());
@@ -2397,7 +2403,7 @@ public class TradingFrame extends JFrame {
         try {
             stocks.addAll(portfolioCaptureLuckyStocks(config, apiKey, apiSecret, marketDataApi));
         } catch (Exception ex) {
-            log("[Portfolio Capture] Auto re-entry failed to fetch I Am Feeling Lucky stocks: " + ex.getMessage());
+            log("[Portfolio Liquidation] Auto re-entry failed to fetch I Am Feeling Lucky stocks: " + ex.getMessage());
             return "Skipped: unable to fetch lucky stocks.";
         }
         List<LuckySimulationSelection> selections = new LuckyPortfolioAutomationService(marketDataApi, this::log)
@@ -2429,7 +2435,7 @@ public class TradingFrame extends JFrame {
             @Override public void log(String message) { TradingFrame.this.log(message); }
         }, config.reentryMode());
         LuckySimulationPlacementController.PlacementResult result = controller.place(selections);
-        log("[Portfolio Capture] Auto re-entry generated positions. created=" + result.created()
+        log("[Portfolio Liquidation] Auto re-entry generated positions. created=" + result.created()
                 + " replaced=" + result.replaced() + " skipped=" + result.skipped());
         return controller.summaryMessage(result).replace('\n', ' ');
     }
@@ -2444,7 +2450,7 @@ public class TradingFrame extends JFrame {
             List<TrendingStock> stocks = LuckyTrendingStocksDialog.diversifiedTop20Stocks(
                     symbol -> latestPriceForPortfolioCaptureAutomation(symbol, marketDataApi)
             );
-            log("[Portfolio Capture] Auto re-entry using Top 20 Diversified Stocks. symbols="
+            log("[Portfolio Liquidation] Auto re-entry using Top 20 Diversified Stocks. symbols="
                     + stocks.stream().map(TrendingStock::symbol).toList());
             return stocks;
         }
@@ -2452,7 +2458,7 @@ public class TradingFrame extends JFrame {
         List<TrendingStock> stocks = new ArrayList<>();
         stocks.addAll(groups.gainers());
         stocks.addAll(groups.losers());
-        log("[Portfolio Capture] Auto re-entry using Volatile Strategy. gainers="
+        log("[Portfolio Liquidation] Auto re-entry using Volatile Strategy. gainers="
                 + groups.gainers().stream().map(TrendingStock::symbol).toList()
                 + " losers=" + groups.losers().stream().map(TrendingStock::symbol).toList());
         return stocks;
@@ -2471,14 +2477,14 @@ public class TradingFrame extends JFrame {
             }
             return bars.get(bars.size() - 1).close();
         } catch (Exception ex) {
-            log("[Portfolio Capture] Price fetch fallback used for " + symbol + ": " + ex.getMessage());
+            log("[Portfolio Liquidation] Price fetch fallback used for " + symbol + ": " + ex.getMessage());
             return BigDecimal.ZERO;
         }
     }
 
     private void setCapturePortfolioBusy(boolean busy) {
         capturePortfolioButton.setEnabled(!busy);
-        capturePortfolioButton.setText(busy ? "Capturing..." : "Capture Portfolio");
+        capturePortfolioButton.setText(busy ? "Liquidating..." : "Liquidate Portfolio");
     }
 
     private void startCapturePortfolioPulse() {
@@ -2513,14 +2519,14 @@ public class TradingFrame extends JFrame {
     private void showPortfolioCaptureSummary(PortfolioCaptureExecutionResult result, boolean targetTriggered) {
         if (targetTriggered) {
             JOptionPane.showMessageDialog(this,
-                    "Portfolio target reached. Capture executed successfully.",
-                    "Capture Portfolio",
+                    "Portfolio target reached. Liquidation executed successfully.",
+                    "Liquidate Portfolio",
                     JOptionPane.INFORMATION_MESSAGE);
         }
         JOptionPane.showMessageDialog(this,
                 "<html><body style='width:420px'>"
-                        + "<b>Portfolio Capture Summary</b><br><br>"
-                        + "Total Stocks Captured: " + result.capturedCount() + "<br>"
+                        + "<b>Portfolio Liquidation Summary</b><br><br>"
+                        + "Total Stocks Liquidated: " + result.capturedCount() + "<br>"
                         + "Total Investment: $" + Monetary.round(result.totalInvestment()) + "<br>"
                         + "Estimated Portfolio Value: $" + Monetary.round(result.estimatedPortfolioValue()) + "<br>"
                         + "Actual Broker Execution Value: $" + Monetary.round(result.actualBrokerExecutionValue()) + "<br>"
@@ -2531,9 +2537,9 @@ public class TradingFrame extends JFrame {
                         + "Timestamp: " + result.timestamp() + "<br><br>"
                         + (result.failures().isEmpty() ? "" : "<b>Failures:</b><br>" + String.join("<br>", result.failures()))
                         + "</body></html>",
-                "Portfolio Capture Summary",
+                "Portfolio Liquidation Summary",
                 result.failures().isEmpty() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
-        userActionLog.completed("Capture Portfolio", "Captured " + result.capturedCount() + " stock(s).");
+        userActionLog.completed("Liquidate Portfolio", "Liquidated " + result.capturedCount() + " stock(s).");
     }
 
     private String portfolioCaptureHistorySummaryHtml() {
@@ -2541,9 +2547,9 @@ public class TradingFrame extends JFrame {
         if (summary == null || summary.captureCount() == 0) {
             return "";
         }
-        return "<br><b>Cumulative Capture History</b><br>"
-                + "Capture Runs: " + summary.captureCount() + "<br>"
-                + "Stocks Captured: " + summary.capturedStocks() + "<br>"
+        return "<br><b>Cumulative Liquidation History</b><br>"
+                + "Liquidation Runs: " + summary.captureCount() + "<br>"
+                + "Stocks Liquidated: " + summary.capturedStocks() + "<br>"
                 + "Total Estimated P&L: $" + Monetary.round(summary.estimatedPnl()) + "<br>"
                 + "Total Actual P&L: $" + Monetary.round(summary.actualPnl()) + "<br>"
                 + "Total Broker Execution Value: $" + Monetary.round(summary.actualBrokerExecutionValue()) + "<br><br>";
@@ -3921,8 +3927,36 @@ public class TradingFrame extends JFrame {
         resetPollingCountdown(entry);
         updateHeaderModeStatus(currentBrokerType);
         refreshStrategyTableData();
+        refreshEditedStrategyBrokerSnapshotAsync(updatedResult.get().id());
         refreshPanels();
         userActionLog.completed("Edit Strategy " + updatedResult.get().symbol(), "Strategy saved.");
+    }
+
+    private void refreshEditedStrategyBrokerSnapshotAsync(String strategyId) {
+        if (strategyId == null || strategyId.isBlank() || currentBrokerType != BrokerType.ALPACA) {
+            return;
+        }
+        uiPollingExecutor.execute(() -> {
+            Optional<Strategy> persisted = strategyRepository.findById(strategyId);
+            if (persisted.isEmpty()) {
+                return;
+            }
+            Map<String, Position> snapshots = loadPositionSnapshotsForStrategies(List.of(persisted.get()));
+            if (snapshots.isEmpty()) {
+                return;
+            }
+            SwingUtilities.invokeLater(() -> {
+                Strategy latest = strategyRepository.findById(strategyId).orElse(persisted.get());
+                ManagedStrategy managed = findStrategyById(strategyId);
+                if (managed != null) {
+                    managed.syncFrom(latest);
+                }
+                applyPositionSnapshots(snapshots);
+                refreshStrategyTableData();
+                refreshPanels();
+                updateStatusBar();
+            });
+        });
     }
 
     private String closePaperAccountState(Strategy strategy) {
@@ -4873,16 +4907,16 @@ public class TradingFrame extends JFrame {
     private void setStatus(String message, Color color) {
         SwingUtilities.invokeLater(() -> {
             if (message != null && message.startsWith("FAILED")) {
-                statusBar.setText("<html>Broker: <b>FAILED</b> Retrying...</html>");
+                statusBar.setText("<html><b>FAILED</b> Retrying...</html>");
             } else {
-                statusBar.setText("Broker: " + message);
+                statusBar.setText(message == null || message.isBlank() ? "-" : message);
             }
             statusBar.setForeground(color == null ? BOTTOM_STATUS_ACCENT : color);
         });
     }
 
     private String connectionModeStatus(BrokerType brokerType) {
-        return "Broker: Alpaca | Mode: " + selectedModeLabel();
+        return "Alpaca  Mode " + selectedModeLabel();
     }
 
     private String gridBrokerModeLabel(Strategy strategy) {
@@ -4931,7 +4965,7 @@ public class TradingFrame extends JFrame {
         JPanel panel = new JPanel(new BorderLayout(8, 0));
         panel.setOpaque(false);
         // Horizontal insets (14px) match the bottom status-bar padding so the search
-        // field and the Capture Portfolio button sit at the same visual margin as the
+        // field and the Liquidate Portfolio button sit at the same visual margin as the
         // rest of the chrome. Vertical insets match the header bar (6px top/bottom).
         panel.setBorder(new EmptyBorder(6, 14, 6, 14));
         JPanel searchControls = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
@@ -5241,6 +5275,9 @@ public class TradingFrame extends JFrame {
                         marketStatusViewModel.tooltip(),
                         marketStatusViewModel.openForUi(),
                         marketValueText,
+                        investedValueText,
+                        availableFundsText,
+                        baseBuyPendingTotalText,
                         cpuText,
                         memoryText
                 )
@@ -5253,10 +5290,10 @@ public class TradingFrame extends JFrame {
             marketStatus.setText(statusBarViewModel.marketText());
             marketStatus.setForeground(statusToneColor(statusBarViewModel.marketTone()));
             marketStatus.setToolTipText(TooltipStyler.text(statusBarViewModel.marketTooltip()));
-            availableFundsStatus.setText(availableFundsText);
+            availableFundsStatus.setText(statusBarViewModel.availableFundsText());
             marketValueStatus.setText(statusBarViewModel.marketValueText());
-            investedValueStatus.setText(investedValueText);
-            baseBuyPendingStatus.setText(baseBuyPendingTotalText);
+            investedValueStatus.setText(statusBarViewModel.investedValueText());
+            baseBuyPendingStatus.setText(statusBarViewModel.baseBuyPendingText());
             cpuUsageStatus.setText(statusBarViewModel.cpuText());
             memoryUsageStatus.setText(statusBarViewModel.memoryText());
             statusBar.setText(statusBarViewModel.brokerText());
@@ -5421,6 +5458,7 @@ public class TradingFrame extends JFrame {
         if (capturePortfolioPulseTimer != null) {
             capturePortfolioPulseTimer.stop();
         }
+        bottomStatusBars.shutdown();
         portfolioCaptureController.shutdown();
         strategyPollingTimer.stop();
         uiPollingExecutor.shutdownNow();
@@ -5905,6 +5943,16 @@ public class TradingFrame extends JFrame {
             int modelRow = table.convertRowIndexToModel(row);
             ManagedStrategy strategy = strategies.get(modelRow);
             StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = actionViewModelFor(strategy);
+            removeAll();
+            int actionCount = actionsViewModel.promoteVisible() ? 5 : 4;
+            setLayout(new GridLayout(1, actionCount, 6, 0));
+            add(editButton);
+            add(toggleButton);
+            add(sellButton);
+            if (actionsViewModel.promoteVisible()) {
+                add(promoteButton);
+            }
+            add(deleteButton);
             toggleButton.setText("");
             String toggleIconPath = actionsViewModel.toggleIconPath();
             String currentToggleIconPath = (String) toggleButton.getClientProperty("toggleIconPath");
@@ -5917,6 +5965,7 @@ public class TradingFrame extends JFrame {
             sellButton.setEnabled(actionsViewModel.sellEnabled());
             styleIconOnlyActionButton(sellButton, actionsViewModel.sellColor());
             promoteButton.setEnabled(actionsViewModel.promoteEnabled());
+            promoteButton.setVisible(actionsViewModel.promoteVisible());
             styleActionButton(promoteButton, actionsViewModel.promoteColor());
             editButton.setToolTipText(TooltipStyler.text("Edit strategy rules, limits, and settings."));
             toggleButton.setToolTipText(actionsViewModel.toggleEnabled()
@@ -5959,7 +6008,8 @@ public class TradingFrame extends JFrame {
         StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = actionViewModelFor(strategy);
         java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, 10, false);
         int xInCell = mouseX - cellRect.x;
-        int section = Math.max(1, cellRect.width / 5);
+        int actionCount = actionsViewModel.promoteVisible() ? 5 : 4;
+        int section = Math.max(1, cellRect.width / actionCount);
         if (xInCell < section) {
             return TooltipStyler.text("Edit strategy rules, limits, and settings.");
         }
@@ -5973,7 +6023,7 @@ public class TradingFrame extends JFrame {
                     ? TooltipStyler.text("Sell the open position for this strategy.")
                     : TooltipStyler.text("Sell is available only when Alpaca shows an open position for this strategy.");
         }
-        if (xInCell < section * 4) {
+        if (actionsViewModel.promoteVisible() && xInCell < section * 4) {
             return actionsViewModel.promoteEnabled()
                     ? TooltipStyler.text("Promote this PAPER strategy to LIVE.")
                     : TooltipStyler.text("Promote is available only for eligible PAPER strategies.");
@@ -6224,12 +6274,12 @@ public class TradingFrame extends JFrame {
             boolean error = normalized.equalsIgnoreCase("error");
             streamReconnectAvailable = error;
             if (error) {
-                streamStatus.setText("<html>Trade Stream: <b>error</b> "
+                streamStatus.setText("<html><b>error</b> "
                         + "<span style='color:#2F80ED; text-decoration:underline;'>Reconnect</span></html>");
                 streamStatus.setToolTipText(TooltipStyler.text("Click Reconnect to open the Alpaca trade stream WebSocket again."));
                 streamStatus.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
             } else {
-                streamStatus.setText("Trade Stream: " + normalized);
+                streamStatus.setText(normalized);
                 streamStatus.setToolTipText(null);
                 streamStatus.setCursor(Cursor.getDefaultCursor());
                 String lower = normalized.toLowerCase(Locale.ROOT);

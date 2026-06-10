@@ -2,7 +2,6 @@ package com.neuralarc.ui;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
-import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
@@ -24,9 +23,8 @@ final class BottomStatusBars {
     private static final int COMPACT_THRESHOLD_PX = 1280;
     private static final String STATUS_CARD_FULL = "full";
     private static final String STATUS_CARD_COMPACT = "compact";
-    private static final String INLINE_GROUP_SEPARATOR = " · ";
-    private static final String GROUP_SEPARATOR = ".";
-    private static final String COMPACT_SEPARATOR = " . ";
+    private static final String COMPACT_SEPARATOR = "   ";
+    private static final Color ITEM_LABEL_COLOR = new Color(126, 132, 146);
 
     private final Font baseFont;
     private final Color accentColor;
@@ -43,6 +41,7 @@ final class BottomStatusBars {
     private final JLabel baseBuyPendingStatus;
     private final JLabel compactStatusSummary;
     private final JButton statusDetailsButton;
+    private final NetworkConnectionStatusIndicator networkConnectionStatus;
 
     private final JPanel statusBarPanel;
     private final JPanel portfolioStatusBarPanel;
@@ -67,6 +66,7 @@ final class BottomStatusBars {
             JLabel compactStatusSummary,
             JButton statusDetailsButton,
             JPanel statusRight,
+            StatusBarPresenter statusBarPresenter,
             BooleanSupplier streamReconnectAvailable,
             Runnable reconnectTradeStreamAction
     ) {
@@ -85,6 +85,7 @@ final class BottomStatusBars {
         this.baseBuyPendingStatus = baseBuyPendingStatus;
         this.compactStatusSummary = compactStatusSummary;
         this.statusDetailsButton = statusDetailsButton;
+        this.networkConnectionStatus = new NetworkConnectionStatusIndicator(statusBarPresenter);
 
         forceLeftAlignment();
 
@@ -126,6 +127,7 @@ final class BottomStatusBars {
                 BorderFactory.createEmptyBorder(2, 14, 2, 14)
         ));
         this.portfolioStatusBarPanel.add(buildPortfolioLeft(), BorderLayout.WEST);
+        this.portfolioStatusBarPanel.add(buildNetworkStatusRight(), BorderLayout.EAST);
 
         applyModeBackground(initialBackground);
         updateLayoutMode();
@@ -163,28 +165,32 @@ final class BottomStatusBars {
         statusDetailsButton.setToolTipText(detailsTooltip);
     }
 
+    void shutdown() {
+        networkConnectionStatus.shutdown();
+    }
+
     private JPanel buildMainStatusLeft() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setOpaque(false);
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridy = 0;
-        gbc.anchor = GridBagConstraints.WEST;
         int column = 0;
-        column = addStatusSegment(panel, gbc, column, createStatusGroup(statusBar, marketStatus, streamStatus), true);
-        column = addStatusSegment(panel, gbc, column, createStatusGroup(cpuUsageStatus, memoryUsageStatus), true);
-        addStatusSegment(panel, gbc, column, createStatusGroup(pollingSummary), false);
+        column = addStatusItem(panel, column, "Broker", statusBar);
+        column = addStatusItem(panel, column, "Market", marketStatus);
+        column = addStatusItem(panel, column, "Stream", streamStatus);
+        column = addStatusItem(panel, column, "Polling", pollingSummary);
+        column = addStatusItem(panel, column, "CPU", cpuUsageStatus);
+        addStatusItem(panel, column, "Memory", memoryUsageStatus);
         return panel;
     }
 
     private JPanel buildPortfolioLeft() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setOpaque(false);
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridy = 0;
-        gbc.anchor = GridBagConstraints.WEST;
         int column = 0;
-        column = addStatusSegment(panel, gbc, column, createStatusGroup(statusStrategyCount), true);
-        addStatusSegment(panel, gbc, column, createPortfolioValueSegment(), false);
+        column = addStatusItem(panel, column, "Records", statusStrategyCount);
+        column = addStatusItem(panel, column, "Funds", availableFundsStatus);
+        column = addStatusItem(panel, column, "Market Value", marketValueStatus);
+        column = addStatusItem(panel, column, "Invested", investedValueStatus);
+        addStatusItem(panel, column, "Pending Buys", baseBuyPendingStatus);
         return panel;
     }
 
@@ -205,99 +211,59 @@ final class BottomStatusBars {
         return panel;
     }
 
-    private JPanel createStatusGroup(JComponent... components) {
-        JPanel panel = new JPanel(new BorderLayout());
+    private JPanel buildNetworkStatusRight() {
+        JPanel panel = new JPanel(new GridBagLayout());
         panel.setOpaque(false);
-        panel.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
-
-        JPanel content = new JPanel(new GridBagLayout());
-        content.setOpaque(false);
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridy = 0;
-        gbc.anchor = GridBagConstraints.WEST;
-        for (int i = 0; i < components.length; i++) {
-            gbc.gridx = i * 2;
-            gbc.insets = new java.awt.Insets(0, i == 0 ? 0 : 2, 0, 0);
-            content.add(components[i], gbc);
-            if (i < components.length - 1) {
-                gbc.gridx = i * 2 + 1;
-                gbc.insets = new java.awt.Insets(0, 6, 0, 6);
-                content.add(createInlineStatusSeparator(), gbc);
-            }
-        }
-        panel.add(content, BorderLayout.CENTER);
+        gbc.anchor = GridBagConstraints.CENTER;
+        gbc.gridx = 0;
+        gbc.insets = new java.awt.Insets(0, 0, 0, 0);
+        panel.add(networkConnectionStatus.component(), gbc);
         return panel;
     }
 
-    private int addStatusSegment(
-            JPanel statusPanel,
-            GridBagConstraints constraints,
-            int column,
-            JComponent segment,
-            boolean separatorAfter
-    ) {
+    private int addStatusItem(JPanel statusPanel, int column, String labelText, JLabel valueLabel) {
+        GridBagConstraints constraints = new GridBagConstraints();
         constraints.gridx = column;
-        constraints.insets = new java.awt.Insets(0, 0, 0, 0);
-        statusPanel.add(segment, constraints);
-        if (!separatorAfter) {
-            return column + 1;
-        }
-        constraints.gridx = column + 1;
-        constraints.insets = new java.awt.Insets(0, 8, 0, 8);
-        statusPanel.add(createStatusSeparator(), constraints);
-        return column + 2;
+        constraints.gridy = 0;
+        constraints.anchor = GridBagConstraints.WEST;
+        constraints.insets = new java.awt.Insets(0, column == 0 ? 0 : 10, 0, 0);
+        statusPanel.add(createStatusItem(labelText, valueLabel), constraints);
+        return column + 1;
     }
 
-    private JComponent createStatusSeparator() {
-        JLabel separator = new JLabel(GROUP_SEPARATOR);
-        separator.setFont(baseFont.deriveFont(Font.BOLD, 11f));
-        separator.setForeground(new Color(86, 92, 108));
-        separator.setHorizontalAlignment(SwingConstants.CENTER);
-        return separator;
-    }
-
-    private JPanel createPortfolioValueSegment() {
+    private JPanel createStatusItem(String labelText, JLabel valueLabel) {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setOpaque(false);
-        panel.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
+        panel.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 0));
+
+        JLabel label = new JLabel(labelText);
+        label.setFont(baseFont.deriveFont(Font.PLAIN, 9f));
+        label.setForeground(ITEM_LABEL_COLOR);
+        label.setHorizontalAlignment(SwingConstants.LEFT);
+
+        valueLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridy = 0;
         gbc.anchor = GridBagConstraints.WEST;
         gbc.gridx = 0;
-        gbc.insets = new java.awt.Insets(0, 0, 0, 6);
-        panel.add(availableFundsStatus, gbc);
+        gbc.insets = new java.awt.Insets(0, 0, 0, 4);
+        panel.add(label, gbc);
         gbc.gridx = 1;
-        panel.add(createInlineStatusSeparator(), gbc);
-        gbc.gridx = 2;
-        panel.add(marketValueStatus, gbc);
-        gbc.gridx = 3;
-        panel.add(createInlineStatusSeparator(), gbc);
-        gbc.gridx = 4;
-        gbc.insets = new java.awt.Insets(0, 0, 0, 6);
-        panel.add(investedValueStatus, gbc);
-        gbc.gridx = 5;
-        panel.add(createInlineStatusSeparator(), gbc);
-        gbc.gridx = 6;
         gbc.insets = new java.awt.Insets(0, 0, 0, 0);
-        panel.add(baseBuyPendingStatus, gbc);
+        panel.add(valueLabel, gbc);
         return panel;
-    }
-
-    private JLabel createInlineStatusSeparator() {
-        JLabel separator = new JLabel(INLINE_GROUP_SEPARATOR);
-        separator.setFont(baseFont.deriveFont(Font.BOLD, 11f));
-        separator.setForeground(new Color(102, 108, 122));
-        return separator;
     }
 
     private String compactStatusSummaryText(StatusBarPresenter.StatusBarViewModel model, String availableFundsText) {
         String broker = stripHtmlTags(model.brokerText());
         String market = model.marketText();
-        String funds = availableFundsText == null || availableFundsText.isBlank()
-                ? "Funds: -"
-                : availableFundsText.replace("Funds Available:", "Funds");
-        return broker + COMPACT_SEPARATOR + market + COMPACT_SEPARATOR + funds
-                + COMPACT_SEPARATOR + stripHtmlTags(baseBuyPendingStatus.getText());
+        String funds = model.availableFundsText() == null || model.availableFundsText().isBlank()
+                ? "-"
+                : model.availableFundsText();
+        return "Broker " + broker + COMPACT_SEPARATOR + "Market " + market + COMPACT_SEPARATOR + "Funds " + funds
+                + COMPACT_SEPARATOR + "Pending " + model.baseBuyPendingText();
     }
 
     private String statusBarDetailsHtml(StatusBarPresenter.StatusBarViewModel model) {
@@ -306,12 +272,12 @@ final class BottomStatusBars {
                 + "<br><b>Records</b>: " + escapeHtml(model.strategyCountText())
                 + "<br><b>Polling</b>: " + escapeHtml(model.pollingText())
                 + "<br><b>Trade Stream</b>: " + escapeHtml(stripHtmlTags(streamStatus.getText()))
-                + "<br><b>Funds</b>: " + escapeHtml(stripHtmlTags(availableFundsStatus.getText()))
-                + "<br><b>Market Value</b>: " + escapeHtml(stripHtmlTags(marketValueStatus.getText()))
-                + "<br><b>Invested Value</b>: " + escapeHtml(stripHtmlTags(investedValueStatus.getText()))
-                + "<br><b>Base Buy Pending Total</b>: " + escapeHtml(stripHtmlTags(baseBuyPendingStatus.getText()))
-                + "<br><b>CPU</b>: " + escapeHtml(stripHtmlTags(cpuUsageStatus.getText()))
-                + "<br><b>Memory</b>: " + escapeHtml(stripHtmlTags(memoryUsageStatus.getText()));
+                + "<br><b>Funds</b>: " + escapeHtml(model.availableFundsText())
+                + "<br><b>Market Value</b>: " + escapeHtml(model.marketValueText())
+                + "<br><b>Invested Value</b>: " + escapeHtml(model.investedValueText())
+                + "<br><b>Pending Buys</b>: " + escapeHtml(model.baseBuyPendingText())
+                + "<br><b>CPU</b>: " + escapeHtml(model.cpuText())
+                + "<br><b>Memory</b>: " + escapeHtml(model.memoryText());
     }
 
     private String stripHtmlTags(String text) {

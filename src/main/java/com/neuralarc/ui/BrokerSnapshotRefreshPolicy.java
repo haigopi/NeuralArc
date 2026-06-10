@@ -14,7 +14,8 @@ final class BrokerSnapshotRefreshPolicy {
 
     static boolean eligibleForBrokerSnapshot(Strategy strategy) {
         return strategy != null
-                && strategy.status() == StrategyStatus.ACTIVE
+                && strategy.status() != StrategyStatus.ARCHIVED
+                && strategy.status() != StrategyStatus.STOPPED
                 && strategy.symbol() != null
                 && !strategy.symbol().isBlank();
     }
@@ -39,4 +40,3 @@ final class BrokerSnapshotRefreshPolicy {
         return Math.max(MINIMUM_FLOOR_INTERVAL_MILLIS, minimum);
     }
 }
-

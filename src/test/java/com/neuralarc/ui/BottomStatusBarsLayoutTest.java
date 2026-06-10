@@ -52,7 +52,7 @@ class BottomStatusBarsLayoutTest {
     }
 
     @Test
-    void usesDotSeparatorsAcrossGroupedStatusItems() {
+    void removesSeparatorLabelsAcrossStatusItems() {
         BottomStatusBarsFixture fixture = new BottomStatusBarsFixture();
         BottomStatusBars bars = fixture.bars();
 
@@ -61,12 +61,23 @@ class BottomStatusBarsLayoutTest {
         long pipes = countLabelsWithText(bars.mainBarPanel(), "|")
                 + countLabelsWithText(bars.portfolioBarPanel(), "|");
 
-        assertTrue(dots >= 3, "Expected dot separators in grouped sections of both bars.");
-        assertEquals(0L, pipes, "Pipe separators should no longer appear in grouped status sections.");
+        assertEquals(0L, dots, "Dot separators should not appear in redesigned status sections.");
+        assertEquals(0L, pipes, "Pipe separators should not appear in redesigned status sections.");
+        assertTrue(countLabelsWithText(bars.mainBarPanel(), "Broker") > 0);
+        assertTrue(countLabelsWithText(bars.portfolioBarPanel(), "Funds") > 0);
     }
 
     @Test
-    void compactSummaryUsesDotSeparator() {
+    void placesWifiIndicatorOnUpperPortfolioBarRightSide() {
+        BottomStatusBarsFixture fixture = new BottomStatusBarsFixture();
+        BottomStatusBars bars = fixture.bars();
+
+        assertTrue(containsAccessibleComponent(bars.portfolioBarPanel(), "Internet connection status"));
+        assertFalse(containsAccessibleComponent(bars.mainBarPanel(), "Internet connection status"));
+    }
+
+    @Test
+    void compactSummaryUsesSpacingWithoutOldSeparators() {
         BottomStatusBarsFixture fixture = new BottomStatusBarsFixture();
         StatusBarPresenter presenter = new StatusBarPresenter();
         StatusBarPresenter.StatusBarViewModel vm = presenter.present(new StatusBarPresenter.StatusBarState(
@@ -83,14 +94,18 @@ class BottomStatusBarsLayoutTest {
                 "tooltip",
                 true,
                 "Market Value: $100",
+                "Invested Value: $80",
+                "Funds Available: $500",
+                "Base Buy Pending Total: $20",
                 "CPU: 10%",
                 "Memory: 120 MB"
         ));
 
         fixture.bars().updateCompactSummaryAndDetails(vm, "Funds Available: $500");
 
-        assertTrue(fixture.compactStatusSummary.getText().contains(" . "));
+        assertTrue(fixture.compactStatusSummary.getText().contains("   "));
         assertFalse(fixture.compactStatusSummary.getText().contains(" | "));
+        assertFalse(fixture.compactStatusSummary.getText().contains(" . "));
     }
 
     private long countLabelsWithText(Container root, String text) {
@@ -106,19 +121,32 @@ class BottomStatusBarsLayoutTest {
         return count;
     }
 
+    private boolean containsAccessibleComponent(Container root, String accessibleName) {
+        for (Component child : root.getComponents()) {
+            if (child.getAccessibleContext() != null
+                    && accessibleName.equals(child.getAccessibleContext().getAccessibleName())) {
+                return true;
+            }
+            if (child instanceof Container nested && containsAccessibleComponent(nested, accessibleName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static final class BottomStatusBarsFixture {
-        private final JLabel statusBar = new JLabel("Broker: Connected");
-        private final JLabel marketStatus = new JLabel("Market: Open");
-        private final JLabel streamStatus = new JLabel("Trade Stream: connected");
-        private final JLabel pollingSummary = new JLabel("Strategy Polling: Running");
-        private final JLabel cpuUsageStatus = new JLabel("CPU: 12%");
-        private final JLabel memoryUsageStatus = new JLabel("Memory: 256 MB");
-        private final JLabel statusStrategyCount = new JLabel("Records: 4");
-        private final JLabel availableFundsStatus = new JLabel("Funds Available: $1000");
-        private final JLabel marketValueStatus = new JLabel("Market Value: $1200");
-        private final JLabel investedValueStatus = new JLabel("Invested Value: $900");
-        private final JLabel baseBuyPendingStatus = new JLabel("Base Buy Pending Total: $500");
-        private final JLabel compactStatusSummary = new JLabel("Broker: Connected");
+        private final JLabel statusBar = new JLabel("Connected");
+        private final JLabel marketStatus = new JLabel("Open");
+        private final JLabel streamStatus = new JLabel("connected");
+        private final JLabel pollingSummary = new JLabel("Running");
+        private final JLabel cpuUsageStatus = new JLabel("12%");
+        private final JLabel memoryUsageStatus = new JLabel("256 MB");
+        private final JLabel statusStrategyCount = new JLabel("Strategies 4");
+        private final JLabel availableFundsStatus = new JLabel("$1000");
+        private final JLabel marketValueStatus = new JLabel("$1200");
+        private final JLabel investedValueStatus = new JLabel("$900");
+        private final JLabel baseBuyPendingStatus = new JLabel("$500");
+        private final JLabel compactStatusSummary = new JLabel("Broker Connected");
         private final JButton statusDetailsButton = new JButton("Details");
         private final BottomStatusBars bars;
 
@@ -143,6 +171,7 @@ class BottomStatusBarsLayoutTest {
                     compactStatusSummary,
                     statusDetailsButton,
                     statusRight,
+                    new StatusBarPresenter(),
                     () -> false,
                     () -> {
                     }

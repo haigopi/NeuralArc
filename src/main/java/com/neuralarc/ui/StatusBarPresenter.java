@@ -1,15 +1,17 @@
 package com.neuralarc.ui;
 
 public final class StatusBarPresenter {
+    public static final String NETWORK_ICON_PATH = "icons/wifi.svg";
+
     public StatusBarViewModel present(StatusBarState state) {
-        String pollingText = "Strategy Polling: Ready";
+        String pollingText = "Ready";
         Tone pollingTone = Tone.DEFAULT;
         if (state.pollCycleEvaluated()) {
             if (state.pollMarketClosedSuppressed()) {
-                pollingText = "Strategy Polling: Paused for market close";
+                pollingText = "Paused for market close";
                 pollingTone = Tone.MUTED;
             } else {
-                pollingText = "Strategy Polling: Active";
+                pollingText = "Active";
                 pollingTone = Tone.OK;
             }
         }
@@ -17,38 +19,61 @@ public final class StatusBarPresenter {
         String brokerText;
         Tone brokerTone;
         if (state.connectionRetryPending()) {
-            brokerText = "<html>Broker: <b>FAILED</b> Retrying...</html>";
+            brokerText = "<html><b>FAILED</b> Retrying...</html>";
             brokerTone = Tone.ERR;
         } else if (!state.connectionOk()) {
-            brokerText = "Broker: Not connected";
+            brokerText = "Not connected";
             brokerTone = Tone.ERR;
         } else if (state.runningStrategies() > 0) {
-            brokerText = "Broker: Connected";
+            brokerText = "Connected";
             brokerTone = Tone.OK;
         } else if (state.inactiveStrategies() > 0) {
-            brokerText = "Broker: Connected (No active strategies)";
+            brokerText = "Connected (No active)";
             brokerTone = Tone.WARN;
         } else {
-            brokerText = "Broker: Connected (No strategies)";
+            brokerText = "Connected (No strategies)";
             brokerTone = Tone.WARN;
         }
 
         return new StatusBarViewModel(
-                "Records: Strategies " + (state.runningStrategies() + state.inactiveStrategies())
-                        + " (Active " + state.runningStrategies()
-                        + ", Inactive " + state.inactiveStrategies()
-                        + ") | Trade History " + state.historyRows(),
+                "Strategies " + (state.runningStrategies() + state.inactiveStrategies())
+                        + "  Active " + state.runningStrategies()
+                        + "  Inactive " + state.inactiveStrategies()
+                        + "  History " + state.historyRows(),
                 pollingText,
                 pollingTone,
-                state.marketLabel(),
+                removePrefix(state.marketLabel(), "Market:"),
                 state.marketTooltip(),
                 state.marketOpenForUi() ? Tone.OK : Tone.WARN,
-                state.marketValueText(),
-                state.cpuText(),
-                state.memoryText(),
+                removePrefix(state.marketValueText(), "Market Value:"),
+                removePrefix(state.investedValueText(), "Invested Value:"),
+                removePrefix(state.availableFundsText(), "Funds Available:"),
+                removePrefix(state.baseBuyPendingText(), "Base Buy Pending Total:"),
+                removePrefix(state.cpuText(), "CPU:"),
+                removePrefix(state.memoryText(), "Memory:"),
                 brokerText,
                 brokerTone
         );
+    }
+
+    public NetworkStatusViewModel presentNetworkStatus(boolean online) {
+        return new NetworkStatusViewModel(
+                NETWORK_ICON_PATH,
+                online ? Tone.OK : Tone.ERR,
+                online ? "Internet connection available" : "Internet connection unavailable",
+                false
+        );
+    }
+
+    private String removePrefix(String value, String prefix) {
+        if (value == null || value.isBlank()) {
+            return "-";
+        }
+        String trimmed = value.trim();
+        if (trimmed.regionMatches(true, 0, prefix, 0, prefix.length())) {
+            return trimmed.substring(prefix.length()).trim();
+        }
+        return trimmed;
     }
 
     public enum Tone {
@@ -73,6 +98,9 @@ public final class StatusBarPresenter {
             String marketTooltip,
             boolean marketOpenForUi,
             String marketValueText,
+            String investedValueText,
+            String availableFundsText,
+            String baseBuyPendingText,
             String cpuText,
             String memoryText
     ) {
@@ -86,10 +114,21 @@ public final class StatusBarPresenter {
             String marketTooltip,
             Tone marketTone,
             String marketValueText,
+            String investedValueText,
+            String availableFundsText,
+            String baseBuyPendingText,
             String cpuText,
             String memoryText,
             String brokerText,
             Tone brokerTone
+    ) {
+    }
+
+    public record NetworkStatusViewModel(
+            String iconPath,
+            Tone tone,
+            String tooltip,
+            boolean blink
     ) {
     }
 }

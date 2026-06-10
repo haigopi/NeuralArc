@@ -9,19 +9,28 @@ import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.Position;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyLifecycleState;
+import com.neuralarc.model.StrategyOrder;
+import com.neuralarc.model.StrategyOrderStatus;
+import com.neuralarc.model.StrategyOrderSide;
+import com.neuralarc.model.StrategyStage;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.util.BrokerOrderStatusUtil;
 import com.neuralarc.service.StrategyRepository;
+import com.neuralarc.service.StrategyOrderRepository;
+import com.neuralarc.service.StrategyService;
 
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -51,6 +60,7 @@ final class PortfolioRefreshController {
     }
 
     private final StrategyRepository strategyRepository;
+    private final StrategyOrderRepository orderRepository;
     private final ExecutorService executor;
     private final Gateway gateway;
     private final UserActionLogSupport actionLog;
@@ -59,10 +69,12 @@ final class PortfolioRefreshController {
 
     PortfolioRefreshController(
             StrategyRepository strategyRepository,
+            StrategyOrderRepository orderRepository,
             ExecutorService executor,
             Gateway gateway
     ) {
         this.strategyRepository = strategyRepository;
+        this.orderRepository = orderRepository;
         this.executor = executor;
         this.gateway = gateway;
         this.actionLog = new UserActionLogSupport(gateway::log);
@@ -104,8 +116,13 @@ final class PortfolioRefreshController {
         try {
             List<Strategy> stored = strategyRepository.findAll();
             Map<String, Position> snapshots = loadPositionSnapshots(stored);
+            int reconciledCount = reconcileLeftoverLocalBrokerState(stored, snapshots);
+            if (reconciledCount > 0) {
+                stored = strategyRepository.findAll();
+            }
             List<Strategy> invalidStrategies = findInvalidBrokerMissingStrategies(stored);
-            runOnEdt(() -> applySuccessfulRefresh(generation, stored, snapshots, invalidStrategies));
+            List<Strategy> refreshedStored = stored;
+            runOnEdt(() -> applySuccessfulRefresh(generation, refreshedStored, snapshots, invalidStrategies));
         } catch (Exception ex) {
             runOnEdt(() -> applyFailedRefresh(generation, manualTrigger, ex));
         }
@@ -215,6 +232,170 @@ final class PortfolioRefreshController {
         invalid.addAll(findInvalidBrokerMissingStrategiesForMode(stored, StrategyMode.PAPER, ApplicationMode.PAPER));
         invalid.addAll(findInvalidBrokerMissingStrategiesForMode(stored, StrategyMode.LIVE, ApplicationMode.LIVE));
         return invalid;
+    }
+
+    private int reconcileLeftoverLocalBrokerState(List<Strategy> stored, Map<String, Position> snapshots) {
+        if (stored == null || stored.isEmpty() || gateway.brokerType() != BrokerType.ALPACA) {
+            return 0;
+        }
+        int count = 0;
+        count += reconcileLeftoverLocalBrokerStateForMode(stored, snapshots, StrategyMode.PAPER, ApplicationMode.PAPER);
+        count += reconcileLeftoverLocalBrokerStateForMode(stored, snapshots, StrategyMode.LIVE, ApplicationMode.LIVE);
+        return count;
+    }
+
+    private int reconcileLeftoverLocalBrokerStateForMode(
+            List<Strategy> stored,
+            Map<String, Position> snapshots,
+            StrategyMode strategyMode,
+            ApplicationMode applicationMode
+    ) {
+        List<Strategy> candidates = stored.stream()
+                .filter(strategy -> strategy.mode() == strategyMode)
+                .filter(this::isWaitingLocalOrderCandidate)
+                .toList();
+        if (candidates.isEmpty()) {
+            return 0;
+        }
+        HttpAlpacaClient client = gateway.alpacaClientForMode(applicationMode);
+        if (client == null) {
+            return 0;
+        }
+        Map<String, AlpacaOrderData> openOrdersById = new LinkedHashMap<>();
+        for (AlpacaOrderData order : client.getOpenOrders()) {
+            if (order.orderId() != null && !order.orderId().isBlank()) {
+                openOrdersById.put(order.orderId(), order);
+            }
+        }
+
+        int reconciled = 0;
+        for (Strategy strategy : candidates) {
+            Optional<StrategyOrder> maybeOrder = latestTrackedOrder(strategy);
+            if (maybeOrder.isEmpty()) {
+                continue;
+            }
+            StrategyOrder order = maybeOrder.get();
+            String orderId = order.alpacaOrderId();
+            if (orderId == null || orderId.isBlank()) {
+                continue;
+            }
+            AlpacaOrderData openOrder = openOrdersById.get(orderId);
+            if (openOrder != null) {
+                applyBrokerOrderStatus(strategy, order, openOrder);
+                reconciled++;
+                continue;
+            }
+            Optional<AlpacaOrderData> brokerOrder = client.getOrder(orderId);
+            if (brokerOrder.isPresent()) {
+                applyBrokerOrderStatus(strategy, order, brokerOrder.get());
+                reconciled++;
+                continue;
+            }
+            Position snapshot = snapshots.get(strategy.id());
+            if (snapshot != null && snapshot.getTotalShares() > 0 && order.side() == StrategyOrderSide.BUY) {
+                markLocalBuyFilledFromBrokerPosition(strategy, order);
+                reconciled++;
+            }
+        }
+        if (reconciled > 0) {
+            gateway.log("[Portfolio Refresh] Reconciled " + reconciled
+                    + " leftover local order status record(s) from Alpaca.");
+        }
+        return reconciled;
+    }
+
+    private Optional<StrategyOrder> latestTrackedOrder(Strategy strategy) {
+        List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
+        String latestAlpacaOrderId = strategy.latestAlpacaOrderId();
+        if (latestAlpacaOrderId != null && !latestAlpacaOrderId.isBlank()) {
+            Optional<StrategyOrder> byLatestId = orders.stream()
+                    .filter(order -> latestAlpacaOrderId.equals(order.alpacaOrderId()))
+                    .findFirst();
+            if (byLatestId.isPresent()) {
+                return byLatestId;
+            }
+        }
+        return orders.stream()
+                .filter(order -> order.alpacaOrderId() != null && !order.alpacaOrderId().isBlank())
+                .filter(order -> order.isPending() || isPendingOrCanceledLocalState(strategy.currentState()))
+                .max(Comparator.comparing(StrategyOrder::updatedAt));
+    }
+
+    private void applyBrokerOrderStatus(Strategy strategy, StrategyOrder order, AlpacaOrderData brokerOrder) {
+        String normalized = BrokerOrderStatusUtil.normalize(brokerOrder.status());
+        StrategyOrderStatus mapped = StrategyService.mapOrderStatus(normalized);
+        order.setStatus(mapped);
+        order.setFilledQuantity(brokerOrder.filledQuantity());
+        order.setFilledAveragePrice(brokerOrder.filledAveragePrice());
+        order.setRawResponseJson(brokerOrder.rawJson());
+        if (mapped == StrategyOrderStatus.FILLED && order.filledAt() == null) {
+            order.setFilledAt(Instant.now());
+        }
+        orderRepository.save(order);
+
+        strategy.setLatestOrderStatus(normalized);
+        strategy.setLatestAlpacaOrderId(order.alpacaOrderId() == null ? "" : order.alpacaOrderId());
+        if (mapped == StrategyOrderStatus.FILLED || mapped == StrategyOrderStatus.PARTIALLY_FILLED) {
+            strategy.setCurrentState(filledLifecycleState(order.stage(), mapped, strategy.currentState()));
+            strategy.clearLastError();
+        } else if (isClosedBrokerStatus(normalized)) {
+            strategy.setStatus(StrategyStatus.FAILED);
+            strategy.setCurrentState(StrategyLifecycleState.FAILED);
+            strategy.setLastError("Alpaca order " + BrokerOrderStatusUtil.displayLabel(normalized).toLowerCase(Locale.ROOT));
+            strategy.setLastEvent("Updated during portfolio refresh from Alpaca order status: "
+                    + BrokerOrderStatusUtil.displayLabel(normalized));
+        }
+        strategyRepository.save(strategy);
+    }
+
+    private void markLocalBuyFilledFromBrokerPosition(Strategy strategy, StrategyOrder order) {
+        order.setStatus(StrategyOrderStatus.FILLED);
+        if (order.filledAt() == null) {
+            order.setFilledAt(Instant.now());
+        }
+        orderRepository.save(order);
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(filledLifecycleState(order.stage(), StrategyOrderStatus.FILLED, strategy.currentState()));
+        strategy.setLatestOrderStatus("filled");
+        strategy.setLatestAlpacaOrderId(order.alpacaOrderId() == null ? "" : order.alpacaOrderId());
+        strategy.clearLastError();
+        strategy.setLastEvent("Updated during portfolio refresh from Alpaca position snapshot.");
+        strategyRepository.save(strategy);
+    }
+
+    private StrategyLifecycleState filledLifecycleState(
+            StrategyStage stage,
+            StrategyOrderStatus orderStatus,
+            StrategyLifecycleState fallback
+    ) {
+        boolean partial = orderStatus == StrategyOrderStatus.PARTIALLY_FILLED;
+        return switch (stage) {
+            case BASE_BUY -> partial ? StrategyLifecycleState.BASE_BUY_PARTIALLY_FILLED : StrategyLifecycleState.BASE_BUY_FILLED;
+            case BUY_LIMIT_1 -> partial ? StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED : StrategyLifecycleState.BUY_LIMIT_1_FILLED;
+            case BUY_LIMIT_2 -> partial ? StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED : StrategyLifecycleState.BUY_LIMIT_2_FILLED;
+            case TARGET_SELL, PROFIT_EXIT, STOP_LOSS, LOSS_EXIT, MANUAL_EXIT, CLOSE_POSITION ->
+                    partial ? StrategyLifecycleState.SELL_PARTIALLY_FILLED : StrategyLifecycleState.COMPLETED;
+            default -> fallback == null ? StrategyLifecycleState.VALIDATED : fallback;
+        };
+    }
+
+    private boolean isClosedBrokerStatus(String normalizedStatus) {
+        return "expired".equals(normalizedStatus)
+                || "canceled".equals(normalizedStatus)
+                || "cancelled".equals(normalizedStatus)
+                || "rejected".equals(normalizedStatus)
+                || "suspended".equals(normalizedStatus);
+    }
+
+    private boolean isWaitingLocalOrderCandidate(Strategy strategy) {
+        if (strategy == null
+                || strategy.status() == StrategyStatus.ARCHIVED
+                || strategy.status() == StrategyStatus.STOPPED
+                || strategy.status() == StrategyStatus.COMPLETED) {
+            return false;
+        }
+        return BrokerOrderStatusUtil.isWaitingForFill(strategy.latestOrderStatus())
+                || isPendingOrCanceledLocalState(strategy.currentState());
     }
 
     private List<Strategy> findInvalidBrokerMissingStrategiesForMode(

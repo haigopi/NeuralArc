@@ -430,7 +430,7 @@ public final class HistoryTablePresenter {
     private String manualExitLabel(StrategyOrder order) {
         StrategyService.SellExecutionSource source = sellExecutionSource(order);
         if (source == StrategyService.SellExecutionSource.PORTFOLIO_CAPTURE) {
-            return "Portfolio Capture - Market Sell";
+            return "Portfolio Liquidation - Market Sell";
         }
         if (source == StrategyService.SellExecutionSource.PORTFOLIO_ACTION) {
             return "Manual - Portfolio Action";

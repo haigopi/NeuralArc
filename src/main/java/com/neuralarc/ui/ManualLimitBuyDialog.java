@@ -20,7 +20,7 @@ final class ManualLimitBuyDialog {
             return Optional.empty();
         }
         JSpinner quantitySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 1_000_000, 1));
-        JTextField limitPriceField = new JTextField(defaultLimitPrice(strategy), 12);
+        JTextField limitPriceField = new JTextField(defaultLimitPrice(currentPrice), 12);
         String currentPriceText = currentPrice != null && currentPrice.compareTo(BigDecimal.ZERO) > 0
                 ? "$" + Monetary.round(currentPrice).toPlainString()
                 : "not available";
@@ -62,9 +62,10 @@ final class ManualLimitBuyDialog {
         }
     }
 
-    private static String defaultLimitPrice(Strategy strategy) {
-        BigDecimal base = strategy.baseBuyLimitPrice();
-        return base == null || base.compareTo(BigDecimal.ZERO) <= 0 ? "" : Monetary.round(base).toPlainString();
+    static String defaultLimitPrice(BigDecimal currentPrice) {
+        return currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0
+                ? ""
+                : Monetary.round(currentPrice).toPlainString();
     }
 
     private static BigDecimal parsePositivePrice(String value) {

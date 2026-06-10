@@ -48,7 +48,7 @@ final class LuckyPortfolioAutomationService {
                     .analyzeBundle(stock.symbol(), 1, 15, stock.latestPrice());
             return Optional.of(new LuckySimulationSelection(stock, bundle, recommendationType, quantity));
         } catch (Exception ex) {
-            logger.accept("[Portfolio Capture] Auto re-entry skipped " + stock.symbol() + ": " + ex.getMessage());
+            logger.accept("[Portfolio Liquidation] Auto re-entry skipped " + stock.symbol() + ": " + ex.getMessage());
             return Optional.empty();
         }
     }

@@ -25,6 +25,7 @@ public final class StrategyActionsPresenter {
                 busy,
                 state.latestOrderStatus()
         );
+        boolean showPromote = state.paperMode();
         boolean canSell = state.hasPosition()
                 && status != StrategyStatus.ARCHIVED
                 && status != StrategyStatus.CREATED
@@ -61,6 +62,7 @@ public final class StrategyActionsPresenter {
                 canToggle,
                 canSell,
                 sellColor,
+                showPromote,
                 canPromote,
                 promoteColor
         );
@@ -131,6 +133,7 @@ public final class StrategyActionsPresenter {
             boolean toggleEnabled,
             boolean sellEnabled,
             Color sellColor,
+            boolean promoteVisible,
             boolean promoteEnabled,
             Color promoteColor
     ) {

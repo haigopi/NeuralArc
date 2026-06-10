@@ -119,7 +119,7 @@ class HistoryTablePresenterTest {
         assertTrue(sellStages.contains("Autonomous Strategy - Stop Loss"));
         assertTrue(sellStages.contains("Autonomous Strategy - Profit Exit"));
         assertTrue(sellStages.contains("Manual - User Sell"));
-        assertTrue(sellStages.contains("Portfolio Capture - Market Sell"));
+        assertTrue(sellStages.contains("Portfolio Liquidation - Market Sell"));
         assertTrue(sellStages.contains("Manual - Portfolio Action"));
     }
 

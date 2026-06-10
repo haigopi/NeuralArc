@@ -19,10 +19,37 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class StrategyActionsControllerTest {
+    private final StrategyActionsPresenter presenter = new StrategyActionsPresenter();
+
+    @Test
+    void promoteButtonIsVisibleOnlyForPaperMode() {
+        assertTrue(presenter.present(new StrategyActionsPresenter.StrategyActionsState(
+                StrategyStatus.ACTIVE,
+                false,
+                false,
+                "Working...",
+                true,
+                false,
+                true,
+                ""
+        )).promoteVisible());
+        assertFalse(presenter.present(new StrategyActionsPresenter.StrategyActionsState(
+                StrategyStatus.ACTIVE,
+                false,
+                false,
+                "Working...",
+                false,
+                false,
+                true,
+                ""
+        )).promoteVisible());
+    }
+
     @Test
     void togglePauseResumeReturnsEarlyForArchivedStrategy() {
         FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ARCHIVED));
@@ -262,6 +289,22 @@ class StrategyActionsControllerTest {
         assertEquals(strategy.id(), gateway.limitBuyStrategyId);
         assertEquals(5, gateway.limitBuyQuantitySubmitted);
         assertEquals(0, new BigDecimal("9.25").compareTo(gateway.limitBuyPriceSubmitted));
+    }
+
+    @Test
+    void buyMoreAtLimitSubmitsManualLimitBuyWhenMarketClosed() {
+        Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        FakeGateway gateway = new FakeGateway(strategy);
+        gateway.marketOpen = false;
+        gateway.limitBuySelection = Optional.of(new ManualLimitBuySelection(3, new BigDecimal("7.75")));
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.buyMoreAtLimitPrice(0);
+
+        assertEquals(1, gateway.backgroundTasksRun);
+        assertEquals(strategy.id(), gateway.limitBuyStrategyId);
+        assertEquals(3, gateway.limitBuyQuantitySubmitted);
+        assertEquals(0, new BigDecimal("7.75").compareTo(gateway.limitBuyPriceSubmitted));
     }
 
     @Test
