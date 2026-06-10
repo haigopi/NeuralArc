@@ -882,6 +882,36 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .selling-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 22px;
+      width: min(1180px, 100%);
+    }
+
+    .selling-card {
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.025)),
+        rgba(12, 28, 41, 0.56);
+      text-align: left;
+    }
+
+    .selling-card h3 {
+      font-size: 1rem;
+      margin-bottom: 9px;
+      color: var(--text);
+    }
+
+    .selling-card p {
+      color: var(--muted);
+      line-height: 1.68;
+      font-size: .92rem;
+    }
+
     .step-card small {
       display: inline-block;
       margin-bottom: 8px;
@@ -1167,7 +1197,8 @@
       .rest-grid,
       .feature-grid,
       .preview-grid,
-      .tech-grid {
+      .tech-grid,
+      .selling-grid {
         grid-template-columns: 1fr;
       }
 
@@ -1343,6 +1374,46 @@ live: manual promotion only</pre>
         </article>
       </section>
 
+      <section class="panel panel--full-screen" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
+        <span class="section-chip">Autonomous Trading System</span>
+        <h2>Built to watch, decide, protect, and act.</h2>
+        <p class="panel-intro panel-intro--wide">NeuralArc turns a desktop into an operator console for repeatable trading work. You define the strategy and guardrails; the app keeps monitoring, scanning, and executing the routine.</p>
+        <div class="selling-grid">
+          <section class="selling-card" data-aos="fade-up" data-aos-delay="40" data-aos-duration="800">
+            <h3>Continuous Monitoring</h3>
+            <p>Keep strategies under watch with polling, status tracking, and broker synchronization while your machine is running.</p>
+          </section>
+          <section class="selling-card" data-aos="fade-up" data-aos-delay="70" data-aos-duration="800">
+            <h3>Automated Decisions</h3>
+            <p>Convert buy levels, sell triggers, and configured rules into repeatable actions instead of manual one-off checks.</p>
+          </section>
+          <section class="selling-card" data-aos="fade-up" data-aos-delay="100" data-aos-duration="800">
+            <h3>Smart Risk Management</h3>
+            <p>Use stop loss, staged buys, maximum capital limits, and operating status controls to keep risk visible.</p>
+          </section>
+          <section class="selling-card" data-aos="fade-up" data-aos-delay="130" data-aos-duration="800">
+            <h3>Profit Protections</h3>
+            <p>Protect upside with target sells, profit hold, trailing logic, and booked P&amp;L visibility after exits.</p>
+          </section>
+          <section class="selling-card" data-aos="fade-up" data-aos-delay="160" data-aos-duration="800">
+            <h3>Automatic Liquidations</h3>
+            <p>Monitor portfolio P&amp;L targets and liquidate eligible open positions when your configured target is reached.</p>
+          </section>
+          <section class="selling-card" data-aos="fade-up" data-aos-delay="190" data-aos-duration="800">
+            <h3>Market Scans</h3>
+            <p>Review market movers and diversified candidates, then turn selected opportunities into strategies quickly.</p>
+          </section>
+          <section class="selling-card" data-aos="fade-up" data-aos-delay="220" data-aos-duration="800">
+            <h3>Hands-Free Trading</h3>
+            <p>Let the desktop carry the repetitive workflow after setup, while you retain mode, risk, and live-trading control.</p>
+          </section>
+          <section class="selling-card" data-aos="fade-up" data-aos-delay="250" data-aos-duration="800">
+            <h3>Paper-to-Live Workflow</h3>
+            <p>Start in paper mode, validate behavior, and promote eligible strategies to live only when you choose.</p>
+          </section>
+        </div>
+      </section>
+
       <section class="rest-grid screen--rest">
         <article class="panel" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
           <span class="section-chip">Built for Everyday Operators</span>
@@ -1388,20 +1459,20 @@ live: manual promotion only</pre>
 
         <article class="panel product-preview" style="grid-column: 1 / -1;" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
           <span class="section-chip">Product Preview</span>
-          <h2>Set the gauradrails. Keep the machine running.</h2>
-          <p class="panel-intro panel-intro--wide">Connect Alpaca, tune the strategy, and let NeuralArc keep watching the market from your own desktop. It turns your setup into a disciplined, profit-focused operator console while you stay in control.</p>
+          <h2>Set the guardrails. Keep the machine running.</h2>
+          <p class="panel-intro panel-intro--wide">Connect Alpaca, tune the strategy, and let NeuralArc watch the market from your own desktop. Continuous monitoring, automated decisions, risk controls, profit protection, and liquidation workflows come together in one operator console.</p>
           <div class="preview-grid">
             <article class="preview-card" data-aos="fade-up" data-aos-delay="60" data-aos-duration="800">
               <div class="preview-visual"><img src="./images/workflow-dashboard.png" alt="NeuralArc current strategies dashboard"></div>
               <div class="preview-copy">
-                <h3>Live Strategy Command</h3>
-                <p>Watch active strategies, status, price movement, and P&amp;L in one console. Your machine stays focused on the next rule instead of forcing you to chase every tick.</p>
+                <h3>Continuous Strategy Command</h3>
+                <p>Watch active strategies, status, price movement, booked results, and P&amp;L in one console. Your machine stays focused on the next rule instead of forcing you to chase every tick.</p>
               </div>
             </article>
             <article class="preview-card" data-aos="fade-up" data-aos-delay="110" data-aos-duration="800">
               <div class="preview-visual"><img src="./images/workflow-strategy-dialog.png" alt="NeuralArc stock strategy setup dialog"></div>
               <div class="preview-copy">
-                <h3>Rules Before Emotion</h3>
+                <h3>Automated Decisions</h3>
                 <p>Set buy, sell, risk, and repeat behavior before the trade starts. NeuralArc keeps the workflow disciplined when the market starts moving.</p>
               </div>
             </article>
@@ -1409,28 +1480,28 @@ live: manual promotion only</pre>
               <div class="preview-visual"><img src="./images/workflow-profit-controls.png" alt="NeuralArc automated profit control settings"></div>
               <div class="preview-copy">
                 <h3>Profit Protection Modes</h3>
-                <p>Choose the automated profit strategy that fits the position. Trigger, stop, and trailing controls are built to protect upside without hiding manual control.</p>
+                <p>Choose the automated profit strategy that fits the position. Trigger, stop, and trailing controls are built to protect upside while keeping risk visible.</p>
               </div>
             </article>
             <article class="preview-card" data-aos="fade-up" data-aos-delay="60" data-aos-duration="800">
               <div class="preview-visual"><img src="./images/workflow-portfolio-actions.png" alt="NeuralArc portfolio actions controls"></div>
               <div class="preview-copy">
-                <h3>Operator Actions Ready</h3>
-                <p>Refresh the portfolio, cancel pending buys, or promote strategies when the setup is ready. The app gives you action buttons for real operating moments.</p>
+                <h3>Automatic Liquidations</h3>
+                <p>Refresh the portfolio, cancel pending buys, liquidate eligible positions, or promote strategies when the setup is ready. The app gives you action buttons for real operating moments.</p>
               </div>
             </article>
             <article class="preview-card" data-aos="fade-up" data-aos-delay="110" data-aos-duration="800">
               <div class="preview-visual"><img src="./images/workflow-current-strategies.png" alt="NeuralArc strategy grid status and actions"></div>
               <div class="preview-copy">
-                <h3>Know What Is Waiting</h3>
-                <p>Each strategy shows the current state and what it is waiting on next. That keeps the desktop running like a trading operations station, not a spreadsheet.</p>
+                <h3>Smart Risk Visibility</h3>
+                <p>Each strategy shows the current state, next wait condition, entry source, exit source, and booked outcome. That keeps the desktop running like a trading operations station, not a spreadsheet.</p>
               </div>
             </article>
             <article class="preview-card" data-aos="fade-up" data-aos-delay="160" data-aos-duration="800">
               <div class="preview-visual"><img src="./images/workflow-settings.png" alt="NeuralArc settings and broker configuration"></div>
               <div class="preview-copy">
-                <h3>Configured Once, Reused Daily</h3>
-                <p>Broker mode, notifications, and operating preferences live in one place. Set the machine up, review the safeguards, and let the routine work begin.</p>
+                <h3>Hands-Free Operating Setup</h3>
+                <p>Broker mode, notifications, polling preferences, and safeguards live in one place. Set the machine up, review the controls, and let the routine work begin.</p>
               </div>
             </article>
           </div>
@@ -1719,20 +1790,20 @@ live: manual promotion only</pre>
         },
         automation: {
           title: "Move Faster with Automation",
-          intro: "Automation helps reduce repetitive setup work while keeping your approval points clear.",
+          intro: "Automation helps reduce repetitive strategy work while keeping your approval points clear.",
           points: [
-            "Guided setup helps you connect credentials and validate before execution.",
-            "Rule-based strategy configuration turns intent into repeatable behavior.",
-            "You can promote from simulation to live only when you are ready."
+            "Continuous monitoring keeps active strategies, orders, and P&L moving through one desktop console.",
+            "Rule-based decisions turn buy levels, sell triggers, and repeat behavior into repeatable actions.",
+            "Market scans and Lucky Strategies help you turn candidates into strategies faster."
           ]
         },
         risk: {
           title: "Autonomous & Risk",
-          intro: "NeuralArc balances autonomous monitoring with explicit risk controls under your supervision.",
+          intro: "NeuralArc balances hands-free trading with explicit risk controls under your supervision.",
           points: [
-            "Auto Analyze highlights opportunities without replacing operator judgment.",
-            "Recommendation context includes confidence and actionable ranges.",
-            "Rules keep risk boundaries and decision control in your hands."
+            "Stop loss, target sell, profit hold, and trailing controls help protect positions after entry.",
+            "Automatic liquidation can watch portfolio P&L targets and exit eligible positions when configured.",
+            "Paper-to-live promotion keeps live trading intentional instead of accidental."
           ]
         }
       };
