@@ -26,7 +26,7 @@ final class PortfolioCaptureController {
                 StrategyService.SellExecutionSource executionSource
         );
         int cancelPendingBaseBuys();
-        String runLuckyAutomation(PortfolioCaptureConfig config);
+        String runSmartPicksAutomation(PortfolioCaptureConfig config);
         boolean tradingSessionOpen();
         String nextTradingSessionOpenDisplay();
         void onMonitoringChanged(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config);
@@ -105,7 +105,7 @@ final class PortfolioCaptureController {
                 + " flow=" + config.executionFlow()
                 + " reentryMode=" + config.reentryMode()
                 + " reentryTerm=" + config.reentryRecommendationType()
-                + " luckyStrategy=" + config.reentryLuckyStrategy()
+                + " smartPicksStrategy=" + config.reentrySmartPicksStrategy()
                 + " reentryQty=" + config.reentryQuantity());
     }
 
@@ -293,8 +293,8 @@ final class PortfolioCaptureController {
                     pendingCanceledCount += canceled;
                     gateway.log("[Portfolio Liquidation] Pre re-entry pending base buy cleanup canceled " + canceled + " order(s).");
                 }
-                String reentrySummary = gateway.runLuckyAutomation(executionConfig);
-                gateway.log("[Portfolio Liquidation] I Am Feeling Lucky automation completed: " + reentrySummary);
+                String reentrySummary = gateway.runSmartPicksAutomation(executionConfig);
+                gateway.log("[Portfolio Liquidation] Smart Picks automation completed: " + reentrySummary);
             }
             PortfolioCaptureSnapshot resultSnapshot = withoutRows(snapshot, skippedManualSales);
             BigDecimal executionVariance = actualValueTotal.subtract(resultSnapshot.marketValue());

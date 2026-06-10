@@ -9,16 +9,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class LuckyParallelExecutorTest {
+class SmartPicksParallelExecutorTest {
     @Test
     void mapPreservingOrderRunsTasksInParallel() {
         AtomicInteger running = new AtomicInteger();
         AtomicInteger maxRunning = new AtomicInteger();
         CopyOnWriteArrayList<Integer> completedCounts = new CopyOnWriteArrayList<>();
 
-        List<Integer> result = LuckyParallelExecutor.mapPreservingOrder(
+        List<Integer> result = SmartPicksParallelExecutor.mapPreservingOrder(
                 List.of(1, 2, 3, 4),
-                "test-lucky-parallel",
+                "test-smart-picks-parallel",
                 value -> {
                     int active = running.incrementAndGet();
                     maxRunning.accumulateAndGet(active, Math::max);
@@ -35,15 +35,15 @@ class LuckyParallelExecutorTest {
         );
 
         assertEquals(List.of(10, 20, 30, 40), result);
-        assertTrue(maxRunning.get() > 1, "expected more than one lucky task to run at the same time");
+        assertTrue(maxRunning.get() > 1, "expected more than one Smart Picks task to run at the same time");
         assertEquals(4, completedCounts.size());
         assertTrue(completedCounts.contains(4));
     }
 
     @Test
     void threadCountUsesBoundedPool() {
-        assertEquals(1, LuckyParallelExecutor.threadCount(1));
-        assertTrue(LuckyParallelExecutor.threadCount(20) <= 6);
-        assertTrue(LuckyParallelExecutor.threadCount(20) >= 2);
+        assertEquals(1, SmartPicksParallelExecutor.threadCount(1));
+        assertTrue(SmartPicksParallelExecutor.threadCount(20) <= 6);
+        assertTrue(SmartPicksParallelExecutor.threadCount(20) >= 2);
     }
 }

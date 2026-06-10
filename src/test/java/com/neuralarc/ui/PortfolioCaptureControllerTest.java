@@ -67,7 +67,7 @@ class PortfolioCaptureControllerTest {
                 StrategyMode.PAPER,
                 1,
                 RecommendationType.SHORT_TERM,
-                PortfolioCaptureLuckyStrategy.VOLATILE,
+                PortfolioCaptureSmartPicksStrategy.VOLATILE,
                 false
         );
     }
@@ -157,7 +157,7 @@ class PortfolioCaptureControllerTest {
         }
 
         @Override public int cancelPendingBaseBuys() { return 0; }
-        @Override public String runLuckyAutomation(PortfolioCaptureConfig config) { return ""; }
+        @Override public String runSmartPicksAutomation(PortfolioCaptureConfig config) { return ""; }
         @Override public boolean tradingSessionOpen() { return true; }
         @Override public String nextTradingSessionOpenDisplay() { return ""; }
         @Override public void onMonitoringChanged(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) { }

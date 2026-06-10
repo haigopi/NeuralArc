@@ -1,6 +1,6 @@
 package com.neuralarc.model;
 
-public record LuckyStockAnalysis(
+public record SmartPicksStockAnalysis(
         TrendingStock stock,
         AutoAnalyzeBundle analysis,
         String errorMessage

@@ -17,7 +17,7 @@ record PortfolioCaptureConfig(
         StrategyMode reentryMode,
         int reentryQuantity,
         RecommendationType reentryRecommendationType,
-        PortfolioCaptureLuckyStrategy reentryLuckyStrategy,
+        PortfolioCaptureSmartPicksStrategy reentrySmartPicksStrategy,
         boolean autoCleanPendingBeforeCycle
 ) {
     static PortfolioCaptureConfig captureNow() {
@@ -33,7 +33,7 @@ record PortfolioCaptureConfig(
                 StrategyMode.PAPER,
                 1,
                 RecommendationType.SHORT_TERM,
-                PortfolioCaptureLuckyStrategy.VOLATILE,
+                PortfolioCaptureSmartPicksStrategy.VOLATILE,
                 false
         );
     }

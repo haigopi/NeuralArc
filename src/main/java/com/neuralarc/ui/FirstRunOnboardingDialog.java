@@ -71,7 +71,7 @@ final class FirstRunOnboardingDialog extends JDialog {
                 1. Copy your Alpaca Paper API keys
                 2. Put the key and secret in Settings
                 3. Click Verify Connection
-                4. Try Lucky Strategies with Top 20 Diversified Stocks
+                4. Try Smart Picks with Diversified Leaders (Top 20)
                 5. Review results in paper mode until the workflow feels comfortable
 
                 Move to LIVE mode and real funds only after you understand the strategy behavior and risk.

@@ -113,8 +113,8 @@ public class TradingFrame extends JFrame {
     private static final DateTimeFormatter RULE_TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM d yyyy, h:mm a");
     private static final DateTimeFormatter NEXT_OPEN_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM d yyyy h:mm a z");
     private static final int GRID_SEARCH_MIN_STOCK_COUNT = 9;
-    private static final String LUCKY_MENU_VOLATILE = "Volatile Strategy";
-    private static final String LUCKY_MENU_DIVERSIFIED = "Top 20 Diversified Stocks";
+    private static final String SMART_PICKS_MENU_VOLATILE = "High Volatility Movers";
+    private static final String SMART_PICKS_MENU_DIVERSIFIED = "Diversified Leaders (Top 20)";
 
     private final JLabel positionSummary = new JLabel("Position: -");
     private final JLabel ruleState = new JLabel("Rules: -");
@@ -202,8 +202,8 @@ public class TradingFrame extends JFrame {
     private static final Color HEADER_STATUS_LIVE_ACTIVE_DIM = Color.WHITE;
     private final JTextPane eventLog = new JTextPane();
     private final JButton addStrategyButton = new JButton("Add New Stock Strategy");
-    private final JButton luckyButton = new JButton("Lucky Strategies");
-    private final JPopupMenu luckyStrategiesMenu = new JPopupMenu();
+    private final JButton smartPicksButton = new JButton("Smart Picks");
+    private final JPopupMenu smartPicksMenu = new JPopupMenu();
     private final JButton portfolioActionsButton = new JButton("Portfolio Actions");
     private final JButton settingsButton = new JButton("Settings");
     private final JButton legalDisclosureButton = new JButton("Legal Disclosure");
@@ -548,7 +548,7 @@ public class TradingFrame extends JFrame {
                         return TradingFrame.this.sellPosition(entry.strategy, submissionType, executionSource);
                     }
                     @Override public int cancelPendingBaseBuys() { return TradingFrame.this.cancelPendingBaseBuysForAutomation(); }
-                    @Override public String runLuckyAutomation(PortfolioCaptureConfig config) { return TradingFrame.this.runLuckyAutomation(config); }
+                    @Override public String runSmartPicksAutomation(PortfolioCaptureConfig config) { return TradingFrame.this.runSmartPicksAutomation(config); }
                     @Override public boolean tradingSessionOpen() { return TradingFrame.this.isMarketOpenForUi(); }
                     @Override public String nextTradingSessionOpenDisplay() { return TradingFrame.this.nextTradingSessionOpenDisplay(); }
                     @Override
@@ -1077,7 +1077,7 @@ public class TradingFrame extends JFrame {
         JPanel headerControlsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         headerControlsPanel.setOpaque(false);
         headerControlsPanel.add(addStrategyButton);
-        headerControlsPanel.add(luckyButton);
+        headerControlsPanel.add(smartPicksButton);
         headerControlsPanel.add(refreshPortfolioButton);
         headerControlsPanel.add(portfolioActionsButton);
         headerControlsPanel.add(settingsButton);
@@ -1825,13 +1825,13 @@ public class TradingFrame extends JFrame {
         applyFontRecursively(this);
 
         styleHeaderButton(addStrategyButton);
-        styleHeaderButton(luckyButton);
+        styleHeaderButton(smartPicksButton);
         styleHeaderButton(refreshPortfolioButton);
         styleCompactHeaderButton(capturePortfolioButton);
         styleHeaderButton(portfolioActionsButton);
         styleHeaderButton(settingsButton);
         applyButtonIcon(addStrategyButton, "icons/add-stock-strategy.svg", 16);
-        applyButtonIcon(luckyButton, "icons/lucky.svg", 16);
+        applyButtonIcon(smartPicksButton, "icons/smart-picks.svg", 16);
         applyButtonIcon(refreshPortfolioButton, "icons/refresh.svg", 16);
         applyButtonIcon(capturePortfolioButton, "icons/portfolio.svg", 16);
         applyButtonIcon(portfolioActionsButton, "icons/portfolio.svg", 16);
@@ -1841,11 +1841,11 @@ public class TradingFrame extends JFrame {
                 320
         ));
         capturePortfolioButton.setToolTipText(capturePortfolioDefaultTooltip());
-        luckyButton.setToolTipText(TooltipStyler.text(
-                "Open strategy picker: Volatile Strategy or Top 20 Diversified Stocks. Both run Auto Analyze with high-risk short-term review tabs.",
+        smartPicksButton.setToolTipText(TooltipStyler.text(
+                "Open strategy picker: High Volatility Movers or Diversified Leaders (Top 20). Both run Auto Analyze with high-risk short-term review tabs.",
                 320
         ));
-        luckyButton.setEnabled(false);
+        smartPicksButton.setEnabled(false);
     }
 
     private void applyDataViewFonts() {
@@ -2407,7 +2407,7 @@ public class TradingFrame extends JFrame {
         return canceled;
     }
 
-    private String runLuckyAutomation(PortfolioCaptureConfig config) {
+    private String runSmartPicksAutomation(PortfolioCaptureConfig config) {
         ApplicationMode mode = config.reentryMode() == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER;
         String apiKey = settingsDialog.savedApiKey(mode);
         String apiSecret = settingsDialog.savedApiSecret(mode);
@@ -2417,18 +2417,18 @@ public class TradingFrame extends JFrame {
         log("[Portfolio Liquidation] Auto re-entry started. mode=" + config.reentryMode()
                 + " quantity=" + config.reentryQuantity()
                 + " term=" + config.reentryRecommendationType()
-                + " luckyStrategy=" + config.reentryLuckyStrategy());
+                + " smartPicksStrategy=" + config.reentrySmartPicksStrategy());
         HttpAlpacaMarketDataApi marketDataApi = new HttpAlpacaMarketDataApi(apiKey, apiSecret);
         List<TrendingStock> stocks = new ArrayList<>();
         try {
-            stocks.addAll(portfolioCaptureLuckyStocks(config, apiKey, apiSecret, marketDataApi));
+            stocks.addAll(portfolioCaptureSmartPicksStocks(config, apiKey, apiSecret, marketDataApi));
         } catch (Exception ex) {
-            log("[Portfolio Liquidation] Auto re-entry failed to fetch I Am Feeling Lucky stocks: " + ex.getMessage());
-            return "Skipped: unable to fetch lucky stocks.";
+            log("[Portfolio Liquidation] Auto re-entry failed to fetch Smart Picks stocks: " + ex.getMessage());
+            return "Skipped: unable to fetch Smart Picks stocks.";
         }
-        List<LuckySimulationSelection> selections = new LuckyPortfolioAutomationService(marketDataApi, this::log)
+        List<SmartPicksSimulationSelection> selections = new SmartPicksPortfolioAutomationService(marketDataApi, this::log)
                 .analyzeSelections(stocks, config.reentryRecommendationType(), config.reentryQuantity());
-        LuckySimulationPlacementController controller = new LuckySimulationPlacementController(new LuckySimulationPlacementController.Gateway() {
+        SmartPicksSimulationPlacementController controller = new SmartPicksSimulationPlacementController(new SmartPicksSimulationPlacementController.Gateway() {
             @Override public com.neuralarc.service.StrategyRepository repository() { return strategyRepository; }
             @Override public StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy) {
                 return createStrategy(strategy, config.reentryMode());
@@ -2454,23 +2454,23 @@ public class TradingFrame extends JFrame {
             }
             @Override public void log(String message) { TradingFrame.this.log(message); }
         }, config.reentryMode());
-        LuckySimulationPlacementController.PlacementResult result = controller.place(selections);
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(selections);
         log("[Portfolio Liquidation] Auto re-entry generated positions. created=" + result.created()
                 + " replaced=" + result.replaced() + " skipped=" + result.skipped());
         return controller.summaryMessage(result).replace('\n', ' ');
     }
 
-    private List<TrendingStock> portfolioCaptureLuckyStocks(
+    private List<TrendingStock> portfolioCaptureSmartPicksStocks(
             PortfolioCaptureConfig config,
             String apiKey,
             String apiSecret,
             HttpAlpacaMarketDataApi marketDataApi
     ) throws Exception {
-        if (config.reentryLuckyStrategy() == PortfolioCaptureLuckyStrategy.DIVERSIFIED_TOP_20) {
-            List<TrendingStock> stocks = LuckyTrendingStocksDialog.diversifiedTop20Stocks(
+        if (config.reentrySmartPicksStrategy() == PortfolioCaptureSmartPicksStrategy.DIVERSIFIED_TOP_20) {
+            List<TrendingStock> stocks = SmartPicksTrendingStocksDialog.diversifiedTop20Stocks(
                     symbol -> latestPriceForPortfolioCaptureAutomation(symbol, marketDataApi)
             );
-            log("[Portfolio Liquidation] Auto re-entry using Top 20 Diversified Stocks. symbols="
+            log("[Portfolio Liquidation] Auto re-entry using Diversified Leaders (Top 20). symbols="
                     + stocks.stream().map(TrendingStock::symbol).toList());
             return stocks;
         }
@@ -2478,7 +2478,7 @@ public class TradingFrame extends JFrame {
         List<TrendingStock> stocks = new ArrayList<>();
         stocks.addAll(groups.gainers());
         stocks.addAll(groups.losers());
-        log("[Portfolio Liquidation] Auto re-entry using Volatile Strategy. gainers="
+        log("[Portfolio Liquidation] Auto re-entry using High Volatility Movers. gainers="
                 + groups.gainers().stream().map(TrendingStock::symbol).toList()
                 + " losers=" + groups.losers().stream().map(TrendingStock::symbol).toList());
         return stocks;
@@ -2581,7 +2581,7 @@ public class TradingFrame extends JFrame {
 
     private void wireEvents() {
         addStrategyButton.addActionListener(e -> addStrategy());
-        luckyButton.addActionListener(e -> showLuckyStrategiesMenu());
+        smartPicksButton.addActionListener(e -> showSmartPicksMenu());
         refreshPortfolioButton.addActionListener(e -> portfolioRefreshController.refresh(true));
         capturePortfolioButton.addActionListener(e -> openPortfolioCaptureDialog());
         portfolioActionsButton.addActionListener(e -> portfolioActionsController.showMenu(portfolioActionsButton));
@@ -2589,10 +2589,10 @@ public class TradingFrame extends JFrame {
         configureButtonShortcut(addStrategyButton, KeyEvent.VK_S,
                 KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
                 "addStockStrategy");
-        configureButtonShortcut(luckyButton, KeyEvent.VK_L,
+        configureButtonShortcut(smartPicksButton, KeyEvent.VK_L,
                 KeyStroke.getKeyStroke(KeyEvent.VK_L, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
-                "feelingLucky");
-        configureLuckyStrategiesMenu();
+                "smartPicks");
+        configureSmartPicksMenu();
         configureButtonShortcut(refreshPortfolioButton, KeyEvent.VK_R,
                 KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
                 "refreshPortfolio");
@@ -2641,36 +2641,36 @@ public class TradingFrame extends JFrame {
         return -1;
     }
 
-    private void configureLuckyStrategiesMenu() {
-        luckyStrategiesMenu.removeAll();
-        luckyStrategiesMenu.setBackground(new Color(46, 49, 60));
-        luckyStrategiesMenu.setOpaque(true);
-        luckyStrategiesMenu.setBorder(BorderFactory.createCompoundBorder(
+    private void configureSmartPicksMenu() {
+        smartPicksMenu.removeAll();
+        smartPicksMenu.setBackground(new Color(46, 49, 60));
+        smartPicksMenu.setOpaque(true);
+        smartPicksMenu.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(70, 76, 90), 1, true),
                 new EmptyBorder(4, 4, 4, 4)
         ));
-        luckyStrategiesMenu.add(createStatusMenuHeader("Lucky Strategies"));
-        luckyStrategiesMenu.add(createStatusMenuItem(
-                LUCKY_MENU_VOLATILE,
-                "icons/lucky.svg",
-                () -> openLuckyTrendingStocksDialog(LuckyTrendingStocksDialog.StrategyUniverse.VOLATILE)
+        smartPicksMenu.add(createStatusMenuHeader("Smart Picks"));
+        smartPicksMenu.add(createStatusMenuItem(
+                SMART_PICKS_MENU_VOLATILE,
+                "icons/smart-picks.svg",
+                () -> openSmartPicksTrendingStocksDialog(SmartPicksTrendingStocksDialog.StrategyUniverse.VOLATILE)
         ));
-        luckyStrategiesMenu.add(createStatusMenuItem(
-                LUCKY_MENU_DIVERSIFIED,
+        smartPicksMenu.add(createStatusMenuItem(
+                SMART_PICKS_MENU_DIVERSIFIED,
                 "icons/portfolio.svg",
-                () -> openLuckyTrendingStocksDialog(LuckyTrendingStocksDialog.StrategyUniverse.DIVERSIFIED_TOP_20)
+                () -> openSmartPicksTrendingStocksDialog(SmartPicksTrendingStocksDialog.StrategyUniverse.DIVERSIFIED_TOP_20)
         ));
     }
 
-    static List<String> luckyStrategyMenuLabels() {
-        return List.of(LUCKY_MENU_VOLATILE, LUCKY_MENU_DIVERSIFIED);
+    static List<String> smartPicksMenuLabels() {
+        return List.of(SMART_PICKS_MENU_VOLATILE, SMART_PICKS_MENU_DIVERSIFIED);
     }
 
-    private void showLuckyStrategiesMenu() {
-        if (!luckyButton.isEnabled()) {
+    private void showSmartPicksMenu() {
+        if (!smartPicksButton.isEnabled()) {
             return;
         }
-        luckyStrategiesMenu.show(luckyButton, 0, luckyButton.getHeight());
+        smartPicksMenu.show(smartPicksButton, 0, smartPicksButton.getHeight());
     }
 
     private void togglePauseResume(int viewRow) {
@@ -3652,16 +3652,12 @@ public class TradingFrame extends JFrame {
         refreshPanels();
     }
 
-    private void openLuckyTrendingStocksDialog() {
-        openLuckyTrendingStocksDialog(LuckyTrendingStocksDialog.StrategyUniverse.VOLATILE);
-    }
-
-    private void openLuckyTrendingStocksDialog(LuckyTrendingStocksDialog.StrategyUniverse universe) {
-        String actionName = universe == LuckyTrendingStocksDialog.StrategyUniverse.DIVERSIFIED_TOP_20
-                ? "Lucky Strategies: Top 20 Diversified Stocks"
-                : "Lucky Strategies: Volatile Strategy";
+    private void openSmartPicksTrendingStocksDialog(SmartPicksTrendingStocksDialog.StrategyUniverse universe) {
+        String actionName = universe == SmartPicksTrendingStocksDialog.StrategyUniverse.DIVERSIFIED_TOP_20
+                ? "Smart Picks: Diversified Leaders (Top 20)"
+                : "Smart Picks: High Volatility Movers";
         userActionLog.started(actionName);
-        log("[I Am Feeling Lucky] Menu action clicked. source=" + universe);
+        log("[Smart Picks] Menu action clicked. source=" + universe);
         StrategyMode targetMode = selectedViewMode;
         String apiKey = savedApiKeyForSelectedMode();
         String apiSecret = savedApiSecretForSelectedMode();
@@ -3669,14 +3665,14 @@ public class TradingFrame extends JFrame {
             userActionLog.failed(actionName, "Alpaca credentials are required.");
             JOptionPane.showMessageDialog(
                     this,
-                    "Please complete Settings with " + selectedModeLabel() + " Alpaca credentials before using Lucky Strategies.",
+                    "Please complete Settings with " + selectedModeLabel() + " Alpaca credentials before using Smart Picks.",
                     "Alpaca Credentials Required",
                     JOptionPane.WARNING_MESSAGE
             );
             return;
         }
         HttpAlpacaMarketDataApi marketDataApi = new HttpAlpacaMarketDataApi(apiKey, apiSecret);
-        Consumer<LuckySimulationSelection> reviewHandler = selection -> {
+        Consumer<SmartPicksSimulationSelection> reviewHandler = selection -> {
             StrategyRecommendation recommendation = switch (selection.selectedRecommendationType()) {
                 case HIGH_RISK_SHORT_TERM -> selection.analysis().highRiskShortTermRecommendation();
                 case LONG_TERM -> selection.analysis().longTermRecommendation();
@@ -3696,7 +3692,7 @@ public class TradingFrame extends JFrame {
             if (currentPriceForGuard == null || currentPriceForGuard.compareTo(BigDecimal.ZERO) <= 0) {
                 currentPriceForGuard = recommendation.currentPrice();
             }
-            BigDecimal guardedBaseBuyPrice = LuckySimulationPlacementController.adjustedLuckyPaperBaseBuyPrice(
+            BigDecimal guardedBaseBuyPrice = SmartPicksSimulationPlacementController.adjustedSmartPicksPaperBaseBuyPrice(
                     values.buyRulePrice(),
                     currentPriceForGuard
             );
@@ -3757,11 +3753,11 @@ public class TradingFrame extends JFrame {
             }
             Strategy strategy = Strategy.fromConfig(
                     UUID.randomUUID().toString(),
-                    luckyStrategyName(selection, config.symbol(), targetMode),
+                    smartPicksStrategyName(selection, config.symbol(), targetMode),
                     config,
                     targetMode
             );
-            strategy.setLastEvent(luckyEntrySourceEvent(selection, strategy.baseBuyLimitPrice(), targetMode));
+            strategy.setLastEvent(smartPicksEntrySourceEvent(selection, strategy.baseBuyLimitPrice(), targetMode));
             StrategyService service = strategyServiceForMode(targetMode);
             if (service == null) {
                 JOptionPane.showMessageDialog(TradingFrame.this,
@@ -3779,7 +3775,7 @@ public class TradingFrame extends JFrame {
                         JOptionPane.ERROR_MESSAGE);
                 return;
             }
-            log("[I Am Feeling Lucky] " + config.symbol() + " " + targetMode + " strategy created from review dialog.");
+            log("[Smart Picks] " + config.symbol() + " " + targetMode + " strategy created from review dialog.");
             userActionLog.completed(actionName + " Review", config.symbol() + " " + selectedModeLabel() + " strategy added.");
             syncStrategiesFromRepository();
             refreshStrategyTableData();
@@ -3790,11 +3786,11 @@ public class TradingFrame extends JFrame {
                     "Strategy Added",
                     JOptionPane.INFORMATION_MESSAGE);
         };
-        LuckyTrendingStocksDialog dialog = new LuckyTrendingStocksDialog(
+        SmartPicksTrendingStocksDialog dialog = new SmartPicksTrendingStocksDialog(
                 this,
                 new TrendingStocksService(new HttpAlpacaScreenerClient(apiKey, apiSecret)),
                 marketDataApi,
-                this::placeLuckySimulationStrategies,
+                this::placeSmartPicksSimulationStrategies,
                 this::log,
                 targetMode,
                 universe
@@ -3803,27 +3799,27 @@ public class TradingFrame extends JFrame {
         dialog.setVisible(true);
     }
 
-    private String luckyEntrySourceEvent(LuckySimulationSelection selection, BigDecimal baseBuyLimitPrice, StrategyMode mode) {
+    private String smartPicksEntrySourceEvent(SmartPicksSimulationSelection selection, BigDecimal baseBuyLimitPrice, StrategyMode mode) {
         String stockReason = selection.stock().reason() == null || selection.stock().reason().isBlank()
-                ? "lucky-simulation"
+                ? "smart-picks-simulation"
                 : selection.stock().reason();
         String basePrice = baseBuyLimitPrice == null
                 ? "-"
                 : baseBuyLimitPrice.toPlainString();
         String modeLabel = mode == StrategyMode.LIVE ? "Alpaca Live" : "Alpaca Paper";
-        return modeLabel + " mode from I Am Feeling Lucky. Selected "
+        return modeLabel + " mode from Smart Picks. Selected "
                 + selection.selectedRecommendationType().name()
                 + ". Source " + stockReason
                 + ". Base limit buy $" + basePrice
                 + ".";
     }
 
-    private String luckyStrategyName(LuckySimulationSelection selection, String symbol, StrategyMode mode) {
-        return "I_AM_FEELING_LUCKY_" + luckySourceToken(selection) + ": " + symbol + " "
+    private String smartPicksStrategyName(SmartPicksSimulationSelection selection, String symbol, StrategyMode mode) {
+        return "SMART_PICKS_" + smartPicksSourceToken(selection) + ": " + symbol + " "
                 + (mode == StrategyMode.LIVE ? "Live" : "Paper");
     }
 
-    private String luckySourceToken(LuckySimulationSelection selection) {
+    private String smartPicksSourceToken(SmartPicksSimulationSelection selection) {
         String reason = selection == null || selection.stock() == null || selection.stock().reason() == null
                 ? ""
                 : selection.stock().reason().toLowerCase(Locale.ROOT);
@@ -3836,9 +3832,9 @@ public class TradingFrame extends JFrame {
         return "REVIEWED";
     }
 
-    private void placeLuckySimulationStrategies(List<LuckySimulationSelection> selections) {
+    private void placeSmartPicksSimulationStrategies(List<SmartPicksSimulationSelection> selections) {
         StrategyMode targetMode = selectedViewMode;
-        LuckySimulationPlacementController controller = new LuckySimulationPlacementController(new LuckySimulationPlacementController.Gateway() {
+        SmartPicksSimulationPlacementController controller = new SmartPicksSimulationPlacementController(new SmartPicksSimulationPlacementController.Gateway() {
             @Override public com.neuralarc.service.StrategyRepository repository() { return strategyRepository; }
             @Override public StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy) {
                 return createStrategy(strategy, targetMode);
@@ -3874,13 +3870,13 @@ public class TradingFrame extends JFrame {
             }
             @Override public void log(String message) { TradingFrame.this.log(message); }
         }, targetMode);
-        LuckySimulationPlacementController.PlacementResult result = controller.place(selections);
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(selections);
         if (result.canceled()) {
             return;
         }
         String message = controller.summaryMessage(result);
-        JOptionPane.showMessageDialog(this, message, "I Am Feeling Lucky", JOptionPane.INFORMATION_MESSAGE);
-        userActionLog.completed("I Am Feeling Lucky", message.replace('\n', ' '));
+        JOptionPane.showMessageDialog(this, message, "Smart Picks", JOptionPane.INFORMATION_MESSAGE);
+        userActionLog.completed("Smart Picks", message.replace('\n', ' '));
     }
 
     private void editStrategy(int viewRow) {
@@ -5320,7 +5316,7 @@ public class TradingFrame extends JFrame {
             statusBar.setText(statusBarViewModel.brokerText());
             statusBar.setForeground(statusToneColor(statusBarViewModel.brokerTone()));
             bottomStatusBars.updateCompactSummaryAndDetails(statusBarViewModel, availableFundsText);
-            luckyButton.setEnabled(settingsDialog.hasRequiredSettings());
+            smartPicksButton.setEnabled(settingsDialog.hasRequiredSettings());
             refreshTradeHistoryHeading();
             refreshGridSearchVisibility();
             bottomStatusBars.updateLayoutMode();

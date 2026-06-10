@@ -2,8 +2,8 @@ package com.neuralarc.ui;
 
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.model.AutoAnalyzeBundle;
-import com.neuralarc.model.LuckySimulationSelection;
-import com.neuralarc.model.LuckyStockAnalysis;
+import com.neuralarc.model.SmartPicksSimulationSelection;
+import com.neuralarc.model.SmartPicksStockAnalysis;
 import com.neuralarc.model.RecommendationType;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyRecommendation;
@@ -56,8 +56,8 @@ import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class LuckyTrendingStocksDialog extends JDialog {
-    private static final Logger LOGGER = Logger.getLogger(LuckyTrendingStocksDialog.class.getName());
+public class SmartPicksTrendingStocksDialog extends JDialog {
+    private static final Logger LOGGER = Logger.getLogger(SmartPicksTrendingStocksDialog.class.getName());
     private static final DateTimeFormatter DISPLAY_FMT =
             DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm").withZone(ZoneId.systemDefault());
     private static final DateTimeFormatter STATUS_TIME_FMT = DateTimeFormatter.ofPattern("MMM d, HH:mm")
@@ -119,11 +119,11 @@ public class LuckyTrendingStocksDialog extends JDialog {
 
     private final TrendingStocksService trendingStocksService;
     private final AlpacaMarketDataApi marketDataApi;
-    private final Consumer<List<LuckySimulationSelection>> placementHandler;
+    private final Consumer<List<SmartPicksSimulationSelection>> placementHandler;
     private final Consumer<String> logSink;
     private final StrategyMode targetMode;
     private final StrategyUniverse universe;
-    private transient Consumer<LuckySimulationSelection> reviewHandler;
+    private transient Consumer<SmartPicksSimulationSelection> reviewHandler;
     private final JPanel cardsPanel = new JPanel();
     private final JLabel statusLabel = new JLabel("Loading trending stocks...");
     private final JProgressBar progressBar = new JProgressBar();
@@ -132,39 +132,39 @@ public class LuckyTrendingStocksDialog extends JDialog {
     private final List<StockCard> cards = new ArrayList<>();
     private volatile boolean loadInFlight;
 
-    public LuckyTrendingStocksDialog(
+    public SmartPicksTrendingStocksDialog(
             JFrame owner,
             TrendingStocksService trendingStocksService,
             AlpacaMarketDataApi marketDataApi,
-            Consumer<List<LuckySimulationSelection>> placementHandler,
+            Consumer<List<SmartPicksSimulationSelection>> placementHandler,
             Consumer<String> logSink
     ) {
         this(owner, trendingStocksService, marketDataApi, placementHandler, logSink, StrategyMode.PAPER);
     }
 
-    public LuckyTrendingStocksDialog(
+    public SmartPicksTrendingStocksDialog(
             JFrame owner,
             TrendingStocksService trendingStocksService,
             AlpacaMarketDataApi marketDataApi,
-            Consumer<List<LuckySimulationSelection>> placementHandler,
+            Consumer<List<SmartPicksSimulationSelection>> placementHandler,
             Consumer<String> logSink,
             StrategyMode targetMode
     ) {
         this(owner, trendingStocksService, marketDataApi, placementHandler, logSink, targetMode, StrategyUniverse.VOLATILE);
     }
 
-    public LuckyTrendingStocksDialog(
+    public SmartPicksTrendingStocksDialog(
             JFrame owner,
             TrendingStocksService trendingStocksService,
             AlpacaMarketDataApi marketDataApi,
-            Consumer<List<LuckySimulationSelection>> placementHandler,
+            Consumer<List<SmartPicksSimulationSelection>> placementHandler,
             Consumer<String> logSink,
             StrategyMode targetMode,
             StrategyUniverse universe
     ) {
-        super(owner, "I Am Feeling Lucky - " + (universe == StrategyUniverse.DIVERSIFIED_TOP_20
-                ? "Top 20 Diversified Stocks"
-                : "Volatile Strategy"), true);
+        super(owner, "Smart Picks - " + (universe == StrategyUniverse.DIVERSIFIED_TOP_20
+                ? "Diversified Leaders (Top 20)"
+                : "High Volatility Movers"), true);
         this.trendingStocksService = Objects.requireNonNull(trendingStocksService);
         this.marketDataApi = Objects.requireNonNull(marketDataApi);
         this.placementHandler = Objects.requireNonNull(placementHandler);
@@ -175,7 +175,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
         initializeTrendsOnOpen();
     }
 
-    public void setReviewHandler(Consumer<LuckySimulationSelection> reviewHandler) {
+    public void setReviewHandler(Consumer<SmartPicksSimulationSelection> reviewHandler) {
         this.reviewHandler = reviewHandler;
     }
 
@@ -290,12 +290,12 @@ public class LuckyTrendingStocksDialog extends JDialog {
                     }
                     render(result);
                 } catch (Exception ex) {
-                    LOGGER.log(Level.WARNING, "I Am Feeling Lucky failed", ex);
+                    LOGGER.log(Level.WARNING, "Smart Picks failed", ex);
                     statusLabel.setText("Failed to load " + sourceDisplayName().toLowerCase() + ": " + message(ex));
                     JOptionPane.showMessageDialog(
-                            LuckyTrendingStocksDialog.this,
+                            SmartPicksTrendingStocksDialog.this,
                             "Failed to load " + sourceDisplayName().toLowerCase() + ": " + message(ex),
-                            "I Am Feeling Lucky",
+                            "Smart Picks",
                             JOptionPane.ERROR_MESSAGE
                     );
                 }
@@ -322,16 +322,16 @@ public class LuckyTrendingStocksDialog extends JDialog {
         worker.execute();
     }
 
-    private LuckyStockAnalysis analyze(TrendingStock stock) {
+    private SmartPicksStockAnalysis analyze(TrendingStock stock) {
         try {
             log("Analysis started for " + stock.symbol());
             AutoAnalyzeBundle bundle = new AutoAnalyzeService(marketDataApi)
                     .analyzeBundle(stock.symbol(), 12, 15, stock.latestPrice());
             log("Analysis completed for " + stock.symbol());
-            return new LuckyStockAnalysis(stock, bundle, "");
+            return new SmartPicksStockAnalysis(stock, bundle, "");
         } catch (Exception ex) {
             log("Analysis failed for " + stock.symbol() + ": " + ex.getMessage());
-            return new LuckyStockAnalysis(stock, null, message(ex));
+            return new SmartPicksStockAnalysis(stock, null, message(ex));
         }
     }
 
@@ -376,8 +376,8 @@ public class LuckyTrendingStocksDialog extends JDialog {
         return analyzeGroupedStocks(
                 firstTen,
                 secondTen,
-                "Top 20 Diversified Stocks - Set A",
-                "Top 20 Diversified Stocks - Set B",
+                "Diversified Leaders (Top 20) - Set A",
+                "Diversified Leaders (Top 20) - Set B",
                 progressCallback
         );
     }
@@ -397,11 +397,11 @@ public class LuckyTrendingStocksDialog extends JDialog {
         List<GroupedStock> groupedStocks = new ArrayList<>(taskCount);
         firstGroup.forEach(stock -> groupedStocks.add(new GroupedStock(0, stock)));
         secondGroup.forEach(stock -> groupedStocks.add(new GroupedStock(1, stock)));
-        List<LuckyStockAnalysis> firstAnalyses = new ArrayList<>();
-        List<LuckyStockAnalysis> secondAnalyses = new ArrayList<>();
-        List<LuckyStockAnalysis> analyses = LuckyParallelExecutor.mapPreservingOrder(
+        List<SmartPicksStockAnalysis> firstAnalyses = new ArrayList<>();
+        List<SmartPicksStockAnalysis> secondAnalyses = new ArrayList<>();
+        List<SmartPicksStockAnalysis> analyses = SmartPicksParallelExecutor.mapPreservingOrder(
                 groupedStocks,
-                "neuralarc-lucky-analysis",
+                "neuralarc-smart-picks-analysis",
                 groupedStock -> analyze(groupedStock.stock()),
                 completed -> progressCallback.set(percent(completed, taskCount))
         );
@@ -421,7 +421,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
     }
 
     static List<TrendingStock> diversifiedTop20Stocks(Function<String, BigDecimal> latestPriceLookup) {
-        return LuckyParallelExecutor.mapPreservingOrder(TOP_20_DIVERSIFIED_STOCKS, "neuralarc-lucky-price", entry -> {
+        return SmartPicksParallelExecutor.mapPreservingOrder(TOP_20_DIVERSIFIED_STOCKS, "neuralarc-smart-picks-price", entry -> {
             BigDecimal latestPrice = latestPriceLookup == null ? BigDecimal.ZERO : latestPriceLookup.apply(entry.symbol());
             return new TrendingStock(
                     entry.symbol(),
@@ -493,7 +493,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
                     JOptionPane.WARNING_MESSAGE);
             return;
         }
-        LuckySimulationSelection selection = card.selection();
+        SmartPicksSimulationSelection selection = card.selection();
         if (reviewHandler != null) {
             reviewHandler.accept(selection);
         } else {
@@ -503,7 +503,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
         }
     }
 
-    private void addGroup(String title, List<LuckyStockAnalysis> analyses, Color sectionBackground, Color sectionBorder) {
+    private void addGroup(String title, List<SmartPicksStockAnalysis> analyses, Color sectionBackground, Color sectionBorder) {
         JPanel group = new JPanel(new BorderLayout(0, 4));
         group.setOpaque(true);
         group.setBackground(sectionBackground);
@@ -531,7 +531,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
             empty.setForeground(TEXT_PRIMARY);
             body.add(empty);
         }
-        for (LuckyStockAnalysis analysis : analyses == null ? List.<LuckyStockAnalysis>of() : analyses) {
+        for (SmartPicksStockAnalysis analysis : analyses == null ? List.<SmartPicksStockAnalysis>of() : analyses) {
             StockCard card = new StockCard(analysis);
             cards.add(card);
             body.add(card);
@@ -542,7 +542,7 @@ public class LuckyTrendingStocksDialog extends JDialog {
     }
 
     private void placeReviewedStocks() {
-        List<LuckySimulationSelection> selections = cards.stream()
+        List<SmartPicksSimulationSelection> selections = cards.stream()
                 .filter(StockCard::isVisible)
                 .filter(StockCard::placeable)
                 .map(StockCard::selection)
@@ -629,15 +629,15 @@ public class LuckyTrendingStocksDialog extends JDialog {
 
     private void log(String message) {
         LOGGER.info(message);
-        SwingUtilities.invokeLater(() -> logSink.accept("[I Am Feeling Lucky] " + message));
+        SwingUtilities.invokeLater(() -> logSink.accept("[Smart Picks] " + message));
     }
 
     private final class StockCard extends JPanel {
-        private final LuckyStockAnalysis analysis;
+        private final SmartPicksStockAnalysis analysis;
         private final JTabbedPane tabs = new JTabbedPane();
         private final JSpinner quantitySpinner = new JSpinner(new SpinnerNumberModel(10, 1, 100000, 1));
 
-        private StockCard(LuckyStockAnalysis analysis) {
+        private StockCard(SmartPicksStockAnalysis analysis) {
             super(new BorderLayout(0, 6));
             this.analysis = analysis;
             setOpaque(true);
@@ -787,8 +787,8 @@ public class LuckyTrendingStocksDialog extends JDialog {
                     && usablePrice(recommendation.baseBuyPrice());
         }
 
-        private LuckySimulationSelection selection() {
-            return new LuckySimulationSelection(analysis.stock(), analysis.analysis(), selectedType(), selectedQuantity());
+        private SmartPicksSimulationSelection selection() {
+            return new SmartPicksSimulationSelection(analysis.stock(), analysis.analysis(), selectedType(), selectedQuantity());
         }
 
         private int selectedQuantity() {
@@ -857,8 +857,8 @@ public class LuckyTrendingStocksDialog extends JDialog {
     }
 
     private record LoadResult(
-            List<LuckyStockAnalysis> gainers,
-            List<LuckyStockAnalysis> losers,
+            List<SmartPicksStockAnalysis> gainers,
+            List<SmartPicksStockAnalysis> losers,
             String primaryTitle,
             String secondaryTitle
     ) {}

@@ -161,7 +161,7 @@ class StrategyPnlTotalsCalculatorTest {
                 StrategyMode.PAPER,
                 1,
                 com.neuralarc.model.RecommendationType.SHORT_TERM,
-                PortfolioCaptureLuckyStrategy.VOLATILE,
+                PortfolioCaptureSmartPicksStrategy.VOLATILE,
                 false
         );
     }

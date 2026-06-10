@@ -33,7 +33,7 @@ class PortfolioCaptureStateStoreTest {
                 StrategyMode.LIVE,
                 3,
                 RecommendationType.HIGH_RISK_SHORT_TERM,
-                PortfolioCaptureLuckyStrategy.DIVERSIFIED_TOP_20,
+                PortfolioCaptureSmartPicksStrategy.DIVERSIFIED_TOP_20,
                 true
         );
         Instant timestamp = Instant.parse("2026-05-15T14:30:00Z");
@@ -51,10 +51,28 @@ class PortfolioCaptureStateStoreTest {
         assertEquals(StrategyMode.LIVE, restored.get().config().reentryMode());
         assertEquals(3, restored.get().config().reentryQuantity());
         assertEquals(RecommendationType.HIGH_RISK_SHORT_TERM, restored.get().config().reentryRecommendationType());
-        assertEquals(PortfolioCaptureLuckyStrategy.DIVERSIFIED_TOP_20, restored.get().config().reentryLuckyStrategy());
+        assertEquals(PortfolioCaptureSmartPicksStrategy.DIVERSIFIED_TOP_20, restored.get().config().reentrySmartPicksStrategy());
         assertTrue(restored.get().config().autoCleanPendingBeforeCycle());
         assertEquals(timestamp, restored.get().lastMonitoringTimestamp());
         assertEquals(new BigDecimal("12345.67"), restored.get().lastCalculatedPortfolioValue());
+    }
+
+    @Test
+    void loadsSmartPicksStrategyFromLegacyLuckyKey() throws Exception {
+        Path stateFile = tempDir.resolve("capture-state.json");
+        java.nio.file.Files.writeString(stateFile, """
+                {
+                  "enabled": true,
+                  "targetType": "PROFIT_AMOUNT",
+                  "targetValue": "100",
+                  "reentryLuckyStrategy": "DIVERSIFIED_TOP_20"
+                }
+                """);
+        PortfolioCaptureStateStore store = new PortfolioCaptureStateStore(stateFile);
+
+        Optional<PortfolioCaptureStateStore.State> restored = store.load();
+        assertTrue(restored.isPresent());
+        assertEquals(PortfolioCaptureSmartPicksStrategy.DIVERSIFIED_TOP_20, restored.get().config().reentrySmartPicksStrategy());
     }
 
     @Test
