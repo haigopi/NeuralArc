@@ -58,6 +58,7 @@ public class GitHubReleaseUpdateService {
         String publishedAt = json.optString("published_at", "");
         AssetMatch asset = selectAsset(json.optJSONArray("assets"), detectPlatform());
         boolean updateAvailable = compareVersions(latestVersion, normalizedCurrentVersion) > 0;
+        boolean dataCompatibilityWarning = hasDataCompatibilityWarning(releaseNotes);
 
         return new UpdateCheckResult(
                 true,
@@ -70,6 +71,7 @@ public class GitHubReleaseUpdateService {
                 asset.downloadUrl(),
                 asset.assetName(),
                 publishedAt.isBlank() ? null : Instant.parse(publishedAt),
+                dataCompatibilityWarning,
                 updateAvailable
                         ? "Update available"
                         : "You are already on the latest version."
@@ -151,6 +153,20 @@ public class GitHubReleaseUpdateService {
         return 0;
     }
 
+    static boolean hasDataCompatibilityWarning(String releaseNotes) {
+        if (releaseNotes == null || releaseNotes.isBlank()) {
+            return false;
+        }
+        String normalized = releaseNotes.toLowerCase();
+        return normalized.contains("[data-incompatible]")
+                || normalized.contains("[local-data-reset]")
+                || normalized.contains("local data may be lost")
+                || normalized.contains("data loss")
+                || normalized.contains("incompatible with local data")
+                || normalized.contains("incompatible with existing data")
+                || normalized.contains("breaking data migration");
+    }
+
     enum Platform {
         MAC,
         WINDOWS,
@@ -171,10 +187,11 @@ public class GitHubReleaseUpdateService {
             String downloadUrl,
             String assetName,
             Instant publishedAt,
+            boolean dataCompatibilityWarning,
             String message
     ) {
         static UpdateCheckResult notConfigured(String currentVersion, String message) {
-            return new UpdateCheckResult(false, false, normalizeVersion(currentVersion), "", "", "", "", "", "", null, message);
+            return new UpdateCheckResult(false, false, normalizeVersion(currentVersion), "", "", "", "", "", "", null, false, message);
         }
     }
 }

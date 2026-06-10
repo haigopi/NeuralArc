@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class StrategyPnlTotalsCalculatorTest {
     private final StrategyPnlTotalsCalculator calculator = new StrategyPnlTotalsCalculator();
+    private final PortfolioCaptureCalculator captureCalculator = new PortfolioCaptureCalculator();
 
     @Test
     void totalsFollowGridRowSemanticsForUnrealizedAndRealized() {
@@ -69,6 +70,53 @@ class StrategyPnlTotalsCalculatorTest {
         assertEquals(new BigDecimal("0.00"), totals.liveRealized());
     }
 
+    @Test
+    void headerUnrealizedPnlMatchesLiquidationSnapshotForSameOpenRows() {
+        ManagedStrategy gain = managed("AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        gain.setCachedPosition(openPosition("AAPL", "100.00", "115.00", 10));
+        ManagedStrategy loss = managed("MSFT", StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        loss.setCachedPosition(openPosition("MSFT", "200.00", "190.00", 5));
+        ManagedStrategy closed = managed("CLOSED", StrategyMode.PAPER, StrategyStatus.COMPLETED);
+        closed.setCachedPosition(new Position("CLOSED"));
+
+        List<ManagedStrategy> visibleRows = List.of(gain, loss, closed);
+        StrategyPnlTotalsCalculator.Totals totals = calculator.calculate(
+                visibleRows,
+                entry -> true,
+                id -> new BigDecimal("99.00")
+        );
+        PortfolioCaptureSnapshot snapshot = captureCalculator.calculate(
+                visibleRows,
+                config(true)
+        );
+
+        assertEquals(totals.paperUnrealized(), snapshot.unrealizedPnl());
+        assertEquals(new BigDecimal("100.00"), snapshot.unrealizedPnl());
+    }
+
+    @Test
+    void invalidOpenRowsAreSkippedByHeaderAndLiquidationMath() {
+        ManagedStrategy invalid = managed("BAD", StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        Position position = new Position("BAD");
+        position.applyBuy(5, new BigDecimal("100.00"));
+        position.setLastPrice(BigDecimal.ZERO);
+        invalid.setCachedPosition(position);
+
+        StrategyPnlTotalsCalculator.Totals totals = calculator.calculate(
+                List.of(invalid),
+                entry -> true,
+                id -> BigDecimal.ZERO
+        );
+        PortfolioCaptureSnapshot snapshot = captureCalculator.calculate(
+                List.of(invalid),
+                config(true)
+        );
+
+        assertEquals(new BigDecimal("0.00"), totals.paperUnrealized());
+        assertEquals(new BigDecimal("0.00"), snapshot.unrealizedPnl());
+        assertEquals(0, snapshot.eligibleCount());
+    }
+
     private ManagedStrategy managed(String symbol, StrategyMode mode, StrategyStatus status) {
         Strategy strategy = Strategy.fromConfig(
                 UUID.randomUUID().toString(),
@@ -99,5 +147,22 @@ class StrategyPnlTotalsCalculatorTest {
         position.setLastPrice(new BigDecimal(lastPrice));
         return position;
     }
-}
 
+    private PortfolioCaptureConfig config(boolean includeLosses) {
+        return new PortfolioCaptureConfig(
+                PortfolioCaptureMode.TARGET_MONITORING,
+                PortfolioCaptureTargetType.PROFIT_AMOUNT,
+                new BigDecimal("100.00"),
+                includeLosses,
+                1,
+                true,
+                true,
+                PortfolioCaptureExecutionFlow.EXECUTE_ONCE_AND_STOP,
+                StrategyMode.PAPER,
+                1,
+                com.neuralarc.model.RecommendationType.SHORT_TERM,
+                PortfolioCaptureLuckyStrategy.VOLATILE,
+                false
+        );
+    }
+}

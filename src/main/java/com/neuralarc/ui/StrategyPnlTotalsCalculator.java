@@ -9,6 +9,16 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 final class StrategyPnlTotalsCalculator {
+    private final StrategyOpenPnlCalculator openPnlCalculator;
+
+    StrategyPnlTotalsCalculator() {
+        this(new StrategyOpenPnlCalculator());
+    }
+
+    StrategyPnlTotalsCalculator(StrategyOpenPnlCalculator openPnlCalculator) {
+        this.openPnlCalculator = openPnlCalculator;
+    }
+
     Totals calculate(
             List<ManagedStrategy> strategies,
             Predicate<ManagedStrategy> includeInTotals,
@@ -27,9 +37,14 @@ final class StrategyPnlTotalsCalculator {
             if (entry == null || entry.strategy == null || !includeInTotals.test(entry)) {
                 continue;
             }
-            boolean openPosition = entry.cachedPosition().getTotalShares() > 0;
+            boolean hasShares = entry.cachedPosition().getTotalShares() > 0;
+            java.util.Optional<StrategyOpenPnlCalculator.Row> openRow = openPnlCalculator.openRow(entry);
+            if (hasShares && openRow.isEmpty()) {
+                continue;
+            }
+            boolean openPosition = openRow.isPresent();
             BigDecimal pnlValue = openPosition
-                    ? entry.cachedPosition().unrealizedPnl()
+                    ? openRow.get().unrealizedPnl()
                     : safe(realizedPnlByStrategyId.apply(entry.strategy.id()));
 
             if (entry.strategy.mode() == StrategyMode.PAPER) {
@@ -68,4 +83,3 @@ final class StrategyPnlTotalsCalculator {
         }
     }
 }
-

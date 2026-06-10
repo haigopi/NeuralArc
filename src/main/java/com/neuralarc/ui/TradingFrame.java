@@ -4132,7 +4132,8 @@ public class TradingFrame extends JFrame {
                 isStrategySessionSuppressed(entry.strategy),
                 isWaitingForFill(entry.strategy),
                 entry.strategy.status() == StrategyStatus.FAILED && isQueueableSessionError(entry.strategy.lastError()),
-                !connectionOk || connectionRetryPending
+                !connectionOk || connectionRetryPending,
+                entry.cachedRealizedPnl()
         );
     }
 

@@ -1,6 +1,5 @@
 package com.neuralarc.ui;
 
-import com.neuralarc.model.Position;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.util.Monetary;
 
@@ -10,6 +9,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 final class PortfolioCaptureCalculator {
+    private final StrategyOpenPnlCalculator openPnlCalculator;
+
+    PortfolioCaptureCalculator() {
+        this(new StrategyOpenPnlCalculator());
+    }
+
+    PortfolioCaptureCalculator(StrategyOpenPnlCalculator openPnlCalculator) {
+        this.openPnlCalculator = openPnlCalculator;
+    }
+
     PortfolioCaptureSnapshot calculate(List<ManagedStrategy> strategies, PortfolioCaptureConfig config) {
         if (strategies == null || strategies.isEmpty()) {
             return PortfolioCaptureSnapshot.empty();
@@ -24,25 +33,26 @@ final class PortfolioCaptureCalculator {
             if (!eligible(entry, config)) {
                 continue;
             }
-            Position position = entry.cachedPosition();
-            BigDecimal rowPnl = position.unrealizedPnl();
+            StrategyOpenPnlCalculator.Row pnlRow = openPnlCalculator.openRow(entry).orElse(null);
+            if (pnlRow == null) {
+                continue;
+            }
+            BigDecimal rowPnl = pnlRow.unrealizedPnl();
             if (!includeLosses && rowPnl.compareTo(BigDecimal.ZERO) < 0) {
                 continue;
             }
-            BigDecimal rowInvestment = position.totalInvested();
-            BigDecimal rowMarketValue = position.marketValue();
             rows.add(new PortfolioCaptureSnapshot.Row(
-                    entry.strategy.id(),
-                    entry.strategy.symbol(),
-                    position.getTotalShares(),
-                    position.getAverageCost(),
-                    position.getLastPrice(),
-                    rowInvestment,
-                    rowMarketValue,
+                    pnlRow.strategyId(),
+                    pnlRow.symbol(),
+                    pnlRow.shares(),
+                    pnlRow.averageCost(),
+                    pnlRow.lastPrice(),
+                    pnlRow.investment(),
+                    pnlRow.marketValue(),
                     rowPnl
             ));
-            investment = investment.add(rowInvestment);
-            marketValue = marketValue.add(rowMarketValue);
+            investment = investment.add(pnlRow.investment());
+            marketValue = marketValue.add(pnlRow.marketValue());
             pnl = pnl.add(rowPnl);
         }
 
@@ -96,9 +106,6 @@ final class PortfolioCaptureCalculator {
         if (config != null && config.includeOnlyActiveStrategies() && entry.isPaused()) {
             return false;
         }
-        Position position = entry.cachedPosition();
-        return position.getTotalShares() > 0
-                && position.getLastPrice().compareTo(BigDecimal.ZERO) > 0
-                && position.getAverageCost().compareTo(BigDecimal.ZERO) > 0;
+        return openPnlCalculator.openRow(entry).isPresent();
     }
 }

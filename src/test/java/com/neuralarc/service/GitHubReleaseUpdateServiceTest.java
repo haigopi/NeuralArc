@@ -48,4 +48,17 @@ class GitHubReleaseUpdateServiceTest {
         assertEquals("NeuralArc-1.0.1.exe", match.assetName());
         assertEquals("https://example.com/a.exe", match.downloadUrl());
     }
+
+    @Test
+    void detectsDataCompatibilityWarningsFromReleaseNotes() {
+        assertEquals(true, GitHubReleaseUpdateService.hasDataCompatibilityWarning(
+                "Important: [data-incompatible] this release rebuilds local storage."
+        ));
+        assertEquals(true, GitHubReleaseUpdateService.hasDataCompatibilityWarning(
+                "Breaking data migration. Local data may be lost in rare cases."
+        ));
+        assertEquals(false, GitHubReleaseUpdateService.hasDataCompatibilityWarning(
+                "Bug fixes and UI improvements."
+        ));
+    }
 }

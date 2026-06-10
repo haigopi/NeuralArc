@@ -117,6 +117,7 @@ final class UpdateCheckSupport {
                 + "Current version: " + safe(result.currentVersion()) + "<br>"
                 + "Latest version: " + safe(result.latestVersion())
                 + (published.isBlank() ? "" : "<br>Published: " + published)
+                + "<br><br>" + updateDataSafetyHtml(result)
                 + "</html>");
         header.setFont(FontLoader.ui(java.awt.Font.PLAIN, 12f));
         panel.add(header, BorderLayout.NORTH);
@@ -144,10 +145,43 @@ final class UpdateCheckSupport {
                 options[0]);
 
         if (selection == 0) {
-            openUrl(parent, result.downloadUrl().isBlank() ? result.releasePageUrl() : result.downloadUrl());
+            if (result.downloadUrl().isBlank()) {
+                openUrl(parent, result.releasePageUrl());
+            } else if (confirmDownloadWithDataWarning(parent, result)) {
+                openUrl(parent, result.downloadUrl());
+            }
         } else if (!result.downloadUrl().isBlank() && selection == 1) {
             openUrl(parent, result.releasePageUrl());
         }
+    }
+
+    private static String updateDataSafetyHtml(GitHubReleaseUpdateService.UpdateCheckResult result) {
+        if (result.dataCompatibilityWarning()) {
+            return "<b style='color:#B00020'>Data compatibility warning:</b> "
+                    + "This update is marked as potentially incompatible with local application data. "
+                    + "Local strategy/history data may be lost in rare situations. "
+                    + "NeuralArc will still pull and sync broker-side positions/orders where available after installation.";
+        }
+        return "<b>Data safety:</b> Normal updates keep local NeuralArc data in place. "
+                + "Do not uninstall/reset application data during the update unless the release notes explicitly require it.";
+    }
+
+    private static boolean confirmDownloadWithDataWarning(Component parent, GitHubReleaseUpdateService.UpdateCheckResult result) {
+        if (!result.dataCompatibilityWarning()) {
+            return true;
+        }
+        int choice = JOptionPane.showConfirmDialog(parent,
+                "<html><body style='width:440px'>"
+                        + "<b>This update may not be compatible with existing local data.</b><br><br>"
+                        + "There may be local data loss with this update in rare situations. "
+                        + "After installation, NeuralArc will pull and sync broker-side data where available, "
+                        + "but local-only strategy history/settings may not be fully recoverable.<br><br>"
+                        + "Continue to download this update?"
+                        + "</body></html>",
+                "Data Compatibility Warning",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
+        return choice == JOptionPane.YES_OPTION;
     }
 
     private static void openUrl(Component parent, String url) {

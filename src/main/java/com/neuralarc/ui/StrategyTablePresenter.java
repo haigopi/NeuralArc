@@ -7,6 +7,7 @@ import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.util.BrokerOrderStatusUtil;
+import com.neuralarc.util.Monetary;
 
 import java.math.BigDecimal;
 
@@ -66,6 +67,26 @@ public final class StrategyTablePresenter {
             boolean queueableSessionError,
             boolean brokerUnavailableActive
     ) {
+        return displayStatusLabel(
+                strategy,
+                position,
+                marketClosedSuppressed,
+                waitingForFill,
+                queueableSessionError,
+                brokerUnavailableActive,
+                null
+        );
+    }
+
+    public String displayStatusLabel(
+            Strategy strategy,
+            Position position,
+            boolean marketClosedSuppressed,
+            boolean waitingForFill,
+            boolean queueableSessionError,
+            boolean brokerUnavailableActive,
+            BigDecimal realizedPnl
+    ) {
         if (strategy == null) {
             return "";
         }
@@ -107,6 +128,10 @@ public final class StrategyTablePresenter {
                 return expiredStatusLabel(strategy);
             }
         }
+        String completedLabel = completedBookedStatusLabel(strategy, realizedPnl);
+        if (!completedLabel.isBlank()) {
+            return completedLabel;
+        }
         String lifecycle = appendPlacedQuantity(
                 formatLifecycleStateForDisplay(strategy.currentState()),
                 strategy,
@@ -138,6 +163,22 @@ public final class StrategyTablePresenter {
             return activeRule.isBlank() ? lifecycle + " - Monitoring next configured rule" : activeRule;
         }
         return lifecycle;
+    }
+
+    private String completedBookedStatusLabel(Strategy strategy, BigDecimal realizedPnl) {
+        if (strategy == null
+                || strategy.status() != StrategyStatus.COMPLETED
+                || strategy.currentState() != StrategyLifecycleState.COMPLETED) {
+            return "";
+        }
+        BigDecimal booked = realizedPnl == null ? BigDecimal.ZERO : Monetary.round(realizedPnl);
+        if (booked.compareTo(BigDecimal.ZERO) > 0) {
+            return "Completed - Profit Booked $" + booked.toPlainString();
+        }
+        if (booked.compareTo(BigDecimal.ZERO) < 0) {
+            return "Completed - Loss Booked $" + booked.abs().toPlainString();
+        }
+        return "Completed";
     }
 
     private String expiredStatusLabel(Strategy strategy) {
