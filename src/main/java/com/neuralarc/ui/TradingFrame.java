@@ -1350,11 +1350,11 @@ public class TradingFrame extends JFrame {
         filledOrdersGrid.getViewport().setOpaque(false);
         filledOrdersGrid.getViewport().setBackground(new Color(0, 0, 0, 0));
         javax.swing.border.TitledBorder filledOrdersTitle = BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(new Color(208, 214, 222), 1, true),
+                BorderFactory.createLineBorder(ThemeColors.color("NeuralArc.Section.border", new Color(208, 214, 222)), 1, true),
                 "Trade History"
         );
         filledOrdersTitle.setTitleFont(FontLoader.ui(Font.BOLD, 10f));
-        filledOrdersTitle.setTitleColor(new Color(78, 84, 94));
+        filledOrdersTitle.setTitleColor(ThemeColors.color("NeuralArc.Section.titleForeground", new Color(78, 84, 94)));
         filledOrdersGrid.setBorder(BorderFactory.createCompoundBorder(
                 new EmptyBorder(10, 0, 0, 0),
                 filledOrdersTitle
@@ -1460,6 +1460,7 @@ public class TradingFrame extends JFrame {
 
         applyButtonIcon(footerActionsButton, "icons/actions.svg", 15);
         styleStatusActionButton(footerActionsButton);
+        markAsDropdownButton(footerActionsButton);
         footerActionsMenu.setBackground(new Color(46, 49, 60));
         footerActionsMenu.setOpaque(true);
         footerActionsMenu.setBorder(BorderFactory.createCompoundBorder(
@@ -1555,11 +1556,11 @@ public class TradingFrame extends JFrame {
         eventLogScrollPane.getViewport().setOpaque(false);
         eventLogScrollPane.getViewport().setBackground(new Color(0, 0, 0, 0));
         javax.swing.border.TitledBorder eventLogTitle = BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(new Color(208, 214, 222), 1, true),
+                BorderFactory.createLineBorder(ThemeColors.color("NeuralArc.Section.border", new Color(208, 214, 222)), 1, true),
                 "Logs"
         );
         eventLogTitle.setTitleFont(FontLoader.ui(Font.BOLD, 10f));
-        eventLogTitle.setTitleColor(new Color(78, 84, 94));
+        eventLogTitle.setTitleColor(ThemeColors.color("NeuralArc.Section.titleForeground", new Color(78, 84, 94)));
         eventLogScrollPane.setBorder(BorderFactory.createCompoundBorder(
                 new EmptyBorder(10, 0, 0, 0),
                 eventLogTitle
@@ -1829,9 +1830,11 @@ public class TradingFrame extends JFrame {
 
         styleHeaderButton(addStrategyButton);
         styleHeaderButton(smartPicksButton);
+        markAsDropdownButton(smartPicksButton);
         styleHeaderButton(refreshPortfolioButton);
         styleCompactHeaderButton(capturePortfolioButton);
         styleHeaderButton(portfolioActionsButton);
+        markAsDropdownButton(portfolioActionsButton);
         styleHeaderButton(settingsButton);
         applyButtonIcon(addStrategyButton, "icons/add-stock-strategy.svg", 16);
         applyButtonIcon(smartPicksButton, "icons/smart-picks.svg", 16);
@@ -1916,30 +1919,43 @@ public class TradingFrame extends JFrame {
     }
 
     // ── Shared colours for the dark-background (header / footer) buttons ──────
-    private static final Color DARK_BTN_BG           = new Color(60,  60,  90);
-    private static final Color DARK_BTN_BORDER        = new Color(100, 100, 160);
-    private static final Color DARK_BTN_BG_HOVER      = new Color(80,  80,  118);
-    private static final Color DARK_BTN_BORDER_HOVER  = new Color(128, 128, 196);
-    private static final Color DARK_BTN_BG_PRESSED    = new Color(42,  42,  68);
-    private static final Color DARK_BTN_BORDER_PRESSED= new Color(85,  85,  148);
+    private static final Color DARK_BTN_BG           = ThemeColors.color("NeuralArc.Button.background", new Color(60,  60,  90));
+    private static final Color DARK_BTN_BORDER        = ThemeColors.color("NeuralArc.Button.border", new Color(100, 100, 160));
+    private static final Color DARK_BTN_BG_HOVER      = ThemeColors.color("NeuralArc.Button.hoverBackground", new Color(80,  80,  118));
+    private static final Color DARK_BTN_BORDER_HOVER  = ThemeColors.color("NeuralArc.Button.hoverBorder", new Color(128, 128, 196));
+    private static final Color DARK_BTN_BG_PRESSED    = ThemeColors.color("NeuralArc.Button.pressedBackground", new Color(42,  42,  68));
+    private static final Color DARK_BTN_BORDER_PRESSED= ThemeColors.color("NeuralArc.Button.pressedBorder", new Color(85,  85,  148));
+    private static final Color DARK_BTN_FG            = ThemeColors.color("NeuralArc.Button.foreground", new Color(230, 230, 255));
 
     private void styleHeaderButton(JButton button) {
         button.setFocusPainted(false);
         button.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
-        button.setForeground(new Color(230, 230, 255));
+        button.setFont(FontLoader.ui(Font.BOLD, 11f));
+        button.setForeground(DARK_BTN_FG);
         button.setBackground(DARK_BTN_BG);
         button.setOpaque(true);
         button.setContentAreaFilled(true);
         button.setRolloverEnabled(true);
         button.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(DARK_BTN_BORDER, 1, true),
-                new EmptyBorder(7, 12, 7, 12)
+                new EmptyBorder(4, 10, 4, 10)
         ));
-        button.setIconTextGap(8);
+        button.setIconTextGap(6);
         installDarkButtonInteraction(button,
-                new EmptyBorder(7, 12, 7, 12),
-                new EmptyBorder(6, 11, 6, 11));
+                new EmptyBorder(4, 10, 4, 10),
+                new EmptyBorder(3, 9, 3, 9));
     }
+
+    /** Marks a button that opens a popup menu with a trailing dropdown chevron. */
+    private static void markAsDropdownButton(JButton button) {
+        String text = button.getText();
+        if (text != null && !text.endsWith(DROPDOWN_ARROW_SUFFIX)) {
+            button.setText(text + DROPDOWN_ARROW_SUFFIX);
+        }
+        button.setHorizontalTextPosition(SwingConstants.LEADING);
+    }
+
+    private static final String DROPDOWN_ARROW_SUFFIX = "  \u25BE";
 
     private void styleCompactHeaderButton(JButton button) {
         button.setFocusPainted(false);
@@ -1949,32 +1965,33 @@ public class TradingFrame extends JFrame {
         button.setOpaque(true);
         button.setContentAreaFilled(true);
         button.setRolloverEnabled(true);
+        button.setFont(FontLoader.ui(Font.BOLD, 11f));
         button.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(DARK_BTN_BORDER, 1, true),
-                new EmptyBorder(5, 10, 5, 10)
+                new EmptyBorder(3, 8, 3, 8)
         ));
-        button.setIconTextGap(8);
+        button.setIconTextGap(6);
         installDarkButtonInteraction(button,
-                new EmptyBorder(5, 10, 5, 10),
-                new EmptyBorder(4, 9, 4, 9));
+                new EmptyBorder(3, 8, 3, 8),
+                new EmptyBorder(2, 7, 2, 7));
     }
 
     private void styleStatusActionButton(JButton button) {
         button.setFocusPainted(false);
         button.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
-        button.setFont(BASE_FONT.deriveFont(Font.BOLD, 12f));
-        button.setForeground(new Color(220, 220, 255));
+        button.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        button.setForeground(DARK_BTN_FG);
         button.setBackground(DARK_BTN_BG);
         button.setOpaque(true);
         button.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(DARK_BTN_BORDER, 1, true),
-                new EmptyBorder(5, 12, 5, 12)
+                new EmptyBorder(3, 10, 3, 10)
         ));
-        button.setMargin(new java.awt.Insets(5, 12, 5, 12));
-        button.setIconTextGap(8);
+        button.setMargin(new java.awt.Insets(3, 10, 3, 10));
+        button.setIconTextGap(6);
         installDarkButtonInteraction(button,
-                new EmptyBorder(5, 12, 5, 12),
-                new EmptyBorder(4, 11, 4, 11));
+                new EmptyBorder(3, 10, 3, 10),
+                new EmptyBorder(2, 9, 2, 9));
     }
 
     private void installPremiumActionButtonStyle(JButton button) {
@@ -2071,7 +2088,7 @@ public class TradingFrame extends JFrame {
 
     private void showUpdateAvailableNotice(GitHubReleaseUpdateService.UpdateCheckResult result) {
         updateAvailableNoticeActive = true;
-        footerActionsButton.setText("Update Available");
+        footerActionsButton.setText("Update Available" + DROPDOWN_ARROW_SUFFIX);
         footerActionsButton.setToolTipText(TooltipStyler.text(
                 "Newer version " + result.latestVersion() + " is available. Click to check updates.",
                 300
@@ -2109,7 +2126,7 @@ public class TradingFrame extends JFrame {
         if (updateAvailableFlashTimer != null) {
             updateAvailableFlashTimer.stop();
         }
-        footerActionsButton.setText("Actions");
+        footerActionsButton.setText("Actions" + DROPDOWN_ARROW_SUFFIX);
         footerActionsButton.setToolTipText(null);
         footerActionsButton.setForeground(new Color(220, 220, 255));
         footerActionsButton.setBackground(DARK_BTN_BG);

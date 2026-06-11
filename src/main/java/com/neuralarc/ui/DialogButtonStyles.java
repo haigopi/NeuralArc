@@ -2,6 +2,7 @@ package com.neuralarc.ui;
 
 import com.neuralarc.util.FontLoader;
 import com.neuralarc.util.SvgIconLoader;
+import com.neuralarc.util.ThemeColors;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -11,16 +12,18 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 
 final class DialogButtonStyles {
+    // Shares the NeuralArc.Button.* palette with the main-frame header buttons
+    // so dialog actions look identical to the rest of the application.
     // ── Base state ────────────────────────────────────────────────────────────
-    private static final Color BUTTON_BG          = new Color(250, 250, 250);
-    private static final Color BUTTON_BORDER      = new Color(100, 100, 160);
-    private static final Color BUTTON_TEXT        = new Color(20, 20, 25);
+    private static final Color BUTTON_BG          = ThemeColors.color("NeuralArc.Button.background", new Color(250, 250, 250));
+    private static final Color BUTTON_BORDER      = ThemeColors.color("NeuralArc.Button.border", new Color(100, 100, 160));
+    private static final Color BUTTON_TEXT        = ThemeColors.color("NeuralArc.Button.foreground", new Color(20, 20, 25));
     // ── Hover state ───────────────────────────────────────────────────────────
-    private static final Color BUTTON_BG_HOVER     = new Color(224, 230, 255);
-    private static final Color BUTTON_BORDER_HOVER = new Color(72, 82, 180);
+    private static final Color BUTTON_BG_HOVER     = ThemeColors.color("NeuralArc.Button.hoverBackground", new Color(224, 230, 255));
+    private static final Color BUTTON_BORDER_HOVER = ThemeColors.color("NeuralArc.Button.hoverBorder", new Color(72, 82, 180));
     // ── Pressed state ─────────────────────────────────────────────────────────
-    private static final Color BUTTON_BG_PRESSED     = new Color(198, 210, 252);
-    private static final Color BUTTON_BORDER_PRESSED = new Color(50, 60, 155);
+    private static final Color BUTTON_BG_PRESSED     = ThemeColors.color("NeuralArc.Button.pressedBackground", new Color(198, 210, 252));
+    private static final Color BUTTON_BORDER_PRESSED = ThemeColors.color("NeuralArc.Button.pressedBorder", new Color(50, 60, 155));
 
     private DialogButtonStyles() {
     }
@@ -34,10 +37,10 @@ final class DialogButtonStyles {
         button.setOpaque(true);
         button.setContentAreaFilled(true);
         button.setBorderPainted(true);
-        button.putClientProperty("JButton.arc", 14);
+        button.putClientProperty("JButton.arc", 8);
         button.setBorder(normalBorder());
-        button.setMargin(new java.awt.Insets(5, 12, 5, 12));
-        button.setIconTextGap(8);
+        button.setMargin(new java.awt.Insets(3, 10, 3, 10));
+        button.setIconTextGap(6);
         button.setHorizontalTextPosition(SwingConstants.RIGHT);
         button.setVerticalTextPosition(SwingConstants.CENTER);
 
@@ -84,7 +87,7 @@ final class DialogButtonStyles {
 
     static void apply(JButton button, String iconResourcePath) {
         apply(button);
-        button.setIcon(SvgIconLoader.load(iconResourcePath, 15, BUTTON_BORDER));
+        button.setIcon(SvgIconLoader.load(iconResourcePath, 14, BUTTON_TEXT));
     }
 
     // ── Border helpers ────────────────────────────────────────────────────────
@@ -92,14 +95,14 @@ final class DialogButtonStyles {
     private static javax.swing.border.Border normalBorder() {
         return BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(BUTTON_BORDER, 1, true),
-                new EmptyBorder(7, 12, 7, 12)
+                new EmptyBorder(4, 10, 4, 10)
         );
     }
 
     private static javax.swing.border.Border hoverBorder() {
         return BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(BUTTON_BORDER_HOVER, 1, true),
-                new EmptyBorder(7, 12, 7, 12)
+                new EmptyBorder(4, 10, 4, 10)
         );
     }
 
@@ -108,7 +111,7 @@ final class DialogButtonStyles {
         // doesn't shift/grow.
         return BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(BUTTON_BORDER_PRESSED, 2, true),
-                new EmptyBorder(6, 11, 6, 11)
+                new EmptyBorder(3, 9, 3, 9)
         );
     }
 }

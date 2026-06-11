@@ -11,6 +11,7 @@ import com.neuralarc.service.AiRecommendationProviderFactory;
 import com.neuralarc.service.AiRecommendationService;
 import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.util.FontLoader;
+import com.neuralarc.util.ThemeColors;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -45,7 +46,7 @@ public class AiRecommendationPanel extends JPanel {
     private static final DateTimeFormatter DISPLAY_FMT =
             DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm").withZone(ZoneId.systemDefault());
     private static final Color TEXT_MUTED = new Color(130, 130, 130);
-    private static final Color INPUT_BORDER = new Color(190, 190, 200);
+    private static final Color INPUT_BORDER = ThemeColors.color("NeuralArc.Input.border", new Color(190, 190, 200));
     private static final int PANEL_WIDTH = 760;
 
     private final Supplier<AiRecommendationRequest> requestSupplier;
