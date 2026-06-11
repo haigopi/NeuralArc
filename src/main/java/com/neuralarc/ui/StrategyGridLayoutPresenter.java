@@ -5,17 +5,16 @@ final class StrategyGridLayoutPresenter {
     static final int ACTIONS_COLUMN_INDEX = 11;
 
     ColumnWidth pollingColumnWidth() {
-        return new ColumnWidth(170, 150);
+        return new ColumnWidth(190, 160);
     }
 
     ColumnWidth actionsColumnWidth(boolean promoteVisible) {
-        return promoteVisible
-                ? new ColumnWidth(520, 430)
-                : new ColumnWidth(320, 260);
+        int width = StrategyGridActionLayout.columnWidth(promoteVisible);
+        return new ColumnWidth(width, width);
     }
 
     int actionButtonCount(boolean promoteVisible) {
-        return promoteVisible ? 5 : 4;
+        return StrategyGridActionLayout.buttonCount(promoteVisible);
     }
 
     record ColumnWidth(int preferred, int minimum) {

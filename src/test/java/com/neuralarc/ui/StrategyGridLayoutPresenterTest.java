@@ -14,11 +14,14 @@ class StrategyGridLayoutPresenterTest {
         StrategyGridLayoutPresenter.ColumnWidth paperActions = presenter.actionsColumnWidth(true);
         StrategyGridLayoutPresenter.ColumnWidth liveActions = presenter.actionsColumnWidth(false);
 
-        assertEquals(170, polling.preferred());
-        assertEquals(150, polling.minimum());
+        assertEquals(190, polling.preferred());
+        assertEquals(160, polling.minimum());
+        assertEquals(StrategyGridActionLayout.columnWidth(true), paperActions.preferred());
+        assertEquals(StrategyGridActionLayout.columnWidth(false), liveActions.preferred());
+        assertEquals(paperActions.preferred(), paperActions.minimum());
+        assertEquals(liveActions.preferred(), liveActions.minimum());
         assertTrue(liveActions.minimum() < paperActions.minimum());
         assertTrue(liveActions.preferred() < paperActions.preferred());
-        assertTrue(liveActions.minimum() + polling.minimum() <= paperActions.minimum());
     }
 
     @Test

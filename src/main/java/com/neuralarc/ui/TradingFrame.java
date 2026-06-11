@@ -68,7 +68,6 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
@@ -1197,12 +1196,14 @@ public class TradingFrame extends JFrame {
         strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX).setCellRenderer(new ActionsRenderer());
         strategyTable.getColumnModel().getColumn(0).setPreferredWidth(72);
         strategyTable.getColumnModel().getColumn(0).setMinWidth(58);
+        strategyTable.getColumnModel().getColumn(1).setPreferredWidth(280);
+        strategyTable.getColumnModel().getColumn(1).setMinWidth(220);
         strategyTable.getColumnModel().getColumn(6).setPreferredWidth(300);
         strategyTable.getColumnModel().getColumn(6).setMinWidth(260);
         strategyTable.getColumnModel().getColumn(8).setPreferredWidth(95);
         strategyTable.getColumnModel().getColumn(8).setMinWidth(80);
-        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(130);
-        strategyTable.getColumnModel().getColumn(9).setMinWidth(110);
+        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(170);
+        strategyTable.getColumnModel().getColumn(9).setMinWidth(135);
         strategyTable.getColumnModel().getColumn(10).setPreferredWidth(140);
         strategyTable.getColumnModel().getColumn(10).setMinWidth(120);
         applyStrategyGridColumnLayout();
@@ -1225,7 +1226,7 @@ public class TradingFrame extends JFrame {
                     strategyTable.setRowSelectionInterval(viewRow, viewRow);
                 }
 
-                // Dispatch the action buttons via equal zones in the Actions column.
+                // Dispatch the action buttons via the same fixed-width zones used by the renderer.
                 // Use invokeLater so the action runs AFTER ALL mousePressed handlers
                 // (ours + BasicTableUI) have finished — this is critical because:
                 //   • BasicTableUI fires its own mousePressed AFTER ours (LIFO order).
@@ -1236,25 +1237,23 @@ public class TradingFrame extends JFrame {
                         || viewCol != StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX) return;
                 ManagedStrategy clickedStrategy = strategies.get(strategyTable.convertRowIndexToModel(viewRow));
                 boolean promoteVisible = actionViewModelFor(clickedStrategy).promoteVisible();
-                int actionCount = strategyGridLayoutPresenter.actionButtonCount(promoteVisible);
                 java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, viewCol, false);
                 int xInCell  = e.getX() - cellRect.x;
-                int section  = Math.max(1, cellRect.width / actionCount);
+                StrategyGridActionLayout.Action action = StrategyGridActionLayout.actionAt(cellRect.width, xInCell, promoteVisible);
+                if (action == StrategyGridActionLayout.Action.NONE) {
+                    return;
+                }
                 final int capturedRow     = viewRow;
-                final int capturedX       = xInCell;
-                final int capturedSection = section;
-                final boolean capturedPromoteVisible = promoteVisible;
+                final StrategyGridActionLayout.Action capturedAction = action;
                 SwingUtilities.invokeLater(() -> {
-                    if (capturedX < capturedSection) {
-                        editStrategy(capturedRow);
-                    } else if (capturedX < capturedSection * 2) {
-                        togglePauseResume(capturedRow);
-                    } else if (capturedX < capturedSection * 3) {
-                        sellStrategy(capturedRow);
-                    } else if (capturedPromoteVisible && capturedX < capturedSection * 4) {
-                        previewLivePromotion(capturedRow);
-                    } else {
-                        deleteStrategy(capturedRow);
+                    switch (capturedAction) {
+                        case EDIT -> editStrategy(capturedRow);
+                        case TOGGLE -> togglePauseResume(capturedRow);
+                        case SELL -> sellStrategy(capturedRow);
+                        case PROMOTE -> previewLivePromotion(capturedRow);
+                        case DELETE -> deleteStrategy(capturedRow);
+                        case NONE -> {
+                        }
                     }
                 });
             }
@@ -1276,7 +1275,8 @@ public class TradingFrame extends JFrame {
                 // an actual data row — NOT over the empty viewport space below the rows.
                 int viewRow = strategyTable.rowAtPoint(e.getPoint());
                 int viewCol = strategyTable.columnAtPoint(e.getPoint());
-                if (viewRow >= 0 && viewCol == StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX) {
+                if (viewRow >= 0 && viewCol == StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX
+                        && actionAtMousePoint(viewRow, e.getX()) != StrategyGridActionLayout.Action.NONE) {
                     strategyTable.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
                 } else {
                     strategyTable.setCursor(java.awt.Cursor.getDefaultCursor());
@@ -6069,8 +6069,9 @@ public class TradingFrame extends JFrame {
         private final JButton deleteButton = new JButton();
 
         private ActionsRenderer() {
-            super(new GridLayout(1, 5, 6, 0));
+            super(new FlowLayout(FlowLayout.CENTER, StrategyGridActionLayout.BUTTON_GAP, 0));
             setOpaque(true);
+            setBorder(new EmptyBorder(5, 0, 0, 0));
             applyButtonIcon(editButton, "icons/edit.svg", 12);
             applyButtonIcon(toggleButton, "icons/pause.svg", 13);
             applyButtonIcon(sellButton, "icons/sell-position.svg", 13);
@@ -6086,6 +6087,11 @@ public class TradingFrame extends JFrame {
             add(sellButton);
             add(promoteButton);
             add(deleteButton);
+            setActionButtonSize(editButton, StrategyGridActionLayout.ICON_BUTTON_WIDTH);
+            setActionButtonSize(toggleButton, StrategyGridActionLayout.ICON_BUTTON_WIDTH);
+            setActionButtonSize(sellButton, StrategyGridActionLayout.ICON_BUTTON_WIDTH);
+            setActionButtonSize(promoteButton, StrategyGridActionLayout.PROMOTE_BUTTON_WIDTH);
+            setActionButtonSize(deleteButton, StrategyGridActionLayout.ICON_BUTTON_WIDTH);
         }
 
         @Override
@@ -6094,8 +6100,6 @@ public class TradingFrame extends JFrame {
             ManagedStrategy strategy = strategies.get(modelRow);
             StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = actionViewModelFor(strategy);
             removeAll();
-            int actionCount = strategyGridLayoutPresenter.actionButtonCount(actionsViewModel.promoteVisible());
-            setLayout(new GridLayout(1, actionCount, 6, 0));
             add(editButton);
             add(toggleButton);
             add(sellButton);
@@ -6133,6 +6137,13 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    private void setActionButtonSize(JButton button, int width) {
+        Dimension size = new Dimension(width, StrategyGridActionLayout.BUTTON_HEIGHT);
+        button.setPreferredSize(size);
+        button.setMinimumSize(size);
+        button.setMaximumSize(size);
+    }
+
     private StrategyActionsPresenter.StrategyActionsViewModel actionViewModelFor(ManagedStrategy strategy) {
         return strategyActionsPresenter.present(
                 new StrategyActionsPresenter.StrategyActionsState(
@@ -6156,29 +6167,32 @@ public class TradingFrame extends JFrame {
         }
         ManagedStrategy strategy = strategies.get(modelRow);
         StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = actionViewModelFor(strategy);
-        java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX, false);
-        int xInCell = mouseX - cellRect.x;
-        int actionCount = strategyGridLayoutPresenter.actionButtonCount(actionsViewModel.promoteVisible());
-        int section = Math.max(1, cellRect.width / actionCount);
-        if (xInCell < section) {
-            return TooltipStyler.text("Edit strategy rules, limits, and settings.");
-        }
-        if (xInCell < section * 2) {
-            return actionsViewModel.toggleEnabled()
+        return switch (actionAtMousePoint(viewRow, mouseX)) {
+            case EDIT -> TooltipStyler.text("Edit strategy rules, limits, and settings.");
+            case TOGGLE -> actionsViewModel.toggleEnabled()
                     ? TooltipStyler.text("Run the shown action for this strategy: " + actionsViewModel.toggleText() + ".")
                     : TooltipStyler.text("This action is currently unavailable for this strategy state.");
-        }
-        if (xInCell < section * 3) {
-            return actionsViewModel.sellEnabled()
+            case SELL -> actionsViewModel.sellEnabled()
                     ? TooltipStyler.text("Sell the open position for this strategy.")
                     : TooltipStyler.text("Sell is available only when Alpaca shows an open position for this strategy.");
-        }
-        if (actionsViewModel.promoteVisible() && xInCell < section * 4) {
-            return actionsViewModel.promoteEnabled()
+            case PROMOTE -> actionsViewModel.promoteEnabled()
                     ? TooltipStyler.text("Promote this PAPER strategy to LIVE.")
                     : TooltipStyler.text("Promote is available only for eligible PAPER strategies.");
+            case DELETE -> TooltipStyler.text("Delete this strategy from Current Strategies.");
+            case NONE -> null;
+        };
+    }
+
+    private StrategyGridActionLayout.Action actionAtMousePoint(int viewRow, int mouseX) {
+        int modelRow = strategyTable.convertRowIndexToModel(viewRow);
+        if (modelRow < 0 || modelRow >= strategies.size()) {
+            return StrategyGridActionLayout.Action.NONE;
         }
-        return TooltipStyler.text("Delete this strategy from Current Strategies.");
+        ManagedStrategy strategy = strategies.get(modelRow);
+        boolean promoteVisible = actionViewModelFor(strategy).promoteVisible();
+        java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX, false);
+        int xInCell = mouseX - cellRect.x;
+        return StrategyGridActionLayout.actionAt(cellRect.width, xInCell, promoteVisible);
     }
 
 
