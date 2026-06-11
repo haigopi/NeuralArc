@@ -34,6 +34,7 @@ import com.neuralarc.util.BrokerOrderStatusUtil;
 import com.neuralarc.util.FontLoader;
 import com.neuralarc.util.Monetary;
 import com.neuralarc.util.SvgIconLoader;
+import com.neuralarc.util.ThemeColors;
 import org.json.JSONArray;
 
 import javax.swing.*;
@@ -139,9 +140,9 @@ public class TradingFrame extends JFrame {
     private final JLabel compactStatusSummary = new JLabel("Broker Not connected   Market Unknown");
     private final JButton statusDetailsButton = new JButton("Details");
     private final JLabel headerStatus = new JLabel("Status: waiting for settings");
-    private static final Color STATUS_OK = new Color(34, 139, 34);
-    private static final Color STATUS_WARN = new Color(180, 100, 0);
-    private static final Color STATUS_ERR = new Color(180, 30, 30);
+    private static final Color STATUS_OK = ThemeColors.color("NeuralArc.statusOk", new Color(34, 139, 34));
+    private static final Color STATUS_WARN = ThemeColors.color("NeuralArc.statusWarn", new Color(180, 100, 0));
+    private static final Color STATUS_ERR = ThemeColors.color("NeuralArc.statusError", new Color(180, 30, 30));
     private static final Color PAPER_HEADER_BG = new Color(35, 35, 45);
     private static final Color PAPER_STATUS_BG = new Color(35, 35, 45);
     private static final Color LIVE_HEADER_BG = new Color(45, 32, 34);
@@ -152,39 +153,39 @@ public class TradingFrame extends JFrame {
     private static final Color CAPTURE_ACTIVE_BG_ALT = new Color(255, 136, 0);
     private static final Color CAPTURE_ACTIVE_BORDER = new Color(255, 187, 74);
     private static final Color CAPTURE_ACTIVE_BORDER_ALT = new Color(255, 96, 80);
-    private static final Color CAPTURE_INDICATOR_ACTIVE_TEXT = new Color(19, 102, 74);
-    private static final Color CAPTURE_INDICATOR_IDLE_TEXT = new Color(86, 92, 104);
-    private static final Color TABLE_SELECTION_BG       = new Color(201, 220, 252); // blue row highlight
-    private static final Color TABLE_SELECTION_FG       = new Color(10,  35, 100); // dark navy text on blue
-    private static final Color TABLE_SELECTION_BORDER   = new Color(66, 133, 244); // left accent stripe on selected row
-    private static final Color TABLE_SELECTION_BAR_BG   = new Color(170, 198, 245); // progress-bar unfilled on blue row
-    private static final Color TABLE_ROW_BG_EVEN        = new Color(245, 247, 250); // light blue-white for even rows
-    private static final Color TABLE_ROW_BG_ODD         = new Color(255, 255, 255); // white for odd rows
+    private static final Color CAPTURE_INDICATOR_ACTIVE_TEXT = ThemeColors.color("NeuralArc.captureIndicatorActive", new Color(19, 102, 74));
+    private static final Color CAPTURE_INDICATOR_IDLE_TEXT = ThemeColors.color("NeuralArc.captureIndicatorIdle", new Color(86, 92, 104));
+    private static final Color TABLE_SELECTION_BG       = ThemeColors.color("NeuralArc.Table.selectionBackground", new Color(201, 220, 252));
+    private static final Color TABLE_SELECTION_FG       = ThemeColors.color("NeuralArc.Table.selectionForeground", new Color(10,  35, 100));
+    private static final Color TABLE_SELECTION_BORDER   = ThemeColors.color("NeuralArc.Table.selectionBorder", new Color(66, 133, 244)); // left accent stripe on selected row
+    private static final Color TABLE_SELECTION_BAR_BG   = ThemeColors.color("NeuralArc.Table.selectionBarBackground", new Color(170, 198, 245)); // progress-bar unfilled on selected row
+    private static final Color TABLE_ROW_BG_EVEN        = ThemeColors.color("NeuralArc.Table.rowBackgroundEven", new Color(245, 247, 250));
+    private static final Color TABLE_ROW_BG_ODD         = ThemeColors.color("NeuralArc.Table.rowBackgroundOdd", new Color(255, 255, 255));
     private static final Color PNL_POSITIVE_FG        = PnlCellStyleSupport.POSITIVE;
     private static final Color PNL_NEGATIVE_FG        = PnlCellStyleSupport.NEGATIVE;
-    private static final Color STATUS_TEXT_RUNNING = new Color(46, 125, 50);
-    private static final Color STATUS_TEXT_PAUSED = new Color(180, 100, 0);
-    private static final Color MODE_TEXT_ALPACA_PAPER = new Color(25, 118, 210);
-    private static final Color MODE_TEXT_ALPACA_LIVE = new Color(183, 28, 28);
+    private static final Color STATUS_TEXT_RUNNING = ThemeColors.color("NeuralArc.statusRunning", new Color(46, 125, 50));
+    private static final Color STATUS_TEXT_PAUSED = ThemeColors.color("NeuralArc.statusPaused", new Color(180, 100, 0));
+    private static final Color MODE_TEXT_ALPACA_PAPER = ThemeColors.color("NeuralArc.modePaper", new Color(25, 118, 210));
+    private static final Color MODE_TEXT_ALPACA_LIVE = ThemeColors.color("NeuralArc.modeLive", new Color(183, 28, 28));
     private static final Color BOTTOM_STATUS_ACCENT = new Color(180, 160, 110);
     private static final Color BOTTOM_STATUS_MARKET_VALUE = new Color(108, 201, 168);
-    private static final Color HISTORY_BUY_BG = new Color(227, 242, 253);
-    private static final Color HISTORY_BUY_FG = new Color(13, 71, 161);
-    private static final Color HISTORY_SELL_GAIN_BG = new Color(232, 245, 233);
-    private static final Color HISTORY_SELL_GAIN_FG = new Color(27, 94, 32);
-    private static final Color HISTORY_SELL_LOSS_BG = new Color(255, 235, 238);
-    private static final Color HISTORY_SELL_LOSS_FG = new Color(183, 28, 28);
-    private static final Color HISTORY_SELL_FLAT_BG = new Color(255, 248, 225);
-    private static final Color HISTORY_SELL_FLAT_FG = new Color(111, 79, 0);
-    private static final Color HISTORY_FAILED_BG = new Color(255, 243, 224);
-    private static final Color HISTORY_FAILED_FG = new Color(140, 80, 0);
-    private static final Color HISTORY_COMPLETED_BG = new Color(245, 245, 245);
-    private static final Color HISTORY_COMPLETED_FG = new Color(78, 84, 94);
-    private static final Color HISTORY_SUBTOTAL_BG  = new Color(215, 225, 240);
-    private static final Color HISTORY_SUBTOTAL_FG  = new Color(28, 48, 80);
-    private static final Color HISTORY_GROUP_BORDER = new Color(173, 181, 189);
-    private static final Color LOG_LINE_EVEN = new Color(63, 72, 82);
-    private static final Color LOG_LINE_ODD = new Color(110, 118, 128);
+    private static final Color HISTORY_BUY_BG = ThemeColors.color("NeuralArc.History.buyBackground", new Color(227, 242, 253));
+    private static final Color HISTORY_BUY_FG = ThemeColors.color("NeuralArc.History.buyForeground", new Color(13, 71, 161));
+    private static final Color HISTORY_SELL_GAIN_BG = ThemeColors.color("NeuralArc.History.sellGainBackground", new Color(232, 245, 233));
+    private static final Color HISTORY_SELL_GAIN_FG = ThemeColors.color("NeuralArc.History.sellGainForeground", new Color(27, 94, 32));
+    private static final Color HISTORY_SELL_LOSS_BG = ThemeColors.color("NeuralArc.History.sellLossBackground", new Color(255, 235, 238));
+    private static final Color HISTORY_SELL_LOSS_FG = ThemeColors.color("NeuralArc.History.sellLossForeground", new Color(183, 28, 28));
+    private static final Color HISTORY_SELL_FLAT_BG = ThemeColors.color("NeuralArc.History.sellFlatBackground", new Color(255, 248, 225));
+    private static final Color HISTORY_SELL_FLAT_FG = ThemeColors.color("NeuralArc.History.sellFlatForeground", new Color(111, 79, 0));
+    private static final Color HISTORY_FAILED_BG = ThemeColors.color("NeuralArc.History.failedBackground", new Color(255, 243, 224));
+    private static final Color HISTORY_FAILED_FG = ThemeColors.color("NeuralArc.History.failedForeground", new Color(140, 80, 0));
+    private static final Color HISTORY_COMPLETED_BG = ThemeColors.color("NeuralArc.History.completedBackground", new Color(245, 245, 245));
+    private static final Color HISTORY_COMPLETED_FG = ThemeColors.color("NeuralArc.History.completedForeground", new Color(78, 84, 94));
+    private static final Color HISTORY_SUBTOTAL_BG  = ThemeColors.color("NeuralArc.History.subtotalBackground", new Color(215, 225, 240));
+    private static final Color HISTORY_SUBTOTAL_FG  = ThemeColors.color("NeuralArc.History.subtotalForeground", new Color(28, 48, 80));
+    private static final Color HISTORY_GROUP_BORDER = ThemeColors.color("NeuralArc.History.groupBorder", new Color(173, 181, 189));
+    private static final Color LOG_LINE_EVEN = ThemeColors.color("NeuralArc.Log.lineEven", new Color(63, 72, 82));
+    private static final Color LOG_LINE_ODD = ThemeColors.color("NeuralArc.Log.lineOdd", new Color(110, 118, 128));
     private static final int MAX_EVENT_LOG_LINES = 1500;
     private static final long CLOSED_MARKET_RECONCILE_POLL_INTERVAL_MILLIS = 60L * 1000L;
     private static final long CLOSED_MARKET_POLL_INTERVAL_MILLIS = 10L * 60L * 1000L;
@@ -1544,7 +1545,7 @@ public class TradingFrame extends JFrame {
 
         eventLog.setEditable(false);
         eventLog.setBorder(new EmptyBorder(8, 8, 8, 8));
-        eventLog.setBackground(new Color(248, 249, 252));
+        eventLog.setBackground(ThemeColors.color("NeuralArc.Log.background", new Color(248, 249, 252)));
         applyUiPolish();
         applyDataViewFonts();
 
@@ -1575,7 +1576,7 @@ public class TradingFrame extends JFrame {
         if (splitPane.getUI() instanceof BasicSplitPaneUI splitPaneUi) {
             BasicSplitPaneDivider divider = splitPaneUi.getDivider();
             divider.setBorder(BorderFactory.createEmptyBorder());
-            divider.setBackground(new Color(189, 198, 210));
+            divider.setBackground(ThemeColors.color("NeuralArc.SplitPane.divider", new Color(189, 198, 210)));
         }
 
         JPanel positionSection = createDetailSection(positionSectionTitle, positionSummary);
@@ -1855,14 +1856,14 @@ public class TradingFrame extends JFrame {
         strategyTable.setFont(FontLoader.ui(Font.PLAIN, 12f));
         strategyTable.getTableHeader().setFont(FontLoader.ui(Font.BOLD, 10f));
         strategyTable.getTableHeader().setOpaque(true);
-        strategyTable.getTableHeader().setBackground(new Color(228, 233, 240));
-        strategyTable.getTableHeader().setForeground(new Color(82, 88, 98));
+        strategyTable.getTableHeader().setBackground(ThemeColors.color("NeuralArc.TableHeader.background", new Color(228, 233, 240)));
+        strategyTable.getTableHeader().setForeground(ThemeColors.color("NeuralArc.TableHeader.foreground", new Color(82, 88, 98)));
         strategyTable.getTableHeader().setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(204, 210, 218)));
         filledOrdersTable.setFont(FontLoader.ui(Font.PLAIN, 12f));
         filledOrdersTable.getTableHeader().setFont(FontLoader.ui(Font.BOLD, 10f));
         filledOrdersTable.getTableHeader().setOpaque(true);
-        filledOrdersTable.getTableHeader().setBackground(new Color(228, 233, 240));
-        filledOrdersTable.getTableHeader().setForeground(new Color(82, 88, 98));
+        filledOrdersTable.getTableHeader().setBackground(ThemeColors.color("NeuralArc.TableHeader.background", new Color(228, 233, 240)));
+        filledOrdersTable.getTableHeader().setForeground(ThemeColors.color("NeuralArc.TableHeader.foreground", new Color(82, 88, 98)));
         filledOrdersTable.getTableHeader().setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(204, 210, 218)));
         paperUnrealizedSummary.setFont(headerStatus.getFont());
         liveUnrealizedSummary.setFont(headerStatus.getFont());
@@ -1888,16 +1889,16 @@ public class TradingFrame extends JFrame {
     }
 
     private JPanel createDetailSection(JLabel titleLabel, JLabel contentLabel) {
-        titleLabel.setForeground(new Color(70, 70, 90));
-        contentLabel.setForeground(new Color(35, 35, 45));
+        titleLabel.setForeground(ThemeColors.color("NeuralArc.Detail.titleForeground", new Color(70, 70, 90)));
+        contentLabel.setForeground(ThemeColors.color("NeuralArc.Detail.foreground", new Color(35, 35, 45)));
         contentLabel.setVerticalAlignment(SwingConstants.TOP);
         contentLabel.setBorder(new EmptyBorder(2, 0, 0, 0));
 
         JPanel section = new JPanel(new BorderLayout(0, 2));
         section.setOpaque(true);
-        section.setBackground(new Color(248, 249, 252));
+        section.setBackground(ThemeColors.color("NeuralArc.Detail.background", new Color(248, 249, 252)));
         section.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(210, 214, 223), 1, true),
+                BorderFactory.createLineBorder(ThemeColors.color("NeuralArc.Detail.border", new Color(210, 214, 223)), 1, true),
                 new EmptyBorder(10, 12, 10, 12)
         ));
         section.add(titleLabel, BorderLayout.NORTH);
@@ -5766,7 +5767,7 @@ public class TradingFrame extends JFrame {
                             setForeground(STATUS_ERR);
                             setFont(getFont().deriveFont(Font.BOLD));
                         } else if (strategies.get(modelRow).strategy.status() == StrategyStatus.ARCHIVED) {
-                            setForeground(new Color(108, 117, 125));
+                            setForeground(ThemeColors.color("NeuralArc.statusArchived", new Color(108, 117, 125)));
                         } else if (strategies.get(modelRow).strategy.pauseReason() == PauseReason.SYSTEM_ERROR) {
                             setForeground(STATUS_ERR);
                         } else {
@@ -5810,10 +5811,10 @@ public class TradingFrame extends JFrame {
             }
             String source = String.valueOf(value).toLowerCase(Locale.ROOT);
             if (source.contains("gainer")) {
-                return new Color(34, 139, 34);
+                return ThemeColors.color("NeuralArc.entryGainers", new Color(34, 139, 34));
             }
             if (source.contains("loser")) {
-                return new Color(210, 130, 20);
+                return ThemeColors.color("NeuralArc.entryLosers", new Color(210, 130, 20));
             }
             return fallback;
         }

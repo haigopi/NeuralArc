@@ -1,11 +1,13 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.util.ThemeColors;
+
 import java.awt.Color;
 import java.math.BigDecimal;
 
 final class PnlCellStyleSupport {
-    static final Color POSITIVE = new Color(27, 94, 32);
-    static final Color NEGATIVE = new Color(183, 28, 28);
+    static final Color POSITIVE = ThemeColors.color("NeuralArc.pnlPositive", new Color(27, 94, 32));
+    static final Color NEGATIVE = ThemeColors.color("NeuralArc.pnlNegative", new Color(183, 28, 28));
 
     private PnlCellStyleSupport() {
     }
