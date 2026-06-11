@@ -210,10 +210,18 @@ public final class StrategyTablePresenter {
 
     private String expiredStatusLabel(Strategy strategy) {
         String waitingRule = expiredWaitingRuleLabel(strategy);
+        String autoExtension = expiredAutoExtensionLabel(strategy);
         if (waitingRule.isBlank()) {
-            return "Expired";
+            return "Expired - " + autoExtension;
         }
-        return "Expired (" + waitingRule + " - waiting to fill)";
+        return "Expired (" + waitingRule + " - waiting to fill) - " + autoExtension;
+    }
+
+    private String expiredAutoExtensionLabel(Strategy strategy) {
+        if (strategy.resubmitOnExpiryEnabled()) {
+            return "auto extension enabled; base limit buy will be reposted with automated guard rails";
+        }
+        return "no auto extension set; manual reposition required";
     }
 
     private String expiredWaitingRuleLabel(Strategy strategy) {

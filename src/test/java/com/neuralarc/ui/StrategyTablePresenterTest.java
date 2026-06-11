@@ -226,7 +226,7 @@ class StrategyTablePresenterTest {
 
         String label = presenter.displayStatusLabel(strategy, false, false, false);
 
-        assertEquals("Expired", label);
+        assertEquals("Expired - no auto extension set; manual reposition required", label);
     }
 
     @Test
@@ -236,10 +236,15 @@ class StrategyTablePresenterTest {
         strategy.setCurrentState(StrategyLifecycleState.FAILED);
         strategy.setLatestOrderStatus("expired");
         strategy.setLastTriggeredRuleType("BUY_RULE");
+        strategy.setResubmitOnExpiryEnabled(true);
 
         String label = presenter.displayStatusLabel(strategy, false, false, false);
 
-        assertEquals("Expired (Limit Base Buy Placed - waiting to fill)", label);
+        assertEquals(
+                "Expired (Limit Base Buy Placed - waiting to fill) - auto extension enabled; "
+                        + "base limit buy will be reposted with automated guard rails",
+                label
+        );
     }
 
     @Test
@@ -251,7 +256,10 @@ class StrategyTablePresenterTest {
 
         String label = presenter.displayStatusLabel(strategy, false, false, false);
 
-        assertEquals("Expired (Limit Buy 1 Placed - waiting to fill)", label);
+        assertEquals(
+                "Expired (Limit Buy 1 Placed - waiting to fill) - no auto extension set; manual reposition required",
+                label
+        );
     }
 
     @Test
