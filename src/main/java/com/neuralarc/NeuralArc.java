@@ -1,5 +1,7 @@
 package com.neuralarc;
 
+import com.formdev.flatlaf.FlatLaf;
+import com.formdev.flatlaf.FlatDarculaLaf;
 import com.neuralarc.ui.AboutDialog;
 import com.neuralarc.service.RotatingJavaLogHandler;
 import com.neuralarc.ui.SplashScreenWindow;
@@ -19,6 +21,7 @@ import java.util.logging.LogManager;
 public class NeuralArc {
     public static void main(String[] args) {
         configureLogging();
+        installLookAndFeel();
         FontLoader.installSwingDefaults();
         configureTooltips();
 
@@ -42,6 +45,12 @@ public class NeuralArc {
             splashTimer.setRepeats(false);
             splashTimer.start();
         });
+    }
+
+    private static void installLookAndFeel() {
+        // Must run before any Swing component is created so every widget picks up the theme.
+        FlatLaf.registerCustomDefaultsSource("themes");
+        FlatDarculaLaf.setup();
     }
 
     private static void installMacApplicationMenu(TradingFrame frame) {
