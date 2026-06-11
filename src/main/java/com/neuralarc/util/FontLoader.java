@@ -8,15 +8,19 @@ import javax.swing.BorderFactory;
 import javax.swing.UIManager;
 
 /**
- * Loads and registers the bundled Inter font family from project resources,
- * then resolves the best available UI font using the fallback chain:
- *   Inter (bundled) → Segoe UI → Arial
+ * Loads and registers the bundled Poppins and Inter font families from project
+ * resources, then resolves the best available UI font using the fallback chain:
+ *   Poppins (bundled) → Inter (bundled) → Segoe UI → Arial
  */
 public final class FontLoader {
     public static final float DEFAULT_UI_SIZE = 14f;
     public static final float SMALL_UI_SIZE = 10f;
 
-    private static final String[] INTER_VARIANTS = {
+    private static final String[] BUNDLED_VARIANTS = {
+            "/fonts/Poppins-Regular.ttf",
+            "/fonts/Poppins-Bold.ttf",
+            "/fonts/Poppins-Italic.ttf",
+            "/fonts/Poppins-BoldItalic.ttf",
             "/fonts/Inter-Regular.ttf",
             "/fonts/Inter-Bold.ttf",
             "/fonts/Inter-Italic.ttf",
@@ -24,7 +28,7 @@ public final class FontLoader {
     };
 
     /** Ordered fallback chain. First name found on this JVM wins. */
-    private static final String[] FALLBACK_CHAIN = {"Inter", "Segoe UI", "Arial"};
+    private static final String[] FALLBACK_CHAIN = {"Poppins", "Inter", "Segoe UI", "Arial"};
 
     private static volatile boolean registered = false;
     private static volatile String resolvedFamily = null;
@@ -32,13 +36,13 @@ public final class FontLoader {
     private FontLoader() {}
 
     /**
-     * Registers bundled Inter TTF files with the local GraphicsEnvironment.
+     * Registers bundled TTF files with the local GraphicsEnvironment.
      * Call once at startup before any Swing component is created.
      */
     public static synchronized void registerInter() {
         if (registered) return;
         GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
-        for (String path : INTER_VARIANTS) {
+        for (String path : BUNDLED_VARIANTS) {
             try (InputStream is = FontLoader.class.getResourceAsStream(path)) {
                 if (is != null) {
                     ge.registerFont(Font.createFont(Font.TRUETYPE_FONT, is));

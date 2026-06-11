@@ -20,6 +20,7 @@ import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.AutoAnalyzeService;
 import com.neuralarc.service.StrategyApplyService;
 import com.neuralarc.util.FontLoader;
+import com.neuralarc.util.ThemeColors;
 
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -82,14 +83,14 @@ public class StrategyDialog extends JDialog {
     private static final Color INPUT_BG = UIManager.getColor("TextField.background") != null
             ? UIManager.getColor("TextField.background")
             : Color.WHITE;
-    private static final Color INPUT_BORDER = new Color(190, 190, 200);
+    private static final Color INPUT_BORDER = ThemeColors.color("NeuralArc.Input.border", new Color(190, 190, 200));
     private static final Color TEXT_PRIMARY = UIManager.getColor("Label.foreground") != null
             ? UIManager.getColor("Label.foreground")
             : new Color(45, 45, 50);
     private static final Color TEXT_MUTED = UIManager.getColor("Label.disabledForeground") != null
             ? UIManager.getColor("Label.disabledForeground")
             : new Color(130, 130, 130);
-    private static final Color TAB_BORDER = new Color(204, 214, 225);
+    private static final Color TAB_BORDER = ThemeColors.color("NeuralArc.Section.border", new Color(204, 214, 225));
     private static final Color TAB_SELECTED_BG = new Color(235, 244, 252);
     private static final Color TAB_UNSELECTED_BG = new Color(246, 248, 250);
     private static final Color TAB_SELECTED_TEXT = new Color(11, 84, 132);
@@ -797,7 +798,7 @@ public class StrategyDialog extends JDialog {
 
     private Border createSectionBorder(String title) {
         TitledBorder border = new TitledBorder(title);
-        border.setTitleColor(TEXT_PRIMARY);
+        border.setTitleColor(ThemeColors.color("NeuralArc.Section.titleForeground", TEXT_PRIMARY));
         border.setTitleFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
         return BorderFactory.createCompoundBorder(
                 border,

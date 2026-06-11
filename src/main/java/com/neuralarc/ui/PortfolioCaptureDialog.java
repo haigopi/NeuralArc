@@ -4,6 +4,7 @@ import com.neuralarc.model.RecommendationType;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.util.FontLoader;
 import com.neuralarc.util.Monetary;
+import com.neuralarc.util.ThemeColors;
 
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
@@ -494,11 +495,11 @@ final class PortfolioCaptureDialog extends JDialog {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setOpaque(false);
         TitledBorder titleBorder = BorderFactory.createTitledBorder(
-                BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(190, 194, 202)),
+                BorderFactory.createMatteBorder(1, 0, 0, 0, ThemeColors.color("NeuralArc.Section.border", new Color(190, 194, 202))),
                 title
         );
         titleBorder.setTitleFont(UI_BOLD_FONT);
-        titleBorder.setTitleColor(new Color(70, 75, 85));
+        titleBorder.setTitleColor(ThemeColors.color("NeuralArc.Section.titleForeground", new Color(70, 75, 85)));
         panel.setBorder(BorderFactory.createCompoundBorder(
                 titleBorder,
                 new EmptyBorder(5, 6, 7, 6)

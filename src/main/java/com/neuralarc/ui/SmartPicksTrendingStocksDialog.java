@@ -12,6 +12,7 @@ import com.neuralarc.model.TrendingStockGroups;
 import com.neuralarc.service.AutoAnalyzeService;
 import com.neuralarc.service.TrendingStocksService;
 import com.neuralarc.util.FontLoader;
+import com.neuralarc.util.ThemeColors;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -79,8 +80,8 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
     private static final Color SECTION_GAINERS_BORDER = new Color(195, 220, 200);
     private static final Color SECTION_LOSERS_BG = new Color(255, 242, 228);
     private static final Color SECTION_LOSERS_BORDER = new Color(235, 210, 170);
-    private static final Color INPUT_BORDER = new Color(210, 210, 220);
-    private static final Color TAB_BORDER = new Color(204, 214, 225);
+    private static final Color INPUT_BORDER = ThemeColors.color("NeuralArc.Input.border", new Color(210, 210, 220));
+    private static final Color TAB_BORDER = ThemeColors.color("NeuralArc.Section.border", new Color(204, 214, 225));
     private static final Color TAB_SELECTED_BG = new Color(235, 244, 252);
     private static final Color TAB_UNSELECTED_BG = new Color(246, 248, 250);
     private static final Color TAB_SELECTED_TEXT = new Color(11, 84, 132);
@@ -825,7 +826,7 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
                 title
         );
         border.setTitleFont(FontLoader.ui(Font.BOLD, 12f));
-        border.setTitleColor(TEXT_PRIMARY);
+        border.setTitleColor(ThemeColors.color("NeuralArc.Section.titleForeground", TEXT_PRIMARY));
         return border;
     }
 

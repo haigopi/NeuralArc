@@ -6,6 +6,7 @@ import com.neuralarc.model.AiRecommendationSettings;
 import com.neuralarc.service.AiRecommendationProvider;
 import com.neuralarc.service.AiRecommendationProviderFactory;
 import com.neuralarc.util.FontLoader;
+import com.neuralarc.util.ThemeColors;
 
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
@@ -40,9 +41,9 @@ public class AiRecommendationSettingsPanel extends JPanel {
     private static final Color INPUT_BG = UIManager.getColor("TextField.background") != null
             ? UIManager.getColor("TextField.background")
             : Color.WHITE;
-    private static final Color INPUT_BORDER = new Color(190, 190, 200);
+    private static final Color INPUT_BORDER = ThemeColors.color("NeuralArc.Input.border", new Color(190, 190, 200));
     private static final Color INPUT_DISABLED_BG = new Color(240, 242, 246);
-    private static final Color INPUT_DISABLED_BORDER = new Color(214, 218, 225);
+    private static final Color INPUT_DISABLED_BORDER = ThemeColors.color("NeuralArc.Input.border", new Color(214, 218, 225));
     private static final Color INPUT_DISABLED_TEXT = new Color(142, 148, 160);
     private static final Color TEXT_PRIMARY = UIManager.getColor("Label.foreground") != null
             ? UIManager.getColor("Label.foreground")
@@ -337,7 +338,7 @@ public class AiRecommendationSettingsPanel extends JPanel {
     private Border createSectionBorder(String title) {
         TitledBorder border = new TitledBorder(title);
         border.setTitleFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
-        border.setTitleColor(TEXT_PRIMARY);
+        border.setTitleColor(ThemeColors.color("NeuralArc.Section.titleForeground", TEXT_PRIMARY));
         return BorderFactory.createCompoundBorder(border, new EmptyBorder(
                 SECTION_INNER_PADDING,
                 SECTION_INNER_PADDING,

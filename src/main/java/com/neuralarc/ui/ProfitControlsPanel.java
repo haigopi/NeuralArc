@@ -6,6 +6,7 @@ import com.neuralarc.model.StrategyConfig;
 import com.neuralarc.model.ThresholdType;
 import com.neuralarc.model.TrailingType;
 import com.neuralarc.util.FontLoader;
+import com.neuralarc.util.ThemeColors;
 
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -37,7 +38,7 @@ public class ProfitControlsPanel extends JPanel {
     private static final Color INPUT_BG = UIManager.getColor("TextField.background") != null
             ? UIManager.getColor("TextField.background")
             : Color.WHITE;
-    private static final Color INPUT_BORDER = new Color(190, 190, 200);
+    private static final Color INPUT_BORDER = ThemeColors.color("NeuralArc.Input.border", new Color(190, 190, 200));
 
     private final JRadioButton noAutomationMode = new JRadioButton("Manual only", true);
     private final JRadioButton sellTriggerMode = new JRadioButton("Sell Trigger", false);
@@ -420,7 +421,7 @@ public class ProfitControlsPanel extends JPanel {
 
     private static Border createSectionBorder(String title) {
         TitledBorder border = BorderFactory.createTitledBorder(title);
-        border.setTitleColor(TEXT_PRIMARY);
+        border.setTitleColor(ThemeColors.color("NeuralArc.Section.titleForeground", TEXT_PRIMARY));
         border.setTitleFont(FontLoader.ui(Font.BOLD, 12f));
         return BorderFactory.createCompoundBorder(
                 border,

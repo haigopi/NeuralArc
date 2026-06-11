@@ -6,6 +6,7 @@ import com.neuralarc.model.ApplicationMode;
 import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.util.AppMetadata;
 import com.neuralarc.util.FontLoader;
+import com.neuralarc.util.ThemeColors;
 
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -36,9 +37,9 @@ public class SettingsDialog extends JDialog {
     private static final Color INPUT_BG = UIManager.getColor("TextField.background") != null
             ? UIManager.getColor("TextField.background")
             : Color.WHITE;
-    private static final Color INPUT_BORDER = new Color(190, 190, 200);
+    private static final Color INPUT_BORDER = ThemeColors.color("NeuralArc.Input.border", new Color(190, 190, 200));
     private static final Color INPUT_DISABLED_BG = new Color(240, 242, 246);
-    private static final Color INPUT_DISABLED_BORDER = new Color(214, 218, 225);
+    private static final Color INPUT_DISABLED_BORDER = ThemeColors.color("NeuralArc.Input.border", new Color(214, 218, 225));
     private static final Color INPUT_DISABLED_TEXT = new Color(142, 148, 160);
     private static final Color TEXT_PRIMARY = UIManager.getColor("Label.foreground") != null
             ? UIManager.getColor("Label.foreground")
@@ -918,7 +919,7 @@ public class SettingsDialog extends JDialog {
 
     private Border createSectionBorder(String title) {
         TitledBorder border = new TitledBorder(title);
-        border.setTitleColor(TEXT_PRIMARY);
+        border.setTitleColor(ThemeColors.color("NeuralArc.Section.titleForeground", TEXT_PRIMARY));
         border.setTitleFont(FontLoader.ui(Font.BOLD, 12f));
         return withInnerPadding(border);
     }

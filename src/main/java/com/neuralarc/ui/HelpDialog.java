@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.util.FontLoader;
+import com.neuralarc.util.ThemeColors;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -15,7 +16,7 @@ import java.awt.Graphics;
 import java.awt.Insets;
 
 public class HelpDialog extends JDialog {
-    private static final Color TAB_CONTENT_BORDER = new Color(200, 206, 214);
+    private static final Color TAB_CONTENT_BORDER = ThemeColors.color("NeuralArc.Section.border", new Color(200, 206, 214));
 
     private static final Font HEADING_FONT = FontLoader.ui(Font.BOLD, 13);
     private static final Font BODY_FONT    = FontLoader.ui(Font.PLAIN, 13);
@@ -446,7 +447,7 @@ public class HelpDialog extends JDialog {
         JPanel panel = new JPanel(new BorderLayout());
         TitledBorder border = BorderFactory.createTitledBorder(title);
         border.setTitleFont(HEADING_FONT);
-        border.setTitleColor(new Color(40, 40, 120));
+        border.setTitleColor(ThemeColors.color("NeuralArc.Section.titleForeground", new Color(40, 40, 120)));
         panel.setBorder(BorderFactory.createCompoundBorder(
                 border,
                 new EmptyBorder(12, 14, 14, 14)
