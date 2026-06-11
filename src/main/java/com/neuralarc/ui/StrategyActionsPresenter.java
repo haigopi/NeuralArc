@@ -6,11 +6,11 @@ import com.neuralarc.util.BrokerOrderStatusUtil;
 import java.awt.Color;
 
 public final class StrategyActionsPresenter {
-    private static final Color DISABLED = new Color(88, 106, 118);
-    private static final Color RESUME = new Color(46, 125, 50);
-    private static final Color CANCEL = new Color(198, 40, 40);
-    private static final Color SELL = new Color(230, 81, 0);
-    private static final Color PROMOTE_ENABLED = new Color(25, 118, 210);
+    private static final Color DISABLED = new Color(100, 116, 139);
+    private static final Color RESUME = new Color(39, 132, 110);
+    private static final Color CANCEL = new Color(180, 122, 42);
+    private static final Color SELL = new Color(71, 85, 105);
+    private static final Color PROMOTE_ENABLED = new Color(37, 99, 235);
 
     public StrategyActionsViewModel present(StrategyActionsState state) {
         StrategyStatus status = state.status();

@@ -399,7 +399,7 @@ class StrategyTablePresenterTest {
         );
 
         assertEquals("Picks [Gainers]", entryValue);
-        assertEquals("Manual Exit", exitValue);
+        assertEquals("Manual - User Exit", exitValue);
     }
 
     @Test
@@ -419,7 +419,18 @@ class StrategyTablePresenterTest {
                 "Paper"
         );
 
-        assertEquals("Loss Exit", exitValue);
+        assertEquals("Autonomous - Loss Exit", exitValue);
+    }
+
+    @Test
+    void autonomousExitSourcesIncludeSystemOwnership() {
+        Strategy stopLoss = completedStrategyWithRule("STOP_LOSS_RULE");
+        Strategy sellTrigger = completedStrategyWithRule("SELL_RULE");
+        Strategy profitExit = completedStrategyWithRule("PROFIT_EXIT");
+
+        assertEquals("Autonomous - Stop Loss", presenter.valueAt(stopLoss, new Position("AAPL"), BigDecimal.ZERO, BigDecimal.ZERO, 10, "Completed", "Paper"));
+        assertEquals("Autonomous - Sell Trigger", presenter.valueAt(sellTrigger, new Position("AAPL"), BigDecimal.ZERO, BigDecimal.ZERO, 10, "Completed", "Paper"));
+        assertEquals("Autonomous - Profit Exit", presenter.valueAt(profitExit, new Position("AAPL"), BigDecimal.ZERO, BigDecimal.ZERO, 10, "Completed", "Paper"));
     }
 
     @Test
@@ -707,5 +718,13 @@ class StrategyTablePresenterTest {
                 Instant.now(),
                 Instant.now()
         );
+    }
+
+    private Strategy completedStrategyWithRule(String rule) {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.COMPLETED);
+        strategy.setCurrentState(StrategyLifecycleState.COMPLETED);
+        strategy.setLastTriggeredRuleType(rule);
+        return strategy;
     }
 }

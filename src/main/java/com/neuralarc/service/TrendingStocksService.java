@@ -74,6 +74,16 @@ public class TrendingStocksService {
                     .limit(requested)
                     .toList();
         }
+        if (candidates.isEmpty()) {
+            JSONObject activeByVolume = client.getMostActives("volume", Math.max(50, requested * 2));
+            JSONObject activeByTrades = client.getMostActives("trades", Math.max(50, requested * 2));
+            candidates = parseCandidates(new JSONObject(), activeByVolume, activeByTrades).stream()
+                    .filter(stock -> stock.latestPrice().compareTo(BigDecimal.ZERO) <= 0
+                            || stock.latestPrice().compareTo(WEEKEND_REBOUND_MIN_PRICE) >= 0)
+                    .map(TrendingStocksService::asWeekendReboundActiveFallbackCandidate)
+                    .limit(requested)
+                    .toList();
+        }
         List<TrendingStock> selected = candidates;
         LOGGER.info(() -> "Alpaca Weekend Rebound candidates selected. symbols="
                 + selected.stream().map(TrendingStock::symbol).toList());
@@ -187,6 +197,19 @@ public class TrendingStocksService {
                 stock.volume(),
                 stock.tradeCount(),
                 "weekend rebound watchlist candidate",
+                stock.trendingScore()
+        );
+    }
+
+    private static TrendingStock asWeekendReboundActiveFallbackCandidate(TrendingStock stock) {
+        return new TrendingStock(
+                stock.symbol(),
+                stock.companyName(),
+                stock.latestPrice(),
+                stock.dailyChangePercent(),
+                stock.volume(),
+                stock.tradeCount(),
+                "weekend rebound active fallback candidate",
                 stock.trendingScore()
         );
     }

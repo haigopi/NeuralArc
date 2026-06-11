@@ -56,6 +56,9 @@ public class WeekendReboundScoreService {
         }
 
         MarketBar latest = orderedBars.getLast();
+        if (latest.close().compareTo(new BigDecimal("10.00")) < 0) {
+            return Optional.empty();
+        }
         BigDecimal fridayDecline = fridayDecline(candidate, orderedBars);
         if (fridayDecline.compareTo(WATCHLIST_MIN_DECLINE) > 0 || fridayDecline.compareTo(CATASTROPHIC_DECLINE) < 0) {
             return Optional.empty();

@@ -6010,11 +6010,11 @@ public class TradingFrame extends JFrame {
             applyButtonIcon(sellButton, "icons/sell-position.svg", 13);
             applyButtonIcon(promoteButton, "icons/add-stock-strategy.svg", 13);
             applyButtonIcon(deleteButton, "icons/delete.svg", 13);
-            styleIconOnlyActionButton(editButton, new Color(63, 81, 181));
-            styleIconOnlyActionButton(toggleButton, new Color(198, 40, 40));
-            styleIconOnlyActionButton(sellButton, new Color(230, 81, 0));
-            styleActionButton(promoteButton, new Color(25, 118, 210));
-            styleIconOnlyActionButton(deleteButton, new Color(156, 39, 39));
+            styleIconOnlyActionButton(editButton, new Color(82, 101, 132));
+            styleIconOnlyActionButton(toggleButton, new Color(180, 122, 42));
+            styleIconOnlyActionButton(sellButton, new Color(71, 85, 105));
+            styleActionButton(promoteButton, new Color(37, 99, 235));
+            styleIconOnlyActionButton(deleteButton, new Color(148, 62, 78));
             add(editButton);
             add(toggleButton);
             add(sellButton);
@@ -6254,7 +6254,7 @@ public class TradingFrame extends JFrame {
         button.setForeground(Color.WHITE);
         button.setIconTextGap(6);
         button.putClientProperty("actionButtonBase", background);
-        button.putClientProperty("actionButtonHover", background.brighter());
+        button.putClientProperty("actionButtonHover", actionButtonHoverColor(background));
         updateActionButtonColor(button, background);
         button.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(background.darker(), 1, true),
@@ -6304,6 +6304,13 @@ public class TradingFrame extends JFrame {
         button.setBackground(background);
         button.setForeground(button.isEnabled() ? Color.WHITE : new Color(248, 250, 252));
         button.putClientProperty("JButton.disabledText", new Color(248, 250, 252));
+    }
+
+    private Color actionButtonHoverColor(Color background) {
+        int red = Math.min(255, background.getRed() + 18);
+        int green = Math.min(255, background.getGreen() + 18);
+        int blue = Math.min(255, background.getBlue() + 18);
+        return new Color(red, green, blue);
     }
 
     private void applyButtonIcon(JButton button, String resourcePath, int size) {

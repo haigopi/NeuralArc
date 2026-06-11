@@ -57,6 +57,16 @@ class WeekendReboundScoreServiceTest {
         assertTrue(result.get().reason().contains("watchlist-level current selloff"));
     }
 
+    @Test
+    void computesDeclineFromDailyBarsWhenScreenerChangeIsMissing() {
+        WeekendReboundScoreService service = new WeekendReboundScoreService();
+
+        var result = service.score(candidate("AAPL", "0.00", "0.00"), qualifiedBars());
+
+        assertTrue(result.isPresent());
+        assertEquals(new BigDecimal("-3.29"), result.get().dailyChangePercent());
+    }
+
     private TrendingStock candidate(String symbol, String decline, String price) {
         return new TrendingStock(
                 symbol,

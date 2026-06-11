@@ -651,28 +651,31 @@ public final class StrategyTablePresenter {
             return "";
         }
         if ("MANUAL_EXIT".equalsIgnoreCase(rule)) {
-            return "Manual Exit";
+            return "Manual - User Exit";
         }
-        if ("STOP_LOSS".equalsIgnoreCase(rule)) {
-            return "Stop Loss";
+        if ("STOP_LOSS".equalsIgnoreCase(rule) || "STOP_LOSS_RULE".equalsIgnoreCase(rule)) {
+            return "Autonomous - Stop Loss";
         }
-        if ("TARGET_SELL".equalsIgnoreCase(rule)) {
-            return "Sell Trigger";
+        if ("TARGET_SELL".equalsIgnoreCase(rule) || "SELL_RULE".equalsIgnoreCase(rule)) {
+            return "Autonomous - Sell Trigger";
         }
-        if ("PROFIT_EXIT".equalsIgnoreCase(rule)) {
-            return "Profit Exit";
+        if ("PROFIT_EXIT".equalsIgnoreCase(rule) || "ALPACA_TRAILING_STOP".equalsIgnoreCase(rule)) {
+            return "Autonomous - Profit Exit";
+        }
+        if ("LOSS_EXIT".equalsIgnoreCase(rule)) {
+            return "Autonomous - Loss Exit";
         }
         if ("REMOTE_SYNC".equalsIgnoreCase(rule)) {
             return "Broker Direct";
         }
-        return "System Exit (" + rule + ")";
+        return "System - Exit (" + rule + ")";
     }
 
     private String exitSourceFromRealizedPnl(BigDecimal realizedPnl) {
         if (realizedPnl == null || realizedPnl.compareTo(BigDecimal.ZERO) == 0) {
             return "";
         }
-        return realizedPnl.compareTo(BigDecimal.ZERO) < 0 ? "Loss Exit" : "Profit Exit";
+        return realizedPnl.compareTo(BigDecimal.ZERO) < 0 ? "Autonomous - Loss Exit" : "Autonomous - Profit Exit";
     }
 
     private boolean isSellCompleted(Strategy strategy) {

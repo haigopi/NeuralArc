@@ -179,6 +179,29 @@ class TrendingStocksServiceTest {
         assertEquals("weekend rebound watchlist candidate", result.getFirst().reason());
     }
 
+    @Test
+    void weekendReboundCandidatesFallbackToMostActivesWhenMoversAreEmpty() throws Exception {
+        TrendingStocksService service = new TrendingStocksService(new AlpacaScreenerClient() {
+            @Override
+            public JSONObject getMarketMovers(int top) {
+                return new JSONObject().put("losers", new JSONArray());
+            }
+
+            @Override
+            public JSONObject getMostActives(String by, int top) {
+                return new JSONObject()
+                        .put("most_actives", new JSONArray()
+                                .put(new JSONObject().put("symbol", "AAPL").put("price", "190").put("volume", "50000000").put("trade_count", "600000"))
+                                .put(new JSONObject().put("symbol", "CHEAP").put("price", "9.99").put("volume", "9000000").put("trade_count", "100000")));
+            }
+        });
+
+        List<TrendingStock> result = service.weekendReboundCandidates(10);
+
+        assertEquals(List.of("AAPL"), result.stream().map(TrendingStock::symbol).toList());
+        assertEquals("weekend rebound active fallback candidate", result.getFirst().reason());
+    }
+
     private TrendingStock stock(String symbol, String score) {
         return new TrendingStock(
                 symbol,
