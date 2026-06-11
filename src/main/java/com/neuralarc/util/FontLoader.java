@@ -3,20 +3,24 @@ package com.neuralarc.util;
 import java.awt.Font;
 import java.awt.GraphicsEnvironment;
 import java.awt.RenderingHints;
+import java.awt.font.TextAttribute;
 import java.io.InputStream;
+import java.util.Map;
 import javax.swing.BorderFactory;
 import javax.swing.UIManager;
 
 /**
- * Loads and registers the bundled Poppins and Inter font families from project
- * resources, then resolves the best available UI font using the fallback chain:
- *   Poppins (bundled) → Inter (bundled) → Segoe UI → Arial
+ * Loads and registers bundled application fonts from project resources.
+ *
+ * <p>Application UI resolves to Inter first. NeuralArc branding uses Manrope
+ * ExtraBold when available.
  */
 public final class FontLoader {
     public static final float DEFAULT_UI_SIZE = 14f;
     public static final float SMALL_UI_SIZE = 10f;
 
     private static final String[] BUNDLED_VARIANTS = {
+            "/fonts/Manrope-ExtraBold.ttf",
             "/fonts/Poppins-Regular.ttf",
             "/fonts/Poppins-Bold.ttf",
             "/fonts/Poppins-Italic.ttf",
@@ -28,10 +32,12 @@ public final class FontLoader {
     };
 
     /** Ordered fallback chain. First name found on this JVM wins. */
-    private static final String[] FALLBACK_CHAIN = {"Poppins", "Inter", "Segoe UI", "Arial"};
+    private static final String[] UI_FALLBACK_CHAIN = {"Inter", "Segoe UI", "Arial", "Poppins"};
+    private static final String[] BRAND_FALLBACK_CHAIN = {"Manrope ExtraBold", "Manrope", "Inter", "Segoe UI", "Arial"};
 
     private static volatile boolean registered = false;
     private static volatile String resolvedFamily = null;
+    private static volatile String resolvedBrandFamily = null;
 
     private FontLoader() {}
 
@@ -52,14 +58,22 @@ public final class FontLoader {
             }
         }
         registered = true;
-        resolvedFamily = resolveFamily();
-        System.out.println("FontLoader: using font family [" + resolvedFamily + "]");
+        resolvedFamily = resolveFamily(UI_FALLBACK_CHAIN);
+        resolvedBrandFamily = resolveFamily(BRAND_FALLBACK_CHAIN);
+        System.out.println("FontLoader: using UI font family [" + resolvedFamily
+                + "], branding font family [" + resolvedBrandFamily + "]");
     }
 
     /** Returns the resolved font family name (Inter, Segoe UI, or Arial). */
     public static String resolvedFamily() {
         if (resolvedFamily == null) registerInter();
         return resolvedFamily;
+    }
+
+    /** Returns the resolved branding font family name (Manrope preferred). */
+    public static String resolvedBrandFamily() {
+        if (resolvedBrandFamily == null) registerInter();
+        return resolvedBrandFamily;
     }
 
     /** Returns a font using the resolved family with the given style and size (pt). */
@@ -73,6 +87,15 @@ public final class FontLoader {
 
     public static Font bold(float sizePt) {
         return ui(Font.BOLD, sizePt);
+    }
+
+    public static Font brandingExtraBold(float sizePt) {
+        Map<TextAttribute, Object> attributes = Map.of(
+                TextAttribute.FAMILY, resolvedBrandFamily(),
+                TextAttribute.WEIGHT, TextAttribute.WEIGHT_EXTRABOLD,
+                TextAttribute.SIZE, sizePt
+        );
+        return Font.getFont(attributes);
     }
 
     public static Font uiDefault() {
@@ -114,13 +137,13 @@ public final class FontLoader {
 
     // ── internals ────────────────────────────────────────────────────────────
 
-    private static String resolveFamily() {
+    private static String resolveFamily(String[] fallbackChain) {
         java.util.Set<String> available = new java.util.HashSet<>();
         for (String f : GraphicsEnvironment.getLocalGraphicsEnvironment()
                                            .getAvailableFontFamilyNames()) {
             available.add(f.toLowerCase(java.util.Locale.ROOT));
         }
-        for (String candidate : FALLBACK_CHAIN) {
+        for (String candidate : fallbackChain) {
             if (available.contains(candidate.toLowerCase(java.util.Locale.ROOT))) {
                 return candidate;
             }

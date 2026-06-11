@@ -45,7 +45,7 @@ public class SplashScreenWindow extends JWindow {
         content.add(logoLabel, BorderLayout.NORTH);
 
         JLabel title = new JLabel(AppMetadata.name(), SwingConstants.CENTER);
-        title.setFont(FontLoader.bold(32f));
+        title.setFont(FontLoader.brandingExtraBold(32f));
         title.setForeground(TEXT_PRIMARY);
 
         JLabel version = new JLabel("Loading " + AppMetadata.displayVersion(), SwingConstants.CENTER);

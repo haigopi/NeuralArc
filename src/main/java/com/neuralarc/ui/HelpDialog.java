@@ -6,19 +6,21 @@ import com.neuralarc.util.ThemeColors;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
-import javax.swing.plaf.basic.BasicTabbedPaneUI;
 import java.awt.BorderLayout;
 import java.awt.Color;
-import java.awt.FontMetrics;
 import java.awt.FlowLayout;
 import java.awt.Font;
-import java.awt.Graphics;
-import java.awt.Insets;
 
 public class HelpDialog extends JDialog {
-    private static final Color TAB_CONTENT_BORDER = ThemeColors.color("NeuralArc.Section.border", new Color(200, 206, 214));
+    private static final Color CONTENT_BG = UIManager.getColor("Panel.background") != null
+            ? UIManager.getColor("Panel.background")
+            : Color.WHITE;
+    private static final Color BODY_FG = ThemeColors.color("NeuralArc.Detail.foreground",
+            UIManager.getColor("Label.foreground") != null ? UIManager.getColor("Label.foreground") : new Color(45, 45, 50));
+    private static final Color SECTION_TITLE_FG = ThemeColors.color("NeuralArc.Section.titleForeground",
+            UIManager.getColor("Label.foreground") != null ? UIManager.getColor("Label.foreground") : new Color(40, 40, 120));
 
-    private static final Font HEADING_FONT = FontLoader.ui(Font.BOLD, 13);
+    private static final Font HEADING_FONT = FontLoader.ui(Font.BOLD, 12f);
     private static final Font BODY_FONT    = FontLoader.ui(Font.PLAIN, 13);
 
     private static final String[][] CUSTOMER_FAQS = {
@@ -420,9 +422,9 @@ public class HelpDialog extends JDialog {
     public HelpDialog(JFrame owner) {
         super(owner, "Help & FAQ", true);
         setLayout(new BorderLayout(0, 0));
-        JTabbedPane tabs = new JTabbedPane(JTabbedPane.TOP, JTabbedPane.WRAP_TAB_LAYOUT);
-        tabs.setUI(new StandardTabbedPaneUI());
-        tabs.setBorder(null);
+        getContentPane().setBackground(CONTENT_BG);
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.setBorder(new EmptyBorder(0, 0, 0, 0));
         tabs.setFont(FontLoader.ui(Font.PLAIN, 12f));
         tabs.addTab("Customer Benefits", buildFaqScrollPane(CUSTOMER_FAQS));
         tabs.addTab("Technical Highlights", buildFaqScrollPane(TECHNICAL_FAQS));
@@ -432,6 +434,7 @@ public class HelpDialog extends JDialog {
         add(tabs, BorderLayout.CENTER);
 
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        footer.setBackground(CONTENT_BG);
         footer.setBorder(new EmptyBorder(12, 24, 16, 24));
         JButton close = new JButton("Close");
         DialogButtonStyles.apply(close, "icons/close.svg");
@@ -445,9 +448,10 @@ public class HelpDialog extends JDialog {
 
     private JPanel buildFaqPanel(String title, String body) {
         JPanel panel = new JPanel(new BorderLayout());
+        panel.setOpaque(false);
         TitledBorder border = BorderFactory.createTitledBorder(title);
         border.setTitleFont(HEADING_FONT);
-        border.setTitleColor(ThemeColors.color("NeuralArc.Section.titleForeground", new Color(40, 40, 120)));
+        border.setTitleColor(SECTION_TITLE_FG);
         panel.setBorder(BorderFactory.createCompoundBorder(
                 border,
                 new EmptyBorder(12, 14, 14, 14)
@@ -459,7 +463,8 @@ public class HelpDialog extends JDialog {
         text.setLineWrap(true);
         text.setWrapStyleWord(true);
         text.setFont(BODY_FONT);
-        text.setForeground(new Color(50, 50, 50));
+        text.setForeground(BODY_FG);
+        text.setCaretColor(BODY_FG);
         text.setBorder(new EmptyBorder(0, 2, 0, 2));
 
         panel.add(text, BorderLayout.CENTER);
@@ -468,6 +473,7 @@ public class HelpDialog extends JDialog {
 
     private JScrollPane buildFaqScrollPane(String[][] faqs) {
         JPanel content = new JPanel();
+        content.setBackground(CONTENT_BG);
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setBorder(new EmptyBorder(18, 24, 18, 24));
 
@@ -480,54 +486,8 @@ public class HelpDialog extends JDialog {
         scroll.setBorder(null);
         scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.getVerticalScrollBar().setUnitIncrement(16);
-        scroll.getViewport().setBackground(Color.WHITE);
+        scroll.setBackground(CONTENT_BG);
+        scroll.getViewport().setBackground(CONTENT_BG);
         return scroll;
-    }
-
-    private static final class StandardTabbedPaneUI extends BasicTabbedPaneUI {
-        @Override
-        protected void installDefaults() {
-            super.installDefaults();
-            tabInsets = new Insets(5, 12, 5, 12);
-            selectedTabPadInsets = new Insets(0, 0, 0, 0);
-            tabAreaInsets = new Insets(4, 4, 0, 4);
-            contentBorderInsets = new Insets(1, 1, 1, 1);
-        }
-
-        @Override
-        protected void paintTabBackground(Graphics g, int tabPlacement, int tabIndex,
-                                          int x, int y, int w, int h, boolean isSelected) {
-            g.setColor(tabPane.getBackgroundAt(tabIndex));
-            g.fillRect(x, y, w, h);
-        }
-
-        @Override
-        protected void paintTabBorder(Graphics g, int tabPlacement, int tabIndex,
-                                      int x, int y, int w, int h, boolean isSelected) {
-            g.setColor(TAB_CONTENT_BORDER.darker());
-            g.drawLine(x, y + h - 1, x, y);
-            g.drawLine(x, y, x + w - 1, y);
-            g.drawLine(x + w - 1, y, x + w - 1, y + h - 1);
-            if (!isSelected) {
-                g.drawLine(x, y + h - 1, x + w - 1, y + h - 1);
-            }
-        }
-
-        @Override
-        protected int calculateTabHeight(int tabPlacement, int tabIndex, int fontHeight) {
-            return Math.max(super.calculateTabHeight(tabPlacement, tabIndex, fontHeight), 26);
-        }
-
-        @Override
-        protected int calculateTabWidth(int tabPlacement, int tabIndex, FontMetrics metrics) {
-            return super.calculateTabWidth(tabPlacement, tabIndex, metrics) + 6;
-        }
-
-        @Override
-        protected void paintContentBorder(Graphics g, int tabPlacement, int selectedIndex) {
-            g.setColor(TAB_CONTENT_BORDER);
-            int top = calculateTabAreaHeight(tabPlacement, runCount, maxTabHeight) - 1;
-            g.drawRect(4, top, tabPane.getWidth() - 9, tabPane.getHeight() - top - 5);
-        }
     }
 }

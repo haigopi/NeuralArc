@@ -2,6 +2,7 @@ package com.neuralarc;
 
 import com.formdev.flatlaf.FlatDarculaLaf;
 import com.formdev.flatlaf.FlatLaf;
+import com.neuralarc.util.FontLoader;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.UIManager;
@@ -17,6 +18,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * would otherwise only surface as broken styling at application startup.
  */
 class ThemeSetupTest {
+
+    @Test
+    void fontLoaderUsesInterForUiAndManropeForBranding() {
+        FontLoader.registerInter();
+
+        assertEquals("Inter", FontLoader.resolvedFamily());
+        assertEquals("Manrope ExtraBold", FontLoader.resolvedBrandFamily());
+        assertEquals("Manrope ExtraBold", FontLoader.brandingExtraBold(24f).getFamily());
+    }
 
     @Test
     void customThemeDefaultsLoadAndParse() {
