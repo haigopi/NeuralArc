@@ -85,6 +85,9 @@ public final class FontLoader {
 
         Font plain = uiDefault();
         Font bold = FontLoader.bold(DEFAULT_UI_SIZE);
+        // FlatLaf derives every component font from "defaultFont"; the explicit
+        // per-key entries below remain as fallback for non-FlatLaf environments.
+        UIManager.put("defaultFont", plain);
         String[] fontKeys = {
                 "Button.font", "CheckBox.font", "ComboBox.font", "Label.font",
                 "List.font", "Menu.font", "MenuItem.font", "OptionPane.messageFont",
