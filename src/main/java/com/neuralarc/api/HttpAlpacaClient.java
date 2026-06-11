@@ -1,5 +1,7 @@
 package com.neuralarc.api;
 
+import com.neuralarc.model.MarketBar;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.service.ApiRequestIdStore;
 import com.neuralarc.util.Monetary;
 import org.json.JSONArray;
@@ -14,6 +16,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -52,7 +56,18 @@ public class HttpAlpacaClient implements AlpacaClient {
 
     @Override
     public AlpacaOrderData submitLimitBuyOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
-        return submitLimitOrder(symbol, quantity, limitPrice, clientOrderId, "buy");
+        return submitLimitBuyOrder(symbol, quantity, limitPrice, clientOrderId, TimeInForce.DAY);
+    }
+
+    @Override
+    public AlpacaOrderData submitLimitBuyOrder(
+            String symbol,
+            int quantity,
+            BigDecimal limitPrice,
+            String clientOrderId,
+            TimeInForce timeInForce
+    ) {
+        return submitLimitOrder(symbol, quantity, limitPrice, clientOrderId, "buy", timeInForce);
     }
 
     @Override
@@ -74,7 +89,7 @@ public class HttpAlpacaClient implements AlpacaClient {
 
     @Override
     public AlpacaOrderData submitLimitSellOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
-        return submitLimitOrder(symbol, quantity, limitPrice, clientOrderId, "sell");
+        return submitLimitOrder(symbol, quantity, limitPrice, clientOrderId, "sell", TimeInForce.DAY);
     }
 
     @Override
@@ -314,6 +329,50 @@ public class HttpAlpacaClient implements AlpacaClient {
     }
 
     @Override
+    public List<MarketBar> getDailyBars(String symbol, LocalDate startDate, LocalDate endDate) {
+        if (symbol == null || symbol.isBlank() || startDate == null || endDate == null) {
+            return List.of();
+        }
+        String upperSymbol = symbol.trim().toUpperCase();
+        String endpoint = dataBaseUrl + "/v2/stocks/"
+                + URLEncoder.encode(upperSymbol, StandardCharsets.UTF_8)
+                + "/bars?timeframe=1Day&start=" + DateTimeFormatter.ISO_LOCAL_DATE.format(startDate)
+                + "&end=" + DateTimeFormatter.ISO_LOCAL_DATE.format(endDate)
+                + "&limit=10&feed=iex";
+        HttpRequest request = baseRequest(endpoint).GET().build();
+        Optional<String> body = executeBody(request);
+        if (body.isEmpty()) {
+            return List.of();
+        }
+        try {
+            JSONObject json = new JSONObject(body.get());
+            JSONArray bars = json.optJSONArray("bars");
+            if (bars == null) {
+                return List.of();
+            }
+            List<MarketBar> result = new ArrayList<>();
+            for (int i = 0; i < bars.length(); i++) {
+                JSONObject bar = bars.optJSONObject(i);
+                if (bar != null) {
+                    result.add(new MarketBar(
+                            upperSymbol,
+                            bar.optString("t", ""),
+                            parseMoneyValue(bar.opt("o")),
+                            parseMoneyValue(bar.opt("h")),
+                            parseMoneyValue(bar.opt("l")),
+                            parseMoneyValue(bar.opt("c")),
+                            parseMoneyValue(bar.opt("v"))
+                    ));
+                }
+            }
+            return result;
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "Failed to parse daily bars", ex);
+            return List.of();
+        }
+    }
+
+    @Override
     public boolean supportsOvernightSession(String symbol) {
         if (symbol == null || symbol.isBlank()) {
             return false;
@@ -354,13 +413,21 @@ public class HttpAlpacaClient implements AlpacaClient {
         }
     }
 
-    private AlpacaOrderData submitLimitOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId, String side) {
+    private AlpacaOrderData submitLimitOrder(
+            String symbol,
+            int quantity,
+            BigDecimal limitPrice,
+            String clientOrderId,
+            String side,
+            TimeInForce timeInForce
+    ) {
+        TimeInForce tif = timeInForce == null ? TimeInForce.DAY : timeInForce;
         JSONObject payload = new JSONObject()
                 .put("symbol", symbol == null ? "" : symbol.toUpperCase())
                 .put("qty", quantity)
                 .put("side", side)
                 .put("type", "limit")
-                .put("time_in_force", "day")
+                .put("time_in_force", tif.brokerValue())
                 .put("limit_price", Monetary.round(limitPrice).toPlainString())
                 .put("client_order_id", clientOrderId == null ? "" : clientOrderId);
         if (extendedHoursEnabled) {
@@ -573,6 +640,10 @@ public class HttpAlpacaClient implements AlpacaClient {
         } catch (NumberFormatException ex) {
             return Monetary.zero();
         }
+    }
+
+    private BigDecimal parseMoneyValue(Object value) {
+        return parseMoney(value == null ? "0" : String.valueOf(value));
     }
 
     private String normalizeBaseUrl(String value) {

@@ -5,10 +5,12 @@ import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
+import com.neuralarc.model.StrategyConfig;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.model.ThresholdType;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.model.TrailingType;
 import com.neuralarc.service.StrategyRepository;
 import org.json.JSONArray;
@@ -186,9 +188,9 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     profit_control_mode, automatic_stop_sell_threshold_type,
                     automatic_stop_sell_threshold, automatic_stop_sell_trailing_type,
                     automatic_stop_sell_trailing_value,
-                    resubmit_on_expiry_enabled,
+                    resubmit_on_expiry_enabled, base_buy_repost_reduction_percent, time_in_force,
                     created_at, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name, symbol=excluded.symbol,
                     mode=excluded.mode, status=excluded.status, current_state=excluded.current_state,
@@ -233,6 +235,8 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     automatic_stop_sell_trailing_type=excluded.automatic_stop_sell_trailing_type,
                     automatic_stop_sell_trailing_value=excluded.automatic_stop_sell_trailing_value,
                     resubmit_on_expiry_enabled=excluded.resubmit_on_expiry_enabled,
+                    base_buy_repost_reduction_percent=excluded.base_buy_repost_reduction_percent,
+                    time_in_force=excluded.time_in_force,
                     created_at=excluded.created_at,
                     updated_at=excluded.updated_at
                 """;
@@ -268,9 +272,9 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     profit_control_mode, automatic_stop_sell_threshold_type,
                     automatic_stop_sell_threshold, automatic_stop_sell_trailing_type,
                     automatic_stop_sell_trailing_value,
-                    resubmit_on_expiry_enabled,
+                    resubmit_on_expiry_enabled, base_buy_repost_reduction_percent, time_in_force,
                     created_at, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             bindStrategy(ps, s);
@@ -327,6 +331,10 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         ps.setString(i++, s.automaticStopSellTrailingType() == null ? TrailingType.PERCENTAGE.name() : s.automaticStopSellTrailingType().name());
         ps.setString(i++, s.automaticStopSellTrailingValue() == null ? "0.00" : s.automaticStopSellTrailingValue().toPlainString());
         ps.setInt(i++, s.resubmitOnExpiryEnabled() ? 1 : 0);
+        ps.setString(i++, s.baseBuyRepostReductionPercent() == null
+                ? StrategyConfig.DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT.toPlainString()
+                : s.baseBuyRepostReductionPercent().toPlainString());
+        ps.setString(i++, s.timeInForce() == null ? TimeInForce.DAY.name() : s.timeInForce().name());
         ps.setString(i++, s.createdAt().toString());
         ps.setString(i, s.updatedAt().toString());
     }
@@ -385,6 +393,8 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         s.setAutomaticStopSellTrailingType(safeTrailingType(rs.getString("automatic_stop_sell_trailing_type")));
         s.setAutomaticStopSellTrailingValue(decimal(rs, "automatic_stop_sell_trailing_value"));
         s.setResubmitOnExpiryEnabled(rs.getInt("resubmit_on_expiry_enabled") == 1);
+        s.setBaseBuyRepostReductionPercent(decimal(rs, "base_buy_repost_reduction_percent"));
+        s.setTimeInForce(safeTimeInForce(rs.getString("time_in_force")));
         return s;
     }
 
@@ -440,6 +450,8 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         s.setAutomaticStopSellTrailingType(safeTrailingType(o.optString("automaticStopSellTrailingType", "PERCENTAGE")));
         s.setAutomaticStopSellTrailingValue(decimal(o, "automaticStopSellTrailingValue"));
         s.setResubmitOnExpiryEnabled(o.optBoolean("resubmitOnExpiryEnabled", false));
+        s.setBaseBuyRepostReductionPercent(decimal(o, "baseBuyRepostReductionPercent"));
+        s.setTimeInForce(safeTimeInForce(o.optString("timeInForce", "DAY")));
         return s;
     }
 
@@ -490,6 +502,10 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         o.put("automaticStopSellTrailingType", s.automaticStopSellTrailingType() == null ? TrailingType.PERCENTAGE.name() : s.automaticStopSellTrailingType().name());
         o.put("automaticStopSellTrailingValue", s.automaticStopSellTrailingValue() == null ? "0.00" : s.automaticStopSellTrailingValue().toPlainString());
         o.put("resubmitOnExpiryEnabled", s.resubmitOnExpiryEnabled());
+        o.put("baseBuyRepostReductionPercent", s.baseBuyRepostReductionPercent() == null
+                ? StrategyConfig.DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT.toPlainString()
+                : s.baseBuyRepostReductionPercent().toPlainString());
+        o.put("timeInForce", s.timeInForce() == null ? TimeInForce.DAY.name() : s.timeInForce().name());
         return o;
     }
 
@@ -533,6 +549,10 @@ public final class SqliteStrategyRepository implements StrategyRepository {
     private TrailingType safeTrailingType(String v) {
         try { return TrailingType.valueOf(v == null || v.isBlank() ? "PERCENTAGE" : v); }
         catch (IllegalArgumentException ex) { return TrailingType.PERCENTAGE; }
+    }
+
+    private TimeInForce safeTimeInForce(String v) {
+        return TimeInForce.safeValue(v);
     }
 
     private PauseReason safePauseReason(String v) {

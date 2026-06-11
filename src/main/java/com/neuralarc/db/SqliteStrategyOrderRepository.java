@@ -5,6 +5,7 @@ import com.neuralarc.model.StrategyOrderSide;
 import com.neuralarc.model.StrategyOrderStatus;
 import com.neuralarc.model.StrategyOrderType;
 import com.neuralarc.model.StrategyStage;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.service.StrategyOrderRepository;
 
 import java.math.BigDecimal;
@@ -133,8 +134,8 @@ public final class SqliteStrategyOrderRepository implements StrategyOrderReposit
                     id, strategy_id, stage, alpaca_order_id, client_order_id,
                     symbol, side, order_type, limit_price, stop_price,
                     requested_quantity, filled_quantity, filled_average_price,
-                    status, submitted_at, updated_at, filled_at, raw_response_json
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    status, time_in_force, submitted_at, updated_at, filled_at, raw_response_json
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     strategy_id=excluded.strategy_id,
                     stage=excluded.stage,
@@ -149,6 +150,7 @@ public final class SqliteStrategyOrderRepository implements StrategyOrderReposit
                     filled_quantity=excluded.filled_quantity,
                     filled_average_price=excluded.filled_average_price,
                     status=excluded.status,
+                    time_in_force=excluded.time_in_force,
                     submitted_at=excluded.submitted_at,
                     updated_at=excluded.updated_at,
                     filled_at=excluded.filled_at,
@@ -170,6 +172,7 @@ public final class SqliteStrategyOrderRepository implements StrategyOrderReposit
             ps.setString(i++, o.filledQuantity().toPlainString());
             ps.setString(i++, o.filledAveragePrice().toPlainString());
             ps.setString(i++, o.status().name());
+            ps.setString(i++, o.timeInForce() == null ? TimeInForce.DAY.name() : o.timeInForce().name());
             ps.setString(i++, o.submittedAt().toString());
             ps.setString(i++, o.updatedAt() == null ? null : o.updatedAt().toString());
             ps.setString(i++, o.filledAt() == null ? null : o.filledAt().toString());
@@ -199,7 +202,8 @@ public final class SqliteStrategyOrderRepository implements StrategyOrderReposit
                 Instant.parse(rs.getString("submitted_at")),
                 parseInstant(rs.getString("updated_at")),
                 parseInstant(rs.getString("filled_at")),
-                rs.getString("raw_response_json")
+                rs.getString("raw_response_json"),
+                TimeInForce.safeValue(rs.getString("time_in_force"))
         );
     }
 
@@ -248,4 +252,3 @@ public final class SqliteStrategyOrderRepository implements StrategyOrderReposit
         seedCache();
     }
 }
-

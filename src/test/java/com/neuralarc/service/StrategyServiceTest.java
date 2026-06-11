@@ -64,6 +64,24 @@ class StrategyServiceTest {
     }
 
     @Test
+    void initialOrderPersistsConfiguredTimeInForce() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setTimeInForce(TimeInForce.GTC);
+
+        StrategyService.StrategyCreationResult result = service.createAndActivate(strategy);
+
+        assertTrue(result.success());
+        StrategyOrder initial = orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).orElseThrow();
+        assertEquals(TimeInForce.GTC, initial.timeInForce());
+    }
+
+    @Test
     void initialOrderUsesStrategyDialogConfigurationValues() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

@@ -5,6 +5,7 @@ import com.neuralarc.model.StrategyOrderSide;
 import com.neuralarc.model.StrategyOrderStatus;
 import com.neuralarc.model.StrategyOrderType;
 import com.neuralarc.model.StrategyStage;
+import com.neuralarc.model.TimeInForce;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -159,7 +160,8 @@ public class FileStrategyOrderRepository implements StrategyOrderRepository {
                         Instant.parse(o.getString("submittedAt")),
                         parseInstant(o.optString("updatedAt", "")),
                         parseInstant(o.optString("filledAt", "")),
-                        o.optString("rawResponseJson", "{}")
+                        o.optString("rawResponseJson", "{}"),
+                        TimeInForce.safeValue(o.optString("timeInForce", "DAY"))
                 ));
             }
             return orders;
@@ -207,6 +209,7 @@ public class FileStrategyOrderRepository implements StrategyOrderRepository {
             json.put("filledQuantity", o.filledQuantity().toPlainString());
             json.put("filledAveragePrice", o.filledAveragePrice().toPlainString());
             json.put("status", o.status().name());
+            json.put("timeInForce", o.timeInForce() == null ? TimeInForce.DAY.name() : o.timeInForce().name());
             json.put("submittedAt", o.submittedAt().toString());
             json.put("updatedAt", o.updatedAt() == null ? "" : o.updatedAt().toString());
             json.put("filledAt", o.filledAt() == null ? "" : o.filledAt().toString());

@@ -25,6 +25,9 @@ public class ProfitControlsPanel extends JPanel {
     private static final int SECTION_INNER_PADDING = 10;
     private static final int HORIZONTAL_CONTENT_PADDING = 12;
     private static final int FORM_LABEL_COLUMN_WIDTH = 220;
+    private static final int FIELD_COLUMNS = 12;
+    private static final int FIELD_MAX_WIDTH = 180;
+    private static final int DESCRIPTION_WRAP_WIDTH = 520;
     private static final Color TEXT_PRIMARY = UIManager.getColor("Label.foreground") != null
             ? UIManager.getColor("Label.foreground")
             : new Color(45, 45, 50);
@@ -43,20 +46,20 @@ public class ProfitControlsPanel extends JPanel {
     private final ButtonGroup modeGroup = new ButtonGroup();
 
     // Sell Trigger fields
-    private final JTextField sellTriggerPriceField = new JTextField(25);
+    private final JTextField sellTriggerPriceField = new JTextField(FIELD_COLUMNS);
 
     // Shared profit activation fields for Automatic Stop Sell and Profit Hold.
     private final JComboBox<ThresholdType> thresholdTypeBox = new JComboBox<>(ThresholdType.values());
-    private final JTextField thresholdValueField = new JTextField(25);
+    private final JTextField thresholdValueField = new JTextField(FIELD_COLUMNS);
 
     // Automatic Stop Sell fields
     private final JComboBox<TrailingType> trailingTypeBox = new JComboBox<>(TrailingType.values());
-    private final JTextField trailingValueField = new JTextField(25);
+    private final JTextField trailingValueField = new JTextField(FIELD_COLUMNS);
 
     // Profit Hold fields
     private final JComboBox<ProfitHoldType> profitHoldTypeBox = new JComboBox<>(ProfitHoldType.values());
-    private final JTextField profitHoldPercentField = new JTextField(25);
-    private final JTextField profitHoldAmountField = new JTextField(25);
+    private final JTextField profitHoldPercentField = new JTextField(FIELD_COLUMNS);
+    private final JTextField profitHoldAmountField = new JTextField(FIELD_COLUMNS);
 
     private final JLabel statusLabel = new JLabel("Manual sell is always available");
 
@@ -177,7 +180,8 @@ public class ProfitControlsPanel extends JPanel {
     }
 
     private JLabel description(String text) {
-        JLabel label = new JLabel("<html>" + text + "</html>");
+        JLabel label = new JLabel("<html><div style='width:" + DESCRIPTION_WRAP_WIDTH + "px;'>"
+                + text + "</div></html>");
         label.putClientProperty("neuralarc.mutedDescription", Boolean.TRUE);
         label.setForeground(TEXT_MUTED);
         label.setFont(FontLoader.ui(Font.PLAIN, 11f));
@@ -206,8 +210,8 @@ public class ProfitControlsPanel extends JPanel {
         GridBagConstraints valueGbc = new GridBagConstraints();
         valueGbc.gridx = 1;
         valueGbc.gridy = row;
-        valueGbc.weightx = 1;
-        valueGbc.fill = GridBagConstraints.HORIZONTAL;
+        valueGbc.weightx = 0;
+        valueGbc.fill = GridBagConstraints.NONE;
         valueGbc.anchor = GridBagConstraints.NORTHWEST;
         valueGbc.insets = new Insets(0, 0, FIELD_GAP, 0);
 
@@ -227,12 +231,18 @@ public class ProfitControlsPanel extends JPanel {
                     BorderFactory.createLineBorder(INPUT_BORDER, 1, true),
                     new EmptyBorder(4, 8, 4, 8)
             ));
+            Dimension preferred = field.getPreferredSize();
+            field.setPreferredSize(new Dimension(Math.min(FIELD_MAX_WIDTH, preferred.width), preferred.height));
+            field.setMaximumSize(new Dimension(FIELD_MAX_WIDTH, preferred.height));
         }
 
         JComboBox<?>[] boxes = { thresholdTypeBox, trailingTypeBox, profitHoldTypeBox };
         for (JComboBox<?> box : boxes) {
             box.setBackground(INPUT_BG);
             box.setForeground(TEXT_PRIMARY);
+            Dimension preferred = box.getPreferredSize();
+            box.setPreferredSize(new Dimension(Math.min(FIELD_MAX_WIDTH, preferred.width), preferred.height));
+            box.setMaximumSize(new Dimension(FIELD_MAX_WIDTH, preferred.height));
         }
 
         JRadioButton[] radioButtons = { noAutomationMode, sellTriggerMode, automaticStopSellMode, profitHoldMode };

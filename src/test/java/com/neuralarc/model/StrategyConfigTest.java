@@ -160,4 +160,42 @@ class StrategyConfigTest {
         assertFalse(config.resubmitOnExpiryEnabled());
     }
 
+    @Test
+    void baseBuyRepostReductionDefaultsWhenMissingOrZero() {
+        StrategyConfig config = new StrategyConfig(
+                "NEO",
+                new BigDecimal("8.00"),
+                10,
+                true,
+                new BigDecimal("7.00"),
+                true,
+                new BigDecimal("10.00"),
+                new BigDecimal("7.40"),
+                5,
+                new BigDecimal("6.40"),
+                5,
+                true,
+                false,
+                BigDecimal.ZERO,
+                2,
+                true,
+                false,
+                false,
+                ProfitHoldType.PERCENT_TRAILING,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                false,
+                ProfitControlMode.NONE,
+                ThresholdType.FIXED_AMOUNT,
+                BigDecimal.ZERO,
+                TrailingType.PERCENTAGE,
+                BigDecimal.ZERO,
+                true,
+                BigDecimal.ZERO,
+                TimeInForce.DAY
+        );
+
+        assertEquals(new BigDecimal("2.00"), config.baseBuyRepostReductionPercent());
+    }
+
 }

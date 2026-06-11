@@ -56,6 +56,8 @@ public class Strategy {
     private TrailingType automaticStopSellTrailingType;
     private BigDecimal automaticStopSellTrailingValue;
     private boolean resubmitOnExpiryEnabled;
+    private BigDecimal baseBuyRepostReductionPercent;
+    private TimeInForce timeInForce;
 
     public Strategy(
             String id,
@@ -136,6 +138,8 @@ public class Strategy {
         this.automaticStopSellTrailingType = TrailingType.PERCENTAGE;
         this.automaticStopSellTrailingValue = BigDecimal.ZERO;
         this.resubmitOnExpiryEnabled = false;
+        this.baseBuyRepostReductionPercent = StrategyConfig.DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT;
+        this.timeInForce = TimeInForce.DAY;
     }
 
     public Strategy(
@@ -262,6 +266,8 @@ public class Strategy {
         strategy.setAutomaticStopSellTrailingType(config.automaticStopSellTrailingType());
         strategy.setAutomaticStopSellTrailingValue(config.automaticStopSellTrailingValue());
         strategy.setResubmitOnExpiryEnabled(config.resubmitOnExpiryEnabled());
+        strategy.setBaseBuyRepostReductionPercent(config.baseBuyRepostReductionPercent());
+        strategy.setTimeInForce(config.timeInForce());
         return strategy;
     }
 
@@ -427,6 +433,8 @@ public class Strategy {
     public TrailingType automaticStopSellTrailingType() { return automaticStopSellTrailingType; }
     public BigDecimal automaticStopSellTrailingValue() { return automaticStopSellTrailingValue; }
     public boolean resubmitOnExpiryEnabled() { return resubmitOnExpiryEnabled; }
+    public BigDecimal baseBuyRepostReductionPercent() { return baseBuyRepostReductionPercent; }
+    public TimeInForce timeInForce() { return timeInForce; }
 
     public void setProfitControlMode(ProfitControlMode mode) { this.profitControlMode = mode == null ? ProfitControlMode.NONE : mode; touch(); }
     public void setAutomaticStopSellThresholdType(ThresholdType type) { this.automaticStopSellThresholdType = type == null ? ThresholdType.FIXED_AMOUNT : type; touch(); }
@@ -434,4 +442,12 @@ public class Strategy {
     public void setAutomaticStopSellTrailingType(TrailingType type) { this.automaticStopSellTrailingType = type == null ? TrailingType.PERCENTAGE : type; touch(); }
     public void setAutomaticStopSellTrailingValue(BigDecimal value) { this.automaticStopSellTrailingValue = money(value); touch(); }
     public void setResubmitOnExpiryEnabled(boolean enabled) { this.resubmitOnExpiryEnabled = enabled; touch(); }
+    public void setBaseBuyRepostReductionPercent(BigDecimal value) {
+        BigDecimal normalized = money(value);
+        this.baseBuyRepostReductionPercent = normalized.compareTo(BigDecimal.ZERO) <= 0
+                ? StrategyConfig.DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT
+                : normalized;
+        touch();
+    }
+    public void setTimeInForce(TimeInForce timeInForce) { this.timeInForce = timeInForce == null ? TimeInForce.DAY : timeInForce; touch(); }
 }

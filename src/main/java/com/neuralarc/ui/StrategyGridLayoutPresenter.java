@@ -2,7 +2,7 @@ package com.neuralarc.ui;
 
 final class StrategyGridLayoutPresenter {
     static final int POLLING_COLUMN_INDEX = 7;
-    static final int ACTIONS_COLUMN_INDEX = 10;
+    static final int ACTIONS_COLUMN_INDEX = 11;
 
     ColumnWidth pollingColumnWidth() {
         return new ColumnWidth(170, 150);

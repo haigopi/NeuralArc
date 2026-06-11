@@ -13,6 +13,7 @@ import com.neuralarc.model.ShortTermMarketMode;
 import com.neuralarc.model.StrategyConfig;
 import com.neuralarc.model.StrategyRecommendation;
 import com.neuralarc.model.ThresholdType;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.model.TrailingType;
 import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.service.AutoAnalyzeResultStore;
@@ -56,6 +57,9 @@ public class StrategyDialog extends JDialog {
     private static final int FIELD_GAP = 10;
     private static final int SECTION_INNER_PADDING = 10;
     private static final int FORM_LABEL_COLUMN_WIDTH = 220;
+    private static final int CURRENT_STRATEGY_FIELD_COLUMNS = 12;
+    private static final int CURRENT_STRATEGY_FIELD_MAX_WIDTH = 180;
+    private static final int DESCRIPTION_WRAP_WIDTH = 520;
     private static final int RECOMMENDATION_LABEL_COLUMN_WIDTH = 210;
     private static final int RECOMMENDATION_TEXT_WRAP_WIDTH = 260;
     private static final int AUTO_ANALYZE_OUTER_SECTION_WIDTH = 820;
@@ -107,21 +111,23 @@ public class StrategyDialog extends JDialog {
     private final boolean defaultRepeatCycleAfterProfitExitEnabled;
     private final boolean defaultResubmitOnExpiryEnabled;
 
-    private final JTextField symbolField = new JTextField(25);
+    private final JTextField symbolField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
     private final JCheckBox paperMode = new JCheckBox("Paper trading mode", true);
-    private final JTextField basePriceField = new JTextField(25);
-    private final JTextField baseQtyField = new JTextField(25);
+    private final JTextField basePriceField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
+    private final JTextField baseQtyField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
+    private final JComboBox<TimeInForce> timeInForceBox = new JComboBox<>(TimeInForce.values());
     private final JCheckBox stopLossEnabled = new JCheckBox("Enable Stop Loss", true);
-    private final JTextField stopLossField = new JTextField(25);
+    private final JTextField stopLossField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
     private final ProfitControlsPanel profitControlsPanel = new ProfitControlsPanel();
-    private final JTextField loss1PriceField = new JTextField(25);
-    private final JTextField loss1QtyField = new JTextField(25);
-    private final JTextField loss2PriceField = new JTextField(25);
-    private final JTextField loss2QtyField = new JTextField(25);
+    private final JTextField loss1PriceField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
+    private final JTextField loss1QtyField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
+    private final JTextField loss2PriceField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
+    private final JTextField loss2QtyField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
     private final JCheckBox lossBuyLevelsEnabled = new JCheckBox("Enable Loss Buy Levels", true);
-    private final JTextField pollingField = new JTextField(25);
+    private final JTextField pollingField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
     private final JCheckBox repeatCycleAfterProfitExitEnabled = new JCheckBox("Repeat cycle after profitable exit", false);
     private final JCheckBox resubmitOnExpiryEnabled = new JCheckBox("Resubmit strategy on expiry", false);
+    private final JTextField baseBuyRepostReductionPercentField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
 
     private final JTextArea highSeriesArea = new JTextArea(8, 22);
     private final JTextArea lowSeriesArea = new JTextArea(8, 22);
@@ -289,10 +295,12 @@ public class StrategyDialog extends JDialog {
         addRow(strategyPanel, "Trading mode:", paperMode);
         addRow(strategyPanel, "Base buy price:", basePriceField);
         addRow(strategyPanel, "Base buy quantity:", baseQtyField);
+        addRow(strategyPanel, "Time In Force:", timeInForceBox);
         prepareSection(strategyPanel);
         JPanel strategySection = describedSection(
                 strategyPanel,
                 "Defines the symbol, broker mode, and first buy order the strategy will place when its entry rule is active."
+                        + " GTC keeps an unfilled base buy working across sessions until broker expiry or cancellation."
         );
 
         // Risk Controls — outer wrapper with three sub-sections
@@ -347,10 +355,11 @@ public class StrategyDialog extends JDialog {
         cycleBehaviorPanel.setBorder(createSectionBorder("Cycle Behavior"));
         addRow(cycleBehaviorPanel, "Repeat cycle after profitable exit (optional):", repeatCycleAfterProfitExitEnabled);
         addRow(cycleBehaviorPanel, "Resubmit strategy on expiry:", resubmitOnExpiryEnabled);
+        addRow(cycleBehaviorPanel, "Repost reduction %:", baseBuyRepostReductionPercentField);
         prepareSection(cycleBehaviorPanel);
         JPanel cycleBehaviorSection = describedSection(
                 cycleBehaviorPanel,
-                "Controls automatic re-entry behavior. Expired Alpaca orders are resubmitted only when Resubmit strategy on expiry is enabled."
+                "Controls automatic re-entry behavior. Expired Alpaca orders are resubmitted only when enabled; weakening indicators reduce the original base buy limit by the configured percent."
         );
 
         content.add(strategySection);
@@ -726,8 +735,8 @@ public class StrategyDialog extends JDialog {
             GridBagConstraints valueGbc = new GridBagConstraints();
             valueGbc.gridx = 1;
             valueGbc.gridy = row;
-            valueGbc.weightx = 1;
-            valueGbc.fill = GridBagConstraints.HORIZONTAL;
+            valueGbc.weightx = 0;
+            valueGbc.fill = GridBagConstraints.NONE;
             valueGbc.anchor = GridBagConstraints.NORTHWEST;
             valueGbc.insets = new Insets(0, 0, FIELD_GAP, 0);
 
@@ -772,7 +781,8 @@ public class StrategyDialog extends JDialog {
     }
 
     private JLabel mutedDescription(String text) {
-        JLabel label = new JLabel("<html>" + text + "</html>");
+        JLabel label = new JLabel("<html><div style='width:" + DESCRIPTION_WRAP_WIDTH + "px;'>"
+                + text + "</div></html>");
         label.putClientProperty("neuralarc.mutedDescription", Boolean.TRUE);
         label.setForeground(TEXT_MUTED);
         label.setFont(FontLoader.ui(java.awt.Font.PLAIN, 11f));
@@ -807,6 +817,7 @@ public class StrategyDialog extends JDialog {
 
     private void configureTooltips() {
         basePriceField.setToolTipText(TooltipStyler.text("Initial buy triggers when price is less than or equal to this value."));
+        timeInForceBox.setToolTipText(TooltipStyler.text("DAY expires at the end of the trading day. GTC remains open until filled, canceled, or expired by the broker."));
         stopLossField.setToolTipText(TooltipStyler.text("Stop Loss activates once price reaches this level, then can trigger stop-loss on reversal."));
         lossBuyLevelsEnabled.setToolTipText(TooltipStyler.text("When disabled, Loss Buy Level 1 and Loss Buy Level 2 will not trigger."));
         loss1PriceField.setToolTipText(TooltipStyler.text("Loss Buy Level 1 triggers when price is less than or equal to this value."));
@@ -815,6 +826,7 @@ public class StrategyDialog extends JDialog {
         pollingField.setToolTipText(TooltipStyler.text("How often the strategy evaluates prices, in seconds."));
         repeatCycleAfterProfitExitEnabled.setToolTipText(TooltipStyler.text("Optional. When enabled, a new cycle starts only after a profitable exit. Stop-loss and manual close exits do not restart the cycle."));
         resubmitOnExpiryEnabled.setToolTipText(TooltipStyler.text("When enabled, polling can reactivate and resubmit this strategy after Alpaca marks its current order expired."));
+        baseBuyRepostReductionPercentField.setToolTipText(TooltipStyler.text("When reposting after expiry and indicators weaken, reduce the original base buy limit by this percent. Blank or zero uses 2.00."));
     }
 
     private void styleInputs() {
@@ -827,6 +839,8 @@ public class StrategyDialog extends JDialog {
         styleInput(loss2PriceField);
         styleInput(loss2QtyField);
         styleInput(pollingField);
+        styleInput(baseBuyRepostReductionPercentField);
+        capCurrentStrategyFieldWidths();
         styleInput(highSeriesArea);
         styleInput(lowSeriesArea);
 
@@ -840,6 +854,22 @@ public class StrategyDialog extends JDialog {
     private void wireLossBuyLevelFields() {
         lossBuyLevelsEnabled.addActionListener(e -> updateLossBuyFieldState());
         updateLossBuyFieldState();
+    }
+
+    private void capCurrentStrategyFieldWidths() {
+        JComponent[] components = {
+                symbolField, basePriceField, baseQtyField, timeInForceBox, stopLossField,
+                loss1PriceField, loss1QtyField, loss2PriceField, loss2QtyField, pollingField,
+                baseBuyRepostReductionPercentField
+        };
+        for (JComponent component : components) {
+            Dimension preferred = component.getPreferredSize();
+            component.setMaximumSize(new Dimension(CURRENT_STRATEGY_FIELD_MAX_WIDTH, preferred.height));
+            component.setPreferredSize(new Dimension(
+                    Math.min(CURRENT_STRATEGY_FIELD_MAX_WIDTH, preferred.width),
+                    preferred.height
+            ));
+        }
     }
 
     private void updateLossBuyFieldState() {
@@ -925,6 +955,7 @@ public class StrategyDialog extends JDialog {
         paperMode.setSelected(config.paperTrading());
         basePriceField.setText(config.baseBuyPrice().toPlainString());
         baseQtyField.setText(String.valueOf(config.baseBuyQty()));
+        timeInForceBox.setSelectedItem(config.timeInForce());
         stopLossEnabled.setSelected(config.stopLossEnabled());
         stopLossField.setText(config.stopLoss().toPlainString());
         lossBuyLevelsEnabled.setSelected(config.lossBuyLevelsEnabled());
@@ -935,6 +966,7 @@ public class StrategyDialog extends JDialog {
         pollingField.setText(String.valueOf(config.pollingSeconds()));
         repeatCycleAfterProfitExitEnabled.setSelected(config.repeatCycleAfterProfitExitEnabled());
         resubmitOnExpiryEnabled.setSelected(config.resubmitOnExpiryEnabled());
+        baseBuyRepostReductionPercentField.setText(config.baseBuyRepostReductionPercent().toPlainString());
         profitControlsPanel.applyConfig(config);
         updateStopLossFieldState();
         updateLossBuyFieldState();
@@ -946,6 +978,7 @@ public class StrategyDialog extends JDialog {
         paperMode.setSelected(DEFAULTS.paperTrading());
         basePriceField.setText(DEFAULTS.baseBuyPrice());
         baseQtyField.setText(DEFAULTS.baseBuyQty());
+        timeInForceBox.setSelectedItem(TimeInForce.DAY);
         stopLossEnabled.setSelected(DEFAULTS.stopLossEnabled());
         stopLossField.setText(DEFAULTS.stopLoss());
         lossBuyLevelsEnabled.setSelected(true);
@@ -956,6 +989,7 @@ public class StrategyDialog extends JDialog {
         pollingField.setText(pollingDefault);
         repeatCycleAfterProfitExitEnabled.setSelected(defaultRepeatCycleAfterProfitExitEnabled);
         resubmitOnExpiryEnabled.setSelected(defaultResubmitOnExpiryEnabled);
+        baseBuyRepostReductionPercentField.setText(StrategyConfig.DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT.toPlainString());
         profitControlsPanel.applyConfig(new StrategyConfig(  // Apply defaults to profit controls panel
                 DEFAULTS.symbol(),
                 new BigDecimal(DEFAULTS.baseBuyPrice()),
@@ -984,7 +1018,9 @@ public class StrategyDialog extends JDialog {
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
                 BigDecimal.ZERO,
-                defaultResubmitOnExpiryEnabled
+                defaultResubmitOnExpiryEnabled,
+                StrategyConfig.DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT,
+                TimeInForce.DAY
         ));
         updateStopLossFieldState();
         updateLossBuyFieldState();
@@ -992,6 +1028,14 @@ public class StrategyDialog extends JDialog {
 
     private void onSaveForSelectedTab() {
         onSave();
+    }
+
+    private BigDecimal parseRepostReductionPercent() {
+        String raw = baseBuyRepostReductionPercentField.getText().trim();
+        if (raw.isBlank()) {
+            return StrategyConfig.DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT;
+        }
+        return new BigDecimal(raw);
     }
 
     private void styleTabs() {
@@ -1116,6 +1160,7 @@ public class StrategyDialog extends JDialog {
 
             int lossBuyLevel1Qty = lossBuysOn ? Integer.parseInt(loss1QtyField.getText().trim()) : 0;
             int lossBuyLevel2Qty = lossBuysOn ? Integer.parseInt(loss2QtyField.getText().trim()) : 0;
+            BigDecimal baseBuyRepostReductionPercent = parseRepostReductionPercent();
 
             // Get profit control data from the panel
             ProfitControlMode profitControlModeFromUI = profitControlsPanel.getSelectedMode();
@@ -1184,7 +1229,9 @@ public class StrategyDialog extends JDialog {
                     profitControlsPanel.getThresholdValue(),
                     profitControlsPanel.getTrailingType(),
                     profitControlsPanel.getTrailingValue(),
-                    resubmitOnExpiryEnabled.isSelected()
+                    resubmitOnExpiryEnabled.isSelected(),
+                    baseBuyRepostReductionPercent,
+                    (TimeInForce) timeInForceBox.getSelectedItem()
             );
             setVisible(false);
         } catch (NumberFormatException ex) {

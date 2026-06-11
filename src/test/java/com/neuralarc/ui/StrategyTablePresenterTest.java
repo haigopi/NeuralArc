@@ -2,6 +2,7 @@ package com.neuralarc.ui;
 
 import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.Position;
+import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
@@ -32,14 +33,42 @@ class StrategyTablePresenterTest {
     }
 
     @Test
-    void activeFilledBaseBuyShowsWaitingForNextRule() {
+    void activeFilledBaseBuyShowsConfiguredLossBuyRule() {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.ACTIVE);
         strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
 
         String label = presenter.displayStatusLabel(strategy, false, false, false);
 
-        assertEquals("Base Buy Filled - Monitoring next configured rule", label);
+        assertEquals("Buy limit 1 active @ $95.00 - monitoring loss buy", label);
+    }
+
+    @Test
+    void activeFilledBaseBuyWithoutLossPreventionShowsSellTriggerRule() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategy.setLossBuyLevelsEnabled(false);
+        strategy.setAutomatedStopLossEnabled(false);
+
+        String label = presenter.displayStatusLabel(strategy, false, false, false);
+
+        assertEquals("Sell trigger active @ $120.00 - monitoring for sell trigger", label);
+    }
+
+    @Test
+    void activeFilledBaseBuyWithAutomaticStopSellShowsAutomaticStopSellRule() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategy.setLossBuyLevelsEnabled(false);
+        strategy.setAutomatedStopLossEnabled(false);
+        strategy.setProfitControlMode(ProfitControlMode.AUTOMATIC_STOP_SELL);
+        strategy.setAutomaticStopSellThreshold(new BigDecimal("10.00"));
+
+        String label = presenter.displayStatusLabel(strategy, false, false, false);
+
+        assertEquals("Automatic stop sell active after $10.00 profit - monitoring profit threshold", label);
     }
 
     @Test
@@ -128,7 +157,7 @@ class StrategyTablePresenterTest {
 
         String label = presenter.displayStatusLabel(strategy, position, false, false, false);
 
-        assertEquals("Sell trigger active @ $120.00 | Current $120.00 - monitoring for sell trigger", label);
+        assertEquals("Sell trigger active @ $120.00 - monitoring for sell trigger", label);
     }
 
     @Test
@@ -143,7 +172,7 @@ class StrategyTablePresenterTest {
 
         String label = presenter.displayStatusLabel(strategy, position, false, false, false);
 
-        assertEquals("Stop loss active @ $85.00 | Current $92.50 - monitoring downside protection", label);
+        assertEquals("Stop loss active @ $85.00 - monitoring downside protection", label);
     }
 
     @Test
@@ -259,6 +288,23 @@ class StrategyTablePresenterTest {
                 "Completed",
                 "Paper"
         ));
+    }
+
+    @Test
+    void valueAtShowsConfiguredTimeInForce() {
+        Strategy strategy = strategy();
+        strategy.setTimeInForce(com.neuralarc.model.TimeInForce.GTC);
+
+        Object value = presenter.valueAt(
+                strategy,
+                new Position("AAPL"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                8,
+                "Limit Base Buy Placed"
+        );
+
+        assertEquals("GTC", value);
     }
 
     @Test

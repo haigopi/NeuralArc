@@ -32,8 +32,12 @@ public record StrategyConfig(
         BigDecimal automaticStopSellThreshold,
         TrailingType automaticStopSellTrailingType,
         BigDecimal automaticStopSellTrailingValue,
-        boolean resubmitOnExpiryEnabled
+        boolean resubmitOnExpiryEnabled,
+        BigDecimal baseBuyRepostReductionPercent,
+        TimeInForce timeInForce
 ) {
+    public static final BigDecimal DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT = new BigDecimal("2.00");
+
     public StrategyConfig {
         baseBuyPrice = Monetary.round(baseBuyPrice);
         stopLoss = Monetary.round(stopLoss);
@@ -54,6 +58,136 @@ public record StrategyConfig(
         automaticStopSellThreshold = Monetary.round(automaticStopSellThreshold);
         automaticStopSellTrailingType = automaticStopSellTrailingType == null ? TrailingType.PERCENTAGE : automaticStopSellTrailingType;
         automaticStopSellTrailingValue = Monetary.round(automaticStopSellTrailingValue);
+        baseBuyRepostReductionPercent = normalizeBaseBuyRepostReductionPercent(baseBuyRepostReductionPercent);
+        timeInForce = timeInForce == null ? TimeInForce.DAY : timeInForce;
+    }
+
+    public StrategyConfig(
+            String symbol,
+            BigDecimal baseBuyPrice,
+            int baseBuyQty,
+            boolean stopLossEnabled,
+            BigDecimal stopLoss,
+            boolean sellTriggerEnabled,
+            BigDecimal sellTriggerPrice,
+            BigDecimal lossBuyLevel1Price,
+            int lossBuyLevel1Qty,
+            BigDecimal lossBuyLevel2Price,
+            int lossBuyLevel2Qty,
+            boolean lossBuyLevelsEnabled,
+            boolean optionalLossExitEnabled,
+            BigDecimal optionalLossExitPrice,
+            int pollingSeconds,
+            boolean paperTrading,
+            boolean alpacaTrailingStopEnabled,
+            boolean profitHoldEnabled,
+            ProfitHoldType profitHoldType,
+            BigDecimal profitHoldPercent,
+            BigDecimal profitHoldAmount,
+            boolean repeatCycleAfterProfitExitEnabled,
+            ProfitControlMode profitControlMode,
+            ThresholdType automaticStopSellThresholdType,
+            BigDecimal automaticStopSellThreshold,
+            TrailingType automaticStopSellTrailingType,
+            BigDecimal automaticStopSellTrailingValue,
+            boolean resubmitOnExpiryEnabled,
+            TimeInForce timeInForce
+    ) {
+        this(
+                symbol,
+                baseBuyPrice,
+                baseBuyQty,
+                stopLossEnabled,
+                stopLoss,
+                sellTriggerEnabled,
+                sellTriggerPrice,
+                lossBuyLevel1Price,
+                lossBuyLevel1Qty,
+                lossBuyLevel2Price,
+                lossBuyLevel2Qty,
+                lossBuyLevelsEnabled,
+                optionalLossExitEnabled,
+                optionalLossExitPrice,
+                pollingSeconds,
+                paperTrading,
+                alpacaTrailingStopEnabled,
+                profitHoldEnabled,
+                profitHoldType,
+                profitHoldPercent,
+                profitHoldAmount,
+                repeatCycleAfterProfitExitEnabled,
+                profitControlMode,
+                automaticStopSellThresholdType,
+                automaticStopSellThreshold,
+                automaticStopSellTrailingType,
+                automaticStopSellTrailingValue,
+                resubmitOnExpiryEnabled,
+                DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT,
+                timeInForce
+        );
+    }
+
+    public StrategyConfig(
+            String symbol,
+            BigDecimal baseBuyPrice,
+            int baseBuyQty,
+            boolean stopLossEnabled,
+            BigDecimal stopLoss,
+            boolean sellTriggerEnabled,
+            BigDecimal sellTriggerPrice,
+            BigDecimal lossBuyLevel1Price,
+            int lossBuyLevel1Qty,
+            BigDecimal lossBuyLevel2Price,
+            int lossBuyLevel2Qty,
+            boolean lossBuyLevelsEnabled,
+            boolean optionalLossExitEnabled,
+            BigDecimal optionalLossExitPrice,
+            int pollingSeconds,
+            boolean paperTrading,
+            boolean alpacaTrailingStopEnabled,
+            boolean profitHoldEnabled,
+            ProfitHoldType profitHoldType,
+            BigDecimal profitHoldPercent,
+            BigDecimal profitHoldAmount,
+            boolean repeatCycleAfterProfitExitEnabled,
+            ProfitControlMode profitControlMode,
+            ThresholdType automaticStopSellThresholdType,
+            BigDecimal automaticStopSellThreshold,
+            TrailingType automaticStopSellTrailingType,
+            BigDecimal automaticStopSellTrailingValue,
+            boolean resubmitOnExpiryEnabled
+    ) {
+        this(
+                symbol,
+                baseBuyPrice,
+                baseBuyQty,
+                stopLossEnabled,
+                stopLoss,
+                sellTriggerEnabled,
+                sellTriggerPrice,
+                lossBuyLevel1Price,
+                lossBuyLevel1Qty,
+                lossBuyLevel2Price,
+                lossBuyLevel2Qty,
+                lossBuyLevelsEnabled,
+                optionalLossExitEnabled,
+                optionalLossExitPrice,
+                pollingSeconds,
+                paperTrading,
+                alpacaTrailingStopEnabled,
+                profitHoldEnabled,
+                profitHoldType,
+                profitHoldPercent,
+                profitHoldAmount,
+                repeatCycleAfterProfitExitEnabled,
+                profitControlMode,
+                automaticStopSellThresholdType,
+                automaticStopSellThreshold,
+                automaticStopSellTrailingType,
+                automaticStopSellTrailingValue,
+                resubmitOnExpiryEnabled,
+                TimeInForce.DAY
+        );
     }
 
     public StrategyConfig(
@@ -113,7 +247,9 @@ public record StrategyConfig(
                 automaticStopSellThreshold,
                 automaticStopSellTrailingType,
                 automaticStopSellTrailingValue,
-                false
+                false,
+                DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT,
+                TimeInForce.DAY
         );
     }
 
@@ -165,7 +301,9 @@ public record StrategyConfig(
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
                 BigDecimal.ZERO,
-                false
+                false,
+                DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT,
+                TimeInForce.DAY
         );
     }
 
@@ -216,7 +354,9 @@ public record StrategyConfig(
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
                 BigDecimal.ZERO,
-                false
+                false,
+                DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT,
+                TimeInForce.DAY
         );
     }
 
@@ -271,7 +411,9 @@ public record StrategyConfig(
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
                 BigDecimal.ZERO,
-                false
+                false,
+                DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT,
+                TimeInForce.DAY
         );
     }
 
@@ -324,7 +466,9 @@ public record StrategyConfig(
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
                 BigDecimal.ZERO,
-                false
+                false,
+                DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT,
+                TimeInForce.DAY
         );
     }
 
@@ -370,7 +514,9 @@ public record StrategyConfig(
                 BigDecimal.ZERO,
                 TrailingType.PERCENTAGE,
                 BigDecimal.ZERO,
-                false
+                false,
+                DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT,
+                TimeInForce.DAY
         );
     }
 
@@ -399,5 +545,13 @@ public record StrategyConfig(
             return ProfitControlMode.SELL_TRIGGER;
         }
         return ProfitControlMode.NONE;
+    }
+
+    private static BigDecimal normalizeBaseBuyRepostReductionPercent(BigDecimal value) {
+        BigDecimal normalized = Monetary.round(value);
+        if (normalized.compareTo(BigDecimal.ZERO) <= 0) {
+            return DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT;
+        }
+        return normalized;
     }
 }

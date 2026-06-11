@@ -1,13 +1,27 @@
 package com.neuralarc.api;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import com.neuralarc.model.MarketBar;
+import com.neuralarc.model.TimeInForce;
+
 public interface AlpacaClient {
     AlpacaOrderData submitLimitBuyOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId);
+
+    default AlpacaOrderData submitLimitBuyOrder(
+            String symbol,
+            int quantity,
+            BigDecimal limitPrice,
+            String clientOrderId,
+            TimeInForce timeInForce
+    ) {
+        return submitLimitBuyOrder(symbol, quantity, limitPrice, clientOrderId);
+    }
 
     default AlpacaOrderData submitMarketBuyOrder(String symbol, int quantity, String clientOrderId) {
         throw new UnsupportedOperationException("Market buy orders are not supported by this broker client");
@@ -42,6 +56,10 @@ public interface AlpacaClient {
     }
 
     BigDecimal getLatestPrice(String symbol);
+
+    default List<MarketBar> getDailyBars(String symbol, LocalDate startDate, LocalDate endDate) {
+        return List.of();
+    }
 
     /**
      * Batch-fetch the latest trade price for multiple symbols in a single API call.

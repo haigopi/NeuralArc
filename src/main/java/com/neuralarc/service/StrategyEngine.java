@@ -7,8 +7,6 @@ import com.neuralarc.model.*;
 import com.neuralarc.util.BrokerOrderStatusUtil;
 import com.neuralarc.util.Monetary;
 
-import org.json.JSONObject;
-import org.json.JSONException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -18,6 +16,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.logging.Logger;
+
+import static com.neuralarc.service.BrokerRejectionMessageFormatter.failureMessage;
+import static com.neuralarc.service.BrokerRejectionMessageFormatter.isQueueableSessionRejection;
+import static com.neuralarc.service.StrategyBuyRiskProjector.projectedRisk;
 
 public class StrategyEngine {
     private static final Logger LOGGER = Logger.getLogger(StrategyEngine.class.getName());
@@ -31,6 +33,7 @@ public class StrategyEngine {
     private final MarketHoursService marketHoursService;
     private final StrategyProfitControlEvaluator profitControlEvaluator;
     private final TradeEmailNotificationService emailNotificationService;
+    private final BaseBuyPriceGuard baseBuyPriceGuard = new BaseBuyPriceGuard();
 
     public StrategyEngine(
             StrategyRepository strategyRepository,
@@ -158,7 +161,7 @@ public class StrategyEngine {
                 && (position.isEmpty() || !position.get().exists())
                 && !isStageFilled(orders, StrategyStage.BASE_BUY)
                 && !hasPendingStage(orders, StrategyStage.BASE_BUY)) {
-            submitBaseBuy(strategy, false);
+            submitBaseBuy(strategy, false, latestPrice);
             orders = orderRepository.findByStrategyId(strategy.id());
         }
 
@@ -175,7 +178,7 @@ public class StrategyEngine {
         } else {
             logRule(strategy, "STOP_LOSS", "SKIPPED", "No open position", outcomes);
             logRule(strategy, "PROFIT_CONTROLS", "SKIPPED", "No open position", outcomes);
-            maybeRestartStrategy(strategy, orders);
+            maybeRestartStrategy(strategy, orders, latestPrice);
         }
 
         maybeSubmitBuyLimit1(strategy, latestPrice, orders, outcomes);
@@ -195,7 +198,21 @@ public class StrategyEngine {
     }
 
     public StrategyOrder submitBaseBuy(Strategy strategy, boolean enforceTradableSession) {
-        return submitBuyOrder(strategy, StrategyStage.BASE_BUY, strategy.baseBuyQuantity(), strategy.baseBuyLimitPrice(),
+        return submitBaseBuy(strategy, enforceTradableSession, null);
+    }
+
+    private StrategyOrder submitBaseBuy(Strategy strategy, boolean enforceTradableSession, BigDecimal currentPrice) {
+        BaseBuyPriceGuard.GuardedPrice guardedPrice = baseBuyPriceGuard.guardedBaseBuyPrice(
+                alpacaClient,
+                strategy.symbol(),
+                strategy.baseBuyLimitPrice(),
+                currentPrice,
+                strategy.baseBuyRepostReductionPercent()
+        );
+        if (!guardedPrice.reason().isBlank()) {
+            logPoll(strategy, "BASE_BUY_GUARD", "APPLIED", guardedPrice.reason());
+        }
+        return submitBuyOrder(strategy, StrategyStage.BASE_BUY, strategy.baseBuyQuantity(), guardedPrice.price(),
                 StrategyLifecycleState.BASE_BUY_PLACED, "Base buy order submitted", enforceTradableSession);
     }
 
@@ -378,7 +395,7 @@ public class StrategyEngine {
     }
 
 
-    private void maybeRestartStrategy(Strategy strategy, List<StrategyOrder> orders) {
+    private void maybeRestartStrategy(Strategy strategy, List<StrategyOrder> orders, BigDecimal latestPrice) {
         if (!isAutoExecutionAllowed(strategy.id())) {
             if (isManuallyCanceled(strategy.id())) {
                 logPoll(strategy, "RESTART", "SKIPPED",
@@ -412,7 +429,7 @@ public class StrategyEngine {
         strategy.setStatus(StrategyStatus.ACTIVE);
         strategy.clearLastError();
         strategyRepository.save(strategy);
-        submitBaseBuy(strategy);
+        submitBaseBuy(strategy, true, latestPrice);
     }
 
     void refreshOrderStatuses(Strategy strategy) {
@@ -547,7 +564,12 @@ public class StrategyEngine {
         if (!isAutoExecutionAllowed(strategy.id())) {
             return null;
         }
-        RiskProjection projection = projectedRisk(strategy, BigDecimal.valueOf(quantity), limitPrice);
+        StrategyBuyRiskProjector.RiskProjection projection = projectedRisk(
+                strategy,
+                orderRepository.findByStrategyId(strategy.id()),
+                BigDecimal.valueOf(quantity),
+                limitPrice
+        );
         if (!projection.allowed()) {
             strategy.setLastError(projection.reason());
             stateMachine.transition(strategy, StrategyLifecycleState.FAILED,
@@ -559,7 +581,14 @@ public class StrategyEngine {
         }
         // Broker should be the source of truth for whether off-hours orders are accepted.
         String clientOrderId = StrategyService.buildClientOrderId(strategy.id(), stage);
-        AlpacaOrderData submitted = alpacaClient.submitLimitBuyOrder(strategy.symbol(), quantity, limitPrice, clientOrderId);
+        TimeInForce timeInForce = strategy.timeInForce() == null ? TimeInForce.DAY : strategy.timeInForce();
+        AlpacaOrderData submitted = alpacaClient.submitLimitBuyOrder(
+                strategy.symbol(),
+                quantity,
+                limitPrice,
+                clientOrderId,
+                timeInForce
+        );
         Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
         StrategyOrder order = new StrategyOrder(
                 UUID.randomUUID().toString(),
@@ -579,7 +608,8 @@ public class StrategyEngine {
                 submittedAt,
                 Instant.now(),
                 null,
-                submitted.rawJson()
+                submitted.rawJson(),
+                timeInForce
         );
         if (order.status() == StrategyOrderStatus.REJECTED || order.status() == StrategyOrderStatus.FAILED) {
             orderRepository.save(order);
@@ -919,66 +949,6 @@ public class StrategyEngine {
 
     private boolean isStageFilled(List<StrategyOrder> orders, StrategyStage stage) {
         return orders.stream().anyMatch(order -> order.stage() == stage && order.status() == StrategyOrderStatus.FILLED);
-    }
-
-    private RiskProjection projectedRisk(Strategy strategy, BigDecimal newOrderQty, BigDecimal newOrderPrice) {
-        List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
-        BigDecimal projectedQty = newOrderQty;
-        BigDecimal projectedCapital = Monetary.round(newOrderPrice.multiply(newOrderQty));
-
-        for (StrategyOrder order : orders) {
-            if (order.side() != StrategyOrderSide.BUY) {
-                continue;
-            }
-            if (order.status() == StrategyOrderStatus.CANCELED
-                    || order.status() == StrategyOrderStatus.REJECTED
-                    || order.status() == StrategyOrderStatus.FAILED) {
-                continue;
-            }
-            projectedQty = projectedQty.add(order.requestedQuantity());
-            projectedCapital = Monetary.round(projectedCapital.add(order.limitPrice().multiply(order.requestedQuantity())));
-        }
-
-        if (projectedQty.compareTo(BigDecimal.valueOf(strategy.maxTotalQuantity())) > 0) {
-            return new RiskProjection(false, "Projected quantity exceeds maxTotalQuantity");
-        }
-        if (projectedCapital.compareTo(strategy.maxCapitalAllowed()) > 0) {
-            return new RiskProjection(false, "Projected capital exceeds maxCapitalAllowed");
-        }
-        return new RiskProjection(true, "");
-    }
-
-    private record RiskProjection(boolean allowed, String reason) {}
-
-    private boolean isQueueableSessionRejection(String rawJson) {
-        String normalized = rawJson == null ? "" : rawJson.toLowerCase();
-        return normalized.contains("market is closed")
-                || normalized.contains("outside market hours")
-                || normalized.contains("extended_hours")
-                || normalized.contains("time_in_force")
-                || normalized.contains("session");
-    }
-
-    private String failureMessage(String rawJson, StrategyStage stage) {
-        if (rawJson == null || rawJson.isBlank()) {
-            return "Broker rejected " + stage.name() + " order";
-        }
-        try {
-            JSONObject error = new JSONObject(rawJson);
-            String msg = error.optString("message", "").trim();
-            if (!msg.isBlank()) {
-                // Capitalize first letter for display consistency
-                String display = Character.toUpperCase(msg.charAt(0)) + msg.substring(1);
-                return "Broker rejected " + stage.name() + " order: " + display;
-            }
-        } catch (JSONException ignored) {
-            // Fall through to raw JSON fallback
-        }
-        String compact = rawJson.replace('\n', ' ').replace('\r', ' ').trim();
-        if (compact.length() > 220) {
-            compact = compact.substring(0, 220) + "...";
-        }
-        return "Broker rejected " + stage.name() + " order: " + compact;
     }
 
     private void logPoll(Strategy strategy, String scope, String status, String details) {

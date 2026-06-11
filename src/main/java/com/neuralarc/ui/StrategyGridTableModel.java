@@ -7,12 +7,12 @@ import java.util.function.Function;
 final class StrategyGridTableModel extends AbstractTableModel {
     static final String[] COLUMNS = {
             "Shares", "Symbol", "Avg Cost", "Stock Price", "Market Value", "P&L",
-            "Status", "Polling", "Entry Source", "Exit Source", "Actions"
+            "Status", "Polling", "Time In Force", "Entry Source", "Exit Source", "Actions"
     };
 
     // Maps the grid column order to the presenter column contract used by StrategyTablePresenter.
     private static final int[] MODEL_TO_PRESENTER_COLUMN_INDEX = {
-            2, 0, 3, 4, 5, 6, 1, 7, 9, 10, 11
+            2, 0, 3, 4, 5, 6, 1, 7, 8, 9, 10, 11
     };
 
     private final List<ManagedStrategy> strategies;

@@ -4,11 +4,13 @@ import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
+import com.neuralarc.model.StrategyConfig;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ThresholdType;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.model.TrailingType;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -219,6 +221,12 @@ public class FileStrategyRepository implements StrategyRepository {
             strategy.setAutomaticStopSellTrailingType(parseTrailingType(o.optString("automaticStopSellTrailingType", "PERCENTAGE")));
             strategy.setAutomaticStopSellTrailingValue(decimal(o, "automaticStopSellTrailingValue", "0.00"));
             strategy.setResubmitOnExpiryEnabled(o.optBoolean("resubmitOnExpiryEnabled", false));
+            strategy.setBaseBuyRepostReductionPercent(decimal(
+                    o,
+                    "baseBuyRepostReductionPercent",
+                    StrategyConfig.DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT.toPlainString()
+            ));
+            strategy.setTimeInForce(TimeInForce.safeValue(o.optString("timeInForce", "DAY")));
             result.add(strategy);
         }
         return result;
@@ -276,6 +284,10 @@ public class FileStrategyRepository implements StrategyRepository {
             o.put("automaticStopSellTrailingType", s.automaticStopSellTrailingType() == null ? "PERCENTAGE" : s.automaticStopSellTrailingType().name());
             o.put("automaticStopSellTrailingValue", s.automaticStopSellTrailingValue().toPlainString());
             o.put("resubmitOnExpiryEnabled", s.resubmitOnExpiryEnabled());
+            o.put("baseBuyRepostReductionPercent", s.baseBuyRepostReductionPercent() == null
+                    ? StrategyConfig.DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT.toPlainString()
+                    : s.baseBuyRepostReductionPercent().toPlainString());
+            o.put("timeInForce", s.timeInForce() == null ? TimeInForce.DAY.name() : s.timeInForce().name());
             arr.put(o);
         }
         return arr;

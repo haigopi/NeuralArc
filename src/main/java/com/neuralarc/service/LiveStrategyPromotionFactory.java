@@ -82,6 +82,8 @@ final class LiveStrategyPromotionFactory {
         liveStrategy.setAutomaticStopSellTrailingType(paperStrategy.automaticStopSellTrailingType());
         liveStrategy.setAutomaticStopSellTrailingValue(paperStrategy.automaticStopSellTrailingValue());
         liveStrategy.setResubmitOnExpiryEnabled(paperStrategy.resubmitOnExpiryEnabled());
+        liveStrategy.setBaseBuyRepostReductionPercent(paperStrategy.baseBuyRepostReductionPercent());
+        liveStrategy.setTimeInForce(paperStrategy.timeInForce());
         liveStrategy.setPauseReason(PauseReason.NONE);
         liveStrategy.setResumeStateBeforePause(StrategyLifecycleState.CREATED);
 

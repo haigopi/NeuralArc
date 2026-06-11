@@ -925,6 +925,62 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void marketClosedExpiryRefreshImmediatelyRepositionsWhenResubmitEnabled() throws Exception {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
+        strategy.setLatestOrderStatus("new");
+        strategy.setLatestAlpacaOrderId("ord-expired");
+        strategy.setLastPolledAt(Instant.now().minusSeconds(60));
+        strategy.setResubmitOnExpiryEnabled(true);
+        f.strategies.save(strategy);
+        f.orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(),
+                strategy.id(),
+                StrategyStage.BASE_BUY,
+                "ord-expired",
+                "client-expired",
+                "AAPL",
+                StrategyOrderSide.BUY,
+                StrategyOrderType.LIMIT,
+                new BigDecimal("8.00"),
+                BigDecimal.ZERO,
+                new BigDecimal("10"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                StrategyOrderStatus.SUBMITTED,
+                Instant.now(),
+                Instant.now(),
+                null,
+                "{}"
+        ));
+        f.alpaca.orderById.put("ord-expired", new AlpacaOrderData(
+                "ord-expired",
+                "client-expired",
+                "AAPL",
+                "buy",
+                "limit",
+                new BigDecimal("8.00"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                "expired",
+                "{}"
+        ));
+        f.marketHoursService.open = false;
+
+        int due = f.service.pollDueStrategies();
+
+        assertEquals(0, due);
+        f.awaitTrue(() -> {
+            Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+            return updated.status() == StrategyStatus.ACTIVE
+                    && updated.currentState() == StrategyLifecycleState.BASE_BUY_PLACED
+                    && "new".equals(updated.latestOrderStatus());
+        }, "Expired base buy should be repositioned immediately after market-closed status refresh");
+        assertTrue(f.orders.findByClientOrderId("client-expired").orElseThrow().status() == StrategyOrderStatus.CANCELED);
+    }
+
+    @Test
     void overnightEligibleSymbolCanPollWhenGlobalSessionIsClosed() throws Exception {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
@@ -1179,14 +1235,17 @@ class StrategyPollingServiceTest {
             openOrderCallsBySymbol.merge(normalizedSymbol, 1, Integer::sum);
             awaitOpenOrdersGateIfConfigured();
             awaitOpenOrdersGateIfConfigured(normalizedSymbol);
-            return orderById.values().stream().filter(o -> o.symbol().equalsIgnoreCase(symbol)).toList();
+            return orderById.values().stream()
+                    .filter(o -> o.symbol().equalsIgnoreCase(symbol))
+                    .filter(this::isOpenOrder)
+                    .toList();
         }
 
         @Override
         public List<AlpacaOrderData> getOpenOrders() {
             openOrderCalls++;
             awaitOpenOrdersGateIfConfigured();
-            return new ArrayList<>(orderById.values());
+            return orderById.values().stream().filter(this::isOpenOrder).toList();
         }
 
         @Override
@@ -1217,6 +1276,13 @@ class StrategyPollingServiceTest {
                 return false;
             }
             return overnightEligibleBySymbol.getOrDefault(symbol.trim().toUpperCase(Locale.ROOT), false);
+        }
+
+        private boolean isOpenOrder(AlpacaOrderData order) {
+            StrategyOrderStatus status = StrategyService.mapOrderStatus(order.status());
+            return status == StrategyOrderStatus.SUBMITTED
+                    || status == StrategyOrderStatus.PENDING
+                    || status == StrategyOrderStatus.PARTIALLY_FILLED;
         }
 
         void blockNextOpenOrdersCall() {

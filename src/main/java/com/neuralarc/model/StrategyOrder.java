@@ -25,6 +25,7 @@ public class StrategyOrder {
     private Instant updatedAt;
     private Instant filledAt;
     private String rawResponseJson;
+    private TimeInForce timeInForce;
 
     public StrategyOrder(
             String id,
@@ -46,6 +47,50 @@ public class StrategyOrder {
             Instant filledAt,
             String rawResponseJson
     ) {
+        this(
+                id,
+                strategyId,
+                stage,
+                alpacaOrderId,
+                clientOrderId,
+                symbol,
+                side,
+                orderType,
+                limitPrice,
+                stopPrice,
+                requestedQuantity,
+                filledQuantity,
+                filledAveragePrice,
+                status,
+                submittedAt,
+                updatedAt,
+                filledAt,
+                rawResponseJson,
+                TimeInForce.DAY
+        );
+    }
+
+    public StrategyOrder(
+            String id,
+            String strategyId,
+            StrategyStage stage,
+            String alpacaOrderId,
+            String clientOrderId,
+            String symbol,
+            StrategyOrderSide side,
+            StrategyOrderType orderType,
+            BigDecimal limitPrice,
+            BigDecimal stopPrice,
+            BigDecimal requestedQuantity,
+            BigDecimal filledQuantity,
+            BigDecimal filledAveragePrice,
+            StrategyOrderStatus status,
+            Instant submittedAt,
+            Instant updatedAt,
+            Instant filledAt,
+            String rawResponseJson,
+            TimeInForce timeInForce
+    ) {
         this.id = Objects.requireNonNull(id, "id");
         this.strategyId = Objects.requireNonNull(strategyId, "strategyId");
         this.stage = Objects.requireNonNull(stage, "stage");
@@ -64,6 +109,7 @@ public class StrategyOrder {
         this.updatedAt = updatedAt == null ? this.submittedAt : updatedAt;
         this.filledAt = filledAt;
         this.rawResponseJson = rawResponseJson == null ? "{}" : rawResponseJson;
+        this.timeInForce = timeInForce == null ? TimeInForce.DAY : timeInForce;
     }
 
     public String id() { return id; }
@@ -84,6 +130,7 @@ public class StrategyOrder {
     public Instant updatedAt() { return updatedAt; }
     public Instant filledAt() { return filledAt; }
     public String rawResponseJson() { return rawResponseJson; }
+    public TimeInForce timeInForce() { return timeInForce; }
 
     public int requestedQuantityInt() {
         return requestedQuantity.setScale(0, java.math.RoundingMode.DOWN).intValue();

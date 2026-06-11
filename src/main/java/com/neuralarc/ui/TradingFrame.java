@@ -1188,10 +1188,12 @@ public class TradingFrame extends JFrame {
         strategyTable.getColumnModel().getColumn(0).setMinWidth(58);
         strategyTable.getColumnModel().getColumn(6).setPreferredWidth(300);
         strategyTable.getColumnModel().getColumn(6).setMinWidth(260);
-        strategyTable.getColumnModel().getColumn(8).setPreferredWidth(130);
-        strategyTable.getColumnModel().getColumn(8).setMinWidth(110);
-        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(140);
-        strategyTable.getColumnModel().getColumn(9).setMinWidth(120);
+        strategyTable.getColumnModel().getColumn(8).setPreferredWidth(95);
+        strategyTable.getColumnModel().getColumn(8).setMinWidth(80);
+        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(130);
+        strategyTable.getColumnModel().getColumn(9).setMinWidth(110);
+        strategyTable.getColumnModel().getColumn(10).setPreferredWidth(140);
+        strategyTable.getColumnModel().getColumn(10).setMinWidth(120);
         applyStrategyGridColumnLayout();
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
@@ -1212,7 +1214,7 @@ public class TradingFrame extends JFrame {
                     strategyTable.setRowSelectionInterval(viewRow, viewRow);
                 }
 
-                // Dispatch the action buttons (column 10 only) via equal zones.
+                // Dispatch the action buttons via equal zones in the Actions column.
                 // Use invokeLater so the action runs AFTER ALL mousePressed handlers
                 // (ours + BasicTableUI) have finished — this is critical because:
                 //   • BasicTableUI fires its own mousePressed AFTER ours (LIFO order).
@@ -4995,12 +4997,6 @@ public class TradingFrame extends JFrame {
         return marketHoursService.nextMarketOpen(extendedHoursEnabled);
     }
 
-    private Color gridBrokerModeColor(Strategy strategy) {
-        return strategy != null && strategy.mode() == StrategyMode.LIVE
-                ? MODE_TEXT_ALPACA_LIVE
-                : MODE_TEXT_ALPACA_PAPER;
-    }
-
     private JPanel createGridSearchPanel(String labelText, JTextField searchField) {
         JPanel panel = new JPanel(new BorderLayout(8, 0));
         panel.setOpaque(false);
@@ -5776,8 +5772,6 @@ public class TradingFrame extends JFrame {
                         } else {
                             setForeground(paused ? STATUS_TEXT_PAUSED : STATUS_TEXT_RUNNING);
                         }
-                    } else if (column == 8) {
-                        setForeground(gridBrokerModeColor(strategies.get(modelRow).strategy));
                     } else if (column == 1) {
                         Object pnlValue = table.getModel().getValueAt(modelRow, 5);
                         setForeground(PnlCellStyleSupport.foregroundFor(pnlValue, table.getForeground()));

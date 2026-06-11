@@ -191,6 +191,8 @@ public final class AppDatabase {
         applyMigration("003_profit_controls", this::migration003);
         applyMigration("004_profit_control_modes", this::migration004);
         applyMigration("005_resubmit_on_expiry", this::migration005);
+        applyMigration("006_time_in_force", this::migration006);
+        applyMigration("007_base_buy_repost_reduction_percent", this::migration007);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -260,6 +262,8 @@ public final class AppDatabase {
                         highest_observed_price          TEXT NOT NULL DEFAULT '0.00',
                         restart_after_exit_enabled      INTEGER NOT NULL DEFAULT 0,
                         resubmit_on_expiry_enabled      INTEGER NOT NULL DEFAULT 0,
+                        base_buy_repost_reduction_percent TEXT NOT NULL DEFAULT '2.00',
+                        time_in_force                   TEXT NOT NULL DEFAULT 'DAY',
                         max_total_quantity              INTEGER NOT NULL DEFAULT 0,
                         max_capital_allowed             TEXT NOT NULL DEFAULT '0.00',
                         polling_interval_seconds        INTEGER NOT NULL DEFAULT 10,
@@ -292,6 +296,7 @@ public final class AppDatabase {
                         filled_quantity       TEXT NOT NULL DEFAULT '0.00',
                         filled_average_price  TEXT NOT NULL DEFAULT '0.00',
                         status                TEXT NOT NULL,
+                        time_in_force         TEXT NOT NULL DEFAULT 'DAY',
                         submitted_at          TEXT NOT NULL,
                         updated_at            TEXT,
                         filled_at             TEXT,
@@ -357,6 +362,15 @@ public final class AppDatabase {
 
     private void migration005() throws SQLException {
         addColumnIfMissing("strategies", "resubmit_on_expiry_enabled", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    private void migration006() throws SQLException {
+        addColumnIfMissing("strategies", "time_in_force", "TEXT NOT NULL DEFAULT 'DAY'");
+        addColumnIfMissing("strategy_orders", "time_in_force", "TEXT NOT NULL DEFAULT 'DAY'");
+    }
+
+    private void migration007() throws SQLException {
+        addColumnIfMissing("strategies", "base_buy_repost_reduction_percent", "TEXT NOT NULL DEFAULT '2.00'");
     }
 
     private void addColumnIfMissing(String table, String column, String definition) throws SQLException {

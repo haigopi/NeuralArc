@@ -2,10 +2,13 @@ package com.neuralarc.ui;
 
 import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.Position;
+import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
+import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyStatus;
+import com.neuralarc.model.ThresholdType;
 import com.neuralarc.util.BrokerOrderStatusUtil;
 import com.neuralarc.util.Monetary;
 
@@ -282,7 +285,7 @@ public final class StrategyTablePresenter {
 
     private String resolveActiveRuleLabel(Strategy strategy, Position position) {
         if (!isProfitablePosition(position) && (position == null || position.getTotalShares() <= 0)) {
-            return "";
+            return configuredActiveRuleLabel(strategy);
         }
         if (strategy.currentState() == StrategyLifecycleState.PROFIT_HOLD_ACTIVE && strategy.profitHoldEnabled()) {
             return "Profit Hold active"
@@ -293,16 +296,102 @@ public final class StrategyTablePresenter {
         if (isProfitablePosition(position) && strategy.targetSellEnabled()) {
             return "Sell trigger active"
                     + priceDescription(" @ $", strategy.targetSellPrice())
-                    + currentPriceDescription(position)
                     + " - monitoring for sell trigger";
         }
         if (strategy.automatedStopLossEnabled()) {
             return "Stop loss active"
                     + priceDescription(" @ $", strategy.stopLossPrice())
-                    + currentPriceDescription(position)
                     + " - monitoring downside protection";
         }
+        return configuredActiveRuleLabel(strategy);
+    }
+
+    private String configuredActiveRuleLabel(Strategy strategy) {
+        String sellTriggerOnly = sellTriggerOnlyLabel(strategy);
+        if (!sellTriggerOnly.isBlank()) {
+            return sellTriggerOnly;
+        }
+        return switch (strategy.currentState()) {
+            case BASE_BUY_FILLED -> hasConfiguredBuyLimit1(strategy)
+                    ? buyLimitActiveLabel("Buy limit 1", strategy.buyLimit1Price())
+                    : configuredExitRuleLabel(strategy);
+            case BUY_LIMIT_1_FILLED -> hasConfiguredBuyLimit2(strategy)
+                    ? buyLimitActiveLabel("Buy limit 2", strategy.buyLimit2Price())
+                    : configuredExitRuleLabel(strategy);
+            case BUY_LIMIT_2_FILLED, STOP_LOSS_ACTIVE, PROFIT_HOLD_ACTIVE -> configuredExitRuleLabel(strategy);
+            default -> "";
+        };
+    }
+
+    private String configuredExitRuleLabel(Strategy strategy) {
+        if (strategy.currentState() == StrategyLifecycleState.STOP_LOSS_ACTIVE && strategy.automatedStopLossEnabled()) {
+            return "Stop loss active" + stopLossDescription(strategy) + " - monitoring downside protection";
+        }
+        if (strategy.profitControlMode() == ProfitControlMode.PROFIT_HOLD && strategy.profitHoldEnabled()) {
+            return "Profit Hold active" + profitHoldDescription(strategy) + " - monitoring trailing protection";
+        }
+        if (strategy.profitControlMode() == ProfitControlMode.AUTOMATIC_STOP_SELL) {
+            return "Automatic stop sell active"
+                    + automaticStopSellThresholdDescription(strategy)
+                    + " - monitoring profit threshold";
+        }
+        if (strategy.targetSellEnabled()) {
+            return "Sell trigger active"
+                    + priceDescription(" @ $", strategy.targetSellPrice())
+                    + " - monitoring for sell trigger";
+        }
         return "";
+    }
+
+    private boolean hasConfiguredBuyLimit1(Strategy strategy) {
+        return strategy.lossBuyLevelsEnabled()
+                && strategy.buyLimit1Quantity() > 0
+                && strategy.buyLimit1Price().compareTo(BigDecimal.ZERO) > 0;
+    }
+
+    private boolean hasConfiguredBuyLimit2(Strategy strategy) {
+        return strategy.lossBuyLevelsEnabled()
+                && strategy.buyLimit2Quantity() > 0
+                && strategy.buyLimit2Price().compareTo(BigDecimal.ZERO) > 0;
+    }
+
+    private String buyLimitActiveLabel(String label, BigDecimal price) {
+        return label + " active"
+                + priceDescription(" @ $", price)
+                + " - monitoring loss buy";
+    }
+
+    private String stopLossDescription(Strategy strategy) {
+        if (strategy.stopLossType() == StopLossType.PERCENT_BELOW_AVERAGE_COST) {
+            return amountDescription(" at ", strategy.stopLossPercent(), "% below average cost");
+        }
+        return priceDescription(" @ $", strategy.stopLossPrice());
+    }
+
+    private String automaticStopSellThresholdDescription(Strategy strategy) {
+        if (strategy.automaticStopSellThresholdType() == ThresholdType.PERCENTAGE) {
+            return amountDescription(" after ", strategy.automaticStopSellThreshold(), "% profit");
+        }
+        return amountDescription(" after $", strategy.automaticStopSellThreshold(), " profit");
+    }
+
+    private boolean hasLossPreventionRules(Strategy strategy) {
+        return hasConfiguredBuyLimit1(strategy)
+                || hasConfiguredBuyLimit2(strategy)
+                || strategy.automatedStopLossEnabled();
+    }
+
+    private String sellTriggerOnlyLabel(Strategy strategy) {
+        ProfitControlMode profitControlMode = strategy.profitControlMode();
+        boolean sellTriggerMode = profitControlMode == null
+                || profitControlMode == ProfitControlMode.NONE
+                || profitControlMode == ProfitControlMode.SELL_TRIGGER;
+        if (hasLossPreventionRules(strategy) || !sellTriggerMode || !strategy.targetSellEnabled()) {
+            return "";
+        }
+        return "Sell trigger active"
+                + priceDescription(" @ $", strategy.targetSellPrice())
+                + " - monitoring for sell trigger";
     }
 
     private String profitHoldDescription(Strategy strategy) {
@@ -427,6 +516,7 @@ public final class StrategyTablePresenter {
             case 0 -> strategy.symbol();
             case 1 -> statusLabel;
             case 7 -> strategy.pollingIntervalSeconds();
+            case 8 -> strategy.timeInForce() == null ? "" : strategy.timeInForce().name();
             case 9 -> entrySource(strategy);
             case 10 -> exitSource(strategy);
             case 11 -> statusLabel;

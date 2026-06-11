@@ -122,7 +122,9 @@ final class ManagedStrategy {
                 strategy.automaticStopSellThreshold(),
                 strategy.automaticStopSellTrailingType() != null ? strategy.automaticStopSellTrailingType() : com.neuralarc.model.TrailingType.PERCENTAGE,
                 strategy.automaticStopSellTrailingValue(),
-                strategy.resubmitOnExpiryEnabled()
+                strategy.resubmitOnExpiryEnabled(),
+                strategy.baseBuyRepostReductionPercent(),
+                strategy.timeInForce()
         );
     }
 

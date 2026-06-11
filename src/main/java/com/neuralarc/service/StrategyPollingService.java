@@ -367,8 +367,18 @@ public class StrategyPollingService {
             pollListener.onPollStarted(strategyId);
             strategyEngine.refreshOrderStatuses(strategy);
             strategyRepository.findById(strategyId).ifPresent(updated -> {
-                updated.setLastPolledAt(now);
-                strategyRepository.save(updated);
+                if (isExpiryResubmitEligible(updated) && strategyEngine.canAutoRetryFailed(updated)) {
+                    LOGGER.info(() -> "[POLL][MARKET_CLOSED_EXPIRY_RESUBMIT][" + updated.symbol()
+                            + "] Repositioning expired base buy after market-closed status refresh");
+                    strategyService.repositionExpiredStrategy(updated.id());
+                    strategyRepository.findById(strategyId).ifPresent(resubmitted -> {
+                        resubmitted.setLastPolledAt(now);
+                        strategyRepository.save(resubmitted);
+                    });
+                } else {
+                    updated.setLastPolledAt(now);
+                    strategyRepository.save(updated);
+                }
             });
             eventRepository.save(event(strategyId, StrategyEventType.POLL_SUCCESS,
                     "Market-closed order status refresh completed", "{\"strategyId\":\"" + strategyId + "\"}"));
