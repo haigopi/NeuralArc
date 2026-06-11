@@ -1461,8 +1461,7 @@ public class TradingFrame extends JFrame {
         });
 
         applyButtonIcon(footerActionsButton, "icons/actions.svg", 15);
-        styleStatusActionButton(footerActionsButton);
-        markAsDropdownButton(footerActionsButton);
+        styleStatusActionButton(footerActionsButton, true);
         footerActionsMenu.setBackground(new Color(46, 49, 60));
         footerActionsMenu.setOpaque(true);
         footerActionsMenu.setBorder(BorderFactory.createCompoundBorder(
@@ -1831,12 +1830,10 @@ public class TradingFrame extends JFrame {
         applyFontRecursively(this);
 
         styleHeaderButton(addStrategyButton);
-        styleHeaderButton(smartPicksButton);
-        markAsDropdownButton(smartPicksButton);
+        styleHeaderButton(smartPicksButton, true);
         styleHeaderButton(refreshPortfolioButton);
         styleCompactHeaderButton(capturePortfolioButton);
-        styleHeaderButton(portfolioActionsButton);
-        markAsDropdownButton(portfolioActionsButton);
+        styleHeaderButton(portfolioActionsButton, true);
         styleHeaderButton(settingsButton);
         applyButtonIcon(addStrategyButton, "icons/add-stock-strategy.svg", 16);
         applyButtonIcon(smartPicksButton, "icons/smart-picks.svg", 16);
@@ -1930,6 +1927,10 @@ public class TradingFrame extends JFrame {
     private static final Color DARK_BTN_FG            = ThemeColors.color("NeuralArc.Button.foreground", new Color(230, 230, 255));
 
     private void styleHeaderButton(JButton button) {
+        styleHeaderButton(button, false);
+    }
+
+    private void styleHeaderButton(JButton button, boolean dropdown) {
         button.setFocusPainted(false);
         button.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
         button.setFont(FontLoader.ui(Font.BOLD, 11f));
@@ -1938,26 +1939,22 @@ public class TradingFrame extends JFrame {
         button.setOpaque(true);
         button.setContentAreaFilled(true);
         button.setRolloverEnabled(true);
+        javax.swing.border.Border inner = dropdownAwareInner(dropdown, new EmptyBorder(4, 10, 4, dropdown ? 8 : 10));
+        javax.swing.border.Border pressedInner = dropdownAwareInner(dropdown, new EmptyBorder(3, 9, 3, dropdown ? 7 : 9));
         button.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(DARK_BTN_BORDER, 1, true),
-                new EmptyBorder(4, 10, 4, 10)
+                inner
         ));
         button.setIconTextGap(6);
-        installDarkButtonInteraction(button,
-                new EmptyBorder(4, 10, 4, 10),
-                new EmptyBorder(3, 9, 3, 9));
+        installDarkButtonInteraction(button, inner, pressedInner);
     }
 
-    /** Marks a button that opens a popup menu with a trailing dropdown chevron. */
-    private static void markAsDropdownButton(JButton button) {
-        String text = button.getText();
-        if (text != null && !text.endsWith(DROPDOWN_ARROW_SUFFIX)) {
-            button.setText(text + DROPDOWN_ARROW_SUFFIX);
-        }
-        button.setHorizontalTextPosition(SwingConstants.LEADING);
+    /** Inserts the dropdown chevron zone between the line border and the padding. */
+    private static javax.swing.border.Border dropdownAwareInner(boolean dropdown, EmptyBorder padding) {
+        return dropdown
+                ? BorderFactory.createCompoundBorder(new DropdownChevronBorder(), padding)
+                : padding;
     }
-
-    private static final String DROPDOWN_ARROW_SUFFIX = "  \u25BE";
 
     private void styleCompactHeaderButton(JButton button) {
         button.setFocusPainted(false);
@@ -1979,21 +1976,25 @@ public class TradingFrame extends JFrame {
     }
 
     private void styleStatusActionButton(JButton button) {
+        styleStatusActionButton(button, false);
+    }
+
+    private void styleStatusActionButton(JButton button, boolean dropdown) {
         button.setFocusPainted(false);
         button.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
         button.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         button.setForeground(DARK_BTN_FG);
         button.setBackground(DARK_BTN_BG);
         button.setOpaque(true);
+        javax.swing.border.Border inner = dropdownAwareInner(dropdown, new EmptyBorder(3, 10, 3, dropdown ? 8 : 10));
+        javax.swing.border.Border pressedInner = dropdownAwareInner(dropdown, new EmptyBorder(2, 9, 2, dropdown ? 7 : 9));
         button.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(DARK_BTN_BORDER, 1, true),
-                new EmptyBorder(3, 10, 3, 10)
+                inner
         ));
         button.setMargin(new java.awt.Insets(3, 10, 3, 10));
         button.setIconTextGap(6);
-        installDarkButtonInteraction(button,
-                new EmptyBorder(3, 10, 3, 10),
-                new EmptyBorder(2, 9, 2, 9));
+        installDarkButtonInteraction(button, inner, pressedInner);
     }
 
     private void installPremiumActionButtonStyle(JButton button) {
@@ -2090,7 +2091,7 @@ public class TradingFrame extends JFrame {
 
     private void showUpdateAvailableNotice(GitHubReleaseUpdateService.UpdateCheckResult result) {
         updateAvailableNoticeActive = true;
-        footerActionsButton.setText("Update Available" + DROPDOWN_ARROW_SUFFIX);
+        footerActionsButton.setText("Update Available");
         footerActionsButton.setToolTipText(TooltipStyler.text(
                 "Newer version " + result.latestVersion() + " is available. Click to check updates.",
                 300
@@ -2128,7 +2129,7 @@ public class TradingFrame extends JFrame {
         if (updateAvailableFlashTimer != null) {
             updateAvailableFlashTimer.stop();
         }
-        footerActionsButton.setText("Actions" + DROPDOWN_ARROW_SUFFIX);
+        footerActionsButton.setText("Actions");
         footerActionsButton.setToolTipText(null);
         footerActionsButton.setForeground(new Color(220, 220, 255));
         footerActionsButton.setBackground(DARK_BTN_BG);
@@ -2158,8 +2159,8 @@ public class TradingFrame extends JFrame {
      *                     side to compensate for the thicker 2-px outer border)
      */
     private void installDarkButtonInteraction(JButton button,
-                                              javax.swing.border.EmptyBorder normalInner,
-                                              javax.swing.border.EmptyBorder pressedInner) {
+                                              javax.swing.border.Border normalInner,
+                                              javax.swing.border.Border pressedInner) {
         if (Boolean.TRUE.equals(button.getClientProperty("darkBtnInteractInstalled"))) {
             return;
         }
