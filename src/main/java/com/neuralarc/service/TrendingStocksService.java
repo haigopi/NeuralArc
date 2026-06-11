@@ -18,6 +18,10 @@ import java.util.logging.Logger;
 public class TrendingStocksService {
     private static final Logger LOGGER = Logger.getLogger(TrendingStocksService.class.getName());
     private static final BigDecimal MIN_LISTING_PRICE = new BigDecimal("5.00");
+    private static final BigDecimal WEEKEND_REBOUND_MIN_PRICE = new BigDecimal("10.00");
+    private static final BigDecimal WEEKEND_REBOUND_WATCHLIST_MIN_DECLINE = new BigDecimal("-1.00");
+    private static final BigDecimal WEEKEND_REBOUND_MIN_DECLINE = new BigDecimal("-3.00");
+    private static final BigDecimal WEEKEND_REBOUND_MAX_DECLINE = new BigDecimal("-15.00");
     private static final BigDecimal MIN_DAILY_BARS_FOR_PROCESSING = new BigDecimal("100");
 
     private final AlpacaScreenerClient client;
@@ -48,6 +52,32 @@ public class TrendingStocksService {
                 + gainers.stream().map(TrendingStock::symbol).toList()
                 + " losers=" + losers.stream().map(TrendingStock::symbol).toList());
         return new TrendingStockGroups(gainers, losers);
+    }
+
+    public List<TrendingStock> weekendReboundCandidates(int limit) throws AlpacaScreenerException {
+        int requested = Math.max(1, limit);
+        LOGGER.info("Alpaca Weekend Rebound candidate request started.");
+        JSONObject movers = client.getMarketMovers(Math.max(100, requested * 4));
+        List<TrendingStock> losers = parseMoverList(movers.optJSONArray("losers"), "weekend rebound candidate");
+        List<TrendingStock> candidates = losers.stream()
+                .filter(TrendingStocksService::isWeekendReboundCandidate)
+                .sorted(Comparator.comparing(TrendingStocksService::weekendReboundPreScore).reversed()
+                        .thenComparing(TrendingStock::symbol))
+                .limit(requested)
+                .toList();
+        if (candidates.isEmpty()) {
+            candidates = losers.stream()
+                    .filter(TrendingStocksService::isWeekendReboundWatchlistCandidate)
+                    .map(TrendingStocksService::asWeekendReboundWatchlistCandidate)
+                    .sorted(Comparator.comparing(TrendingStocksService::weekendReboundPreScore).reversed()
+                            .thenComparing(TrendingStock::symbol))
+                    .limit(requested)
+                    .toList();
+        }
+        List<TrendingStock> selected = candidates;
+        LOGGER.info(() -> "Alpaca Weekend Rebound candidates selected. symbols="
+                + selected.stream().map(TrendingStock::symbol).toList());
+        return candidates;
     }
 
     static List<TrendingStock> parseCandidates(JSONObject movers, JSONObject activeByVolume, JSONObject activeByTrades) {
@@ -132,6 +162,41 @@ public class TrendingStocksService {
     private static boolean hasMinimumDailyBars(TrendingStock stock) {
         return stock.tradeCount().compareTo(BigDecimal.ZERO) == 0
                 || stock.tradeCount().compareTo(MIN_DAILY_BARS_FOR_PROCESSING) >= 0;
+    }
+
+    private static boolean isWeekendReboundCandidate(TrendingStock stock) {
+        BigDecimal decline = stock.dailyChangePercent();
+        return stock.latestPrice().compareTo(WEEKEND_REBOUND_MIN_PRICE) >= 0
+                && decline.compareTo(WEEKEND_REBOUND_MIN_DECLINE) <= 0
+                && decline.compareTo(WEEKEND_REBOUND_MAX_DECLINE) >= 0;
+    }
+
+    private static boolean isWeekendReboundWatchlistCandidate(TrendingStock stock) {
+        BigDecimal decline = stock.dailyChangePercent();
+        return stock.latestPrice().compareTo(WEEKEND_REBOUND_MIN_PRICE) >= 0
+                && decline.compareTo(WEEKEND_REBOUND_WATCHLIST_MIN_DECLINE) <= 0
+                && decline.compareTo(WEEKEND_REBOUND_MAX_DECLINE) >= 0;
+    }
+
+    private static TrendingStock asWeekendReboundWatchlistCandidate(TrendingStock stock) {
+        return new TrendingStock(
+                stock.symbol(),
+                stock.companyName(),
+                stock.latestPrice(),
+                stock.dailyChangePercent(),
+                stock.volume(),
+                stock.tradeCount(),
+                "weekend rebound watchlist candidate",
+                stock.trendingScore()
+        );
+    }
+
+    private static BigDecimal weekendReboundPreScore(TrendingStock stock) {
+        BigDecimal preferredDecline = stock.dailyChangePercent().abs().min(new BigDecimal("12.00"));
+        BigDecimal volumeMillions = stock.volume().compareTo(BigDecimal.ZERO) <= 0
+                ? BigDecimal.ZERO
+                : stock.volume().divide(new BigDecimal("1000000"), 4, RoundingMode.HALF_UP).min(new BigDecimal("20.00"));
+        return preferredDecline.multiply(new BigDecimal("2.00")).add(volumeMillions);
     }
 
     static List<TrendingStock> parseMoverList(JSONArray array, String reason) {

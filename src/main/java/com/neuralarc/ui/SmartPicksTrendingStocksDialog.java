@@ -11,6 +11,7 @@ import com.neuralarc.model.TrendingStock;
 import com.neuralarc.model.TrendingStockGroups;
 import com.neuralarc.service.AutoAnalyzeService;
 import com.neuralarc.service.TrendingStocksService;
+import com.neuralarc.service.WeekendReboundScoreService;
 import com.neuralarc.util.FontLoader;
 import com.neuralarc.util.ThemeColors;
 
@@ -163,9 +164,7 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
             StrategyMode targetMode,
             StrategyUniverse universe
     ) {
-        super(owner, "Smart Picks - " + (universe == StrategyUniverse.DIVERSIFIED_TOP_20
-                ? "Diversified Leaders (Top 20)"
-                : "High Volatility Movers"), true);
+        super(owner, "Smart Picks - " + displayName(universe), true);
         this.trendingStocksService = Objects.requireNonNull(trendingStocksService);
         this.marketDataApi = Objects.requireNonNull(marketDataApi);
         this.placementHandler = Objects.requireNonNull(placementHandler);
@@ -247,7 +246,7 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
     }
 
     private void initializeTrendsOnOpen() {
-        if (universe == StrategyUniverse.DIVERSIFIED_TOP_20) {
+        if (universe != StrategyUniverse.VOLATILE) {
             loadAsync(false, false);
             return;
         }
@@ -274,9 +273,11 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
             @Override
             protected LoadResult doInBackground() throws Exception {
                 setProgress(5);
-                return universe == StrategyUniverse.DIVERSIFIED_TOP_20
-                        ? loadDiversifiedTop20(value -> setProgress(value))
-                        : loadVolatileTopMovers(value -> setProgress(value));
+                return switch (universe) {
+                    case DIVERSIFIED_TOP_20 -> loadDiversifiedTop20(value -> setProgress(value));
+                    case WEEKEND_REBOUND -> loadWeekendRebound(value -> setProgress(value));
+                    default -> loadVolatileTopMovers(value -> setProgress(value));
+                };
             }
 
             @Override
@@ -383,6 +384,23 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
         );
     }
 
+    private LoadResult loadWeekendRebound(ProgressCallback progressCallback) throws Exception {
+        progressCallback.set(10);
+        List<TrendingStock> stocks = new WeekendReboundScoreService()
+                .topStocks(trendingStocksService, marketDataApi, 20);
+        progressCallback.set(35);
+        List<TrendingStock> firstTen = stocks.subList(0, Math.min(10, stocks.size()));
+        List<TrendingStock> secondTen = stocks.subList(Math.min(10, stocks.size()), stocks.size());
+        log("Weekend Rebound stocks selected. symbols=" + stocks.stream().map(TrendingStock::symbol).toList());
+        return analyzeGroupedStocks(
+                firstTen,
+                secondTen,
+                "Weekend Rebound - Top 10",
+                "Weekend Rebound - Next 10",
+                progressCallback
+        );
+    }
+
     private LoadResult analyzeGroupedStocks(
             List<TrendingStock> firstGroup,
             List<TrendingStock> secondGroup,
@@ -460,27 +478,38 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
     }
 
     private String sourceDisplayName() {
-        return universe == StrategyUniverse.DIVERSIFIED_TOP_20
-                ? "Top 20 diversified stocks"
-                : "trending volatile stocks";
+        return switch (universe) {
+            case DIVERSIFIED_TOP_20 -> "Top 20 diversified stocks";
+            case WEEKEND_REBOUND -> "Weekend Rebound stocks";
+            default -> "trending volatile stocks";
+        };
     }
 
     private String sourceLogLabel() {
-        return universe == StrategyUniverse.DIVERSIFIED_TOP_20
-                ? "Top 20 diversified stocks"
-                : "trending volatile movers";
+        return switch (universe) {
+            case DIVERSIFIED_TOP_20 -> "Top 20 diversified stocks";
+            case WEEKEND_REBOUND -> "Weekend Rebound stocks";
+            default -> "trending volatile movers";
+        };
     }
 
     private String initialStatusText() {
-        return universe == StrategyUniverse.DIVERSIFIED_TOP_20
-                ? "Click Refresh to load the curated top 20 diversified stocks."
-                : "Click Refresh to load today's trending stocks.";
+        return switch (universe) {
+            case DIVERSIFIED_TOP_20 -> "Click Refresh to load the curated top 20 diversified stocks.";
+            case WEEKEND_REBOUND -> "Click Refresh after 3:30 PM ET Friday to rank Weekend Rebound stocks.";
+            default -> "Click Refresh to load today's trending stocks.";
+        };
     }
 
     private String dialogDescriptionHtml() {
         if (universe == StrategyUniverse.DIVERSIFIED_TOP_20) {
             return "<html>Review curated diversified large-cap stocks, compare high-risk short-term and other recommendations, "
                     + "then start selected choices as Alpaca " + modeLabel() + " strategies.</html>";
+        }
+        if (universe == StrategyUniverse.WEEKEND_REBOUND) {
+            return "<html>Ranks Friday selloff candidates for a Monday rebound using RSI, SMA20 distance, relative volume, "
+                    + "liquidity, historical Monday recovery, and market-strength guards. Intended after 3:30 PM ET Friday; "
+                    + "max 20 picks, 5% per stock, 50% total exposure.</html>";
         }
         return "<html>Review today's top gainers and losers, remove unwanted picks, then start the remaining choices as Alpaca "
                 + modeLabel() + " strategies.</html>";
@@ -645,7 +674,7 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
             setBackground(INPUT_BG);
             setAlignmentX(Component.LEFT_ALIGNMENT);
             setMaximumSize(new Dimension(Integer.MAX_VALUE, Short.MAX_VALUE));
-            setBorder(createBorder(analysis.stock().symbol()));
+            setBorder(createBorder(cardTitle(analysis.stock())));
             build();
         }
 
@@ -720,7 +749,13 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
             metrics.setFont(FontLoader.ui(Font.BOLD, 11f));
             metrics.setForeground(TEXT_PRIMARY);
 
-            panel.add(metrics, BorderLayout.CENTER);
+            panel.add(metrics, BorderLayout.NORTH);
+            if (stock.reason() != null && !stock.reason().isBlank()) {
+                JLabel reason = new JLabel("<html>" + escape(stock.reason()) + "</html>");
+                reason.setFont(FontLoader.ui(Font.PLAIN, 10f));
+                reason.setForeground(TEXT_MUTED);
+                panel.add(reason, BorderLayout.CENTER);
+            }
             return panel;
         }
 
@@ -857,6 +892,13 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
         return value == null ? "" : value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
+    private static String cardTitle(TrendingStock stock) {
+        if (stock == null || stock.companyName() == null || stock.companyName().isBlank()) {
+            return stock == null ? "" : stock.symbol();
+        }
+        return stock.symbol() + " - " + stock.companyName();
+    }
+
     private record LoadResult(
             List<SmartPicksStockAnalysis> gainers,
             List<SmartPicksStockAnalysis> losers,
@@ -866,6 +908,14 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
 
     private record DiversifiedStock(String symbol, String companyName, String reason) {}
 
+    private static String displayName(StrategyUniverse universe) {
+        return switch (universe == null ? StrategyUniverse.VOLATILE : universe) {
+            case DIVERSIFIED_TOP_20 -> "Diversified Leaders (Top 20)";
+            case WEEKEND_REBOUND -> "Weekend Rebound";
+            default -> "High Volatility Movers";
+        };
+    }
+
     @FunctionalInterface
     private interface ProgressCallback {
         void set(int value);
@@ -873,7 +923,8 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
 
     public enum StrategyUniverse {
         VOLATILE,
-        DIVERSIFIED_TOP_20
+        DIVERSIFIED_TOP_20,
+        WEEKEND_REBOUND
     }
 
     private record CachedDailyTrends(LoadResult result, Instant loadedAt) {}

@@ -25,6 +25,7 @@ import com.neuralarc.service.StrategyService;
 import com.neuralarc.service.StrategyEngine;
 import com.neuralarc.service.TrendingStocksService;
 import com.neuralarc.service.HttpAlpacaScreenerClient;
+import com.neuralarc.service.WeekendReboundScoreService;
 import com.neuralarc.service.RotatingLogWriter;
 import com.neuralarc.service.SpacesLogUploader;
 import com.neuralarc.service.TradeEmailNotificationService;
@@ -116,6 +117,7 @@ public class TradingFrame extends JFrame {
     private static final int GRID_SEARCH_MIN_STOCK_COUNT = 9;
     private static final String SMART_PICKS_MENU_VOLATILE = "High Volatility Movers";
     private static final String SMART_PICKS_MENU_DIVERSIFIED = "Diversified Leaders (Top 20)";
+    private static final String SMART_PICKS_MENU_WEEKEND_REBOUND = "Weekend Rebound";
 
     private final JLabel positionSummary = new JLabel("Position: -");
     private final JLabel ruleState = new JLabel("Rules: -");
@@ -1094,16 +1096,18 @@ public class TradingFrame extends JFrame {
         ));
         killSwitchButton.setFocusPainted(false);
         killSwitchButton.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
-        killSwitchButton.setFont(FontLoader.ui(Font.BOLD, 12f));
+        killSwitchButton.setFont(FontLoader.ui(Font.BOLD, 11f));
         killSwitchButton.setForeground(Color.WHITE);
         killSwitchButton.setBackground(new Color(180, 20, 20));
         killSwitchButton.setOpaque(true);
         killSwitchButton.setContentAreaFilled(true);
+        javax.swing.border.Border killSwitchInner = new EmptyBorder(4, 10, 4, 10);
+        javax.swing.border.Border killSwitchPressedInner = new EmptyBorder(3, 9, 3, 9);
         killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(120, 10, 10), 1, true),
-                new EmptyBorder(8, 14, 8, 14)
+                killSwitchInner
         ));
-        killSwitchButton.setMargin(new java.awt.Insets(8, 14, 8, 14));
+        killSwitchButton.setMargin(new java.awt.Insets(4, 10, 4, 10));
         killSwitchButton.addMouseListener(new MouseAdapter() {
             private static final Color BASE_BG     = new Color(180, 20, 20);
             private static final Color BASE_BORDER  = new Color(120, 10, 10);
@@ -1116,21 +1120,21 @@ public class TradingFrame extends JFrame {
                     killSwitchButton.setBackground(HOVER_BG);
                     killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
                             BorderFactory.createLineBorder(HOVER_BORDER, 1, true),
-                            new EmptyBorder(8, 14, 8, 14)));
+                            killSwitchInner));
                 }
             }
             @Override public void mouseExited(MouseEvent e) {
                 killSwitchButton.setBackground(BASE_BG);
                 killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
                         BorderFactory.createLineBorder(BASE_BORDER, 1, true),
-                        new EmptyBorder(8, 14, 8, 14)));
+                        killSwitchInner));
             }
             @Override public void mousePressed(MouseEvent e) {
                 if (killSwitchButton.isEnabled() && e.getButton() == MouseEvent.BUTTON1) {
                     killSwitchButton.setBackground(PRESS_BG);
                     killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
                             BorderFactory.createLineBorder(PRESS_BORDER, 2, true),
-                            new EmptyBorder(7, 13, 7, 13)));
+                            killSwitchPressedInner));
                 }
             }
             @Override public void mouseReleased(MouseEvent e) {
@@ -1138,12 +1142,12 @@ public class TradingFrame extends JFrame {
                     killSwitchButton.setBackground(HOVER_BG);
                     killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
                             BorderFactory.createLineBorder(HOVER_BORDER, 1, true),
-                            new EmptyBorder(8, 14, 8, 14)));
+                            killSwitchInner));
                 } else {
                     killSwitchButton.setBackground(BASE_BG);
                     killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
                             BorderFactory.createLineBorder(BASE_BORDER, 1, true),
-                            new EmptyBorder(8, 14, 8, 14)));
+                            killSwitchInner));
                 }
             }
         });
@@ -1546,8 +1550,9 @@ public class TradingFrame extends JFrame {
         // ───────────────────────────────────────────────────────────────────────
 
         eventLog.setEditable(false);
+        eventLog.setOpaque(false);
         eventLog.setBorder(new EmptyBorder(8, 8, 8, 8));
-        eventLog.setBackground(ThemeColors.color("NeuralArc.Log.background", new Color(248, 249, 252)));
+        eventLog.setBackground(new Color(0, 0, 0, 0));
         applyUiPolish();
         applyDataViewFonts();
 
@@ -2119,7 +2124,7 @@ public class TradingFrame extends JFrame {
         footerActionsButton.setForeground(Color.WHITE);
         footerActionsButton.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(border, 1, true),
-                new EmptyBorder(5, 12, 5, 12)
+                dropdownAwareInner(true, new EmptyBorder(3, 10, 3, 10))
         ));
     }
 
@@ -2135,7 +2140,7 @@ public class TradingFrame extends JFrame {
         footerActionsButton.setBackground(DARK_BTN_BG);
         footerActionsButton.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(DARK_BTN_BORDER, 1, true),
-                new EmptyBorder(5, 12, 5, 12)
+                dropdownAwareInner(true, new EmptyBorder(3, 10, 3, 10))
         ));
     }
 
@@ -2497,6 +2502,13 @@ public class TradingFrame extends JFrame {
                     + stocks.stream().map(TrendingStock::symbol).toList());
             return stocks;
         }
+        if (config.reentrySmartPicksStrategy() == PortfolioCaptureSmartPicksStrategy.WEEKEND_REBOUND) {
+            TrendingStocksService trendingService = new TrendingStocksService(new HttpAlpacaScreenerClient(apiKey, apiSecret));
+            List<TrendingStock> stocks = new WeekendReboundScoreService().topStocks(trendingService, marketDataApi, 20);
+            log("[Portfolio Liquidation] Auto re-entry using Weekend Rebound. symbols="
+                    + stocks.stream().map(TrendingStock::symbol).toList());
+            return stocks;
+        }
         TrendingStockGroups groups = new TrendingStocksService(new HttpAlpacaScreenerClient(apiKey, apiSecret)).topGainersAndLosers(10);
         List<TrendingStock> stocks = new ArrayList<>();
         stocks.addAll(groups.gainers());
@@ -2683,10 +2695,15 @@ public class TradingFrame extends JFrame {
                 "icons/portfolio.svg",
                 () -> openSmartPicksTrendingStocksDialog(SmartPicksTrendingStocksDialog.StrategyUniverse.DIVERSIFIED_TOP_20)
         ));
+        smartPicksMenu.add(createStatusMenuItem(
+                SMART_PICKS_MENU_WEEKEND_REBOUND,
+                "icons/smart-picks.svg",
+                () -> openSmartPicksTrendingStocksDialog(SmartPicksTrendingStocksDialog.StrategyUniverse.WEEKEND_REBOUND)
+        ));
     }
 
     static List<String> smartPicksMenuLabels() {
-        return List.of(SMART_PICKS_MENU_VOLATILE, SMART_PICKS_MENU_DIVERSIFIED);
+        return List.of(SMART_PICKS_MENU_VOLATILE, SMART_PICKS_MENU_DIVERSIFIED, SMART_PICKS_MENU_WEEKEND_REBOUND);
     }
 
     private void showSmartPicksMenu() {
@@ -3676,9 +3693,11 @@ public class TradingFrame extends JFrame {
     }
 
     private void openSmartPicksTrendingStocksDialog(SmartPicksTrendingStocksDialog.StrategyUniverse universe) {
-        String actionName = universe == SmartPicksTrendingStocksDialog.StrategyUniverse.DIVERSIFIED_TOP_20
-                ? "Smart Picks: Diversified Leaders (Top 20)"
-                : "Smart Picks: High Volatility Movers";
+        String actionName = switch (universe) {
+            case DIVERSIFIED_TOP_20 -> "Smart Picks: Diversified Leaders (Top 20)";
+            case WEEKEND_REBOUND -> "Smart Picks: Weekend Rebound";
+            default -> "Smart Picks: High Volatility Movers";
+        };
         userActionLog.started(actionName);
         log("[Smart Picks] Menu action clicked. source=" + universe);
         StrategyMode targetMode = selectedViewMode;
@@ -3851,6 +3870,9 @@ public class TradingFrame extends JFrame {
         }
         if (reason.contains("loser")) {
             return "LOSERS";
+        }
+        if (reason.contains("weekend rebound")) {
+            return "WEEKEND_REBOUND";
         }
         return "REVIEWED";
     }

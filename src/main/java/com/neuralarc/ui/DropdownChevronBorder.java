@@ -18,7 +18,7 @@ import java.awt.RenderingHints;
  * zone survives hover/pressed border swaps.
  */
 final class DropdownChevronBorder implements Border {
-    private static final int ZONE_WIDTH = 16;
+    private static final int ZONE_WIDTH = 20;
     private static final int CHEVRON_WIDTH = 8;
     private static final int CHEVRON_HEIGHT = 4;
 
@@ -46,7 +46,7 @@ final class DropdownChevronBorder implements Border {
 
             g2.setColor(new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), enabled ? 255 : 110));
             g2.setStroke(new BasicStroke(1.7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-            int cx = zoneX + (ZONE_WIDTH - CHEVRON_WIDTH) / 2 + 1;
+            int cx = zoneX + (ZONE_WIDTH - CHEVRON_WIDTH) / 2;
             int cy = y + (height - CHEVRON_HEIGHT) / 2;
             g2.drawLine(cx, cy, cx + CHEVRON_WIDTH / 2, cy + CHEVRON_HEIGHT);
             g2.drawLine(cx + CHEVRON_WIDTH / 2, cy + CHEVRON_HEIGHT, cx + CHEVRON_WIDTH, cy);

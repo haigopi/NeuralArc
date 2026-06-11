@@ -14,8 +14,8 @@ class TradingFrameSmartPicksMenuConfigTest {
 
         assertEquals(List.of(
                 "High Volatility Movers",
-                "Diversified Leaders (Top 20)"
+                "Diversified Leaders (Top 20)",
+                "Weekend Rebound"
         ), labels);
     }
 }
-

@@ -2,7 +2,8 @@ package com.neuralarc.ui;
 
 enum PortfolioCaptureSmartPicksStrategy {
     VOLATILE("High Volatility Movers"),
-    DIVERSIFIED_TOP_20("Diversified Leaders (Top 20)");
+    DIVERSIFIED_TOP_20("Diversified Leaders (Top 20)"),
+    WEEKEND_REBOUND("Weekend Rebound");
 
     private final String label;
 

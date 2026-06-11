@@ -132,6 +132,53 @@ class TrendingStocksServiceTest {
         assertEquals(List.of("HIGHBARS2"), groups.losers().stream().map(TrendingStock::symbol).toList());
     }
 
+    @Test
+    void weekendReboundCandidatesFilterToControlledFridayLosersAboveTenDollars() throws Exception {
+        TrendingStocksService service = new TrendingStocksService(new AlpacaScreenerClient() {
+            @Override
+            public JSONObject getMarketMovers(int top) {
+                return new JSONObject()
+                        .put("losers", new JSONArray()
+                                .put(new JSONObject().put("symbol", "GOOD").put("price", "125").put("percent_change", "-6.5").put("volume", "5000000"))
+                                .put(new JSONObject().put("symbol", "CHEAP").put("price", "9.99").put("percent_change", "-7.0").put("volume", "7000000"))
+                                .put(new JSONObject().put("symbol", "SMALLDROP").put("price", "80").put("percent_change", "-2.5").put("volume", "8000000"))
+                                .put(new JSONObject().put("symbol", "CRASH").put("price", "75").put("percent_change", "-18.0").put("volume", "9000000")));
+            }
+
+            @Override
+            public JSONObject getMostActives(String by, int top) {
+                return new JSONObject();
+            }
+        });
+
+        List<TrendingStock> result = service.weekendReboundCandidates(10);
+
+        assertEquals(List.of("GOOD"), result.stream().map(TrendingStock::symbol).toList());
+    }
+
+    @Test
+    void weekendReboundCandidatesFallbackToWatchlistWhenStrictDeclinesAreAbsent() throws Exception {
+        TrendingStocksService service = new TrendingStocksService(new AlpacaScreenerClient() {
+            @Override
+            public JSONObject getMarketMovers(int top) {
+                return new JSONObject()
+                        .put("losers", new JSONArray()
+                                .put(new JSONObject().put("symbol", "WATCH").put("price", "125").put("percent_change", "-1.5").put("volume", "5000000"))
+                                .put(new JSONObject().put("symbol", "FLAT").put("price", "80").put("percent_change", "-0.5").put("volume", "8000000")));
+            }
+
+            @Override
+            public JSONObject getMostActives(String by, int top) {
+                return new JSONObject();
+            }
+        });
+
+        List<TrendingStock> result = service.weekendReboundCandidates(10);
+
+        assertEquals(List.of("WATCH"), result.stream().map(TrendingStock::symbol).toList());
+        assertEquals("weekend rebound watchlist candidate", result.getFirst().reason());
+    }
+
     private TrendingStock stock(String symbol, String score) {
         return new TrendingStock(
                 symbol,

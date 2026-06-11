@@ -403,6 +403,26 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void completedLossShowsLossExitWhenRuleWasNotPersisted() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.COMPLETED);
+        strategy.setCurrentState(StrategyLifecycleState.COMPLETED);
+        strategy.setLastTriggeredRuleType("");
+
+        Object exitValue = presenter.valueAt(
+                strategy,
+                new Position("JOBY"),
+                BigDecimal.ZERO,
+                new BigDecimal("-4.90"),
+                10,
+                "Completed - Loss Booked $4.90",
+                "Paper"
+        );
+
+        assertEquals("Loss Exit", exitValue);
+    }
+
+    @Test
     void entrySourceUsesLegacyLuckySourceFromNameWhenOrderSubmissionOverwritesLastEvent() {
         Strategy strategy = strategy();
         strategy.setName("I_AM_FEELING_LUCKY_GAINERS: AAPL Paper");
@@ -457,6 +477,25 @@ class StrategyTablePresenterTest {
         );
 
         assertEquals("Picks [Gainers]", entryValue);
+    }
+
+    @Test
+    void entrySourceRecognizesWeekendReboundSmartPicks() {
+        Strategy strategy = strategy();
+        strategy.setName("SMART_PICKS_WEEKEND_REBOUND: AAPL Paper");
+        strategy.setLastEvent("Order BASE_BUY is ACCEPTED");
+
+        Object entryValue = presenter.valueAt(
+                strategy,
+                new Position("AAPL"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                9,
+                "Limit Base Buy Placed",
+                "Paper"
+        );
+
+        assertEquals("Picks [Weekend Rebound]", entryValue);
     }
 
     @Test

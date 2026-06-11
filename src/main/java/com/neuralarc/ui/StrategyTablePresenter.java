@@ -547,7 +547,7 @@ public final class StrategyTablePresenter {
             case 7 -> strategy.pollingIntervalSeconds();
             case 8 -> strategy.timeInForce() == null ? "" : strategy.timeInForce().name();
             case 9 -> entrySource(strategy);
-            case 10 -> exitSource(strategy);
+            case 10 -> exitSource(strategy, realizedPnl);
             case 11 -> statusLabel;
             default -> "";
         };
@@ -605,6 +605,9 @@ public final class StrategyTablePresenter {
         if (combined.contains("loser")) {
             return "Picks [Losers]";
         }
+        if (combined.contains("weekend_rebound") || combined.contains("weekend rebound")) {
+            return "Picks [Weekend Rebound]";
+        }
         if (combined.contains("reviewed")) {
             return "Picks [Reviewed]";
         }
@@ -625,7 +628,7 @@ public final class StrategyTablePresenter {
                 || combined.contains("after live promotion");
     }
 
-    private String exitSource(Strategy strategy) {
+    private String exitSource(Strategy strategy, BigDecimal realizedPnl) {
         if (strategy == null) {
             return "";
         }
@@ -637,6 +640,10 @@ public final class StrategyTablePresenter {
             String event = strategy.lastEvent() == null ? "" : strategy.lastEvent().toLowerCase();
             if (event.contains("synced from alpaca remote state")) {
                 return "Broker Direct";
+            }
+            String pnlFallback = exitSourceFromRealizedPnl(realizedPnl);
+            if (!pnlFallback.isBlank()) {
+                return pnlFallback;
             }
             return "";
         }
@@ -659,6 +666,13 @@ public final class StrategyTablePresenter {
             return "Broker Direct";
         }
         return "System Exit (" + rule + ")";
+    }
+
+    private String exitSourceFromRealizedPnl(BigDecimal realizedPnl) {
+        if (realizedPnl == null || realizedPnl.compareTo(BigDecimal.ZERO) == 0) {
+            return "";
+        }
+        return realizedPnl.compareTo(BigDecimal.ZERO) < 0 ? "Loss Exit" : "Profit Exit";
     }
 
     private boolean isSellCompleted(Strategy strategy) {
