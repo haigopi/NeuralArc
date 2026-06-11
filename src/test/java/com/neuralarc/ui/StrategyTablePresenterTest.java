@@ -242,7 +242,9 @@ class StrategyTablePresenterTest {
 
         assertEquals(
                 "Expired (Limit Base Buy Placed - waiting to fill) - auto extension enabled; "
-                        + "base limit buy will be reposted with automated guard rails",
+                        + "after polling or closed-market refresh detects expiry, a guarded base limit buy can be reposted. "
+                        + "Example: base $100.00 is kept when quote/previous close/yesterday low are above it; "
+                        + "weak indicators reduce it by 2.00% and it is never increased automatically",
                 label
         );
     }

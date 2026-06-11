@@ -219,9 +219,30 @@ public final class StrategyTablePresenter {
 
     private String expiredAutoExtensionLabel(Strategy strategy) {
         if (strategy.resubmitOnExpiryEnabled()) {
-            return "auto extension enabled; base limit buy will be reposted with automated guard rails";
+            return "auto extension enabled; after polling or closed-market refresh detects expiry, "
+                    + "a guarded base limit buy can be reposted. Example: base "
+                    + priceExample(strategy.baseBuyLimitPrice())
+                    + " is kept when quote/previous close/yesterday low are above it; weak indicators reduce it by "
+                    + percentExample(strategy.baseBuyRepostReductionPercent())
+                    + " and it is never increased automatically";
         }
         return "no auto extension set; manual reposition required";
+    }
+
+    private String priceExample(BigDecimal value) {
+        BigDecimal rounded = Monetary.round(value);
+        if (rounded.compareTo(BigDecimal.ZERO) <= 0) {
+            return "price";
+        }
+        return "$" + rounded.toPlainString();
+    }
+
+    private String percentExample(BigDecimal value) {
+        BigDecimal rounded = Monetary.round(value);
+        if (rounded.compareTo(BigDecimal.ZERO) <= 0) {
+            rounded = new BigDecimal("2.00");
+        }
+        return rounded.toPlainString() + "%";
     }
 
     private String expiredWaitingRuleLabel(Strategy strategy) {

@@ -301,7 +301,9 @@ public class TradingFrame extends JFrame {
                         : reason;
                 tooltip.append("<br><b style='color:#ff6b6b;'>Rejected - action required</b><br>")
                         .append(escapeHtml(rejectedReason));
-            } else if (!reason.isBlank() && (!brokerReachabilityReason || !connectionOk || connectionRetryPending)) {
+            } else if (!reason.isBlank()
+                    && !isExpiredOrderTooltipReason(normalized, reason)
+                    && (!brokerReachabilityReason || !connectionOk || connectionRetryPending)) {
                 tooltip.append("<br>").append(escapeHtml(reason));
             }
             return TooltipStyler.html(
@@ -4178,6 +4180,13 @@ public class TradingFrame extends JFrame {
                 || normalizedReason.contains("broker api error")
                 || normalizedReason.contains("transport")
                 || normalizedReason.contains("connection");
+    }
+
+    private boolean isExpiredOrderTooltipReason(String normalizedOrderStatus, String reason) {
+        if (!"expired".equals(normalizedOrderStatus) || reason == null || reason.isBlank()) {
+            return false;
+        }
+        return "alpaca order expired".equalsIgnoreCase(reason.trim());
     }
 
     private String formatTimestampForDisplay(Instant timestamp) {
