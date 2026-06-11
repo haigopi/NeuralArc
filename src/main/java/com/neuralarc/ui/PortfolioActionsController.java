@@ -26,8 +26,10 @@ final class PortfolioActionsController {
         List<ManagedStrategy> currentStrategies();
         StrategyService strategyService();
         StrategyService strategyServiceForMode(StrategyMode mode);
+        StrategyMode selectedViewMode();
         StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason);
         StrategyService.ArchiveResult deleteLocalTradeHistoryStrategy(String strategyId);
+        StrategyService.ArchiveResult deleteLocalPaperStrategy(String strategyId);
         StrategyService.StrategyCreationResult sellPosition(
                 Strategy strategy,
                 SellSubmissionType submissionType,
@@ -92,6 +94,13 @@ final class PortfolioActionsController {
                 this::handleCleanInvalidStrategies));
         menu.add(gateway.createMenuItem("Clean Trade History", "icons/delete.svg",
                 this::handleCleanTradeHistory));
+        JMenuItem deletePaperEntries = gateway.createMenuItem("Delete All Paper Mode Entries", "icons/delete.svg",
+                this::handleDeleteAllPaperModeEntries);
+        if (gateway.selectedViewMode() == StrategyMode.LIVE) {
+            deletePaperEntries.setEnabled(false);
+            deletePaperEntries.setToolTipText("Paper cleanup is disabled while viewing LIVE mode.");
+        }
+        menu.add(deletePaperEntries);
         menu.add(gateway.createMenuItem("Reposition Expired", "icons/submit.svg",
                 this::handleRepositionExpired));
         menu.add(gateway.createMenuItem("Remove Inactive List", "icons/delete.svg",
@@ -263,6 +272,32 @@ final class PortfolioActionsController {
         }.execute();
     }
 
+    private void handleDeleteAllPaperModeEntries() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.DELETE_ALL_PAPER_MODE_ENTRIES;
+        if (gateway.selectedViewMode() == StrategyMode.LIVE) {
+            String reason = "Paper cleanup is disabled while viewing LIVE mode.";
+            gateway.actionSkipped(action.menuLabel(), reason);
+            gateway.showMessage(reason, action.dialogTitle(), JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), action);
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return deleteAllPaperModeTargets(targets);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
     private void handleRepositionExpired() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.REPOSITION_EXPIRED;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
@@ -372,6 +407,24 @@ final class PortfolioActionsController {
     PortfolioActionsSupport.BatchResult deleteLocalTradeHistoryTargets(List<ManagedStrategy> targets) {
         return runTargetsInParallel(targets, entry -> {
             StrategyService.ArchiveResult result = gateway.deleteLocalTradeHistoryStrategy(entry.strategy.id());
+            return result.success()
+                    ? TargetResult.success(entry.strategy.symbol())
+                    : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+        });
+    }
+
+    PortfolioActionsSupport.BatchResult deleteAllPaperModeTargets(List<ManagedStrategy> targets) {
+        if (gateway.selectedViewMode() == StrategyMode.LIVE) {
+            return new PortfolioActionsSupport.BatchResult(
+                    List.of(),
+                    List.of("Paper cleanup blocked because the current view mode is LIVE.")
+            );
+        }
+        return runTargetsInParallel(targets, entry -> {
+            if (entry.strategy.mode() != StrategyMode.PAPER) {
+                return TargetResult.skipped(entry.strategy.symbol() + ": skipped non-PAPER strategy");
+            }
+            StrategyService.ArchiveResult result = gateway.deleteLocalPaperStrategy(entry.strategy.id());
             return result.success()
                     ? TargetResult.success(entry.strategy.symbol())
                     : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());

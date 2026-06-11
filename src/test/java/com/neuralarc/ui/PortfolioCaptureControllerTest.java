@@ -54,6 +54,28 @@ class PortfolioCaptureControllerTest {
         assertEquals(new BigDecimal("1100.00"), gateway.result.estimatedPortfolioValue());
     }
 
+    @Test
+    void currentSnapshotUsesSelectedModeOnly() {
+        BlockingGateway gateway = new BlockingGateway(List.of(
+                strategy("p1", "AAPL", StrategyMode.PAPER, 10, "100", "110"),
+                strategy("l1", "MSFT", StrategyMode.LIVE, 5, "200", "250")
+        ));
+        PortfolioCaptureController controller = new PortfolioCaptureController(
+                gateway,
+                new PortfolioCaptureCalculator(),
+                new PortfolioCaptureStateStore(tempDir.resolve("mode-state.json")),
+                new PortfolioCaptureHistoryStore(tempDir.resolve("mode-history.json"))
+        );
+
+        gateway.selectedViewMode = StrategyMode.PAPER;
+        PortfolioCaptureSnapshot paperSnapshot = controller.currentSnapshot(config());
+        gateway.selectedViewMode = StrategyMode.LIVE;
+        PortfolioCaptureSnapshot liveSnapshot = controller.currentSnapshot(config());
+
+        assertEquals(List.of("AAPL"), paperSnapshot.rows().stream().map(PortfolioCaptureSnapshot.Row::symbol).toList());
+        assertEquals(List.of("MSFT"), liveSnapshot.rows().stream().map(PortfolioCaptureSnapshot.Row::symbol).toList());
+    }
+
     private PortfolioCaptureConfig config() {
         return new PortfolioCaptureConfig(
                 PortfolioCaptureMode.CAPTURE_NOW,
@@ -73,11 +95,22 @@ class PortfolioCaptureControllerTest {
     }
 
     private ManagedStrategy strategy(String id, String symbol, int quantity, String averageCost, String lastPrice) {
+        return strategy(id, symbol, StrategyMode.PAPER, quantity, averageCost, lastPrice);
+    }
+
+    private ManagedStrategy strategy(
+            String id,
+            String symbol,
+            StrategyMode mode,
+            int quantity,
+            String averageCost,
+            String lastPrice
+    ) {
         Strategy strategy = new Strategy(
                 id,
                 symbol + " Strategy",
                 symbol,
-                StrategyMode.PAPER,
+                mode,
                 StrategyStatus.ACTIVE,
                 StrategyLifecycleState.BASE_BUY_FILLED,
                 new BigDecimal(averageCost),
@@ -122,6 +155,7 @@ class PortfolioCaptureControllerTest {
         private final CountDownLatch releaseFirstSell = new CountDownLatch(1);
         private final CountDownLatch finished = new CountDownLatch(1);
         private final List<String> soldStrategyIds = new ArrayList<>();
+        private StrategyMode selectedViewMode = StrategyMode.PAPER;
         private PortfolioCaptureExecutionResult result;
 
         private BlockingGateway(List<ManagedStrategy> strategies) {
@@ -129,6 +163,7 @@ class PortfolioCaptureControllerTest {
         }
 
         @Override public List<ManagedStrategy> strategies() { return strategies; }
+        @Override public StrategyMode selectedViewMode() { return selectedViewMode; }
 
         @Override
         public StrategyService.StrategyCreationResult sellPosition(
@@ -156,7 +191,7 @@ class PortfolioCaptureControllerTest {
             );
         }
 
-        @Override public int cancelPendingBaseBuys() { return 0; }
+        @Override public int cancelPendingBaseBuys(StrategyMode mode) { return 0; }
         @Override public String runSmartPicksAutomation(PortfolioCaptureConfig config) { return ""; }
         @Override public boolean tradingSessionOpen() { return true; }
         @Override public String nextTradingSessionOpenDisplay() { return ""; }

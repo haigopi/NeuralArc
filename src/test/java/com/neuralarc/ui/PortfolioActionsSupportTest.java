@@ -296,6 +296,31 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
+    void deleteAllPaperModeEntriesTargetsOnlyPaperStrategiesAcrossStatuses() {
+        ManagedStrategy activePaper = managed("AAPL", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy archivedPaper = managed("MSFT", StrategyStatus.ARCHIVED, StrategyLifecycleState.STOPPED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy live = managed("TSLA", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        live.strategy.setMode(StrategyMode.LIVE);
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(activePaper, archivedPaper, live),
+                PortfolioActionsSupport.BulkAction.DELETE_ALL_PAPER_MODE_ENTRIES
+        );
+
+        assertEquals(List.of("AAPL", "MSFT"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
+    void deleteAllPaperModeEntriesResultLabelIsDeleted() {
+        String message = support.buildResultMessage(
+                PortfolioActionsSupport.BulkAction.DELETE_ALL_PAPER_MODE_ENTRIES,
+                new PortfolioActionsSupport.BatchResult(List.of("AAPL", "MSFT"), List.of())
+        );
+
+        assertTrue(message.contains("Deleted: 2"));
+    }
+
+    @Test
     void cleanInvalidTargetsOnlyInvalidFailedRecords() {
         ManagedStrategy invalid = managed("AAPL", StrategyStatus.FAILED, StrategyLifecycleState.FAILED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
         invalid.strategy.setLatestOrderStatus("invalid");

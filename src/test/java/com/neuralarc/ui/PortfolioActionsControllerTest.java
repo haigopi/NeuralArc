@@ -18,6 +18,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PortfolioActionsControllerTest {
@@ -51,6 +52,35 @@ class PortfolioActionsControllerTest {
 
         assertTrue(result.failures().isEmpty());
         assertTrue(gateway.maxConcurrentSells.get() >= 2, "Expected at least two sell calls in flight at once");
+    }
+
+    @Test
+    void deleteAllPaperModeTargetsDeletePaperAndSkipLive() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+        ManagedStrategy paper = managed("AAPL");
+        ManagedStrategy live = managed("MSFT");
+        live.strategy.setMode(StrategyMode.LIVE);
+
+        PortfolioActionsSupport.BatchResult result = controller.deleteAllPaperModeTargets(List.of(paper, live));
+
+        assertEquals(List.of("AAPL"), result.successes());
+        assertEquals(List.of("MSFT: skipped non-PAPER strategy"), result.skipped());
+        assertTrue(result.failures().isEmpty());
+        assertEquals(List.of("AAPL-id"), gateway.deletedPaperStrategyIds);
+    }
+
+    @Test
+    void deleteAllPaperModeTargetsAreBlockedInLiveView() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        gateway.selectedViewMode = StrategyMode.LIVE;
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        PortfolioActionsSupport.BatchResult result = controller.deleteAllPaperModeTargets(List.of(managed("AAPL")));
+
+        assertTrue(result.successes().isEmpty());
+        assertTrue(result.failures().getFirst().contains("LIVE"));
+        assertTrue(gateway.deletedPaperStrategyIds.isEmpty());
     }
 
     private static ManagedStrategy managed(String symbol) {
@@ -124,6 +154,8 @@ class PortfolioActionsControllerTest {
         private final AtomicInteger activeSells = new AtomicInteger();
         private final AtomicInteger maxConcurrentSells = new AtomicInteger();
         private final CountDownLatch sellsEntered = new CountDownLatch(2);
+        private final java.util.List<String> deletedPaperStrategyIds = new java.util.ArrayList<>();
+        private StrategyMode selectedViewMode = StrategyMode.PAPER;
         private boolean blockSell;
 
         private FakeGateway(StrategyService service) {
@@ -134,8 +166,13 @@ class PortfolioActionsControllerTest {
         @Override public List<ManagedStrategy> currentStrategies() { return List.of(); }
         @Override public StrategyService strategyService() { return service; }
         @Override public StrategyService strategyServiceForMode(StrategyMode mode) { return service; }
+        @Override public StrategyMode selectedViewMode() { return selectedViewMode; }
         @Override public StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason) { return StrategyService.ArchiveResult.success(strategyId); }
         @Override public StrategyService.ArchiveResult deleteLocalTradeHistoryStrategy(String strategyId) { return StrategyService.ArchiveResult.success(strategyId); }
+        @Override public StrategyService.ArchiveResult deleteLocalPaperStrategy(String strategyId) {
+            deletedPaperStrategyIds.add(strategyId);
+            return StrategyService.ArchiveResult.success(strategyId);
+        }
         @Override
         public StrategyService.StrategyCreationResult sellPosition(
                 Strategy strategy,

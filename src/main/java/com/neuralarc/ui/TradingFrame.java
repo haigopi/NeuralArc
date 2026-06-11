@@ -228,6 +228,7 @@ public class TradingFrame extends JFrame {
     private Timer capturePortfolioPulseTimer;
     private boolean capturePortfolioPulseOn;
     private PortfolioCaptureConfig capturePortfolioConfigForUi;
+    private StrategyMode capturePortfolioModeForUi;
 
     private final UserIdentityService identityService = new UserIdentityService();
     private final UserActionLogSupport userActionLog = new UserActionLogSupport(this::log);
@@ -501,6 +502,7 @@ public class TradingFrame extends JFrame {
             }
             @Override public StrategyService strategyService() { return strategyService; }
             @Override public StrategyService strategyServiceForMode(StrategyMode mode) { return TradingFrame.this.strategyServiceForMode(mode); }
+            @Override public StrategyMode selectedViewMode() { return selectedViewMode; }
             @Override public StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason) {
                 if (strategyService == null) {
                     return StrategyService.ArchiveResult.failed("strategy service is not configured");
@@ -509,6 +511,9 @@ public class TradingFrame extends JFrame {
             }
             @Override public StrategyService.ArchiveResult deleteLocalTradeHistoryStrategy(String strategyId) {
                 return TradingFrame.this.deleteLocalTradeHistoryStrategy(strategyId);
+            }
+            @Override public StrategyService.ArchiveResult deleteLocalPaperStrategy(String strategyId) {
+                return TradingFrame.this.deleteLocalPaperStrategy(strategyId);
             }
             @Override
             public StrategyService.StrategyCreationResult sellPosition(
@@ -540,10 +545,9 @@ public class TradingFrame extends JFrame {
         portfolioCaptureController = new PortfolioCaptureController(
                 new PortfolioCaptureController.Gateway() {
                     @Override public List<ManagedStrategy> strategies() {
-                        return strategies.stream()
-                                .filter(TradingFrame.this::includeInCurrentStrategiesTab)
-                                .toList();
+                        return strategies;
                     }
+                    @Override public StrategyMode selectedViewMode() { return selectedViewMode; }
                     @Override
                     public StrategyService.StrategyCreationResult sellPosition(
                             ManagedStrategy entry,
@@ -552,7 +556,7 @@ public class TradingFrame extends JFrame {
                     ) {
                         return TradingFrame.this.sellPosition(entry.strategy, submissionType, executionSource);
                     }
-                    @Override public int cancelPendingBaseBuys() { return TradingFrame.this.cancelPendingBaseBuysForAutomation(); }
+                    @Override public int cancelPendingBaseBuys(StrategyMode mode) { return TradingFrame.this.cancelPendingBaseBuysForAutomation(mode); }
                     @Override public String runSmartPicksAutomation(PortfolioCaptureConfig config) { return TradingFrame.this.runSmartPicksAutomation(config); }
                     @Override public boolean tradingSessionOpen() { return TradingFrame.this.isMarketOpenForUi(); }
                     @Override public String nextTradingSessionOpenDisplay() { return TradingFrame.this.nextTradingSessionOpenDisplay(); }
@@ -1703,6 +1707,7 @@ public class TradingFrame extends JFrame {
                 this::refreshPanels,
                 this::updateStatusBar
         );
+        refreshCapturePortfolioModeVisibility();
         updateHeaderModeStatus(currentBrokerType);
         refreshStrategyRuntimeServices(
                 savedApiKeyForSelectedMode(),
@@ -2286,6 +2291,7 @@ public class TradingFrame extends JFrame {
 
     private void updateCapturePortfolioUi(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
         capturePortfolioConfigForUi = active ? config : null;
+        capturePortfolioModeForUi = active ? selectedViewMode : null;
         if (active) {
             capturePortfolioButton.setText("Liquidate Portfolio");
             startCapturePortfolioPulse();
@@ -2298,6 +2304,10 @@ public class TradingFrame extends JFrame {
     }
 
     private void updateCapturePortfolioIndicator(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
+        if (capturePortfolioModeForUi != null && capturePortfolioModeForUi != selectedViewMode) {
+            clearCapturePortfolioIndicatorForMode();
+            return;
+        }
         if (snapshot == null || config == null || config.mode() != PortfolioCaptureMode.TARGET_MONITORING) {
             capturePortfolioIndicator.setText("");
             capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
@@ -2318,8 +2328,32 @@ public class TradingFrame extends JFrame {
         ));
     }
 
+    private void refreshCapturePortfolioModeVisibility() {
+        if (capturePortfolioModeForUi == null || capturePortfolioModeForUi == selectedViewMode) {
+            if (capturePortfolioConfigForUi != null && portfolioCaptureController.monitoringActive()) {
+                updateCapturePortfolioIndicator(
+                        portfolioCaptureController.currentSnapshot(capturePortfolioConfigForUi),
+                        capturePortfolioConfigForUi
+                );
+            }
+            return;
+        }
+        clearCapturePortfolioIndicatorForMode();
+    }
+
+    private void clearCapturePortfolioIndicatorForMode() {
+        capturePortfolioIndicator.setText("");
+        capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
+        capturePortfolioIndicator.setToolTipText(null);
+        capturePortfolioButton.setText("Liquidate Portfolio");
+    }
+
     private void updateCaptureAutomationState(PortfolioCaptureAutomationState state, int loopCount, int pendingCanceled) {
         SwingUtilities.invokeLater(() -> {
+            if (capturePortfolioModeForUi != null && capturePortfolioModeForUi != selectedViewMode) {
+                clearCapturePortfolioIndicatorForMode();
+                return;
+            }
             if (state == PortfolioCaptureAutomationState.STOPPED && !portfolioCaptureController.monitoringActive()) {
                 return;
             }
@@ -2416,9 +2450,13 @@ public class TradingFrame extends JFrame {
         );
     }
 
-    private int cancelPendingBaseBuysForAutomation() {
+    private int cancelPendingBaseBuysForAutomation(StrategyMode mode) {
+        StrategyMode effectiveMode = mode == null ? selectedViewMode : mode;
         int canceled = 0;
         for (ManagedStrategy entry : new ArrayList<>(strategies)) {
+            if (entry.strategy.mode() != effectiveMode) {
+                continue;
+            }
             StrategyService service = strategyServiceForMode(entry.strategy.mode());
             if (service == null) {
                 continue;
@@ -2906,6 +2944,34 @@ public class TradingFrame extends JFrame {
         strategyRepository.deleteById(strategy.id());
         log("[PORTFOLIO] Deleted trade history record for " + strategy.symbol() + ".");
         return StrategyService.ArchiveResult.success(strategy.id());
+    }
+
+    private StrategyService.ArchiveResult deleteLocalPaperStrategy(String strategyId) {
+        if (strategyId == null || strategyId.isBlank()) {
+            return StrategyService.ArchiveResult.failed("Strategy id is missing");
+        }
+        Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
+        if (maybeStrategy.isEmpty()) {
+            return StrategyService.ArchiveResult.failed("Strategy not found");
+        }
+        Strategy strategy = maybeStrategy.get();
+        if (strategy.mode() != StrategyMode.PAPER) {
+            return StrategyService.ArchiveResult.failed("Refusing to delete non-PAPER strategy");
+        }
+        try {
+            StrategyService paperService = strategyServiceForMode(StrategyMode.PAPER);
+            if (paperService != null) {
+                paperService.delete(strategy.id());
+            } else {
+                strategyOrderRepository.deleteByStrategyId(strategy.id());
+                strategyEventRepository.deleteByStrategyId(strategy.id());
+                strategyRepository.deleteById(strategy.id());
+            }
+            log("[PORTFOLIO] Deleted PAPER mode entry for " + strategy.symbol() + ".");
+            return StrategyService.ArchiveResult.success(strategy.id());
+        } catch (Exception ex) {
+            return StrategyService.ArchiveResult.failed(ex.getMessage());
+        }
     }
 
     private boolean autoInitializeConnection() {

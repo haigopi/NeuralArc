@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.SellSubmissionType;
+import com.neuralarc.model.StrategyMode;
 import com.neuralarc.service.StrategyService;
 import com.neuralarc.util.Monetary;
 
@@ -20,12 +21,13 @@ final class PortfolioCaptureController {
 
     interface Gateway {
         List<ManagedStrategy> strategies();
+        StrategyMode selectedViewMode();
         StrategyService.StrategyCreationResult sellPosition(
                 ManagedStrategy entry,
                 SellSubmissionType submissionType,
                 StrategyService.SellExecutionSource executionSource
         );
-        int cancelPendingBaseBuys();
+        int cancelPendingBaseBuys(StrategyMode mode);
         String runSmartPicksAutomation(PortfolioCaptureConfig config);
         boolean tradingSessionOpen();
         String nextTradingSessionOpenDisplay();
@@ -45,6 +47,7 @@ final class PortfolioCaptureController {
     private final Set<String> manuallyExcludedStrategyIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private Timer monitoringTimer;
     private PortfolioCaptureConfig activeConfig;
+    private StrategyMode activeMode;
     private PortfolioCaptureSnapshot lastSnapshot = PortfolioCaptureSnapshot.empty();
     private PortfolioCaptureAutomationState automationState = PortfolioCaptureAutomationState.STOPPED;
     private int loopCount;
@@ -71,7 +74,7 @@ final class PortfolioCaptureController {
     }
 
     PortfolioCaptureSnapshot currentSnapshot(PortfolioCaptureConfig config) {
-        lastSnapshot = calculator.calculate(gateway.strategies(), config);
+        lastSnapshot = calculator.calculate(strategiesForMode(gateway.selectedViewMode()), config);
         return lastSnapshot;
     }
 
@@ -86,8 +89,9 @@ final class PortfolioCaptureController {
 
     void activateMonitoring(PortfolioCaptureConfig config) {
         activeConfig = config;
+        activeMode = gateway.selectedViewMode();
         stopTimerOnly();
-        lastSnapshot = currentSnapshot(config);
+        lastSnapshot = calculator.calculate(strategiesForMode(activeMode), config);
         stateStore.save(new PortfolioCaptureStateStore.State(
                 true,
                 config,
@@ -112,6 +116,7 @@ final class PortfolioCaptureController {
     void deactivateMonitoring() {
         stopTimerOnly();
         activeConfig = null;
+        activeMode = null;
         stateStore.clear();
         gateway.onMonitoringChanged(false, lastSnapshot, null);
         setAutomationState(PortfolioCaptureAutomationState.STOPPED);
@@ -122,6 +127,7 @@ final class PortfolioCaptureController {
         emergencyStopRequested = true;
         stopTimerOnly();
         activeConfig = null;
+        activeMode = null;
         stateStore.clear();
         setAutomationState(PortfolioCaptureAutomationState.STOPPED);
         gateway.onMonitoringChanged(false, lastSnapshot, null);
@@ -167,7 +173,8 @@ final class PortfolioCaptureController {
             marketClosedPauseLogged = false;
             setAutomationState(PortfolioCaptureAutomationState.MONITORING);
         }
-        lastSnapshot = currentSnapshot(activeConfig);
+        StrategyMode mode = activeMode == null ? gateway.selectedViewMode() : activeMode;
+        lastSnapshot = calculator.calculate(strategiesForMode(mode), activeConfig);
         stateStore.save(new PortfolioCaptureStateStore.State(
                 true,
                 activeConfig,
@@ -213,6 +220,13 @@ final class PortfolioCaptureController {
         new CaptureWorker(snapshot, triggerReason, targetTriggered, executionConfig).execute();
     }
 
+    private List<ManagedStrategy> strategiesForMode(StrategyMode mode) {
+        StrategyMode effectiveMode = mode == null ? StrategyMode.PAPER : mode;
+        return gateway.strategies().stream()
+                .filter(entry -> entry != null && entry.strategy != null && entry.strategy.mode() == effectiveMode)
+                .toList();
+    }
+
     private void stopTimerOnly() {
         if (monitoringTimer != null) {
             monitoringTimer.stop();
@@ -247,7 +261,7 @@ final class PortfolioCaptureController {
             BigDecimal actualPnlTotal = BigDecimal.ZERO;
             if (executionConfig.autoCleanPendingBeforeCycle() && !emergencyStopRequested) {
                 setAutomationState(PortfolioCaptureAutomationState.CLEANING_PENDING_ORDERS);
-                int canceled = gateway.cancelPendingBaseBuys();
+                int canceled = gateway.cancelPendingBaseBuys(executionMode());
                 pendingCanceledCount += canceled;
                 gateway.log("[Portfolio Liquidation] Pending base buy cleanup canceled " + canceled + " order(s).");
             }
@@ -289,7 +303,7 @@ final class PortfolioCaptureController {
                 setAutomationState(PortfolioCaptureAutomationState.WAITING_FOR_CONFIRMATION);
                 setAutomationState(PortfolioCaptureAutomationState.REENTERING_POSITIONS);
                 if (executionConfig.autoCleanPendingBeforeCycle()) {
-                    int canceled = gateway.cancelPendingBaseBuys();
+                    int canceled = gateway.cancelPendingBaseBuys(executionMode());
                     pendingCanceledCount += canceled;
                     gateway.log("[Portfolio Liquidation] Pre re-entry pending base buy cleanup canceled " + canceled + " order(s).");
                 }
@@ -308,6 +322,7 @@ final class PortfolioCaptureController {
                 recordCaptureHistory(result, triggerReason, executionConfig);
                 if (targetTriggered) {
                     activeConfig = null;
+                    activeMode = null;
                     stateStore.clear();
                 }
                 gateway.onExecutionFinished(result, targetTriggered);
@@ -339,6 +354,10 @@ final class PortfolioCaptureController {
         });
         restartTimer.setRepeats(false);
         restartTimer.start();
+    }
+
+    private StrategyMode executionMode() {
+        return activeMode == null ? gateway.selectedViewMode() : activeMode;
     }
 
     private void recordCaptureHistory(

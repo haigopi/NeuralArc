@@ -544,6 +544,36 @@ final class PortfolioActionsSupport {
                 return "Deleted";
             }
         },
+        DELETE_ALL_PAPER_MODE_ENTRIES("Delete All Paper Mode Entries") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return entry != null
+                        && entry.strategy != null
+                        && entry.strategy.mode() == com.neuralarc.model.StrategyMode.PAPER;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Permanently delete " + count + " PAPER mode strategy entr(ies)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "This permanently removes all local PAPER strategy entries, orders, and execution events."
+                        + "<br>LIVE strategies are never included."
+                        + "<br>Broker paper positions are not sold by this cleanup action.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no PAPER mode entries to delete.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Deleted";
+            }
+        },
         REPOSITION_EXPIRED("Reposition Expired") {
             @Override
             boolean matches(ManagedStrategy entry) {
