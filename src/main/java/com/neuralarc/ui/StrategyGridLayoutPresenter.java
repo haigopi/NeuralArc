@@ -5,7 +5,7 @@ final class StrategyGridLayoutPresenter {
     static final int ACTIONS_COLUMN_INDEX = 11;
 
     ColumnWidth pollingColumnWidth() {
-        return new ColumnWidth(190, 160);
+        return new ColumnWidth(230, 190);
     }
 
     ColumnWidth actionsColumnWidth(boolean promoteVisible) {
