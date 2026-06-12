@@ -15,7 +15,7 @@ class StrategyGridLayoutPresenterTest {
         StrategyGridLayoutPresenter.ColumnWidth liveActions = presenter.actionsColumnWidth(false);
 
         assertEquals(230, polling.preferred());
-        assertEquals(190, polling.minimum());
+        assertEquals(120, polling.minimum());
         assertEquals(StrategyGridActionLayout.columnWidth(true), paperActions.preferred());
         assertEquals(StrategyGridActionLayout.columnWidth(false), liveActions.preferred());
         assertEquals(paperActions.preferred(), paperActions.minimum());

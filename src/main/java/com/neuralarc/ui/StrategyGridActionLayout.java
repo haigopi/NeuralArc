@@ -3,7 +3,9 @@ package com.neuralarc.ui;
 final class StrategyGridActionLayout {
     static final int ICON_BUTTON_WIDTH = 30;
     static final int BUTTON_HEIGHT = 24;
-    static final int PROMOTE_BUTTON_WIDTH = 150;
+    // Promote is rendered icon-only like the other action buttons, so it stays compact
+    // and the column never has to be wide enough to clip on narrow windows.
+    static final int PROMOTE_BUTTON_WIDTH = ICON_BUTTON_WIDTH;
     static final int BUTTON_GAP = 6;
     private static final int COLUMN_PADDING = 16;
 

@@ -1195,20 +1195,22 @@ public class TradingFrame extends JFrame {
         strategyTable.getColumnModel().getColumn(5).setCellRenderer(new UnrealizedPnLRenderer());
         strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.POLLING_COLUMN_INDEX).setCellRenderer(new PollingBarRenderer());
         strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX).setCellRenderer(new ActionsRenderer());
+        // Preferred widths express the desired layout when there is room; minimums are kept
+        // low so the table can shrink to fit a narrow window instead of overflowing and
+        // clipping the right-hand Actions column. Symbol holds a short ticker, so it stays
+        // tight and the spare preferred width goes to Status, Polling, and Entry/Exit Source.
         strategyTable.getColumnModel().getColumn(0).setPreferredWidth(72);
-        strategyTable.getColumnModel().getColumn(0).setMinWidth(58);
-        // Symbol holds a short ticker; keep it tight and hand the freed space to the
-        // information-dense columns below (Status, Polling, Entry/Exit Source).
+        strategyTable.getColumnModel().getColumn(0).setMinWidth(50);
         strategyTable.getColumnModel().getColumn(1).setPreferredWidth(92);
-        strategyTable.getColumnModel().getColumn(1).setMinWidth(70);
+        strategyTable.getColumnModel().getColumn(1).setMinWidth(54);
         strategyTable.getColumnModel().getColumn(6).setPreferredWidth(340);
-        strategyTable.getColumnModel().getColumn(6).setMinWidth(280);
+        strategyTable.getColumnModel().getColumn(6).setMinWidth(120);
         strategyTable.getColumnModel().getColumn(8).setPreferredWidth(95);
-        strategyTable.getColumnModel().getColumn(8).setMinWidth(80);
+        strategyTable.getColumnModel().getColumn(8).setMinWidth(70);
         strategyTable.getColumnModel().getColumn(9).setPreferredWidth(210);
-        strategyTable.getColumnModel().getColumn(9).setMinWidth(160);
+        strategyTable.getColumnModel().getColumn(9).setMinWidth(110);
         strategyTable.getColumnModel().getColumn(10).setPreferredWidth(180);
-        strategyTable.getColumnModel().getColumn(10).setMinWidth(140);
+        strategyTable.getColumnModel().getColumn(10).setMinWidth(100);
         applyStrategyGridColumnLayout();
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
@@ -6085,7 +6087,7 @@ public class TradingFrame extends JFrame {
         private final JButton editButton = new JButton();
         private final JButton toggleButton = new JButton();
         private final JButton sellButton = new JButton();
-        private final JButton promoteButton = new JButton("Promote to Live");
+        private final JButton promoteButton = new JButton();
         private final JButton deleteButton = new JButton();
 
         private ActionsRenderer() {
@@ -6100,7 +6102,7 @@ public class TradingFrame extends JFrame {
             styleIconOnlyActionButton(editButton, new Color(82, 101, 132));
             styleIconOnlyActionButton(toggleButton, new Color(180, 122, 42));
             styleIconOnlyActionButton(sellButton, new Color(71, 85, 105));
-            styleActionButton(promoteButton, new Color(37, 99, 235));
+            styleIconOnlyActionButton(promoteButton, new Color(37, 99, 235));
             styleIconOnlyActionButton(deleteButton, new Color(148, 62, 78));
             add(editButton);
             add(toggleButton);
@@ -6140,7 +6142,7 @@ public class TradingFrame extends JFrame {
             styleIconOnlyActionButton(sellButton, actionsViewModel.sellColor());
             promoteButton.setEnabled(actionsViewModel.promoteEnabled());
             promoteButton.setVisible(actionsViewModel.promoteVisible());
-            styleActionButton(promoteButton, actionsViewModel.promoteColor());
+            styleIconOnlyActionButton(promoteButton, actionsViewModel.promoteColor());
             editButton.setToolTipText(TooltipStyler.text("Edit strategy rules, limits, and settings."));
             toggleButton.setToolTipText(actionsViewModel.toggleEnabled()
                     ? TooltipStyler.text("Run the shown action for this strategy: " + actionsViewModel.toggleText() + ".")
