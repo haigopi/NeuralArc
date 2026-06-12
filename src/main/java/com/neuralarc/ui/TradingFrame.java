@@ -1197,16 +1197,18 @@ public class TradingFrame extends JFrame {
         strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX).setCellRenderer(new ActionsRenderer());
         strategyTable.getColumnModel().getColumn(0).setPreferredWidth(72);
         strategyTable.getColumnModel().getColumn(0).setMinWidth(58);
-        strategyTable.getColumnModel().getColumn(1).setPreferredWidth(280);
-        strategyTable.getColumnModel().getColumn(1).setMinWidth(220);
-        strategyTable.getColumnModel().getColumn(6).setPreferredWidth(300);
-        strategyTable.getColumnModel().getColumn(6).setMinWidth(260);
+        // Symbol holds a short ticker; keep it tight and hand the freed space to the
+        // information-dense columns below (Status, Polling, Entry/Exit Source).
+        strategyTable.getColumnModel().getColumn(1).setPreferredWidth(92);
+        strategyTable.getColumnModel().getColumn(1).setMinWidth(70);
+        strategyTable.getColumnModel().getColumn(6).setPreferredWidth(340);
+        strategyTable.getColumnModel().getColumn(6).setMinWidth(280);
         strategyTable.getColumnModel().getColumn(8).setPreferredWidth(95);
         strategyTable.getColumnModel().getColumn(8).setMinWidth(80);
-        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(170);
-        strategyTable.getColumnModel().getColumn(9).setMinWidth(135);
-        strategyTable.getColumnModel().getColumn(10).setPreferredWidth(140);
-        strategyTable.getColumnModel().getColumn(10).setMinWidth(120);
+        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(210);
+        strategyTable.getColumnModel().getColumn(9).setMinWidth(160);
+        strategyTable.getColumnModel().getColumn(10).setPreferredWidth(180);
+        strategyTable.getColumnModel().getColumn(10).setMinWidth(140);
         applyStrategyGridColumnLayout();
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
@@ -1826,7 +1828,7 @@ public class TradingFrame extends JFrame {
                 strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.POLLING_COLUMN_INDEX),
                 strategyGridLayoutPresenter.pollingColumnWidth()
         );
-        applyColumnWidth(
+        applyFixedColumnWidth(
                 strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX),
                 strategyGridLayoutPresenter.actionsColumnWidth(selectedViewMode == StrategyMode.PAPER)
         );
@@ -1835,6 +1837,15 @@ public class TradingFrame extends JFrame {
     private void applyColumnWidth(TableColumn column, StrategyGridLayoutPresenter.ColumnWidth width) {
         column.setPreferredWidth(width.preferred());
         column.setMinWidth(width.minimum());
+    }
+
+    // The action buttons are drawn at fixed pixel zones, so the column must stay an exact
+    // width the user cannot drag — otherwise the hit zones and rendered buttons drift apart.
+    private void applyFixedColumnWidth(TableColumn column, StrategyGridLayoutPresenter.ColumnWidth width) {
+        column.setMinWidth(width.minimum());
+        column.setPreferredWidth(width.preferred());
+        column.setMaxWidth(width.preferred());
+        column.setResizable(false);
     }
 
     private void applyUiPolish() {
@@ -5130,11 +5141,19 @@ public class TradingFrame extends JFrame {
         searchControls.add(searchField);
         panel.add(searchControls, BorderLayout.WEST);
         if (searchField == currentStrategiesSearchField) {
-            JPanel captureControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-            captureControls.setOpaque(false);
+            // Pin the button in EAST so BorderLayout always grants it its full preferred
+            // width — it must never be clipped at the toolbar edge. The status indicator
+            // lives in the flexible CENTER region so its variable-length text can shrink
+            // (or clip) without ever squeezing the button.
             capturePortfolioIndicator.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
             capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
-            captureControls.add(capturePortfolioIndicator);
+            JPanel indicatorControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+            indicatorControls.setOpaque(false);
+            indicatorControls.add(capturePortfolioIndicator);
+            panel.add(indicatorControls, BorderLayout.CENTER);
+
+            JPanel captureControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+            captureControls.setOpaque(false);
             captureControls.add(capturePortfolioButton);
             panel.add(captureControls, BorderLayout.EAST);
         } else if (searchField == tradeHistorySearchField) {

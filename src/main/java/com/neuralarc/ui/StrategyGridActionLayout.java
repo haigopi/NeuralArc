@@ -3,9 +3,9 @@ package com.neuralarc.ui;
 final class StrategyGridActionLayout {
     static final int ICON_BUTTON_WIDTH = 30;
     static final int BUTTON_HEIGHT = 24;
-    static final int PROMOTE_BUTTON_WIDTH = 124;
-    static final int BUTTON_GAP = 4;
-    private static final int COLUMN_PADDING = 12;
+    static final int PROMOTE_BUTTON_WIDTH = 150;
+    static final int BUTTON_GAP = 6;
+    private static final int COLUMN_PADDING = 16;
 
     private StrategyGridActionLayout() {
     }
