@@ -525,7 +525,8 @@ public class StrategyService {
                         edits.buyLevel1Qty(),
                         edits.buyLevel2Price() != null ? Monetary.round(edits.buyLevel2Price()) : null,
                         edits.buyLevel2Qty(),
-                        Monetary.round(edits.targetSellPrice())
+                        Monetary.round(edits.targetSellPrice()),
+                        edits.lossBuyLevelsEnabled()
                 );
         Strategy liveStrategy = liveStrategyPromotionFactory.cloneFromPaper(paperStrategy, normalizedEdits);
         StrategyCreationResult creationResult = createAndActivate(liveStrategy);
@@ -550,7 +551,10 @@ public class StrategyService {
             return "Base buy quantity must be greater than zero for live promotion.";
         }
 
-        if (paperStrategy.lossBuyLevelsEnabled()) {
+        boolean lossBuyLevelsEnabled = edits.lossBuyLevelsEnabled() != null
+                ? edits.lossBuyLevelsEnabled()
+                : paperStrategy.lossBuyLevelsEnabled();
+        if (lossBuyLevelsEnabled) {
             BigDecimal level1Price = edits.buyLevel1Price() != null
                     ? edits.buyLevel1Price() : paperStrategy.buyLimit1Price();
             BigDecimal level2Price = edits.buyLevel2Price() != null
@@ -1117,11 +1121,29 @@ public class StrategyService {
             Integer buyLevel1Qty,
             BigDecimal buyLevel2Price,
             Integer buyLevel2Qty,
-            BigDecimal targetSellPrice
+            BigDecimal targetSellPrice,
+            Boolean lossBuyLevelsEnabled
     ) {
+        /**
+         * Convenience constructor that leaves the loss-buy-levels toggle unspecified
+         * ({@code null}), so promotion falls back to the paper strategy's setting.
+         */
+        public LivePromotionEdits(
+                BigDecimal baseBuyPrice,
+                Integer baseBuyQty,
+                BigDecimal buyLevel1Price,
+                Integer buyLevel1Qty,
+                BigDecimal buyLevel2Price,
+                Integer buyLevel2Qty,
+                BigDecimal targetSellPrice
+        ) {
+            this(baseBuyPrice, baseBuyQty, buyLevel1Price, buyLevel1Qty,
+                    buyLevel2Price, buyLevel2Qty, targetSellPrice, null);
+        }
+
         /** Convenience constructor for the price-only path used in older tests. */
         public LivePromotionEdits(BigDecimal baseBuyPrice, BigDecimal targetSellPrice) {
-            this(baseBuyPrice, null, null, null, null, null, targetSellPrice);
+            this(baseBuyPrice, null, null, null, null, null, targetSellPrice, null);
         }
     }
 

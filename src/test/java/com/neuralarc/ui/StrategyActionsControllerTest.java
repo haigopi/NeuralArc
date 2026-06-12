@@ -165,6 +165,7 @@ class StrategyActionsControllerTest {
                 false,
                 new BigDecimal("8.25"),
                 12,
+                true,
                 new BigDecimal("6.75"),
                 6,
                 new BigDecimal("5.50"),
@@ -436,6 +437,7 @@ class StrategyActionsControllerTest {
         StrategyActionsController.PromotionDialogResult promotionDialogResult =
                 new StrategyActionsController.PromotionDialogResult(false, false,
                         new BigDecimal("8.00"), 10,
+                        true,
                         new BigDecimal("7.00"), 5,
                         new BigDecimal("6.50"), 5,
                         new BigDecimal("10.00"));

@@ -767,6 +767,7 @@ public class TradingFrame extends JFrame {
                         dialog.shouldClosePaperPositions(),
                         dialog.baseBuyPrice(),
                         dialog.baseBuyQty(),
+                        dialog.lossBuyLevelsEnabled(),
                         dialog.buyLevel1Price(),
                         dialog.buyLevel1Qty(),
                         dialog.buyLevel2Price(),

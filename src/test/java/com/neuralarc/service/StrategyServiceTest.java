@@ -1171,6 +1171,47 @@ class StrategyServiceTest {
     }
 
     @Test
+    void promotePaperStrategyToLiveHonorsLossBuyLevelsToggleFromPromotionEdits() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(
+                strategies, orders, events, alpaca,
+                new AlwaysOpenMarketHoursService(),
+                true,
+                StrategyMode.LIVE,
+                ApplicationMode.LIVE
+        );
+
+        Strategy paper = baseStrategy("TSLA", 10, new BigDecimal("350.00"));
+        paper.setStatus(StrategyStatus.ACTIVE);
+        paper.setCurrentState(StrategyLifecycleState.VALIDATED);
+        paper.setLossBuyLevelsEnabled(true);
+        paper.setBuyLimit1Price(new BigDecimal("320.00"));
+        paper.setBuyLimit1Quantity(5);
+        paper.setBuyLimit2Price(new BigDecimal("290.00"));
+        paper.setBuyLimit2Quantity(5);
+        paper.setMaxCapitalAllowed(new BigDecimal("10000.00"));
+        strategies.save(paper);
+
+        // The operator unchecks "Include loss buy levels" in the promotion dialog.
+        StrategyService.LivePromotionEdits edits = new StrategyService.LivePromotionEdits(
+                new BigDecimal("351.25"), 12,
+                null, null, null, null,
+                new BigDecimal("366.75"),
+                false
+        );
+        StrategyService.LivePromotionResult result = service.promotePaperStrategyToLive(paper.id(), edits);
+
+        assertTrue(result.success());
+        Strategy live = strategies.findById(result.liveStrategyId()).orElseThrow();
+        assertFalse(live.lossBuyLevelsEnabled());
+        // Capacity ignores the disabled loss levels: maxTotalQuantity == base qty only.
+        assertEquals(12, live.maxTotalQuantity());
+    }
+
+    @Test
     void promotePaperStrategyToLiveAllowsZeroTargetSellWhenDisabled() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

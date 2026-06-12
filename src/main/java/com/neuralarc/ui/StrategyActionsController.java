@@ -150,7 +150,8 @@ public final class StrategyActionsController {
                         dialogResult.buyLevel1Qty(),
                         dialogResult.buyLevel2Price(),
                         dialogResult.buyLevel2Qty(),
-                        dialogResult.targetSellPrice()
+                        dialogResult.targetSellPrice(),
+                        dialogResult.lossBuyLevelsEnabled()
                 )
         );
         if (!result.success()) {
@@ -595,6 +596,7 @@ public final class StrategyActionsController {
             boolean closePaperPositions,
             BigDecimal baseBuyPrice,
             int baseBuyQty,
+            boolean lossBuyLevelsEnabled,
             BigDecimal buyLevel1Price,
             int buyLevel1Qty,
             BigDecimal buyLevel2Price,

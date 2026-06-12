@@ -38,6 +38,9 @@ final class LiveStrategyPromotionFactory {
         BigDecimal targetSellPrice = edits != null && edits.targetSellPrice() != null
                 ? edits.targetSellPrice()
                 : paperStrategy.targetSellPrice();
+        boolean lossBuysEnabled = edits != null && edits.lossBuyLevelsEnabled() != null
+                ? edits.lossBuyLevelsEnabled()
+                : paperStrategy.lossBuyLevelsEnabled();
 
         Strategy liveStrategy = new Strategy(
                 UUID.randomUUID().toString(),
@@ -74,7 +77,7 @@ final class LiveStrategyPromotionFactory {
                 Instant.now(),
                 Instant.now()
         );
-        liveStrategy.setLossBuyLevelsEnabled(paperStrategy.lossBuyLevelsEnabled());
+        liveStrategy.setLossBuyLevelsEnabled(lossBuysEnabled);
         liveStrategy.setAlpacaTrailingStopEnabled(paperStrategy.alpacaTrailingStopEnabled());
         liveStrategy.setProfitControlMode(paperStrategy.profitControlMode());
         liveStrategy.setAutomaticStopSellThresholdType(paperStrategy.automaticStopSellThresholdType());
@@ -88,7 +91,6 @@ final class LiveStrategyPromotionFactory {
         liveStrategy.setResumeStateBeforePause(StrategyLifecycleState.CREATED);
 
         // Recalculate derived capacity fields now that prices/quantities may have been overridden.
-        boolean lossBuysEnabled = paperStrategy.lossBuyLevelsEnabled();
         int maxQty = baseBuyQty + (lossBuysEnabled ? level1Qty + level2Qty : 0);
         BigDecimal maxCapital = Monetary.round(baseBuyPrice.multiply(BigDecimal.valueOf(baseBuyQty))
                 .add(lossBuysEnabled
