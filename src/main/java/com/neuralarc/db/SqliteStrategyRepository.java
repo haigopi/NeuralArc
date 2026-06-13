@@ -189,8 +189,8 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     automatic_stop_sell_threshold, automatic_stop_sell_trailing_type,
                     automatic_stop_sell_trailing_value,
                     resubmit_on_expiry_enabled, base_buy_repost_reduction_percent, time_in_force,
-                    created_at, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    created_at, updated_at, workspace_id
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name, symbol=excluded.symbol,
                     mode=excluded.mode, status=excluded.status, current_state=excluded.current_state,
@@ -238,7 +238,8 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     base_buy_repost_reduction_percent=excluded.base_buy_repost_reduction_percent,
                     time_in_force=excluded.time_in_force,
                     created_at=excluded.created_at,
-                    updated_at=excluded.updated_at
+                    updated_at=excluded.updated_at,
+                    workspace_id=excluded.workspace_id
                 """;
         try (PreparedStatement ps = db.get().prepareStatement(sql)) {
             bindStrategy(ps, s);
@@ -273,8 +274,8 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     automatic_stop_sell_threshold, automatic_stop_sell_trailing_type,
                     automatic_stop_sell_trailing_value,
                     resubmit_on_expiry_enabled, base_buy_repost_reduction_percent, time_in_force,
-                    created_at, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    created_at, updated_at, workspace_id
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             bindStrategy(ps, s);
@@ -336,7 +337,8 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                 : s.baseBuyRepostReductionPercent().toPlainString());
         ps.setString(i++, s.timeInForce() == null ? TimeInForce.DAY.name() : s.timeInForce().name());
         ps.setString(i++, s.createdAt().toString());
-        ps.setString(i, s.updatedAt().toString());
+        ps.setString(i++, s.updatedAt().toString());
+        ps.setString(i, s.workspaceId());
     }
 
     private Strategy fromResultSet(ResultSet rs) throws SQLException {
@@ -395,6 +397,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         s.setResubmitOnExpiryEnabled(rs.getInt("resubmit_on_expiry_enabled") == 1);
         s.setBaseBuyRepostReductionPercent(decimal(rs, "base_buy_repost_reduction_percent"));
         s.setTimeInForce(safeTimeInForce(rs.getString("time_in_force")));
+        s.setWorkspaceId(rs.getString("workspace_id"));
         return s;
     }
 
@@ -452,6 +455,7 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         s.setResubmitOnExpiryEnabled(o.optBoolean("resubmitOnExpiryEnabled", false));
         s.setBaseBuyRepostReductionPercent(decimal(o, "baseBuyRepostReductionPercent"));
         s.setTimeInForce(safeTimeInForce(o.optString("timeInForce", "DAY")));
+        s.setWorkspaceId(o.optString("workspaceId", null));
         return s;
     }
 
@@ -506,6 +510,9 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                 ? StrategyConfig.DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT.toPlainString()
                 : s.baseBuyRepostReductionPercent().toPlainString());
         o.put("timeInForce", s.timeInForce() == null ? TimeInForce.DAY.name() : s.timeInForce().name());
+        if (s.workspaceId() != null) {
+            o.put("workspaceId", s.workspaceId());
+        }
         return o;
     }
 
