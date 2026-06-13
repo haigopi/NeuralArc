@@ -22,6 +22,7 @@ import com.neuralarc.service.LogArchiveService;
 import com.neuralarc.service.LogUploadStatusStore;
 import com.neuralarc.service.StrategyApplyService;
 import com.neuralarc.service.StrategyPollingService;
+import com.neuralarc.service.ReconciliationService;
 import com.neuralarc.service.StrategyService;
 import com.neuralarc.service.WorkspaceService;
 import com.neuralarc.model.StrategyWorkspace;
@@ -374,6 +375,7 @@ public class TradingFrame extends JFrame {
     private String selectedWorkspaceId;
     private final WorkspaceSummaryPresenter workspaceSummaryPresenter = new WorkspaceSummaryPresenter();
     private final JLabel workspaceSummaryLabel = new JLabel(" ");
+    private final RiskDashboardPresenter riskDashboardPresenter = new RiskDashboardPresenter();
     private boolean connectionOk;
     private boolean connectionRetryPending;
     private boolean appLaunchedPublished;
@@ -1518,6 +1520,8 @@ public class TradingFrame extends JFrame {
         ));
 
         footerActionsMenu.add(createStatusMenuHeader("Support"));
+        footerActionsMenu.add(createStatusMenuItem("Strategy Risk Dashboard", "icons/portfolio.svg",
+                this::openRiskDashboard));
         footerActionsMenu.add(createStatusMenuItem("Submit Bug", "icons/submit-bug.svg",
                 this::openSubmitBugDialog));
         footerActionsMenu.add(createStatusMenuItem("Request New Feature", "icons/request-new-feature.svg",
@@ -5614,6 +5618,63 @@ public class TradingFrame extends JFrame {
                 ? "All Stocks"
                 : workspaceService.findById(selectedWorkspaceId).map(StrategyWorkspace::name).orElse("Workspace");
         workspaceSummaryLabel.setText(workspaceSummaryPresenter.summaryLine(label, snapshot));
+    }
+
+    // Opens the read-only risk dashboard: builds strategy-level risk analytics from cached
+    // snapshots on the EDT, fetches Alpaca positions off-EDT for reconciliation, then renders.
+    private void openRiskDashboard() {
+        java.util.List<com.neuralarc.analytics.RiskAnalytics.Holding> holdings = new java.util.ArrayList<>();
+        java.util.List<ReconciliationService.SymbolPosition> localPositions = new java.util.ArrayList<>();
+        for (ManagedStrategy entry : strategies) {
+            if (entry.strategy.mode() != selectedViewMode) {
+                continue;
+            }
+            Position position = entry.cachedPosition();
+            String workspaceLabel = entry.strategy.workspaceId() == null
+                    ? "Unassigned"
+                    : workspaceService.findById(entry.strategy.workspaceId()).map(StrategyWorkspace::name).orElse("Unassigned");
+            BigDecimal totalPnl = position.unrealizedPnl().add(realizedPnlForStrategy(entry.strategy.id()));
+            holdings.add(new com.neuralarc.analytics.RiskAnalytics.Holding(
+                    entry.strategy.symbol(), workspaceLabel, position.marketValue(), totalPnl));
+            if (position.getTotalShares() > 0) {
+                localPositions.add(new ReconciliationService.SymbolPosition(
+                        entry.strategy.symbol(),
+                        BigDecimal.valueOf(position.getTotalShares()),
+                        position.getAverageCost()));
+            }
+        }
+        com.neuralarc.analytics.RiskAnalytics.Report riskReport = com.neuralarc.analytics.RiskAnalytics.analyze(holdings);
+        HttpAlpacaClient client = alpacaClientForMode(selectedApplicationMode());
+        String modeLabel = selectedModeLabel();
+
+        new SwingWorker<java.util.List<ReconciliationService.SymbolPosition>, Void>() {
+            @Override
+            protected java.util.List<ReconciliationService.SymbolPosition> doInBackground() {
+                java.util.List<ReconciliationService.SymbolPosition> broker = new java.util.ArrayList<>();
+                if (client != null) {
+                    for (com.neuralarc.api.AlpacaPositionData position : client.getPositions()) {
+                        if (position.exists()) {
+                            broker.add(new ReconciliationService.SymbolPosition(
+                                    position.symbol(), position.quantity(), position.avgEntryPrice()));
+                        }
+                    }
+                }
+                return broker;
+            }
+
+            @Override
+            protected void done() {
+                ReconciliationService.Report reconciliation;
+                try {
+                    reconciliation = new ReconciliationService().reconcile(localPositions, get());
+                } catch (Exception ex) {
+                    reconciliation = new ReconciliationService().reconcile(localPositions, java.util.List.of());
+                    log("[RISK] Could not fetch broker positions for reconciliation: " + ex.getMessage());
+                }
+                String html = riskDashboardPresenter.buildHtml(modeLabel, riskReport, reconciliation);
+                new RiskDashboardDialog(TradingFrame.this, html).setVisible(true);
+            }
+        }.execute();
     }
 
     private WorkspaceAccounting.Snapshot computeWorkspaceSnapshot(String workspaceId) {
