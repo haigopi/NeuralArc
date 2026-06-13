@@ -1,16 +1,23 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.api.ApiCallMetrics;
 import com.neuralarc.util.SvgIconLoader;
 
 import javax.swing.JComponent;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.Socket;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Enumeration;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -40,6 +47,13 @@ final class NetworkConnectionStatusIndicator {
         label.setHorizontalAlignment(JLabel.CENTER);
         label.setVerticalAlignment(JLabel.CENTER);
         label.getAccessibleContext().setAccessibleName("Internet connection status");
+        label.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        label.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent event) {
+                showNetworkUsage();
+            }
+        });
         applyNetworkStatus(presenter.presentNetworkStatus(true));
 
         probeExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -125,7 +139,38 @@ final class NetworkConnectionStatusIndicator {
             stopOfflineBlink();
             renderIcon(model, model.tone() == StatusBarPresenter.Tone.ERR ? OFFLINE_COLOR : ONLINE_COLOR);
         }
-        label.setToolTipText(TooltipStyler.text(model.tooltip()));
+        label.setToolTipText(TooltipStyler.text(model.tooltip() + " Click to view API usage."));
+    }
+
+    private void showNetworkUsage() {
+        ApiCallMetrics.Snapshot snapshot = ApiCallMetrics.snapshot();
+        String since = DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm")
+                .withZone(ZoneId.systemDefault())
+                .format(snapshot.since());
+        String message = "<html><body style='width:320px'>"
+                + "<b>Alpaca API Usage</b><br><br>"
+                + "Total API calls made: <b>" + snapshot.total() + "</b><br>"
+                + "Succeeded: <b>" + snapshot.succeeded() + "</b><br>"
+                + "Failed: <b>" + snapshot.failed() + "</b><br>"
+                + "Success rate: <b>" + String.format("%.1f%%", snapshot.successRatePercent()) + "</b>"
+                + "<br><br><span style='color:#8A919C;'>Failed counts calls that could not reach the broker "
+                + "(timeouts / network errors) or returned a server error (HTTP 5xx). "
+                + "Counting since " + since + ".</span>"
+                + "</body></html>";
+        Object[] options = {"Close", "Reset counters"};
+        int choice = JOptionPane.showOptionDialog(
+                SwingUtilities.getWindowAncestor(label),
+                message,
+                "Network Usage",
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.INFORMATION_MESSAGE,
+                null,
+                options,
+                options[0]
+        );
+        if (choice == 1) {
+            ApiCallMetrics.reset();
+        }
     }
 
     private void startOfflineBlink(StatusBarPresenter.NetworkStatusViewModel model) {

@@ -169,7 +169,7 @@ public class HttpAlpacaClient implements AlpacaClient {
         HttpRequest request = baseRequest(endpoint).DELETE().build();
         try {
             logRequest("DELETE", endpoint, null);
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendTracked(request);
             recordRequestId("cancelOrder", "DELETE", endpoint, response);
             logResponse("DELETE", endpoint, response.statusCode(), response.body());
             return response.statusCode() >= 200 && response.statusCode() < 300;
@@ -188,7 +188,7 @@ public class HttpAlpacaClient implements AlpacaClient {
         HttpRequest request = baseRequest(endpoint).GET().build();
         try {
             logRequest("GET", endpoint, null);
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendTracked(request);
             recordRequestId("getPosition", "GET", endpoint, response);
             logResponse("GET", endpoint, response.statusCode(), response.body());
             if (response.statusCode() == 404) {
@@ -455,7 +455,7 @@ public class HttpAlpacaClient implements AlpacaClient {
 
         try {
             logRequest("POST", endpoint, payload.toString());
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendTracked(request);
             recordRequestId("submitOrder", "POST", endpoint, response);
             String body = response.body() == null ? "{}" : response.body();
             logResponse("POST", endpoint, response.statusCode(), body);
@@ -493,10 +493,22 @@ public class HttpAlpacaClient implements AlpacaClient {
                 .header("APCA-API-SECRET-KEY", secretKey);
     }
 
+    /** Sends a request while recording it in {@link ApiCallMetrics} for the network-usage view. */
+    private HttpResponse<String> sendTracked(HttpRequest request) throws java.io.IOException, InterruptedException {
+        try {
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            ApiCallMetrics.record(response.statusCode() < 500);
+            return response;
+        } catch (java.io.IOException | InterruptedException ex) {
+            ApiCallMetrics.record(false);
+            throw ex;
+        }
+    }
+
     private Optional<String> executeBody(HttpRequest request) {
         try {
             logRequest(request.method(), request.uri().toString(), null);
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendTracked(request);
             recordRequestId("executeBody", request.method(), request.uri().toString(), response);
             logResponse(request.method(), request.uri().toString(), response.statusCode(), response.body());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
