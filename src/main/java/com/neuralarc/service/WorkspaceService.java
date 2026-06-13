@@ -43,6 +43,23 @@ public final class WorkspaceService {
         return workspace;
     }
 
+    /**
+     * Returns the existing active workspace matching the desired code or name in this mode, or
+     * creates one if none exists. This keeps repeated Smart Picks template clicks from minting
+     * duplicate workspaces/tabs — the caller can just select the returned workspace's tab.
+     */
+    public StrategyWorkspace findOrCreate(String name, String desiredCode, StrategyMode mode) {
+        StrategyMode safeMode = mode == null ? StrategyMode.PAPER : mode;
+        String codeSeed = desiredCode == null || desiredCode.isBlank() ? name : desiredCode;
+        String normalizedCode = StrategyWorkspace.normalizeCode(codeSeed);
+        String trimmedName = name == null ? "" : name.trim();
+        return workspaceRepository.findActive(safeMode).stream()
+                .filter(existing -> existing.code().equalsIgnoreCase(normalizedCode)
+                        || (!trimmedName.isBlank() && existing.name().equalsIgnoreCase(trimmedName)))
+                .findFirst()
+                .orElseGet(() -> create(name, desiredCode, safeMode));
+    }
+
     public Optional<StrategyWorkspace> rename(String id, String newName) {
         if (newName == null || newName.isBlank()) {
             return Optional.empty();

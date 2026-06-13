@@ -76,6 +76,19 @@ class WorkspaceServiceTest {
     }
 
     @Test
+    void findOrCreateReusesExistingWorkspaceInsteadOfDuplicating() {
+        StrategyWorkspace first = service.findOrCreate("ORB Engine", "ORB", StrategyMode.PAPER);
+        StrategyWorkspace again = service.findOrCreate("ORB Engine", "ORB", StrategyMode.PAPER);
+
+        assertEquals(first.id(), again.id());                       // same workspace, not a duplicate
+        assertEquals(1, service.activeWorkspaces(StrategyMode.PAPER).size());
+
+        // A different mode is isolated, so it does create its own.
+        service.findOrCreate("ORB Engine", "ORB", StrategyMode.LIVE);
+        assertEquals(1, service.activeWorkspaces(StrategyMode.LIVE).size());
+    }
+
+    @Test
     void renameUpdatesName() {
         StrategyWorkspace created = service.create("Old", StrategyMode.PAPER);
         service.rename(created.id(), "New Name");

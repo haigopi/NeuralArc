@@ -5823,10 +5823,10 @@ public class TradingFrame extends JFrame {
             }
             name = name.trim();
         }
-        StrategyWorkspace created = strategyWorkspaceTabs.createAndSelect(name, template.isCustom() ? null : template.code());
-        log("[WORKSPACE] Created strategy workspace '" + created.name() + "' (" + created.code() + ") in "
+        StrategyWorkspace workspace = strategyWorkspaceTabs.createOrSelect(name, template.isCustom() ? null : template.code());
+        log("[WORKSPACE] Opened strategy workspace '" + workspace.name() + "' (" + workspace.code() + ") in "
                 + selectedModeLabel() + " mode.");
-        userActionLog.completed("Create Workspace", created.name());
+        userActionLog.completed("Open Workspace", workspace.name());
     }
 
     // Context-menu action: move the strategy in the clicked row into a workspace (or back to

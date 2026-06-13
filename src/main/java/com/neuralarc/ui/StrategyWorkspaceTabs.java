@@ -101,14 +101,15 @@ final class StrategyWorkspaceTabs {
     }
 
     /**
-     * Creates a workspace (with an optional preferred {@code code}), rebuilds the tabs, and selects
-     * the new one. A null/blank {@code code} lets the service derive one from the name.
+     * Returns the workspace matching {@code name}/{@code code} in the current mode (creating it only
+     * if none exists), rebuilds the tabs, and selects it. Repeated calls for the same template
+     * highlight the existing tab instead of creating a duplicate.
      */
-    StrategyWorkspace createAndSelect(String name, String code) {
-        StrategyWorkspace created = workspaceService.create(name, code, modeSupplier.get());
+    StrategyWorkspace createOrSelect(String name, String code) {
+        StrategyWorkspace target = workspaceService.findOrCreate(name, code, modeSupplier.get());
         rebuild();
-        selectWorkspace(created.id());
-        return created;
+        selectWorkspace(target.id());
+        return target;
     }
 
     /** Deletes a workspace (only when empty) and removes its tab; rebuilds on success. */
