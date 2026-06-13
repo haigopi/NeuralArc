@@ -7,7 +7,10 @@ final class StrategyGridActionLayout {
     // and the column never has to be wide enough to clip on narrow windows.
     static final int PROMOTE_BUTTON_WIDTH = ICON_BUTTON_WIDTH;
     static final int BUTTON_GAP = 6;
-    private static final int COLUMN_PADDING = 16;
+    // Generous padding so the centered buttons keep a clear margin (~24px) on each side and
+    // the right-most button never sits flush against the table edge / vertical scrollbar,
+    // which was clipping the Delete button.
+    private static final int COLUMN_PADDING = 48;
 
     private StrategyGridActionLayout() {
     }
