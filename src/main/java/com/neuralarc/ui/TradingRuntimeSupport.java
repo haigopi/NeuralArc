@@ -15,7 +15,11 @@ import com.neuralarc.service.StrategyRepository;
 import com.neuralarc.service.StrategyService;
 import com.neuralarc.service.StrategyValidator;
 import com.neuralarc.service.TradeEmailNotificationService;
+import com.neuralarc.service.WorkspaceCodeResolver;
+import com.neuralarc.service.WorkspaceRepository;
+import com.neuralarc.model.StrategyWorkspace;
 import com.neuralarc.util.AppMetadata;
+import com.neuralarc.util.ClientOrderId;
 
 public final class TradingRuntimeSupport {
     private final StrategyRepository strategyRepository;
@@ -23,6 +27,7 @@ public final class TradingRuntimeSupport {
     private final StrategyExecutionEventRepository strategyEventRepository;
     private final AppSettingsService appSettingsService;
     private final MarketHoursService marketHoursService;
+    private final WorkspaceCodeResolver workspaceCodeResolver;
     private final TradingApiCreator tradingApiCreator;
     private final AlpacaClientCreator alpacaClientCreator;
 
@@ -31,7 +36,8 @@ public final class TradingRuntimeSupport {
             StrategyOrderRepository strategyOrderRepository,
             StrategyExecutionEventRepository strategyEventRepository,
             AppSettingsService appSettingsService,
-            MarketHoursService marketHoursService
+            MarketHoursService marketHoursService,
+            WorkspaceRepository workspaceRepository
     ) {
         this(
                 strategyRepository,
@@ -39,6 +45,7 @@ public final class TradingRuntimeSupport {
                 strategyEventRepository,
                 appSettingsService,
                 marketHoursService,
+                resolverFor(workspaceRepository),
                 TradingApiFactory::create,
                 HttpAlpacaClient::new
         );
@@ -53,13 +60,39 @@ public final class TradingRuntimeSupport {
             TradingApiCreator tradingApiCreator,
             AlpacaClientCreator alpacaClientCreator
     ) {
+        this(strategyRepository, strategyOrderRepository, strategyEventRepository, appSettingsService,
+                marketHoursService, WorkspaceCodeResolver.unassigned(), tradingApiCreator, alpacaClientCreator);
+    }
+
+    TradingRuntimeSupport(
+            StrategyRepository strategyRepository,
+            StrategyOrderRepository strategyOrderRepository,
+            StrategyExecutionEventRepository strategyEventRepository,
+            AppSettingsService appSettingsService,
+            MarketHoursService marketHoursService,
+            WorkspaceCodeResolver workspaceCodeResolver,
+            TradingApiCreator tradingApiCreator,
+            AlpacaClientCreator alpacaClientCreator
+    ) {
         this.strategyRepository = strategyRepository;
         this.strategyOrderRepository = strategyOrderRepository;
         this.strategyEventRepository = strategyEventRepository;
         this.appSettingsService = appSettingsService;
         this.marketHoursService = marketHoursService;
+        this.workspaceCodeResolver = workspaceCodeResolver == null
+                ? WorkspaceCodeResolver.unassigned()
+                : workspaceCodeResolver;
         this.tradingApiCreator = tradingApiCreator;
         this.alpacaClientCreator = alpacaClientCreator;
+    }
+
+    private static WorkspaceCodeResolver resolverFor(WorkspaceRepository workspaceRepository) {
+        if (workspaceRepository == null) {
+            return WorkspaceCodeResolver.unassigned();
+        }
+        return workspaceId -> workspaceRepository.findById(workspaceId)
+                .map(StrategyWorkspace::code)
+                .orElse(ClientOrderId.UNASSIGNED_CODE);
     }
 
     public RuntimeClients createClients(SettingsDialog settingsDialog, String runtimeApiKey, String runtimeApiSecret) {
@@ -101,6 +134,7 @@ public final class TradingRuntimeSupport {
         );
         pollingService.setPollListener(pollListener);
         pollingService.setEmailNotificationListener(emailNotificationListener);
+        pollingService.setWorkspaceCodeResolver(workspaceCodeResolver);
         return new RuntimeServices(strategyService, pollingService);
     }
 
@@ -108,7 +142,7 @@ public final class TradingRuntimeSupport {
         if (runtimeClient == null) {
             return null;
         }
-        return new StrategyService(
+        StrategyService strategyService = new StrategyService(
                 strategyRepository,
                 strategyOrderRepository,
                 strategyEventRepository,
@@ -119,6 +153,8 @@ public final class TradingRuntimeSupport {
                 appSettingsService,
                 marketHoursService
         );
+        strategyService.setWorkspaceCodeResolver(workspaceCodeResolver);
+        return strategyService;
     }
 
     public ConnectionAttemptResult attemptConnection(BrokerType brokerType, ApplicationMode mode, String apiKey, String apiSecret) {

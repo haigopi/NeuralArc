@@ -22,6 +22,11 @@ final class ManualBuyOrderSubmitter {
     private final StrategyOrderRepository orderRepository;
     private final AlpacaClient alpacaClient;
     private final StrategyStateMachine stateMachine;
+    private WorkspaceCodeResolver workspaceCodeResolver = WorkspaceCodeResolver.unassigned();
+
+    void setWorkspaceCodeResolver(WorkspaceCodeResolver resolver) {
+        this.workspaceCodeResolver = resolver == null ? WorkspaceCodeResolver.unassigned() : resolver;
+    }
 
     ManualBuyOrderSubmitter(
             StrategyRepository strategyRepository,
@@ -64,7 +69,7 @@ final class ManualBuyOrderSubmitter {
             return StrategyService.StrategyCreationResult.failed("Only active or paused strategies can submit a manual buy");
         }
 
-        String clientOrderId = StrategyService.buildClientOrderId(strategy.id(), StrategyStage.MANUAL_BUY);
+        String clientOrderId = StrategyService.buildClientOrderId(strategy, StrategyStage.MANUAL_BUY, workspaceCodeResolver);
         AlpacaOrderData submitted = orderType == StrategyOrderType.MARKET
                 ? alpacaClient.submitMarketBuyOrder(strategy.symbol(), quantity, clientOrderId)
                 : alpacaClient.submitLimitBuyOrder(strategy.symbol(), quantity, limitPrice, clientOrderId);

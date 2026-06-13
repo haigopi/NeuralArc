@@ -461,6 +461,12 @@ public class StrategyPollingService {
         this.pollListener = pollListener == null ? PollListener.NOOP : pollListener;
     }
 
+    /** Propagates the workspace-code resolver to this service's engine and internal service. */
+    public void setWorkspaceCodeResolver(WorkspaceCodeResolver resolver) {
+        strategyEngine.setWorkspaceCodeResolver(resolver);
+        strategyService.setWorkspaceCodeResolver(resolver);
+    }
+
     public void setEmailNotificationListener(TradeEmailNotificationService.EmailNotificationListener listener) {
         strategyEngine.setEmailNotificationListener(listener);
     }
