@@ -5540,8 +5540,11 @@ public class TradingFrame extends JFrame {
     }
 
     private String currentStrategiesHeadingText() {
+        // Renamed from "Current Strategies" to "All Stocks" for the strategy-workspaces feature:
+        // this tab always shows every strategy in the active mode regardless of workspace
+        // assignment, preserving the existing stock-centric view for current installations.
         long currentCount = strategies.stream().filter(this::includeInCurrentStrategiesTab).count();
-        return "Current Strategies - " + selectedModeLabel() + " (" + currentCount + ")";
+        return "All Stocks - " + selectedModeLabel() + " (" + currentCount + ")";
     }
 
     private String tradeHistoryHeadingText() {

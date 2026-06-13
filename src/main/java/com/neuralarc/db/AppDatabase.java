@@ -193,6 +193,7 @@ public final class AppDatabase {
         applyMigration("005_resubmit_on_expiry", this::migration005);
         applyMigration("006_time_in_force", this::migration006);
         applyMigration("007_base_buy_repost_reduction_percent", this::migration007);
+        applyMigration("008_strategy_workspaces", this::migration008);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -371,6 +372,27 @@ public final class AppDatabase {
 
     private void migration007() throws SQLException {
         addColumnIfMissing("strategies", "base_buy_repost_reduction_percent", "TEXT NOT NULL DEFAULT '2.00'");
+    }
+
+    // ── Migration 008 — strategy workspaces (additive, backward compatible) ──
+    // New table groups existing per-symbol strategies into higher-level workspaces; a nullable
+    // workspace_id link is added to strategies. Existing rows stay NULL (unassigned / All Stocks).
+    private void migration008() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS strategy_workspaces (
+                        id          TEXT PRIMARY KEY,
+                        name        TEXT NOT NULL DEFAULT '',
+                        code        TEXT NOT NULL,
+                        mode        TEXT NOT NULL DEFAULT 'PAPER',
+                        archived    INTEGER NOT NULL DEFAULT 0,
+                        created_at  TEXT NOT NULL,
+                        updated_at  TEXT NOT NULL
+                    )""");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_workspaces_mode ON strategy_workspaces(mode)");
+            st.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_code_mode ON strategy_workspaces(code, mode)");
+        }
+        addColumnIfMissing("strategies", "workspace_id", "TEXT");
     }
 
     private void addColumnIfMissing(String table, String column, String definition) throws SQLException {

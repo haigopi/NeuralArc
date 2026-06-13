@@ -58,6 +58,10 @@ public class Strategy {
     private boolean resubmitOnExpiryEnabled;
     private BigDecimal baseBuyRepostReductionPercent;
     private TimeInForce timeInForce;
+    // Optional link to a higher-level StrategyWorkspace (Phase 1 of strategy workspaces).
+    // null means "unassigned" — the strategy shows under the All Stocks view and is never
+    // auto-migrated into a workspace. Kept out of the constructor for backward compatibility.
+    private String workspaceId;
 
     public Strategy(
             String id,
@@ -450,4 +454,12 @@ public class Strategy {
         touch();
     }
     public void setTimeInForce(TimeInForce timeInForce) { this.timeInForce = timeInForce == null ? TimeInForce.DAY : timeInForce; touch(); }
+
+    /** Identifier of the owning StrategyWorkspace, or {@code null} when unassigned (All Stocks). */
+    public String workspaceId() { return workspaceId; }
+
+    public void setWorkspaceId(String value) {
+        this.workspaceId = value == null || value.isBlank() ? null : value.trim();
+        touch();
+    }
 }
