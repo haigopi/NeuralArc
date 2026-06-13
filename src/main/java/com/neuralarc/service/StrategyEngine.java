@@ -34,6 +34,11 @@ public class StrategyEngine {
     private final StrategyProfitControlEvaluator profitControlEvaluator;
     private final TradeEmailNotificationService emailNotificationService;
     private final BaseBuyPriceGuard baseBuyPriceGuard = new BaseBuyPriceGuard();
+    private WorkspaceCodeResolver workspaceCodeResolver = WorkspaceCodeResolver.unassigned();
+
+    void setWorkspaceCodeResolver(WorkspaceCodeResolver resolver) {
+        this.workspaceCodeResolver = resolver == null ? WorkspaceCodeResolver.unassigned() : resolver;
+    }
 
     public StrategyEngine(
             StrategyRepository strategyRepository,
@@ -580,7 +585,7 @@ public class StrategyEngine {
             return null;
         }
         // Broker should be the source of truth for whether off-hours orders are accepted.
-        String clientOrderId = StrategyService.buildClientOrderId(strategy.id(), stage);
+        String clientOrderId = StrategyService.buildClientOrderId(strategy, stage, workspaceCodeResolver);
         TimeInForce timeInForce = strategy.timeInForce() == null ? TimeInForce.DAY : strategy.timeInForce();
         AlpacaOrderData submitted = alpacaClient.submitLimitBuyOrder(
                 strategy.symbol(),
@@ -674,7 +679,7 @@ public class StrategyEngine {
         if (requestedQuantity <= 0) {
             return null;
         }
-        String clientOrderId = StrategyService.buildClientOrderId(strategy.id(), stage);
+        String clientOrderId = StrategyService.buildClientOrderId(strategy, stage, workspaceCodeResolver);
         AlpacaOrderData submitted = alpacaClient.submitLimitSellOrder(strategy.symbol(), requestedQuantity, limitPrice, clientOrderId);
         Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
         StrategyOrder order = new StrategyOrder(
@@ -758,7 +763,7 @@ public class StrategyEngine {
         if (requestedQuantity <= 0) {
             return null;
         }
-        String clientOrderId = StrategyService.buildClientOrderId(strategy.id(), StrategyStage.PROFIT_EXIT);
+        String clientOrderId = StrategyService.buildClientOrderId(strategy, StrategyStage.PROFIT_EXIT, workspaceCodeResolver);
         boolean automaticStopSell = strategy.profitControlMode() == ProfitControlMode.AUTOMATIC_STOP_SELL;
         BigDecimal trailPercent = automaticStopSell
                 ? (strategy.automaticStopSellTrailingType() == TrailingType.PERCENTAGE

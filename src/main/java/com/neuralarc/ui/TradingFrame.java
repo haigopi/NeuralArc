@@ -372,6 +372,8 @@ public class TradingFrame extends JFrame {
     // Dynamic strategy-workspace tabs; null workspace = the All Stocks view.
     private StrategyWorkspaceTabs strategyWorkspaceTabs;
     private String selectedWorkspaceId;
+    private final WorkspaceSummaryPresenter workspaceSummaryPresenter = new WorkspaceSummaryPresenter();
+    private final JLabel workspaceSummaryLabel = new JLabel(" ");
     private boolean connectionOk;
     private boolean connectionRetryPending;
     private boolean appLaunchedPublished;
@@ -603,7 +605,8 @@ public class TradingFrame extends JFrame {
                 strategyOrderRepository,
                 strategyEventRepository,
                 appSettingsService,
-                marketHoursService
+                marketHoursService,
+                workspaceRepository
         );
         strategyActionsController = new StrategyActionsController(new StrategyActionsController.Gateway() {
             @Override
@@ -1390,6 +1393,14 @@ public class TradingFrame extends JFrame {
         // The coordinator owns the two base tabs (All Stocks + Trade History) and inserts a
         // dynamic tab per active strategy workspace between them, re-parenting the shared grid.
         JComponent strategiesGridWrapper = wrapGridWithSearch(currentStrategiesSearchPanel, strategyGrid);
+        // Per-tab P&L summary row, pinned below the grid. The wrapper is re-parented into the
+        // selected workspace tab, so this summary follows whichever workspace is being viewed.
+        workspaceSummaryLabel.setFont(BASE_FONT.deriveFont(Font.PLAIN, 11f));
+        workspaceSummaryLabel.setForeground(DARK_BTN_FG);
+        workspaceSummaryLabel.setBorder(new EmptyBorder(6, 14, 4, 14));
+        if (strategiesGridWrapper instanceof JPanel strategiesPanel) {
+            strategiesPanel.add(workspaceSummaryLabel, BorderLayout.SOUTH);
+        }
         JComponent historyGridWrapper = wrapGridWithSearch(tradeHistorySearchPanel, filledOrdersGrid);
         strategyWorkspaceTabs = new StrategyWorkspaceTabs(
                 strategyTabs,
@@ -5501,6 +5512,7 @@ public class TradingFrame extends JFrame {
         );
         SwingUtilities.invokeLater(() -> {
             refreshCurrentStrategiesHeading();
+            refreshWorkspaceSummary();
             statusStrategyCount.setText(statusBarViewModel.strategyCountText());
             pollingSummary.setText(statusBarViewModel.pollingText());
             pollingSummary.setForeground(statusToneColor(statusBarViewModel.pollingTone()));
@@ -5588,6 +5600,93 @@ public class TradingFrame extends JFrame {
         selectedWorkspaceId = workspaceId;
         applyCurrentStrategiesRowFilter();
         refreshCurrentStrategiesHeading();
+        refreshWorkspaceSummary();
+    }
+
+    // Builds the per-tab P&L summary for the selected workspace (or All Stocks) from cached
+    // snapshots — no broker calls — and renders it in the summary row below the grid.
+    private void refreshWorkspaceSummary() {
+        if (workspaceSummaryLabel == null) {
+            return;
+        }
+        WorkspaceAccounting.Snapshot snapshot = computeWorkspaceSnapshot(selectedWorkspaceId);
+        String label = selectedWorkspaceId == null
+                ? "All Stocks"
+                : workspaceService.findById(selectedWorkspaceId).map(StrategyWorkspace::name).orElse("Workspace");
+        workspaceSummaryLabel.setText(workspaceSummaryPresenter.summaryLine(label, snapshot));
+    }
+
+    private WorkspaceAccounting.Snapshot computeWorkspaceSnapshot(String workspaceId) {
+        java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.systemDefault());
+        java.util.List<WorkspaceAccounting.StrategyAccount> accounts = new java.util.ArrayList<>();
+        java.util.List<WorkspaceAccounting.RealizedSell> sells = new java.util.ArrayList<>();
+        for (ManagedStrategy entry : strategies) {
+            if (entry.strategy.mode() != selectedViewMode) {
+                continue;
+            }
+            String entryWorkspaceId = entry.strategy.workspaceId();
+            java.util.List<WorkspaceAccounting.RealizedSell> strategySells =
+                    realizedSellsForStrategy(entryWorkspaceId, strategyOrderRepository.findByStrategyId(entry.strategy.id()), today);
+            sells.addAll(strategySells);
+            BigDecimal realized = BigDecimal.ZERO;
+            for (WorkspaceAccounting.RealizedSell sell : strategySells) {
+                realized = realized.add(sell.realizedPnl());
+            }
+            Position position = entry.cachedPosition();
+            accounts.add(new WorkspaceAccounting.StrategyAccount(
+                    entryWorkspaceId,
+                    position.getTotalShares(),
+                    position.unrealizedPnl(),
+                    realized,
+                    position.marketValue()
+            ));
+        }
+        return WorkspaceAccounting.forWorkspace(workspaceId, accounts, sells);
+    }
+
+    // Reconstructs realized P&L per individual sell (one RealizedSell per filled sell), replaying
+    // fills to track average cost — mirrors realizedPnlForOrders but keeps each trade for win rate.
+    private java.util.List<WorkspaceAccounting.RealizedSell> realizedSellsForStrategy(
+            String workspaceId, List<StrategyOrder> orders, java.time.LocalDate today) {
+        List<StrategyOrder> filledOrders = orders.stream()
+                .filter(order -> order.status() == StrategyOrderStatus.FILLED || order.status() == StrategyOrderStatus.PARTIALLY_FILLED)
+                .filter(order -> order.filledQuantity().compareTo(BigDecimal.ZERO) > 0)
+                .sorted(Comparator
+                        .comparing(StrategyOrder::filledAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+
+        java.util.List<WorkspaceAccounting.RealizedSell> result = new java.util.ArrayList<>();
+        BigDecimal positionQty = BigDecimal.ZERO;
+        BigDecimal averageCost = BigDecimal.ZERO;
+        for (StrategyOrder order : filledOrders) {
+            BigDecimal quantity = order.filledQuantity();
+            BigDecimal fillPrice = order.filledAveragePrice().compareTo(BigDecimal.ZERO) > 0
+                    ? order.filledAveragePrice()
+                    : order.limitPrice();
+            if (order.side() == StrategyOrderSide.BUY) {
+                BigDecimal runningCost = averageCost.multiply(positionQty).add(fillPrice.multiply(quantity));
+                positionQty = positionQty.add(quantity);
+                if (positionQty.compareTo(BigDecimal.ZERO) > 0) {
+                    averageCost = runningCost.divide(positionQty, 8, java.math.RoundingMode.HALF_UP);
+                }
+                continue;
+            }
+            BigDecimal sellQty = quantity.min(positionQty.max(BigDecimal.ZERO));
+            if (sellQty.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            BigDecimal realized = Monetary.round(fillPrice.subtract(averageCost).multiply(sellQty));
+            java.time.Instant when = order.filledAt() != null ? order.filledAt() : order.submittedAt();
+            boolean isToday = when != null
+                    && java.time.LocalDate.ofInstant(when, java.time.ZoneId.systemDefault()).equals(today);
+            result.add(new WorkspaceAccounting.RealizedSell(workspaceId, realized, isToday));
+            positionQty = positionQty.subtract(sellQty);
+            if (positionQty.compareTo(BigDecimal.ZERO) == 0) {
+                averageCost = BigDecimal.ZERO;
+            }
+        }
+        return result;
     }
 
     /** Right-click a workspace tab to rename it or archive it (archive removes the tab, keeps records). */

@@ -60,7 +60,24 @@ class StrategyServiceTest {
         assertEquals(StrategyLifecycleState.BASE_BUY_PLACED, stored.currentState());
         StrategyOrder initial = orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).orElseThrow();
         assertEquals(StrategyOrderType.LIMIT, initial.orderType());
-        assertTrue(initial.clientOrderId().startsWith("neuralarc-" + strategy.id() + "-BASE_BUY-"));
+        assertTrue(initial.clientOrderId().startsWith("NA_PAPER_ALL_AAPL_BASE_BUY_"), initial.clientOrderId());
+    }
+
+    @Test
+    void clientOrderIdEmbedsResolvedWorkspaceCode() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+        service.setWorkspaceCodeResolver(workspaceId -> "w-1".equals(workspaceId) ? "ORB" : "ALL");
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setWorkspaceId("w-1");
+        service.createAndActivate(strategy);
+
+        StrategyOrder initial = orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).orElseThrow();
+        assertTrue(initial.clientOrderId().startsWith("NA_PAPER_ORB_AAPL_BASE_BUY_"), initial.clientOrderId());
     }
 
     @Test
@@ -227,7 +244,7 @@ class StrategyServiceTest {
         AlpacaOrderData submitted = alpaca.submittedOrders.getFirst();
         assertEquals("buy", submitted.side());
         assertEquals("market", submitted.type());
-        assertTrue(submitted.clientOrderId().contains("-MANUAL_BUY-"));
+        assertTrue(submitted.clientOrderId().startsWith("NA_PAPER_ALL_AAPL_MANUAL_BUY_"), submitted.clientOrderId());
         StrategyOrder local = orders.findLatestByStrategyStage(strategy.id(), StrategyStage.MANUAL_BUY).orElseThrow();
         assertEquals(StrategyOrderSide.BUY, local.side());
         assertEquals(StrategyOrderType.MARKET, local.orderType());

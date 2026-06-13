@@ -4,6 +4,7 @@ import com.neuralarc.api.AlpacaClient;
 import com.neuralarc.api.AlpacaPositionData;
 import com.neuralarc.model.*;
 import com.neuralarc.util.BrokerOrderStatusUtil;
+import com.neuralarc.util.ClientOrderId;
 import com.neuralarc.util.Monetary;
 import org.json.JSONObject;
 
@@ -39,6 +40,7 @@ public class StrategyService {
     private final AppSettingsService appSettingsService;
     private final MarketHoursService marketHoursService;
     private final ManualBuyOrderSubmitter manualBuyOrderSubmitter;
+    private WorkspaceCodeResolver workspaceCodeResolver = WorkspaceCodeResolver.unassigned();
 
     public StrategyService(
             StrategyRepository strategyRepository,
@@ -668,7 +670,7 @@ public class StrategyService {
             return StrategyCreationResult.failed("No open quantity to close");
         }
         cancelPendingRemoteOrders(strategy);
-        String clientOrderId = buildClientOrderId(strategy.id(), StrategyStage.MANUAL_EXIT);
+        String clientOrderId = buildClientOrderId(strategy, StrategyStage.MANUAL_EXIT, workspaceCodeResolver);
         SellSubmissionType effectiveType = submissionType == null ? SellSubmissionType.LIMIT : submissionType;
         com.neuralarc.api.AlpacaOrderData submitted = effectiveType == SellSubmissionType.MARKET
                 ? alpacaClient.submitMarketSellOrder(strategy.symbol(), quantity, clientOrderId)
@@ -738,8 +740,23 @@ public class StrategyService {
         PORTFOLIO_CAPTURE
     }
 
-    public static String buildClientOrderId(String strategyId, StrategyStage stage) {
-        return "neuralarc-" + strategyId + "-" + stage.name() + "-" + System.currentTimeMillis();
+    /**
+     * Builds a structured Alpaca {@code client_order_id} that embeds the strategy's mode, workspace
+     * code, symbol and order stage (see {@link ClientOrderId}). The {@code resolver} maps the
+     * strategy's workspace to its short code (or "ALL" when unassigned).
+     */
+    public static String buildClientOrderId(Strategy strategy, StrategyStage stage, WorkspaceCodeResolver resolver) {
+        String code = resolver == null
+                ? ClientOrderId.UNASSIGNED_CODE
+                : resolver.codeForWorkspace(strategy.workspaceId());
+        return ClientOrderId.build(strategy.mode(), code, strategy.symbol(), stage.name());
+    }
+
+    /** Sets the workspace-code resolver and propagates it to the order-submitting collaborators. */
+    public void setWorkspaceCodeResolver(WorkspaceCodeResolver resolver) {
+        this.workspaceCodeResolver = resolver == null ? WorkspaceCodeResolver.unassigned() : resolver;
+        strategyEngine.setWorkspaceCodeResolver(this.workspaceCodeResolver);
+        manualBuyOrderSubmitter.setWorkspaceCodeResolver(this.workspaceCodeResolver);
     }
 
     public static StrategyOrderStatus mapOrderStatus(String alpacaStatus) {
@@ -902,7 +919,7 @@ public class StrategyService {
                 strategy.id(),
                 mapRemoteStage(remoteOrder),
                 remoteOrder.orderId(),
-                remoteOrder.clientOrderId().isBlank() ? buildClientOrderId(strategy.id(), mapRemoteStage(remoteOrder)) : remoteOrder.clientOrderId(),
+                remoteOrder.clientOrderId().isBlank() ? buildClientOrderId(strategy, mapRemoteStage(remoteOrder), workspaceCodeResolver) : remoteOrder.clientOrderId(),
                 strategy.symbol(),
                 "sell".equalsIgnoreCase(remoteOrder.side()) ? StrategyOrderSide.SELL : StrategyOrderSide.BUY,
                 StrategyOrderType.LIMIT,
