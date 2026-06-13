@@ -10,6 +10,7 @@ import com.neuralarc.db.AppDatabase;
 import com.neuralarc.db.SqliteStrategyExecutionEventRepository;
 import com.neuralarc.db.SqliteStrategyOrderRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
+import com.neuralarc.db.SqliteWorkspaceRepository;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.GitHubReleaseUpdateService;
@@ -22,6 +23,9 @@ import com.neuralarc.service.LogUploadStatusStore;
 import com.neuralarc.service.StrategyApplyService;
 import com.neuralarc.service.StrategyPollingService;
 import com.neuralarc.service.StrategyService;
+import com.neuralarc.service.WorkspaceService;
+import com.neuralarc.model.StrategyWorkspace;
+import com.neuralarc.model.StrategyWorkspaceTemplate;
 import com.neuralarc.service.StrategyEngine;
 import com.neuralarc.service.TrendingStocksService;
 import com.neuralarc.service.HttpAlpacaScreenerClient;
@@ -363,6 +367,11 @@ public class TradingFrame extends JFrame {
     private final SqliteStrategyRepository strategyRepository;
     private final SqliteStrategyOrderRepository strategyOrderRepository;
     private final SqliteStrategyExecutionEventRepository strategyEventRepository;
+    private final SqliteWorkspaceRepository workspaceRepository;
+    private final WorkspaceService workspaceService;
+    // Dynamic strategy-workspace tabs; null workspace = the All Stocks view.
+    private StrategyWorkspaceTabs strategyWorkspaceTabs;
+    private String selectedWorkspaceId;
     private boolean connectionOk;
     private boolean connectionRetryPending;
     private boolean appLaunchedPublished;
@@ -454,6 +463,8 @@ public class TradingFrame extends JFrame {
         strategyRepository = new SqliteStrategyRepository(appDatabase);
         strategyOrderRepository = new SqliteStrategyOrderRepository(appDatabase);
         strategyEventRepository = new SqliteStrategyExecutionEventRepository(appDatabase);
+        workspaceRepository = new SqliteWorkspaceRepository(appDatabase);
+        workspaceService = new WorkspaceService(workspaceRepository, strategyRepository);
         portfolioRefreshController = new PortfolioRefreshController(
                 strategyRepository,
                 strategyOrderRepository,
@@ -1376,8 +1387,21 @@ public class TradingFrame extends JFrame {
         ));
 
         strategyTabs.setBorder(new EmptyBorder(0, 0, 0, 0));
-        strategyTabs.addTab(currentStrategiesHeadingText(), wrapGridWithSearch(currentStrategiesSearchPanel, strategyGrid));
-        strategyTabs.addTab(tradeHistoryHeadingText(), wrapGridWithSearch(tradeHistorySearchPanel, filledOrdersGrid));
+        // The coordinator owns the two base tabs (All Stocks + Trade History) and inserts a
+        // dynamic tab per active strategy workspace between them, re-parenting the shared grid.
+        JComponent strategiesGridWrapper = wrapGridWithSearch(currentStrategiesSearchPanel, strategyGrid);
+        JComponent historyGridWrapper = wrapGridWithSearch(tradeHistorySearchPanel, filledOrdersGrid);
+        strategyWorkspaceTabs = new StrategyWorkspaceTabs(
+                strategyTabs,
+                strategiesGridWrapper,
+                historyGridWrapper,
+                workspaceService,
+                () -> selectedViewMode,
+                this::onWorkspaceTabSelected,
+                this::currentStrategiesHeadingText,
+                this::tradeHistoryHeadingText
+        );
+        installWorkspaceTabContextMenu();
         wireGridSearchFields();
         refreshGridSearchVisibility();
 
@@ -1712,6 +1736,10 @@ public class TradingFrame extends JFrame {
                 this::refreshPanels,
                 this::updateStatusBar
         );
+        // Workspaces are mode-scoped: rebuild the dynamic tabs for the newly selected mode.
+        if (strategyWorkspaceTabs != null) {
+            strategyWorkspaceTabs.rebuild();
+        }
         refreshCapturePortfolioModeVisibility();
         updateHeaderModeStatus(currentBrokerType);
         refreshStrategyRuntimeServices(
@@ -2752,6 +2780,16 @@ public class TradingFrame extends JFrame {
                 "icons/smart-picks.svg",
                 () -> openSmartPicksTrendingStocksDialog(SmartPicksTrendingStocksDialog.StrategyUniverse.WEEKEND_REBOUND)
         ));
+        // One-click strategy-workspace creation: clicking a template creates the workspace and its
+        // tab immediately (no restart) and selects it.
+        smartPicksMenu.add(createStatusMenuHeader("New Strategy Workspace"));
+        for (StrategyWorkspaceTemplate template : StrategyWorkspaceTemplate.catalog()) {
+            smartPicksMenu.add(createStatusMenuItem(
+                    template.name(),
+                    "icons/add-stock-strategy.svg",
+                    () -> createWorkspaceFromTemplate(template)
+            ));
+        }
     }
 
     static List<String> smartPicksMenuLabels() {
@@ -5329,6 +5367,11 @@ public class TradingFrame extends JFrame {
                 if (!includeInCurrentStrategiesTab(managedStrategy)) {
                     return false;
                 }
+                // Workspace tab: show only this workspace's strategies. All Stocks (null) shows all.
+                if (selectedWorkspaceId != null
+                        && !selectedWorkspaceId.equals(managedStrategy.strategy.workspaceId())) {
+                    return false;
+                }
                 return query.isBlank() || matchesStockSymbol(managedStrategy.strategy.symbol(), query);
             }
         });
@@ -5536,7 +5579,103 @@ public class TradingFrame extends JFrame {
         if (strategyTabs.getTabCount() < 2) {
             return;
         }
-        strategyTabs.setTitleAt(1, tradeHistoryHeadingText());
+        // Trade History is always the last tab (workspace tabs are inserted before it).
+        strategyTabs.setTitleAt(strategyTabs.getTabCount() - 1, tradeHistoryHeadingText());
+    }
+
+    // Invoked by the workspace-tabs coordinator when the selected tab changes (null = All Stocks).
+    private void onWorkspaceTabSelected(String workspaceId) {
+        selectedWorkspaceId = workspaceId;
+        applyCurrentStrategiesRowFilter();
+        refreshCurrentStrategiesHeading();
+    }
+
+    /** Right-click a workspace tab to rename it or archive it (archive removes the tab, keeps records). */
+    private void installWorkspaceTabContextMenu() {
+        strategyTabs.addMouseListener(new MouseAdapter() {
+            @Override public void mousePressed(MouseEvent event) { maybeShow(event); }
+            @Override public void mouseReleased(MouseEvent event) { maybeShow(event); }
+
+            private void maybeShow(MouseEvent event) {
+                if (!event.isPopupTrigger()) {
+                    return;
+                }
+                int tabIndex = strategyTabs.indexAtLocation(event.getX(), event.getY());
+                String workspaceId = strategyWorkspaceTabs.workspaceIdAt(tabIndex);
+                if (workspaceId == null) {
+                    return; // All Stocks / Trade History are not editable.
+                }
+                showWorkspaceTabMenu(event, workspaceId, strategyTabs.getTitleAt(tabIndex));
+            }
+        });
+    }
+
+    private void showWorkspaceTabMenu(MouseEvent event, String workspaceId, String currentName) {
+        JPopupMenu menu = new JPopupMenu();
+        JMenuItem rename = new JMenuItem("Rename Strategy");
+        rename.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
+        rename.addActionListener(e -> {
+            String newName = JOptionPane.showInputDialog(this, "Rename strategy workspace:", currentName);
+            if (newName != null && !newName.isBlank()) {
+                strategyWorkspaceTabs.renameWorkspace(workspaceId, newName.trim());
+                userActionLog.completed("Rename Workspace", newName.trim());
+            }
+        });
+        JMenuItem archive = new JMenuItem("Archive Strategy");
+        archive.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
+        archive.addActionListener(e -> {
+            int choice = JOptionPane.showConfirmDialog(this,
+                    "Archive \"" + currentName + "\"? Its tab is removed but trade history is kept.",
+                    "Archive Strategy Workspace", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (choice == JOptionPane.YES_OPTION) {
+                strategyWorkspaceTabs.archiveSelectedWorkspace(workspaceId);
+                userActionLog.completed("Archive Workspace", currentName);
+            }
+        });
+        menu.add(rename);
+        menu.add(archive);
+        menu.show(event.getComponent(), event.getX(), event.getY());
+    }
+
+    private void createWorkspaceFromTemplate(StrategyWorkspaceTemplate template) {
+        String name = template.name();
+        if (template.isCustom()) {
+            name = JOptionPane.showInputDialog(this, "Name your strategy workspace:", "Custom Strategy");
+            if (name == null || name.isBlank()) {
+                userActionLog.canceled("Create Workspace");
+                return;
+            }
+            name = name.trim();
+        }
+        StrategyWorkspace created = strategyWorkspaceTabs.createAndSelect(name, template.isCustom() ? null : template.code());
+        log("[WORKSPACE] Created strategy workspace '" + created.name() + "' (" + created.code() + ") in "
+                + selectedModeLabel() + " mode.");
+        userActionLog.completed("Create Workspace", created.name());
+    }
+
+    // Context-menu action: move the strategy in the clicked row into a workspace (or back to
+    // All Stocks when workspaceId is null), then refresh the grid, filter, and tab counts.
+    private void assignStrategyRowToWorkspace(String workspaceId, int viewRow) {
+        if (viewRow < 0) {
+            return;
+        }
+        int modelRow = strategyTable.convertRowIndexToModel(viewRow);
+        if (modelRow < 0 || modelRow >= strategies.size()) {
+            return;
+        }
+        ManagedStrategy entry = strategies.get(modelRow);
+        if (!workspaceService.assignStrategy(entry.strategy.id(), workspaceId)) {
+            return;
+        }
+        syncStrategiesFromRepository();
+        refreshStrategyTableData();
+        applyCurrentStrategiesRowFilter();
+        refreshCurrentStrategiesHeading();
+        String workspaceName = workspaceId == null
+                ? "All Stocks"
+                : workspaceService.findById(workspaceId).map(StrategyWorkspace::name).orElse("workspace");
+        log("[" + entry.strategy.symbol() + "] Moved to " + workspaceName + ".");
+        userActionLog.completed("Move to Workspace", entry.strategy.symbol() + " -> " + workspaceName);
     }
 
     private String currentStrategiesHeadingText() {
@@ -6247,7 +6386,9 @@ public class TradingFrame extends JFrame {
                 this::buyMoreAtMarketPrice,
                 this::buyMoreAtLimitPrice,
                 this::sellStrategyAtMarketPlace,
-                this::repositionExpiredStrategy
+                this::repositionExpiredStrategy,
+                () -> workspaceService.activeWorkspaces(selectedViewMode),
+                this::assignStrategyRowToWorkspace
         ).show(event);
         return true;
     }

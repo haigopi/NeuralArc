@@ -1,13 +1,18 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.model.StrategyWorkspace;
+
 import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 import javax.swing.JPopupMenu;
 import javax.swing.JTable;
 import java.awt.Font;
 import java.awt.event.MouseEvent;
+import java.util.List;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
+import java.util.function.ObjIntConsumer;
+import java.util.function.Supplier;
 
 final class StrategyGridContextMenu {
     private final JTable table;
@@ -18,6 +23,9 @@ final class StrategyGridContextMenu {
     private final IntConsumer buyMoreAtLimitHandler;
     private final IntConsumer sellAtMarketPlaceHandler;
     private final IntConsumer repositionExpiredHandler;
+    private final Supplier<List<StrategyWorkspace>> workspacesProvider;
+    // (workspaceId, viewRow) — workspaceId is null to move the row back to All Stocks (unassigned).
+    private final ObjIntConsumer<String> assignToWorkspaceHandler;
 
     StrategyGridContextMenu(
             JTable table,
@@ -27,7 +35,9 @@ final class StrategyGridContextMenu {
             IntConsumer buyMoreAtMarketHandler,
             IntConsumer buyMoreAtLimitHandler,
             IntConsumer sellAtMarketPlaceHandler,
-            IntConsumer repositionExpiredHandler
+            IntConsumer repositionExpiredHandler,
+            Supplier<List<StrategyWorkspace>> workspacesProvider,
+            ObjIntConsumer<String> assignToWorkspaceHandler
     ) {
         this.table = table;
         this.menuFont = menuFont;
@@ -37,6 +47,8 @@ final class StrategyGridContextMenu {
         this.buyMoreAtLimitHandler = buyMoreAtLimitHandler;
         this.sellAtMarketPlaceHandler = sellAtMarketPlaceHandler;
         this.repositionExpiredHandler = repositionExpiredHandler;
+        this.workspacesProvider = workspacesProvider;
+        this.assignToWorkspaceHandler = assignToWorkspaceHandler;
     }
 
     boolean show(MouseEvent event) {
@@ -54,8 +66,33 @@ final class StrategyGridContextMenu {
         JPopupMenu popup = new JPopupMenu();
         popup.add(copyMenu(viewRow, viewCol));
         popup.add(positionMenu(viewRow));
+        JMenu workspaceMenu = workspaceMenu(viewRow);
+        if (workspaceMenu != null) {
+            popup.add(workspaceMenu);
+        }
         popup.show(event.getComponent(), event.getX(), event.getY());
         return true;
+    }
+
+    private JMenu workspaceMenu(int viewRow) {
+        if (workspacesProvider == null || assignToWorkspaceHandler == null) {
+            return null;
+        }
+        List<StrategyWorkspace> workspaces = workspacesProvider.get();
+        if (workspaces == null || workspaces.isEmpty()) {
+            return null; // No workspaces created yet — nothing to move into.
+        }
+        JMenu menu = new JMenu("Move to Workspace");
+        menu.setFont(menuFont);
+        JMenuItem none = item("All Stocks (unassigned)");
+        none.addActionListener(e -> assignToWorkspaceHandler.accept(null, viewRow));
+        menu.add(none);
+        for (StrategyWorkspace workspace : workspaces) {
+            JMenuItem target = item(workspace.name());
+            target.addActionListener(e -> assignToWorkspaceHandler.accept(workspace.id(), viewRow));
+            menu.add(target);
+        }
+        return menu;
     }
 
     private JMenu copyMenu(int viewRow, int viewCol) {
