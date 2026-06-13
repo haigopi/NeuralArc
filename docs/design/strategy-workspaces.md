@@ -354,18 +354,24 @@ Each phase is its own PR, independently shippable, behind the backward-compat gu
 
 ---
 
-## 16. Open questions
+## 16. Open questions — RESOLVED
 
-- **Q1.** Does `DuplicateSymbolPolicy` currently allow two active `Strategy` rows for the
-  same symbol/mode? If not, Phase 3 must scope the policy by workspace.
-- **Q2.** Embed `stage` in `client_order_id` too, or keep the spec's exact format and rely
-  on the persisted `StrategyOrder.stage`? (Default: keep spec format.)
-- **Q3.** Are workspace **templates** static-in-code for v1, or persisted/editable from the
-  start? (Default: static in v1, persisted later.)
-- **Q4.** "Win Rate" definition — closed strategies with realized P&L > 0 over total
-  closed? Confirm the formula for the P&L summary.
-- **Q5.** Hard-delete policy — only allow hard delete of an empty, never-traded workspace;
-  otherwise archive. Confirm.
+- **Q1. Duplicate symbols → decided: honor the existing setting.** NeuralArc already has
+  the `allowDuplicateSymbolStrategies` setting (`AppSettingsService`, SettingsDialog
+  "Allow multiple strategies for the same symbol"). We honor that setting as-is; we do
+  **not** add workspace-specific duplicate logic.
+- **Q2. `client_order_id` → decided: embed `stage`.** Format becomes
+  `NA_<MODE>_<CODE>_<SYMBOL>_<STAGE>_<TIMESTAMP>_<SHORTUUID>` (stage may contain
+  underscores; the parser uses fixed front/back anchors). Implemented in
+  `util.ClientOrderId` (Phase 3); wiring into the live order path is Phase 3b.
+- **Q3. Templates → decided: static in code** (`model.StrategyWorkspaceTemplate`).
+- **Q4. Win rate → decided: from realized sell trades, not closed strategies.**
+  `winRate = profitable sells / total sells`. `WorkspaceAccounting` computes it from
+  per-sell outcomes; closed-strategy counts are not used.
+- **Q5. Delete → decided: delete only when empty, otherwise reject (no archive).**
+  `WorkspaceService.delete` returns `DELETED` / `REJECTED_NOT_EMPTY` / `NOT_FOUND`; a
+  non-empty workspace must have its strategies moved out first. The `archived` schema
+  column remains (Phase 1) but is unused by the service/UI.
 
 ---
 

@@ -5621,20 +5621,36 @@ public class TradingFrame extends JFrame {
                 userActionLog.completed("Rename Workspace", newName.trim());
             }
         });
-        JMenuItem archive = new JMenuItem("Archive Strategy");
-        archive.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
-        archive.addActionListener(e -> {
-            int choice = JOptionPane.showConfirmDialog(this,
-                    "Archive \"" + currentName + "\"? Its tab is removed but trade history is kept.",
-                    "Archive Strategy Workspace", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-            if (choice == JOptionPane.YES_OPTION) {
-                strategyWorkspaceTabs.archiveSelectedWorkspace(workspaceId);
-                userActionLog.completed("Archive Workspace", currentName);
-            }
-        });
+        JMenuItem delete = new JMenuItem("Delete Strategy");
+        delete.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
+        delete.addActionListener(e -> deleteWorkspaceTab(workspaceId, currentName));
         menu.add(rename);
-        menu.add(archive);
+        menu.add(delete);
         menu.show(event.getComponent(), event.getX(), event.getY());
+    }
+
+    // Delete a workspace only when empty (Q5): otherwise reject and tell the user to move its
+    // strategies out first, so trade records are never orphaned. There is no archive state.
+    private void deleteWorkspaceTab(String workspaceId, String currentName) {
+        int strategyCount = workspaceService.strategiesIn(workspaceId).size();
+        if (strategyCount > 0) {
+            JOptionPane.showMessageDialog(this,
+                    "Can't delete \"" + currentName + "\": it still owns " + strategyCount
+                            + " strategy(ies). Move them to another strategy (or All Stocks) first.",
+                    "Delete Strategy Workspace", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int choice = JOptionPane.showConfirmDialog(this,
+                "Delete the empty strategy workspace \"" + currentName + "\"?",
+                "Delete Strategy Workspace", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (choice != JOptionPane.YES_OPTION) {
+            return;
+        }
+        WorkspaceService.DeleteResult result = strategyWorkspaceTabs.deleteWorkspace(workspaceId);
+        if (result == WorkspaceService.DeleteResult.DELETED) {
+            log("[WORKSPACE] Deleted empty strategy workspace '" + currentName + "'.");
+            userActionLog.completed("Delete Workspace", currentName);
+        }
     }
 
     private void createWorkspaceFromTemplate(StrategyWorkspaceTemplate template) {

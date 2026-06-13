@@ -41,16 +41,38 @@ class WorkspaceServiceTest {
     }
 
     @Test
-    void activeWorkspacesAreModeScopedAndExcludeArchived() {
-        StrategyWorkspace paper = service.create("Momentum Lab", StrategyMode.PAPER);
+    void activeWorkspacesAreModeScoped() {
+        service.create("Momentum Lab", StrategyMode.PAPER);
         service.create("VWAP Desk", StrategyMode.LIVE);
 
         assertEquals(1, service.activeWorkspaces(StrategyMode.PAPER).size());
         assertEquals(1, service.activeWorkspaces(StrategyMode.LIVE).size());
+    }
 
-        service.archive(paper.id());
+    @Test
+    void deleteRemovesAnEmptyWorkspace() {
+        StrategyWorkspace workspace = service.create("Empty Book", StrategyMode.PAPER);
+        assertEquals(WorkspaceService.DeleteResult.DELETED, service.delete(workspace.id()));
         assertTrue(service.activeWorkspaces(StrategyMode.PAPER).isEmpty());
-        assertEquals(1, service.allWorkspaces(StrategyMode.PAPER).size()); // archived still stored
+    }
+
+    @Test
+    void deleteRejectsANonEmptyWorkspace() {
+        StrategyWorkspace workspace = service.create("Busy Book", StrategyMode.PAPER);
+        strategies.save(paperStrategy("s1", StrategyMode.PAPER));
+        service.assignStrategy("s1", workspace.id());
+
+        assertEquals(WorkspaceService.DeleteResult.REJECTED_NOT_EMPTY, service.delete(workspace.id()));
+        assertEquals(1, service.activeWorkspaces(StrategyMode.PAPER).size()); // still present
+
+        // After moving the strategy out, deletion succeeds.
+        service.assignStrategy("s1", null);
+        assertEquals(WorkspaceService.DeleteResult.DELETED, service.delete(workspace.id()));
+    }
+
+    @Test
+    void deleteUnknownWorkspaceReportsNotFound() {
+        assertEquals(WorkspaceService.DeleteResult.NOT_FOUND, service.delete("missing"));
     }
 
     @Test

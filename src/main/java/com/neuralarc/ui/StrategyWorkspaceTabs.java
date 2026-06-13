@@ -111,12 +111,16 @@ final class StrategyWorkspaceTabs {
         return created;
     }
 
-    void archiveSelectedWorkspace(String workspaceId) {
+    /** Deletes a workspace (only when empty) and removes its tab; rebuilds on success. */
+    WorkspaceService.DeleteResult deleteWorkspace(String workspaceId) {
         if (workspaceId == null) {
-            return;
+            return WorkspaceService.DeleteResult.NOT_FOUND;
         }
-        workspaceService.archive(workspaceId);
-        rebuild();
+        WorkspaceService.DeleteResult result = workspaceService.delete(workspaceId);
+        if (result == WorkspaceService.DeleteResult.DELETED) {
+            rebuild();
+        }
+        return result;
     }
 
     void renameWorkspace(String workspaceId, String newName) {

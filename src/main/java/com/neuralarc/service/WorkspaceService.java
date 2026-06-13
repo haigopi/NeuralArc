@@ -5,12 +5,13 @@ import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyWorkspace;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Create / rename / archive strategy workspaces and assign strategies to them.
+ * Create / rename / delete strategy workspaces and assign strategies to them.
  *
  * <p>Honors Paper/Live isolation: workspaces are mode-scoped and a strategy can only join a
  * workspace of its own mode. "Delete" in the UI maps to {@link #archive(String)} so historical
@@ -53,26 +54,44 @@ public final class WorkspaceService {
         });
     }
 
-    /** Archive (the UI "delete"): hides the workspace and removes its tab, retaining all records. */
-    public Optional<StrategyWorkspace> archive(String id) {
-        return setArchived(id, true);
+    /**
+     * Deletes a workspace, but only when it owns no strategies. A non-empty workspace is rejected
+     * (the operator must move/remove its strategies first) so trade records are never orphaned.
+     */
+    public DeleteResult delete(String id) {
+        if (workspaceRepository.findById(id).isEmpty()) {
+            return DeleteResult.NOT_FOUND;
+        }
+        if (!strategiesIn(id).isEmpty()) {
+            return DeleteResult.REJECTED_NOT_EMPTY;
+        }
+        workspaceRepository.deleteById(id);
+        return DeleteResult.DELETED;
     }
 
-    public Optional<StrategyWorkspace> unarchive(String id) {
-        return setArchived(id, false);
+    /** Strategies currently assigned to a workspace. */
+    public List<Strategy> strategiesIn(String workspaceId) {
+        List<Strategy> result = new ArrayList<>();
+        if (workspaceId == null) {
+            return result;
+        }
+        for (Strategy strategy : strategyRepository.findAll()) {
+            if (workspaceId.equals(strategy.workspaceId())) {
+                result.add(strategy);
+            }
+        }
+        return result;
     }
 
-    private Optional<StrategyWorkspace> setArchived(String id, boolean archived) {
-        return workspaceRepository.findById(id).map(existing -> {
-            StrategyWorkspace updated = existing.withArchived(archived);
-            workspaceRepository.save(updated);
-            return updated;
-        });
-    }
-
-    /** Non-archived workspaces for the mode — what the dynamic tabs render. */
+    /** Workspaces shown as tabs for the mode. */
     public List<StrategyWorkspace> activeWorkspaces(StrategyMode mode) {
         return workspaceRepository.findActive(mode);
+    }
+
+    public enum DeleteResult {
+        DELETED,
+        REJECTED_NOT_EMPTY,
+        NOT_FOUND
     }
 
     public List<StrategyWorkspace> allWorkspaces(StrategyMode mode) {
