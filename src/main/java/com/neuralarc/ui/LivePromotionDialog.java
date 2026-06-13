@@ -154,8 +154,9 @@ final class LivePromotionDialog extends JDialog {
         baseBuyQtyField = intInput(strategy.baseBuyQuantity());
         addInputRow(content, gbc, "Base Buy Qty", baseBuyQtyField);
 
-        // Loss buy levels stay optional and selectable regardless of the paper setting.
-        lossBuyLevelsCheckBox = new JCheckBox("Include loss buy levels");
+        // Use the same enable-toggle wording as the Strategy Creation dialog ("Enable Loss Buy
+        // Levels" / "Enable Stop Loss") so promotion stays consistent with strategy creation.
+        lossBuyLevelsCheckBox = new JCheckBox("Enable Loss Buy Levels");
         lossBuyLevelsCheckBox.setOpaque(false);
         lossBuyLevelsCheckBox.setForeground(TEXT_PRIMARY);
         lossBuyLevelsCheckBox.setFont(FontLoader.ui(Font.BOLD, 10f));

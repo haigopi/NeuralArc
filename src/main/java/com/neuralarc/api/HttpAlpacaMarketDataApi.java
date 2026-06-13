@@ -144,7 +144,7 @@ public class HttpAlpacaMarketDataApi implements AlpacaMarketDataApi {
                 .GET()
                 .build();
         try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendTracked(request);
             String requestId = response.headers().firstValue("X-Request-ID").orElse("");
             if (!requestId.isBlank()) {
                 requestIdStore.record("marketData", "GET", url, requestId);
@@ -208,6 +208,18 @@ public class HttpAlpacaMarketDataApi implements AlpacaMarketDataApi {
             throw new AlpacaMarketDataException("Stock symbol must not be blank.");
         }
         return symbol.trim().toUpperCase();
+    }
+
+    /** Sends a request while recording it in {@link ApiCallMetrics} for the network-usage view. */
+    private HttpResponse<String> sendTracked(HttpRequest request) throws java.io.IOException, InterruptedException {
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            ApiCallMetrics.record(response.statusCode() < 500);
+            return response;
+        } catch (java.io.IOException | InterruptedException ex) {
+            ApiCallMetrics.record(false);
+            throw ex;
+        }
     }
 }
 
