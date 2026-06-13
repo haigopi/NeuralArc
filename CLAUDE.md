@@ -21,7 +21,8 @@ Packaging/release scripts live in `scripts/` (`build-all.sh`, `package-macos.sh`
 ## Architecture
 
 All code is under `src/main/java/com/neuralarc/`, tests mirror it under `src/test/java/com/neuralarc/`.
-
+Ensure all the tests were written. 
+Be consistant in the UI look and feel with the rest of the application
 **Layers and data flow:**
 - `NeuralArc.java` — entrypoint; bootstraps FlatLaf look-and-feel and the main window.
 - `ui/` — Swing UI. `TradingFrame` is the main window; logic is deliberately split out into controllers/coordinators (`StrategyActionsController`, `PortfolioActionsController`, `TradeStreamLifecycleCoordinator`, `ConnectionLifecycleCoordinator`) and `TradingRuntimeSupport`, which owns runtime wiring of broker clients and mode-specific services. UI renders from cached snapshots only — never broker calls from renderers.

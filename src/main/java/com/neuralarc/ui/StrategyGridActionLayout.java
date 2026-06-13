@@ -10,7 +10,7 @@ final class StrategyGridActionLayout {
     // Generous padding so the centered buttons keep a clear margin (~24px) on each side and
     // the right-most button never sits flush against the table edge / vertical scrollbar,
     // which was clipping the Delete button.
-    private static final int COLUMN_PADDING = 48;
+    private static final int COLUMN_PADDING = 68;
 
     private StrategyGridActionLayout() {
     }
