@@ -16,7 +16,11 @@ class GapRocketPanelTest {
         assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("NVDA"));
         assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("Market Trend Filter"));
         assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("Entry Style"));
-        assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("Opening Range Duration"));
+        assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("Opening Range Breakout"));
+        assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("Breakout Retest"));
+        assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("SPY Green"));
+        assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("QQQ Green"));
+        assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("5 minutes reacts fastest"));
         panel.analyzeButton().doClick();
         assertTrue(opened.get());
     }

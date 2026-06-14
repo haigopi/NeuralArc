@@ -7,9 +7,11 @@ public final class GapRocketPanel extends JPanel {
     public static final String DESCRIPTION = "Scan premarket gap-up stocks, rank the strongest movers, and add the best candidates to this strategy grid for review.";
     public static final String EXAMPLE = "Example: NVDA is up 7% premarket after earnings, trades 5M shares before the open, holds 6x relative volume, and retests the opening-range high before becoming Ready to Buy.";
     public static final String FIELD_GUIDANCE = "Know before you make a next move:\n"
-            + "Market Trend Filter checks whether SPY, QQQ, either index, or no index filter must be green before recommendations qualify.\n"
-            + "Entry Style controls how the stock is watched after the open: Opening Range Breakout, Breakout Retest, Pullback to VWAP, or Manual Review Only.\n"
-            + "Opening Range Duration chooses the first 5, 15, or 30 minutes after 9:30 AM ET used to define the high/low breakout area.";
+            + "VWAP is the volume-weighted average price; a VWAP pullback looks for price to hold near that intraday fair-value line.\n"
+            + "SPY Green means the S&P 500 ETF is above its previous close; QQQ Green means the Nasdaq 100 ETF is above its previous close.\n"
+            + "Opening Range Breakout waits for price to break above the high from the first 5, 15, or 30 minutes after 9:30 AM ET.\n"
+            + "Breakout Retest waits for that breakout first, then looks for price to pull back near the breakout area before marking Ready to Buy.\n"
+            + "5 minutes reacts fastest but is noisier, 15 minutes balances speed and confirmation, and 30 minutes is slower but filters more early whipsaw.";
     public static final String EMPTY_STATE_TEXT = DESCRIPTION + "\n" + EXAMPLE + "\n" + FIELD_GUIDANCE;
     public static final String ANALYZE_BUTTON_TEXT = "Analyze Gap Stocks";
     private final JButton analyzeButton = new JButton(ANALYZE_BUTTON_TEXT);
@@ -28,12 +30,15 @@ public final class GapRocketPanel extends JPanel {
                 + DESCRIPTION
                 + "<br><br>"
                 + EXAMPLE
-                + "<br><br><div style='text-align:left;'>"
-                + "<b>Know before you make a next move:</b><br>"
-                + "<b>Market Trend Filter:</b> checks whether SPY, QQQ, either index, or no index filter must be green before recommendations qualify.<br>"
-                + "<b>Entry Style:</b> controls how each stock is watched after the open: Opening Range Breakout, Breakout Retest, Pullback to VWAP, or Manual Review Only.<br>"
-                + "<b>Opening Range Duration:</b> chooses the first 5, 15, or 30 minutes after 9:30 AM ET used to define the high/low breakout area."
-                + "</div></div></html>");
+                + "<br><br><div style='text-align:left; font-size:9px;'>"
+                + "<b>Know before you make a next move:</b>"
+                + "<ul style='margin-top:4px; padding-left:14px;'>"
+                + "<li><b>VWAP:</b> volume-weighted average price; a VWAP pullback looks for price to hold near that intraday fair-value line.</li>"
+                + "<li><b>SPY / QQQ Green:</b> SPY tracks the S&amp;P 500 and QQQ tracks the Nasdaq 100. Green means that ETF is above its previous close.</li>"
+                + "<li><b>Opening Range Breakout:</b> waits for price to break above the high from the first 5, 15, or 30 minutes after 9:30 AM ET.</li>"
+                + "<li><b>Breakout Retest:</b> waits for that breakout first, then looks for price to pull back near the breakout area before marking Ready to Buy.</li>"
+                + "<li><b>5 / 15 / 30 minutes:</b> 5 reacts fastest but is noisier; 15 balances speed and confirmation; 30 is slower but filters more early whipsaw.</li>"
+                + "</ul></div></div></html>");
         text.setAlignmentX(Component.CENTER_ALIGNMENT);
         analyzeButton.setAlignmentX(Component.CENTER_ALIGNMENT);
         analyzeButton.addActionListener(e -> { if (onAnalyze != null) onAnalyze.run(); });
