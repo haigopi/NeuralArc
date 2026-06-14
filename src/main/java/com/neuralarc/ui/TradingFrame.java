@@ -365,6 +365,7 @@ public class TradingFrame extends JFrame {
     private final JPanel currentStrategiesSearchPanel = createGridSearchPanel("Search stocks:", currentStrategiesSearchField);
     private final JPanel tradeHistorySearchPanel = createGridSearchPanel("Search stocks:", tradeHistorySearchField);
     private final JButton gapRocketAnalyzeButton = new JButton(GapRocketPanel.ANALYZE_BUTTON_TEXT);
+    private final JButton gapRocketPlaceOrdersButton = new JButton("Place All Pending Limit Buys");
     private JPanel headerPanel;
     private GapRocketConfig lastGapRocketConfig;
     private CardLayout strategiesGridCardLayout;
@@ -5338,7 +5339,7 @@ public class TradingFrame extends JFrame {
         strategiesGridCardPanel = new JPanel(strategiesGridCardLayout);
         strategiesGridCardPanel.setOpaque(false);
         strategiesGridCardPanel.add(grid, STRATEGIES_GRID_CARD);
-        strategiesGridCardPanel.add(new GapRocketPanel(this::openGapRocketAnalysisDialog, false), GAP_ROCKET_EMPTY_CARD);
+        strategiesGridCardPanel.add(new GapRocketPanel(this::openGapRocketAnalysisDialog, true), GAP_ROCKET_EMPTY_CARD);
         strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
         return strategiesGridCardPanel;
     }
@@ -5352,8 +5353,14 @@ public class TradingFrame extends JFrame {
         gapRocketAnalyzeButton.setFocusPainted(false);
         gapRocketAnalyzeButton.setToolTipText(TooltipStyler.text(GapRocketPanel.EMPTY_STATE_TEXT, 420));
         gapRocketAnalyzeButton.addActionListener(event -> openGapRocketAnalysisDialog());
+        gapRocketPlaceOrdersButton.setVisible(false);
+        gapRocketPlaceOrdersButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        gapRocketPlaceOrdersButton.setFocusPainted(false);
+        gapRocketPlaceOrdersButton.setToolTipText(TooltipStyler.text("Submit Alpaca limit buy orders for all Gap Rocket rows still pending order placement. Uses each row's base buy price and current Paper/Live mode."));
+        gapRocketPlaceOrdersButton.addActionListener(event -> placeAllGapRocketPendingLimitBuys());
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 2));
         actions.setOpaque(false);
+        actions.add(gapRocketPlaceOrdersButton);
         actions.add(gapRocketAnalyzeButton);
         bottom.add(actions, BorderLayout.EAST);
         return bottom;
@@ -5668,7 +5675,8 @@ public class TradingFrame extends JFrame {
         }
         boolean selectedGapRocket = isSelectedGapRocketWorkspace();
         boolean showEmptyState = selectedGapRocket && selectedWorkspaceStrategyCount() == 0;
-        gapRocketAnalyzeButton.setVisible(selectedGapRocket);
+        gapRocketAnalyzeButton.setVisible(selectedGapRocket && !showEmptyState);
+        gapRocketPlaceOrdersButton.setVisible(selectedGapRocket && !showEmptyState);
         strategiesGridCardLayout.show(strategiesGridCardPanel, showEmptyState ? GAP_ROCKET_EMPTY_CARD : STRATEGIES_GRID_CARD);
     }
 
@@ -5690,6 +5698,54 @@ public class TradingFrame extends JFrame {
                 .filter(strategy -> strategy.mode() == selectedViewMode)
                 .filter(strategy -> selectedWorkspaceId.equals(strategy.workspaceId()))
                 .count();
+    }
+
+
+    private void placeAllGapRocketPendingLimitBuys() {
+        if (selectedWorkspaceId == null || !isSelectedGapRocketWorkspace()) {
+            return;
+        }
+        StrategyService service = strategyServiceForMode(selectedViewMode);
+        if (service == null) {
+            JOptionPane.showMessageDialog(this,
+                    selectedModeLabel() + " Alpaca credentials are required before placing Gap Rocket limit buys.",
+                    selectedModeLabel() + " Credentials Required",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int submitted = 0;
+        int skipped = 0;
+        List<Strategy> pending = strategyRepository.findAll().stream()
+                .filter(strategy -> strategy.mode() == selectedViewMode)
+                .filter(strategy -> selectedWorkspaceId.equals(strategy.workspaceId()))
+                .filter(this::isGapRocketPendingOrderPlacement)
+                .toList();
+        for (Strategy strategy : pending) {
+            StrategyService.StrategyCreationResult result = service.createAndActivate(strategy);
+            if (result.success()) {
+                submitted++;
+                log("[Gap Rocket] Submitted base limit buy for " + strategy.symbol()
+                        + " @ $" + strategy.baseBuyLimitPrice().toPlainString()
+                        + ", clientOrderId=" + result.clientOrderId());
+            } else {
+                skipped++;
+                log("[Gap Rocket] Failed to submit base limit buy for " + strategy.symbol() + ": " + result.error());
+            }
+        }
+        syncStrategiesFromRepository();
+        refreshStrategyTableData();
+        applyCurrentStrategiesRowFilter();
+        refreshWorkspaceSummary();
+        updateStatusBar();
+        JOptionPane.showMessageDialog(this,
+                "Submitted " + submitted + " Gap Rocket limit buy order" + (submitted == 1 ? "" : "s") + "."
+                        + (skipped > 0 ? "\nSkipped " + skipped + " row" + (skipped == 1 ? "" : "s") + " due to validation or broker errors." : ""),
+                "Gap Rocket Orders",
+                skipped > 0 ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private boolean isGapRocketPendingOrderPlacement(Strategy strategy) {
+        return strategy != null && "GAP_ROCKET_RECOMMENDED".equalsIgnoreCase(strategy.latestOrderStatus());
     }
 
     private void openGapRocketAnalysisDialog() {
@@ -5718,12 +5774,30 @@ public class TradingFrame extends JFrame {
         }
         GapRocketStrategyFactory factory = new GapRocketStrategyFactory();
         int added = 0;
+        int updated = 0;
         int skipped = 0;
         String firstAddedStrategyId = null;
         for (GapRocketRecommendation recommendation : recommendations) {
-            if (gapRocketSymbolAlreadyTracked(recommendation.symbol(), config.mode())) {
-                skipped++;
-                log("[Gap Rocket] Skipped " + recommendation.symbol() + ": already tracked in this strategy tab.");
+            Optional<Strategy> existing = findGapRocketTrackedStrategy(recommendation.symbol(), config.mode());
+            if (existing.isPresent()) {
+                Strategy existingStrategy = existing.get();
+                if (isGapRocketPendingOrderPlacement(existingStrategy)) {
+                    existingStrategy.setBaseBuyLimitPrice(recommendation.plannedEntryPrice());
+                    existingStrategy.setStopLossPrice(recommendation.stopLossPrice());
+                    existingStrategy.setTargetSellPrice(recommendation.takeProfitPrice());
+                    existingStrategy.setLastEvent("Gap-and-Go recommendation refreshed: score=" + recommendation.strategyScore()
+                            + ", plannedEntry=$" + recommendation.plannedEntryPrice().toPlainString()
+                            + ", target=$" + recommendation.takeProfitPrice().toPlainString()
+                            + ". No broker order was submitted.");
+                    strategyRepository.save(existingStrategy);
+                    updated++;
+                    log("[Gap Rocket] Updated existing " + recommendation.symbol()
+                            + " plannedEntry=$" + recommendation.plannedEntryPrice().toPlainString()
+                            + " target=$" + recommendation.takeProfitPrice().toPlainString() + ".");
+                } else {
+                    skipped++;
+                    log("[Gap Rocket] Skipped " + recommendation.symbol() + ": already has an order or active state in this strategy tab.");
+                }
                 continue;
             }
             Strategy strategy = factory.toStrategy(
@@ -5756,20 +5830,21 @@ public class TradingFrame extends JFrame {
         }
         String summary = "[Gap Rocket] Added " + added + " Gap-and-Go candidate" + (added == 1 ? "" : "s")
                 + " to the visible Gap Rocket grid"
+                + (updated > 0 ? "; refreshed " + updated + " existing pending row" + (updated == 1 ? "" : "s") : "")
                 + (skipped > 0 ? "; skipped " + skipped + " duplicate symbol" + (skipped == 1 ? "" : "s") : "")
                 + ". No broker orders were submitted.";
         log(summary);
-        if (added == 0 && skipped > 0) {
+        if (added == 0 && (updated > 0 || skipped > 0)) {
             log("[Gap Rocket] Qualifying symbols are already in this tab; showing the existing grid.");
         }
     }
 
-    private boolean gapRocketSymbolAlreadyTracked(String symbol, StrategyMode mode) {
-        return strategies.stream()
-                .map(entry -> entry.strategy)
-                .anyMatch(strategy -> strategy.mode() == mode
-                        && selectedWorkspaceId.equals(strategy.workspaceId())
-                        && strategy.symbol().equalsIgnoreCase(symbol));
+    private Optional<Strategy> findGapRocketTrackedStrategy(String symbol, StrategyMode mode) {
+        return strategyRepository.findAll().stream()
+                .filter(strategy -> strategy.mode() == mode)
+                .filter(strategy -> selectedWorkspaceId.equals(strategy.workspaceId()))
+                .filter(strategy -> strategy.symbol().equalsIgnoreCase(symbol))
+                .findFirst();
     }
 
     // Builds the per-tab P&L summary for the selected workspace (or All Stocks) from cached
