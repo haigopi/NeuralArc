@@ -14,6 +14,9 @@ class GapRocketPanelTest {
         assertEquals(GapRocketPanel.ANALYZE_BUTTON_TEXT, panel.analyzeButton().getText());
         assertFalse(GapRocketPanel.EMPTY_STATE_TEXT.contains("Gap Rocket is ready"));
         assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("NVDA"));
+        assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("Market Trend Filter"));
+        assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("Entry Style"));
+        assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("Opening Range Duration"));
         panel.analyzeButton().doClick();
         assertTrue(opened.get());
     }

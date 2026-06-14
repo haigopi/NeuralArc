@@ -6,7 +6,11 @@ import java.awt.*;
 public final class GapRocketPanel extends JPanel {
     public static final String DESCRIPTION = "Scan premarket gap-up stocks, rank the strongest movers, and add the best candidates to this strategy grid for review.";
     public static final String EXAMPLE = "Example: NVDA is up 7% premarket after earnings, trades 5M shares before the open, holds 6x relative volume, and retests the opening-range high before becoming Ready to Buy.";
-    public static final String EMPTY_STATE_TEXT = DESCRIPTION + "\n" + EXAMPLE;
+    public static final String FIELD_GUIDANCE = "Know before you make a next move:\n"
+            + "Market Trend Filter checks whether SPY, QQQ, either index, or no index filter must be green before recommendations qualify.\n"
+            + "Entry Style controls how the stock is watched after the open: Opening Range Breakout, Breakout Retest, Pullback to VWAP, or Manual Review Only.\n"
+            + "Opening Range Duration chooses the first 5, 15, or 30 minutes after 9:30 AM ET used to define the high/low breakout area.";
+    public static final String EMPTY_STATE_TEXT = DESCRIPTION + "\n" + EXAMPLE + "\n" + FIELD_GUIDANCE;
     public static final String ANALYZE_BUTTON_TEXT = "Analyze Gap Stocks";
     private final JButton analyzeButton = new JButton(ANALYZE_BUTTON_TEXT);
 
@@ -24,7 +28,12 @@ public final class GapRocketPanel extends JPanel {
                 + DESCRIPTION
                 + "<br><br>"
                 + EXAMPLE
-                + "</div></html>");
+                + "<br><br><div style='text-align:left;'>"
+                + "<b>Know before you make a next move:</b><br>"
+                + "<b>Market Trend Filter:</b> checks whether SPY, QQQ, either index, or no index filter must be green before recommendations qualify.<br>"
+                + "<b>Entry Style:</b> controls how each stock is watched after the open: Opening Range Breakout, Breakout Retest, Pullback to VWAP, or Manual Review Only.<br>"
+                + "<b>Opening Range Duration:</b> chooses the first 5, 15, or 30 minutes after 9:30 AM ET used to define the high/low breakout area."
+                + "</div></div></html>");
         text.setAlignmentX(Component.CENTER_ALIGNMENT);
         analyzeButton.setAlignmentX(Component.CENTER_ALIGNMENT);
         analyzeButton.addActionListener(e -> { if (onAnalyze != null) onAnalyze.run(); });
