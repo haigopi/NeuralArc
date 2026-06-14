@@ -364,6 +364,7 @@ public class TradingFrame extends JFrame {
     private final JButton tradeHistoryGroupByButton = new JButton("Group By Menu: Symbol");
     private final JPanel currentStrategiesSearchPanel = createGridSearchPanel("Search stocks:", currentStrategiesSearchField);
     private final JPanel tradeHistorySearchPanel = createGridSearchPanel("Search stocks:", tradeHistorySearchField);
+    private final JButton gapRocketAnalyzeButton = new JButton(GapRocketPanel.ANALYZE_BUTTON_TEXT);
     private JPanel headerPanel;
     private GapRocketConfig lastGapRocketConfig;
     private CardLayout strategiesGridCardLayout;
@@ -1415,7 +1416,7 @@ public class TradingFrame extends JFrame {
         workspaceSummaryLabel.setForeground(DARK_BTN_FG);
         workspaceSummaryLabel.setBorder(new EmptyBorder(6, 14, 4, 14));
         if (strategiesGridWrapper instanceof JPanel strategiesPanel) {
-            strategiesPanel.add(workspaceSummaryLabel, BorderLayout.SOUTH);
+            strategiesPanel.add(createStrategiesBottomPanel(), BorderLayout.SOUTH);
         }
         JComponent historyGridWrapper = wrapGridWithSearch(tradeHistorySearchPanel, filledOrdersGrid);
         strategyWorkspaceTabs = new StrategyWorkspaceTabs(
@@ -5327,9 +5328,24 @@ public class TradingFrame extends JFrame {
         strategiesGridCardPanel = new JPanel(strategiesGridCardLayout);
         strategiesGridCardPanel.setOpaque(false);
         strategiesGridCardPanel.add(grid, STRATEGIES_GRID_CARD);
-        strategiesGridCardPanel.add(new GapRocketPanel(this::openGapRocketAnalysisDialog), GAP_ROCKET_EMPTY_CARD);
+        strategiesGridCardPanel.add(new GapRocketPanel(this::openGapRocketAnalysisDialog, false), GAP_ROCKET_EMPTY_CARD);
         strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
         return strategiesGridCardPanel;
+    }
+
+    private JPanel createStrategiesBottomPanel() {
+        JPanel bottom = new JPanel(new BorderLayout());
+        bottom.setOpaque(false);
+        bottom.add(workspaceSummaryLabel, BorderLayout.CENTER);
+        gapRocketAnalyzeButton.setVisible(false);
+        gapRocketAnalyzeButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        gapRocketAnalyzeButton.setFocusPainted(false);
+        gapRocketAnalyzeButton.addActionListener(event -> openGapRocketAnalysisDialog());
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 2));
+        actions.setOpaque(false);
+        actions.add(gapRocketAnalyzeButton);
+        bottom.add(actions, BorderLayout.EAST);
+        return bottom;
     }
 
     private JComponent wrapGridWithSearch(JPanel searchPanel, JComponent grid) {
@@ -5639,7 +5655,9 @@ public class TradingFrame extends JFrame {
         if (strategiesGridCardLayout == null || strategiesGridCardPanel == null) {
             return;
         }
-        boolean showEmptyState = isSelectedGapRocketWorkspace() && selectedWorkspaceStrategyCount() == 0;
+        boolean selectedGapRocket = isSelectedGapRocketWorkspace();
+        boolean showEmptyState = selectedGapRocket && selectedWorkspaceStrategyCount() == 0;
+        gapRocketAnalyzeButton.setVisible(selectedGapRocket);
         strategiesGridCardLayout.show(strategiesGridCardPanel, showEmptyState ? GAP_ROCKET_EMPTY_CARD : STRATEGIES_GRID_CARD);
     }
 
@@ -5690,6 +5708,7 @@ public class TradingFrame extends JFrame {
         GapRocketStrategyFactory factory = new GapRocketStrategyFactory();
         int added = 0;
         int skipped = 0;
+        String firstAddedStrategyId = null;
         for (GapRocketRecommendation recommendation : recommendations) {
             if (gapRocketSymbolAlreadyTracked(recommendation.symbol(), config.mode())) {
                 skipped++;
@@ -5703,6 +5722,9 @@ public class TradingFrame extends JFrame {
                     settingsDialog.appliedDefaultStrategyPollingSeconds()
             );
             strategyRepository.save(strategy);
+            if (firstAddedStrategyId == null) {
+                firstAddedStrategyId = strategy.id();
+            }
             added++;
             log("[Gap Rocket] Added " + recommendation.symbol()
                     + " score=" + recommendation.strategyScore()
@@ -5717,13 +5739,21 @@ public class TradingFrame extends JFrame {
         refreshWorkspaceSummary();
         refreshGapRocketEmptyState();
         updateStatusBar();
-        JOptionPane.showMessageDialog(this,
-                "Added " + added + " Gap-and-Go candidate" + (added == 1 ? "" : "s")
-                        + " to Gap Rocket."
-                        + (skipped > 0 ? "\nSkipped " + skipped + " duplicate symbol" + (skipped == 1 ? "" : "s") + "." : "")
-                        + "\nNo broker orders were submitted.",
-                "Gap-and-Go Analysis",
-                JOptionPane.INFORMATION_MESSAGE);
+        if (firstAddedStrategyId != null) {
+            String strategyIdToReveal = firstAddedStrategyId;
+            SwingUtilities.invokeLater(() -> selectAndRevealStrategy(strategyIdToReveal));
+        }
+        String summary = "[Gap Rocket] Added " + added + " Gap-and-Go candidate" + (added == 1 ? "" : "s")
+                + " to the visible Gap Rocket grid"
+                + (skipped > 0 ? "; skipped " + skipped + " duplicate symbol" + (skipped == 1 ? "" : "s") : "")
+                + ". No broker orders were submitted.";
+        log(summary);
+        if (added == 0 && skipped > 0) {
+            JOptionPane.showMessageDialog(this,
+                    "No new Gap-and-Go candidates were added because the qualifying symbols are already in this Gap Rocket tab.",
+                    "Gap-and-Go Analysis",
+                    JOptionPane.INFORMATION_MESSAGE);
+        }
     }
 
     private boolean gapRocketSymbolAlreadyTracked(String symbol, StrategyMode mode) {

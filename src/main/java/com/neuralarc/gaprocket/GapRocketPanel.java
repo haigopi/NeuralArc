@@ -11,6 +11,10 @@ public final class GapRocketPanel extends JPanel {
     private final JButton analyzeButton = new JButton(ANALYZE_BUTTON_TEXT);
 
     public GapRocketPanel(Runnable onAnalyze) {
+        this(onAnalyze, true);
+    }
+
+    public GapRocketPanel(Runnable onAnalyze, boolean showButton) {
         super(new GridBagLayout());
         setOpaque(false);
         JPanel card = new JPanel();
@@ -25,8 +29,10 @@ public final class GapRocketPanel extends JPanel {
         analyzeButton.setAlignmentX(Component.CENTER_ALIGNMENT);
         analyzeButton.addActionListener(e -> { if (onAnalyze != null) onAnalyze.run(); });
         card.add(text);
-        card.add(Box.createVerticalStrut(12));
-        card.add(analyzeButton);
+        if (showButton) {
+            card.add(Box.createVerticalStrut(12));
+            card.add(analyzeButton);
+        }
         add(card, new GridBagConstraints());
     }
 
