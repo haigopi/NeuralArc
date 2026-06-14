@@ -56,12 +56,19 @@ public final class GapRocketAnalyzer {
     }
 
     private GapRocketRecommendation toRecommendation(GapRocketCandidate c, GapRocketConfig cfg, int score) {
-        BigDecimal stopPrice = c.currentPrice().multiply(BigDecimal.ONE.subtract(cfg.stopLossPercent().movePointLeft(2))).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal targetPrice = c.currentPrice().multiply(BigDecimal.ONE.add(cfg.takeProfitPercent().movePointLeft(2))).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal plannedEntryPrice = plannedEntryPrice(c);
+        BigDecimal stopPrice = plannedEntryPrice.multiply(BigDecimal.ONE.subtract(cfg.stopLossPercent().movePointLeft(2))).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal targetPrice = plannedEntryPrice.multiply(BigDecimal.ONE.add(cfg.takeProfitPercent().movePointLeft(2))).setScale(2, RoundingMode.HALF_UP);
         return new GapRocketRecommendation(c.symbol().toUpperCase(), c.companyName(), c.gapPercent(), c.premarketVolume(), c.relativeVolume(),
                 c.currentPrice(), c.previousClose(), c.premarketHigh(), c.premarketLow(), c.catalystType(), c.catalystSummary(), score,
-                cfg.entryStyle(), cfg.openingRangeDuration(), c.premarketHigh(), cfg.stopLossPercent(), stopPrice, cfg.takeProfitPercent(),
+                cfg.entryStyle(), cfg.openingRangeDuration(), plannedEntryPrice, cfg.stopLossPercent(), stopPrice, cfg.takeProfitPercent(),
                 targetPrice, GapRocketStatus.RECOMMENDED, cfg.mode(), Instant.now(clock));
+    }
+
+    private BigDecimal plannedEntryPrice(GapRocketCandidate c) {
+        BigDecimal current = c.currentPrice() == null ? BigDecimal.ZERO : c.currentPrice();
+        BigDecimal high = c.premarketHigh() == null ? BigDecimal.ZERO : c.premarketHigh();
+        return current.max(high).setScale(2, RoundingMode.HALF_UP);
     }
 
     private boolean passesTrend(GapRocketCandidate c, GapRocketConfig.MarketTrendFilter filter) {

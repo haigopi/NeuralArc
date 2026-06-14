@@ -176,6 +176,7 @@ public class TradingFrame extends JFrame {
     private static final Color TABLE_SELECTION_BAR_BG   = ThemeColors.color("NeuralArc.Table.selectionBarBackground", new Color(170, 198, 245)); // progress-bar unfilled on selected row
     private static final Color TABLE_ROW_BG_EVEN        = ThemeColors.color("NeuralArc.Table.rowBackgroundEven", new Color(245, 247, 250));
     private static final Color TABLE_ROW_BG_ODD         = ThemeColors.color("NeuralArc.Table.rowBackgroundOdd", new Color(255, 255, 255));
+    private static final Color TABLE_GRID_COLOR         = ThemeColors.color("NeuralArc.Table.gridColor", new Color(226, 231, 238));
     private static final Color PNL_POSITIVE_FG        = PnlCellStyleSupport.POSITIVE;
     private static final Color PNL_NEGATIVE_FG        = PnlCellStyleSupport.NEGATIVE;
     private static final Color STATUS_TEXT_RUNNING = ThemeColors.color("NeuralArc.statusRunning", new Color(46, 125, 50));
@@ -1219,9 +1220,10 @@ public class TradingFrame extends JFrame {
         strategyTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         strategyTable.setSelectionBackground(TABLE_SELECTION_BG);
         strategyTable.setSelectionForeground(TABLE_SELECTION_FG);
-        strategyTable.setRowMargin(6);
-        strategyTable.setShowGrid(false);
-        strategyTable.setIntercellSpacing(new Dimension(0, 6));
+        strategyTable.setRowMargin(1);
+        strategyTable.setShowGrid(true);
+        strategyTable.setGridColor(TABLE_GRID_COLOR);
+        strategyTable.setIntercellSpacing(new Dimension(1, 1));
         StatusRowRenderer statusRowRenderer = new StatusRowRenderer();
         strategyTable.setDefaultRenderer(Object.class, statusRowRenderer);
         strategyTable.setDefaultRenderer(Number.class, statusRowRenderer);
@@ -1377,9 +1379,10 @@ public class TradingFrame extends JFrame {
         filledOrdersTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         filledOrdersTable.setSelectionBackground(TABLE_SELECTION_BG);
         filledOrdersTable.setSelectionForeground(TABLE_SELECTION_FG);
-        filledOrdersTable.setRowMargin(0);
-        filledOrdersTable.setShowGrid(false);
-        filledOrdersTable.setIntercellSpacing(new Dimension(0, 0));
+        filledOrdersTable.setRowMargin(1);
+        filledOrdersTable.setShowGrid(true);
+        filledOrdersTable.setGridColor(TABLE_GRID_COLOR);
+        filledOrdersTable.setIntercellSpacing(new Dimension(1, 1));
         filledOrdersTable.setDefaultRenderer(Object.class, new HistoryRowRenderer());
         filledOrdersTable.setDefaultRenderer(Number.class, new HistoryRowRenderer());
         filledOrdersSorter = new TableRowSorter<>(filledOrdersTableModel);
@@ -4697,6 +4700,7 @@ public class TradingFrame extends JFrame {
         }
         refreshFilledOrdersTableData();
         refreshGridSearchVisibility();
+        refreshGapRocketEmptyState();
         preservingSelection = false;
         SwingUtilities.invokeLater(this::restoreSelectedRow);
     }
@@ -4718,6 +4722,7 @@ public class TradingFrame extends JFrame {
             refreshFilledOrdersTableData();
             strategyTable.clearSelection();
             selectedStrategyId = null;
+            refreshGapRocketEmptyState();
             return;
         }
         // Row count can change between polls; full refresh keeps sorter/model indexes consistent.
@@ -4727,6 +4732,7 @@ public class TradingFrame extends JFrame {
         strategyTableModel.fireTableDataChanged();
         refreshFilledOrdersTableData();
         refreshGridSearchVisibility();
+        refreshGapRocketEmptyState();
         preservingSelection = false;
         SwingUtilities.invokeLater(() -> {
             restoreSelectedRow();
