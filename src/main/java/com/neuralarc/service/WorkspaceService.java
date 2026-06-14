@@ -18,7 +18,7 @@ import java.util.UUID;
  * records are never lost — archived workspaces are simply hidden (no active tab).
  */
 public final class WorkspaceService {
-    private static final int MAX_CODE_LENGTH = 8;
+    private static final int MAX_CODE_LENGTH = 9;
 
     private final WorkspaceRepository workspaceRepository;
     private final StrategyRepository strategyRepository;

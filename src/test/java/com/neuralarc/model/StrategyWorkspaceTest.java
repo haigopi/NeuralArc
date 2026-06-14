@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class StrategyWorkspaceTest {
     @Test
     void normalizesCodeToShortUppercaseAlphanumeric() {
-        assertEquals("ORBENGIN", StrategyWorkspace.normalizeCode("ORB Engine")); // 8-char cap
+        assertEquals("ORBENGINE", StrategyWorkspace.normalizeCode("ORB Engine")); // 9-char cap
         assertEquals("VWAP", StrategyWorkspace.normalizeCode("vwap"));
         assertEquals("STRAT", StrategyWorkspace.normalizeCode("   !!!  "));
         assertEquals("STRAT", StrategyWorkspace.normalizeCode(null));

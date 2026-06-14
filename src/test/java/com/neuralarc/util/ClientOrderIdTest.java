@@ -44,6 +44,12 @@ class ClientOrderIdTest {
     }
 
     @Test
+    void gapRocketOrderIdIncludesStrategyAndMode() {
+        String id = ClientOrderId.build(StrategyMode.PAPER, "GAPROCKET", "NVDA", "MANUAL_BUY", Instant.parse("2026-06-13T09:45:15Z"));
+        assertTrue(id.startsWith("NA_PAPER_GAPROCKET_NVDA_MANUAL_BUY_20260613094515_"), id);
+    }
+
+    @Test
     void parseRejectsLegacyAndForeignIds() {
         assertTrue(ClientOrderId.parse("neuralarc-s1-BASE_BUY-1718").isEmpty());
         assertTrue(ClientOrderId.parse("NA_NOTAMODE_ORB_NVDA_BASE_BUY_20260613103015_A1B2").isEmpty());
