@@ -14,7 +14,8 @@ public final class GapRocketAnalysisDialog extends JDialog {
     private final JTextField minPrice = new JTextField("5", 8);
     private final JTextField minRelVolume = new JTextField("2", 8);
     private final JTextField maxPrice = new JTextField("", 8);
-    private final JCheckBox catalystRequired = new JCheckBox("News Catalyst Required", true);
+    private final JTextArea candidateSymbols = new JTextArea(3, 24);
+    private final JCheckBox catalystRequired = new JCheckBox("News Catalyst Required", false);
     private final JComboBox<GapRocketConfig.MarketTrendFilter> trend = new JComboBox<>(GapRocketConfig.MarketTrendFilter.values());
     private final JComboBox<GapRocketConfig.EntryStyle> entry = new JComboBox<>(GapRocketConfig.EntryStyle.values());
     private final JComboBox<GapRocketConfig.OpeningRangeDuration> range = new JComboBox<>(GapRocketConfig.OpeningRangeDuration.values());
@@ -44,7 +45,8 @@ public final class GapRocketAnalysisDialog extends JDialog {
                 catalystRequired.isSelected(), null, (GapRocketConfig.MarketTrendFilter) trend.getSelectedItem(),
                 (GapRocketConfig.EntryStyle) entry.getSelectedItem(), (GapRocketConfig.OpeningRangeDuration) range.getSelectedItem(),
                 new BigDecimal(stop.getText()), new BigDecimal(target.getText()), Integer.parseInt(maxStocks.getText()),
-                (GapRocketConfig.ExecutionFrequency) frequency.getSelectedItem(), mode);
+                (GapRocketConfig.ExecutionFrequency) frequency.getSelectedItem(), mode,
+                GapRocketLiveScanner.parseSymbols(candidateSymbols.getText()));
     }
 
     private JPanel build() {
@@ -61,8 +63,10 @@ public final class GapRocketAnalysisDialog extends JDialog {
                 "Require current activity to be meaningfully higher than normal. Example: 2 means at least 2x typical volume.");
         row = addField(fields, row, "Maximum Stock Price", maxPrice,
                 "Optional cap for high-priced stocks. Leave blank to allow any price above the minimum.");
+        row = addField(fields, row, "Candidate Symbols", new JScrollPane(candidateSymbols),
+                "Enter the live tickers to scan, separated by commas or spaces. NeuralArc does not use hardcoded stock candidates.");
         row = addField(fields, row, "News Catalyst Required", catalystRequired,
-                "When enabled, candidates need a reason for the gap such as earnings, FDA/biotech news, analyst upgrades, contracts, partnerships, or breaking news.");
+                "Alpaca market-data scans do not include news. Enable this only when a live news-catalyst source is wired in, otherwise candidates will be rejected.");
         row = addField(fields, row, "Market Trend Filter", trend,
                 "Require SPY, QQQ, or either index to be green so long ideas align with the morning market tone. Disabled skips this check.");
         row = addField(fields, row, "Entry Style", entry,
@@ -113,6 +117,9 @@ public final class GapRocketAnalysisDialog extends JDialog {
         if (component instanceof JCheckBox checkBox) {
             checkBox.setOpaque(false);
         }
+        if (component instanceof JScrollPane scrollPane) {
+            scrollPane.getViewport().getView().setFont(compact);
+        }
     }
 
     private GridBagConstraints constraints(int x, int y, int anchor, double weightx) {
@@ -143,7 +150,7 @@ public final class GapRocketAnalysisDialog extends JDialog {
     private void apply(GapRocketConfig c) {
         minGap.setText(c.minimumPremarketGapPercent().toPlainString()); minVolume.setText(String.valueOf(c.minimumPremarketVolume()));
         minPrice.setText(c.minimumStockPrice().toPlainString()); minRelVolume.setText(c.minimumRelativeVolume().toPlainString());
-        maxPrice.setText(c.maximumStockPrice() == null ? "" : c.maximumStockPrice().toPlainString()); catalystRequired.setSelected(c.newsCatalystRequired());
+        maxPrice.setText(c.maximumStockPrice() == null ? "" : c.maximumStockPrice().toPlainString()); candidateSymbols.setText(String.join(", ", c.candidateSymbols())); catalystRequired.setSelected(c.newsCatalystRequired());
         trend.setSelectedItem(c.marketTrendFilter()); entry.setSelectedItem(c.entryStyle()); range.setSelectedItem(c.openingRangeDuration());
         stop.setText(c.stopLossPercent().toPlainString()); target.setText(c.takeProfitPercent().toPlainString()); maxStocks.setText(String.valueOf(c.maxStocksToAdd()));
         frequency.setSelectedItem(c.executionFrequency());

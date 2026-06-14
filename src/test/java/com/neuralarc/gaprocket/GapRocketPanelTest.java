@@ -13,7 +13,7 @@ class GapRocketPanelTest {
         GapRocketPanel panel = new GapRocketPanel(() -> opened.set(true));
         assertEquals(GapRocketPanel.ANALYZE_BUTTON_TEXT, panel.analyzeButton().getText());
         assertFalse(GapRocketPanel.EMPTY_STATE_TEXT.contains("Gap Rocket is ready"));
-        assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("NVDA"));
+        assertFalse(GapRocketPanel.EMPTY_STATE_TEXT.contains("NVDA"));
         assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("Market Trend Filter"));
         assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("Entry Style"));
         assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("Opening Range Breakout"));

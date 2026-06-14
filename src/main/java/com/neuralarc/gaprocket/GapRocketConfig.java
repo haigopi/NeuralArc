@@ -5,6 +5,7 @@ import com.neuralarc.model.StrategyMode;
 import java.math.BigDecimal;
 import java.time.LocalTime;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 
 public record GapRocketConfig(
@@ -22,7 +23,8 @@ public record GapRocketConfig(
         BigDecimal takeProfitPercent,
         int maxStocksToAdd,
         ExecutionFrequency executionFrequency,
-        StrategyMode mode
+        StrategyMode mode,
+        List<String> candidateSymbols
 ) {
     public static final LocalTime PRIMARY_WINDOW_START_ET = LocalTime.of(9, 45);
     public static final LocalTime PRIMARY_WINDOW_END_ET = LocalTime.of(11, 0);
@@ -43,13 +45,27 @@ public record GapRocketConfig(
         maxStocksToAdd = maxStocksToAdd <= 0 ? 10 : maxStocksToAdd;
         executionFrequency = executionFrequency == null ? ExecutionFrequency.MANUAL : executionFrequency;
         mode = mode == null ? StrategyMode.PAPER : mode;
+        candidateSymbols = candidateSymbols == null ? List.of() : List.copyOf(candidateSymbols);
+    }
+
+    public GapRocketConfig(
+            BigDecimal minimumPremarketGapPercent, long minimumPremarketVolume, BigDecimal minimumStockPrice,
+            BigDecimal minimumRelativeVolume, BigDecimal maximumStockPrice, boolean newsCatalystRequired,
+            Set<CatalystType> catalystTypes, MarketTrendFilter marketTrendFilter, EntryStyle entryStyle,
+            OpeningRangeDuration openingRangeDuration, BigDecimal stopLossPercent, BigDecimal takeProfitPercent,
+            int maxStocksToAdd, ExecutionFrequency executionFrequency, StrategyMode mode
+    ) {
+        this(minimumPremarketGapPercent, minimumPremarketVolume, minimumStockPrice, minimumRelativeVolume,
+                maximumStockPrice, newsCatalystRequired, catalystTypes, marketTrendFilter, entryStyle,
+                openingRangeDuration, stopLossPercent, takeProfitPercent, maxStocksToAdd, executionFrequency,
+                mode, List.of());
     }
 
     public static GapRocketConfig defaults(StrategyMode mode) {
         return new GapRocketConfig(new BigDecimal("5"), 1_000_000L, new BigDecimal("5"), new BigDecimal("2"),
-                null, true, EnumSet.allOf(CatalystType.class), MarketTrendFilter.EITHER_SPY_OR_QQQ_GREEN,
+                null, false, EnumSet.allOf(CatalystType.class), MarketTrendFilter.EITHER_SPY_OR_QQQ_GREEN,
                 EntryStyle.BREAKOUT_RETEST, OpeningRangeDuration.FIFTEEN_MINUTES, new BigDecimal("1"),
-                new BigDecimal("2"), 10, ExecutionFrequency.MANUAL, mode);
+                new BigDecimal("2"), 10, ExecutionFrequency.MANUAL, mode, List.of());
     }
 
     private static BigDecimal defaultIfNull(BigDecimal value, String fallback) {

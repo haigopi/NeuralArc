@@ -16,7 +16,7 @@ import com.neuralarc.gaprocket.GapRocketAnalyzer;
 import com.neuralarc.gaprocket.GapRocketConfig;
 import com.neuralarc.gaprocket.GapRocketRecommendation;
 import com.neuralarc.gaprocket.GapRocketPanel;
-import com.neuralarc.gaprocket.GapRocketSampleScanner;
+import com.neuralarc.gaprocket.GapRocketLiveScanner;
 import com.neuralarc.gaprocket.GapRocketStrategyFactory;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.FeedbackEmailService;
@@ -1264,6 +1264,15 @@ public class TradingFrame extends JFrame {
                 if (viewRow >= 0 && viewRow < strategyTable.getRowCount()
                         && strategyTable.getSelectedRow() != viewRow) {
                     strategyTable.setRowSelectionInterval(viewRow, viewRow);
+                }
+
+                if (e.getButton() == java.awt.event.MouseEvent.BUTTON1
+                        && e.getClickCount() == 2
+                        && viewRow >= 0
+                        && viewCol != StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX) {
+                    final int capturedRow = viewRow;
+                    SwingUtilities.invokeLater(() -> editStrategy(capturedRow));
+                    return;
                 }
 
                 // Dispatch the action buttons via the same fixed-width zones used by the renderer.
@@ -5766,11 +5775,48 @@ public class TradingFrame extends JFrame {
         if (selectedWorkspaceId == null || !isSelectedGapRocketWorkspace()) {
             return;
         }
-        GapRocketAnalyzer analyzer = new GapRocketAnalyzer(java.time.Clock.systemUTC(), this::log);
-        List<GapRocketRecommendation> recommendations = analyzer.analyze(new GapRocketSampleScanner().candidates(), config);
+        if (config.candidateSymbols().isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "Enter at least one live ticker symbol to scan. Gap Rocket no longer uses hardcoded stock candidates.",
+                    "Gap-and-Go Analysis",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        if (!connectionOk || runtimeApiKey.isBlank()) {
+            JOptionPane.showMessageDialog(this,
+                    selectedModeLabel() + " Alpaca credentials are required before scanning Gap Rocket live market data.",
+                    "Gap-and-Go Analysis",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        gapRocketAnalyzeButton.setEnabled(false);
+        gapRocketPlaceOrdersButton.setEnabled(false);
+        uiPollingExecutor.execute(() -> {
+            try {
+                GapRocketLiveScanner scanner = new GapRocketLiveScanner(
+                        new HttpAlpacaMarketDataApi(runtimeApiKey, runtimeApiSecret),
+                        java.time.Clock.systemDefaultZone(),
+                        this::log
+                );
+                GapRocketAnalyzer analyzer = new GapRocketAnalyzer(java.time.Clock.systemUTC(), this::log);
+                List<GapRocketRecommendation> recommendations = analyzer.analyze(scanner.candidates(config.candidateSymbols()), config);
+                SwingUtilities.invokeLater(() -> applyGapRocketRecommendations(config, executeRequested, recommendations));
+            } finally {
+                SwingUtilities.invokeLater(() -> {
+                    gapRocketAnalyzeButton.setEnabled(true);
+                    gapRocketPlaceOrdersButton.setEnabled(true);
+                });
+            }
+        });
+    }
+
+    private void applyGapRocketRecommendations(GapRocketConfig config, boolean executeRequested, List<GapRocketRecommendation> recommendations) {
+        if (selectedWorkspaceId == null || !isSelectedGapRocketWorkspace()) {
+            return;
+        }
         if (recommendations.isEmpty()) {
             JOptionPane.showMessageDialog(this,
-                    "No Gap-and-Go candidates met the current filters. Try lowering the gap, volume, relative-volume, or catalyst requirements.",
+                    "No Gap-and-Go candidates met the current live-data filters. Try lowering the gap, volume, relative-volume, catalyst, or price requirements.",
                     "Gap-and-Go Analysis",
                     JOptionPane.INFORMATION_MESSAGE);
             return;
