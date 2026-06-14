@@ -342,14 +342,7 @@ public class TradingFrame extends JFrame {
             }
             // Left accent stripe: a 3-px blue bar on column 0 of selected rows.
             if (c instanceof JComponent jc) {
-                if (rowSelected && column == 0) {
-                    jc.setBorder(BorderFactory.createCompoundBorder(
-                            BorderFactory.createMatteBorder(0, 3, 0, 0, TABLE_SELECTION_BORDER),
-                            BorderFactory.createEmptyBorder(0, 7, 0, 10)
-                    ));
-                } else if (rowSelected) {
-                    jc.setBorder(tableCellBorder(0, 10, 0, 10));
-                }
+                StrategyGridSelectionStyler.applySelectionBorder(jc, rowSelected, column, TABLE_SELECTION_BORDER);
             }
             return c;
         }
