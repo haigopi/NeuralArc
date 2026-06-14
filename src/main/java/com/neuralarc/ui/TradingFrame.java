@@ -11,6 +11,8 @@ import com.neuralarc.db.SqliteStrategyExecutionEventRepository;
 import com.neuralarc.db.SqliteStrategyOrderRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
 import com.neuralarc.db.SqliteWorkspaceRepository;
+import com.neuralarc.gaprocket.GapRocketAnalysisDialog;
+import com.neuralarc.gaprocket.GapRocketPanel;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.GitHubReleaseUpdateService;
@@ -62,6 +64,7 @@ import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
 import javax.swing.text.StyledDocument;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
@@ -344,6 +347,9 @@ public class TradingFrame extends JFrame {
         }
     };
     private final JTable filledOrdersTable = new JTable(filledOrdersTableModel);
+    private static final String GAP_ROCKET_WORKSPACE_CODE = "GAPROCKET";
+    private static final String STRATEGIES_GRID_CARD = "strategiesGrid";
+    private static final String GAP_ROCKET_EMPTY_CARD = "gapRocketEmpty";
     private final JTabbedPane strategyTabs = new JTabbedPane();
     private final JTextField currentStrategiesSearchField = new JTextField(24);
     private final JTextField tradeHistorySearchField = new JTextField(24);
@@ -354,6 +360,8 @@ public class TradingFrame extends JFrame {
     private final JPanel currentStrategiesSearchPanel = createGridSearchPanel("Search stocks:", currentStrategiesSearchField);
     private final JPanel tradeHistorySearchPanel = createGridSearchPanel("Search stocks:", tradeHistorySearchField);
     private JPanel headerPanel;
+    private CardLayout strategiesGridCardLayout;
+    private JPanel strategiesGridCardPanel;
     private BottomStatusBars bottomStatusBars;
     private TableRowSorter<StrategyGridTableModel> strategySorter;
     private TableRowSorter<HistoryGridTableModel> filledOrdersSorter;
@@ -1394,7 +1402,7 @@ public class TradingFrame extends JFrame {
         strategyTabs.setBorder(new EmptyBorder(0, 0, 0, 0));
         // The coordinator owns the two base tabs (All Stocks + Trade History) and inserts a
         // dynamic tab per active strategy workspace between them, re-parenting the shared grid.
-        JComponent strategiesGridWrapper = wrapGridWithSearch(currentStrategiesSearchPanel, strategyGrid);
+        JComponent strategiesGridWrapper = wrapGridWithSearch(currentStrategiesSearchPanel, createStrategiesGridCenter(strategyGrid));
         // Per-tab P&L summary row, pinned below the grid. The wrapper is re-parented into the
         // selected workspace tab, so this summary follows whichever workspace is being viewed.
         workspaceSummaryLabel.setFont(BASE_FONT.deriveFont(Font.PLAIN, 11f));
@@ -5306,6 +5314,16 @@ public class TradingFrame extends JFrame {
         group.add(button);
     }
 
+    private JComponent createStrategiesGridCenter(JComponent grid) {
+        strategiesGridCardLayout = new CardLayout();
+        strategiesGridCardPanel = new JPanel(strategiesGridCardLayout);
+        strategiesGridCardPanel.setOpaque(false);
+        strategiesGridCardPanel.add(grid, STRATEGIES_GRID_CARD);
+        strategiesGridCardPanel.add(new GapRocketPanel(this::openGapRocketAnalysisDialog), GAP_ROCKET_EMPTY_CARD);
+        strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
+        return strategiesGridCardPanel;
+    }
+
     private JComponent wrapGridWithSearch(JPanel searchPanel, JComponent grid) {
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setOpaque(false);
@@ -5390,6 +5408,7 @@ public class TradingFrame extends JFrame {
                 return query.isBlank() || matchesStockSymbol(managedStrategy.strategy.symbol(), query);
             }
         });
+        refreshGapRocketEmptyState();
     }
 
     private void applyTradeHistoryRowFilter() {
@@ -5605,6 +5624,41 @@ public class TradingFrame extends JFrame {
         applyCurrentStrategiesRowFilter();
         refreshCurrentStrategiesHeading();
         refreshWorkspaceSummary();
+        refreshGapRocketEmptyState();
+    }
+
+    private void refreshGapRocketEmptyState() {
+        if (strategiesGridCardLayout == null || strategiesGridCardPanel == null) {
+            return;
+        }
+        boolean showEmptyState = isSelectedGapRocketWorkspace() && selectedWorkspaceStrategyCount() == 0;
+        strategiesGridCardLayout.show(strategiesGridCardPanel, showEmptyState ? GAP_ROCKET_EMPTY_CARD : STRATEGIES_GRID_CARD);
+    }
+
+    private boolean isSelectedGapRocketWorkspace() {
+        if (selectedWorkspaceId == null) {
+            return false;
+        }
+        return workspaceService.findById(selectedWorkspaceId)
+                .map(StrategyWorkspace::code)
+                .map(GAP_ROCKET_WORKSPACE_CODE::equalsIgnoreCase)
+                .orElse(false);
+    }
+
+    private long selectedWorkspaceStrategyCount() {
+        if (selectedWorkspaceId == null) {
+            return 0;
+        }
+        return strategies.stream()
+                .filter(this::includeInCurrentStrategiesTab)
+                .filter(entry -> selectedWorkspaceId.equals(entry.strategy.workspaceId()))
+                .count();
+    }
+
+    private void openGapRocketAnalysisDialog() {
+        GapRocketAnalysisDialog dialog = new GapRocketAnalysisDialog(this, selectedViewMode, null);
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
     }
 
     // Builds the per-tab P&L summary for the selected workspace (or All Stocks) from cached
@@ -5827,6 +5881,7 @@ public class TradingFrame extends JFrame {
         log("[WORKSPACE] Opened strategy workspace '" + workspace.name() + "' (" + workspace.code() + ") in "
                 + selectedModeLabel() + " mode.");
         userActionLog.completed("Open Workspace", workspace.name());
+        refreshGapRocketEmptyState();
     }
 
     // Context-menu action: move the strategy in the clicked row into a workspace (or back to

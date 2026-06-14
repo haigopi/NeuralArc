@@ -22,6 +22,8 @@ public final class GapRocketAnalysisDialog extends JDialog {
     private final JTextField maxStocks = new JTextField("10", 8);
     private final JComboBox<GapRocketConfig.ExecutionFrequency> frequency = new JComboBox<>(GapRocketConfig.ExecutionFrequency.values());
     private final StrategyMode mode;
+    private boolean accepted;
+    private boolean executeRequested;
 
     public GapRocketAnalysisDialog(Window owner, StrategyMode mode, GapRocketConfig existing) {
         super(owner, TITLE, ModalityType.APPLICATION_MODAL);
@@ -30,6 +32,10 @@ public final class GapRocketAnalysisDialog extends JDialog {
         setContentPane(build());
         pack();
     }
+
+    public boolean accepted() { return accepted; }
+
+    public boolean executeRequested() { return executeRequested; }
 
     public GapRocketConfig config() {
         return new GapRocketConfig(new BigDecimal(minGap.getText()), Long.parseLong(minVolume.getText()), new BigDecimal(minPrice.getText()),
@@ -60,7 +66,13 @@ public final class GapRocketAnalysisDialog extends JDialog {
         wrapper.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
         wrapper.add(panel, BorderLayout.CENTER);
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        buttons.add(new JButton("Cancel")); buttons.add(new JButton("Analyze")); buttons.add(new JButton("Analyze & Execute"));
+        JButton cancel = new JButton("Cancel");
+        JButton analyze = new JButton("Analyze");
+        JButton analyzeAndExecute = new JButton("Analyze & Execute");
+        cancel.addActionListener(event -> dispose());
+        analyze.addActionListener(event -> { accepted = true; executeRequested = false; dispose(); });
+        analyzeAndExecute.addActionListener(event -> { accepted = true; executeRequested = true; dispose(); });
+        buttons.add(cancel); buttons.add(analyze); buttons.add(analyzeAndExecute);
         wrapper.add(buttons, BorderLayout.SOUTH);
         return wrapper;
     }
