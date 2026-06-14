@@ -177,7 +177,7 @@ public class TradingFrame extends JFrame {
     private static final Color TABLE_SELECTION_BAR_BG   = ThemeColors.color("NeuralArc.Table.selectionBarBackground", new Color(170, 198, 245)); // progress-bar unfilled on selected row
     private static final Color TABLE_ROW_BG_EVEN        = ThemeColors.color("NeuralArc.Table.rowBackgroundEven", new Color(245, 247, 250));
     private static final Color TABLE_ROW_BG_ODD         = ThemeColors.color("NeuralArc.Table.rowBackgroundOdd", new Color(239, 243, 248));
-    private static final Color TABLE_GRID_COLOR         = ThemeColors.color("NeuralArc.Table.gridColor", new Color(202, 209, 219));
+    private static final Color TABLE_OUTER_BORDER_COLOR = ThemeColors.color("NeuralArc.Table.outerBorder", new Color(232, 236, 242));
     private static final Color PNL_POSITIVE_FG        = PnlCellStyleSupport.POSITIVE;
     private static final Color PNL_NEGATIVE_FG        = PnlCellStyleSupport.NEGATIVE;
     private static final Color STATUS_TEXT_RUNNING = ThemeColors.color("NeuralArc.statusRunning", new Color(46, 125, 50));
@@ -344,11 +344,8 @@ public class TradingFrame extends JFrame {
             if (c instanceof JComponent jc) {
                 if (rowSelected && column == 0) {
                     jc.setBorder(BorderFactory.createCompoundBorder(
-                            BorderFactory.createMatteBorder(0, 0, 1, 1, TABLE_GRID_COLOR),
-                            BorderFactory.createCompoundBorder(
-                                    BorderFactory.createMatteBorder(0, 3, 0, 0, TABLE_SELECTION_BORDER),
-                                    BorderFactory.createEmptyBorder(0, 7, 0, 10)
-                            )
+                            BorderFactory.createMatteBorder(0, 3, 0, 0, TABLE_SELECTION_BORDER),
+                            BorderFactory.createEmptyBorder(0, 7, 0, 10)
                     ));
                 } else if (rowSelected) {
                     jc.setBorder(tableCellBorder(0, 10, 0, 10));
@@ -1224,10 +1221,9 @@ public class TradingFrame extends JFrame {
         strategyTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         strategyTable.setSelectionBackground(TABLE_SELECTION_BG);
         strategyTable.setSelectionForeground(TABLE_SELECTION_FG);
-        strategyTable.setRowMargin(1);
-        strategyTable.setShowGrid(true);
-        strategyTable.setGridColor(TABLE_GRID_COLOR);
-        strategyTable.setIntercellSpacing(new Dimension(1, 1));
+        strategyTable.setRowMargin(0);
+        strategyTable.setShowGrid(false);
+        strategyTable.setIntercellSpacing(new Dimension(0, 0));
         StatusRowRenderer statusRowRenderer = new StatusRowRenderer();
         strategyTable.setDefaultRenderer(Object.class, statusRowRenderer);
         strategyTable.setDefaultRenderer(Number.class, statusRowRenderer);
@@ -1372,7 +1368,7 @@ public class TradingFrame extends JFrame {
         strategyGrid.getViewport().setBackground(new Color(0, 0, 0, 0));
         strategyGrid.setBorder(BorderFactory.createCompoundBorder(
                 new EmptyBorder(10, 0, 0, 0),
-                BorderFactory.createLineBorder(new Color(208, 214, 222), 1, true)
+                BorderFactory.createLineBorder(TABLE_OUTER_BORDER_COLOR, 1, true)
         ));
 
         filledOrdersTable.setRowHeight(30);
@@ -1383,10 +1379,9 @@ public class TradingFrame extends JFrame {
         filledOrdersTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         filledOrdersTable.setSelectionBackground(TABLE_SELECTION_BG);
         filledOrdersTable.setSelectionForeground(TABLE_SELECTION_FG);
-        filledOrdersTable.setRowMargin(1);
-        filledOrdersTable.setShowGrid(true);
-        filledOrdersTable.setGridColor(TABLE_GRID_COLOR);
-        filledOrdersTable.setIntercellSpacing(new Dimension(1, 1));
+        filledOrdersTable.setRowMargin(0);
+        filledOrdersTable.setShowGrid(false);
+        filledOrdersTable.setIntercellSpacing(new Dimension(0, 0));
         filledOrdersTable.setDefaultRenderer(Object.class, new HistoryRowRenderer());
         filledOrdersTable.setDefaultRenderer(Number.class, new HistoryRowRenderer());
         filledOrdersSorter = new TableRowSorter<>(filledOrdersTableModel);
@@ -1405,7 +1400,7 @@ public class TradingFrame extends JFrame {
         filledOrdersGrid.getViewport().setOpaque(false);
         filledOrdersGrid.getViewport().setBackground(new Color(0, 0, 0, 0));
         javax.swing.border.TitledBorder filledOrdersTitle = BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(ThemeColors.color("NeuralArc.Section.border", new Color(208, 214, 222)), 1, true),
+                BorderFactory.createLineBorder(TABLE_OUTER_BORDER_COLOR, 1, true),
                 "Trade History"
         );
         filledOrdersTitle.setTitleFont(FontLoader.ui(Font.BOLD, 10f));
@@ -6486,10 +6481,7 @@ public class TradingFrame extends JFrame {
     }
 
     private Border tableCellBorder(int top, int left, int bottom, int right) {
-        return BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 1, TABLE_GRID_COLOR),
-                BorderFactory.createEmptyBorder(top, left, bottom, right)
-        );
+        return BorderFactory.createEmptyBorder(top, left, bottom, right);
     }
 
 
