@@ -1623,23 +1623,15 @@ public class TradingFrame extends JFrame {
 
         JScrollPane eventLogScrollPane = new JScrollPane(eventLog);
         eventLogScrollPane.setOpaque(false);
+        eventLogScrollPane.setBorder(BorderFactory.createEmptyBorder());
         eventLogScrollPane.setBackground(new Color(0, 0, 0, 0));
         eventLogScrollPane.getViewport().setOpaque(false);
         eventLogScrollPane.getViewport().setBackground(new Color(0, 0, 0, 0));
-        javax.swing.border.TitledBorder eventLogTitle = BorderFactory.createTitledBorder(
-                BorderFactory.createLineBorder(ThemeColors.color("NeuralArc.Section.border", new Color(208, 214, 222)), 1, true),
-                "Logs"
-        );
-        eventLogTitle.setTitleFont(FontLoader.ui(Font.BOLD, 10f));
-        eventLogTitle.setTitleColor(ThemeColors.color("NeuralArc.Section.titleForeground", new Color(78, 84, 94)));
-        eventLogScrollPane.setBorder(BorderFactory.createCompoundBorder(
-                new EmptyBorder(10, 0, 0, 0),
-                eventLogTitle
-        ));
+        CollapsibleSectionPanel eventLogSection = new CollapsibleSectionPanel("Logs", eventLogScrollPane);
 
         // Put event log and strategy grid in a vertical split so both are always visible
         JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
-                eventLogScrollPane, strategyTabs);
+                eventLogSection, strategyTabs);
         splitPane.setResizeWeight(0.5);
         splitPane.setDividerSize(6);
         splitPane.setBorder(null);
@@ -1651,9 +1643,9 @@ public class TradingFrame extends JFrame {
             divider.setBackground(ThemeColors.color("NeuralArc.SplitPane.divider", new Color(189, 198, 210)));
         }
 
-        JPanel positionSection = createDetailSection(positionSectionTitle, positionSummary);
+        CollapsibleSectionPanel positionSection = createDetailSection(positionSectionTitle, positionSummary);
         installCopyPopup(positionSection, positionSummary);
-        JPanel rulesSection = createDetailSection(rulesSectionTitle, ruleState);
+        CollapsibleSectionPanel rulesSection = createDetailSection(rulesSectionTitle, ruleState);
 
         JPanel detailSectionsPanel = new JPanel();
         detailSectionsPanel.setLayout(new BoxLayout(detailSectionsPanel, BoxLayout.Y_AXIS));
@@ -1974,22 +1966,16 @@ public class TradingFrame extends JFrame {
         refreshPortfolioButton.setText(busy ? "Refreshing..." : "Refresh & Reevaluate Portfolio");
     }
 
-    private JPanel createDetailSection(JLabel titleLabel, JLabel contentLabel) {
-        titleLabel.setForeground(ThemeColors.color("NeuralArc.Detail.titleForeground", new Color(70, 70, 90)));
+    private CollapsibleSectionPanel createDetailSection(JLabel titleLabel, JLabel contentLabel) {
+        titleLabel.setForeground(ThemeColors.color("NeuralArc.Section.titleForeground", new Color(78, 84, 94)));
         contentLabel.setForeground(ThemeColors.color("NeuralArc.Detail.foreground", new Color(35, 35, 45)));
         contentLabel.setVerticalAlignment(SwingConstants.TOP);
         contentLabel.setBorder(new EmptyBorder(2, 0, 0, 0));
 
-        JPanel section = new JPanel(new BorderLayout(0, 2));
-        section.setOpaque(true);
-        section.setBackground(ThemeColors.color("NeuralArc.Detail.background", new Color(248, 249, 252)));
-        section.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(ThemeColors.color("NeuralArc.Detail.border", new Color(210, 214, 223)), 1, true),
-                new EmptyBorder(10, 12, 10, 12)
-        ));
-        section.add(titleLabel, BorderLayout.NORTH);
-        section.add(contentLabel, BorderLayout.CENTER);
-        return section;
+        JPanel contentPanel = new JPanel(new BorderLayout());
+        contentPanel.setOpaque(false);
+        contentPanel.add(contentLabel, BorderLayout.CENTER);
+        return new CollapsibleSectionPanel(titleLabel.getText(), contentPanel);
     }
 
     private void applyFontRecursively(Component component) {
