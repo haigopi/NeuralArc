@@ -46,6 +46,21 @@ class GapRocketAnalyzerTest {
         assertEquals(StrategyMode.LIVE, analyzer.analyze(List.of(strong("TSLA")), GapRocketConfig.defaults(StrategyMode.LIVE)).getFirst().mode());
     }
 
+    @Test
+    void plannedEntryDoesNotFallBelowCurrentPriceWhenPremarketHighIsStale() {
+        GapRocketAnalyzer analyzer = new GapRocketAnalyzer(Clock.fixed(Instant.parse("2026-06-13T13:45:15Z"), ZoneOffset.UTC), null);
+        GapRocketCandidate staleHigh = new GapRocketCandidate("NVDA", "NVIDIA Corporation", new BigDecimal("7.2"),
+                5_200_000L, new BigDecimal("6.1"), new BigDecimal("205"), new BigDecimal("188.80"),
+                new BigDecimal("126"), new BigDecimal("124"), GapRocketConfig.CatalystType.EARNINGS,
+                "Earnings beat", true, true, new BigDecimal("0.35"), true, new BigDecimal("200.80"));
+
+        GapRocketRecommendation recommendation = analyzer.analyze(List.of(staleHigh), GapRocketConfig.defaults(StrategyMode.PAPER)).getFirst();
+
+        assertEquals(new BigDecimal("205.00"), recommendation.plannedEntryPrice());
+        assertEquals(new BigDecimal("194.75"), recommendation.stopLossPrice());
+        assertEquals(new BigDecimal("225.50"), recommendation.takeProfitPrice());
+    }
+
     private GapRocketCandidate strong(String symbol) {
         return new GapRocketCandidate(symbol, symbol + " Inc", new BigDecimal("12"), 5_000_000L, new BigDecimal("6"),
                 new BigDecimal("125"), new BigDecimal("110"), new BigDecimal("126"), new BigDecimal("118"),
