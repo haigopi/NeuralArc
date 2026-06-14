@@ -11,6 +11,9 @@ final class StrategyOpenPnlCalculator {
         if (entry == null || entry.strategy == null) {
             return Optional.empty();
         }
+        if (GapRocketDisplaySupport.suppressBrokerPosition(entry.strategy)) {
+            return Optional.empty();
+        }
         Position position = entry.cachedPosition();
         if (position.getTotalShares() <= 0
                 || position.getLastPrice().compareTo(BigDecimal.ZERO) <= 0

@@ -117,6 +117,24 @@ class StrategyPnlTotalsCalculatorTest {
         assertEquals(0, snapshot.eligibleCount());
     }
 
+
+    @Test
+    void gapRocketPendingRowsDoNotBorrowBrokerSymbolPnl() {
+        ManagedStrategy gapRocket = managed("NVDA", StrategyMode.LIVE, StrategyStatus.CREATED);
+        gapRocket.strategy.setName("GAP_ROCKET: NVDA LIVE");
+        gapRocket.strategy.setLatestOrderStatus("GAP_ROCKET_RECOMMENDED");
+        gapRocket.setCachedPosition(openPosition("NVDA", "215.75", "205.19", 1));
+
+        StrategyPnlTotalsCalculator.Totals totals = calculator.calculate(
+                List.of(gapRocket),
+                entry -> true,
+                id -> BigDecimal.ZERO
+        );
+
+        assertEquals(new BigDecimal("0.00"), totals.liveUnrealized());
+        assertEquals(new BigDecimal("0.00"), totals.liveRealized());
+    }
+
     private ManagedStrategy managed(String symbol, StrategyMode mode, StrategyStatus status) {
         Strategy strategy = Strategy.fromConfig(
                 UUID.randomUUID().toString(),

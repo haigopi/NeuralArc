@@ -5869,7 +5869,9 @@ public class TradingFrame extends JFrame {
             if (entry.strategy.mode() != selectedViewMode) {
                 continue;
             }
-            Position position = entry.cachedPosition();
+            Position position = GapRocketDisplaySupport.suppressBrokerPosition(entry.strategy)
+                    ? new Position(entry.strategy.symbol())
+                    : entry.cachedPosition();
             String workspaceLabel = entry.strategy.workspaceId() == null
                     ? "Unassigned"
                     : workspaceService.findById(entry.strategy.workspaceId()).map(StrategyWorkspace::name).orElse("Unassigned");
@@ -5933,7 +5935,9 @@ public class TradingFrame extends JFrame {
             for (WorkspaceAccounting.RealizedSell sell : strategySells) {
                 realized = realized.add(sell.realizedPnl());
             }
-            Position position = entry.cachedPosition();
+            Position position = GapRocketDisplaySupport.suppressBrokerPosition(entry.strategy)
+                    ? new Position(entry.strategy.symbol())
+                    : entry.cachedPosition();
             accounts.add(new WorkspaceAccounting.StrategyAccount(
                     entryWorkspaceId,
                     position.getTotalShares(),
