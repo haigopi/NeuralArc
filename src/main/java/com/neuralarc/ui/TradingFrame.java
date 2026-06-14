@@ -108,6 +108,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -5514,17 +5515,22 @@ public class TradingFrame extends JFrame {
     }
 
     private void refreshGridSearchVisibility() {
-        boolean showCurrentStrategiesSearch = strategies.stream()
-                .filter(this::includeInCurrentStrategiesTab)
-                .count() >= GRID_SEARCH_MIN_STOCK_COUNT;
+        boolean showCurrentStrategiesSearch = currentStrategiesStockCountInSelectedWorkspace() >= GRID_SEARCH_MIN_STOCK_COUNT;
         boolean hasTradeHistoryRows = tradeHistoryStockCount() > 0;
 
         if (!showCurrentStrategiesSearch && !currentStrategiesSearchField.getText().isBlank()) {
             currentStrategiesSearchField.setText("");
         }
 
-        currentStrategiesSearchPanel.setVisible(true);
+        currentStrategiesSearchPanel.setVisible(showCurrentStrategiesSearch);
         tradeHistorySearchPanel.setVisible(hasTradeHistoryRows);
+    }
+
+    private long currentStrategiesStockCountInSelectedWorkspace() {
+        return strategies.stream()
+                .filter(this::includeInCurrentStrategiesTab)
+                .filter(entry -> selectedWorkspaceId == null || selectedWorkspaceId.equals(entry.strategy.workspaceId()))
+                .count();
     }
 
     private long tradeHistoryStockCount() {
@@ -5662,7 +5668,11 @@ public class TradingFrame extends JFrame {
 
     // Invoked by the workspace-tabs coordinator when the selected tab changes (null = All Stocks).
     private void onWorkspaceTabSelected(String workspaceId) {
+        boolean workspaceChanged = !Objects.equals(selectedWorkspaceId, workspaceId);
         selectedWorkspaceId = workspaceId;
+        if (workspaceChanged && !currentStrategiesSearchField.getText().isBlank()) {
+            currentStrategiesSearchField.setText("");
+        }
         applyCurrentStrategiesRowFilter();
         refreshCurrentStrategiesHeading();
         refreshWorkspaceSummary();
@@ -5694,10 +5704,7 @@ public class TradingFrame extends JFrame {
         if (selectedWorkspaceId == null) {
             return 0;
         }
-        return strategyRepository.findAll().stream()
-                .filter(strategy -> strategy.mode() == selectedViewMode)
-                .filter(strategy -> selectedWorkspaceId.equals(strategy.workspaceId()))
-                .count();
+        return currentStrategiesStockCountInSelectedWorkspace();
     }
 
 
@@ -6033,28 +6040,56 @@ public class TradingFrame extends JFrame {
         menu.show(event.getComponent(), event.getX(), event.getY());
     }
 
-    // Delete a workspace only when empty (Q5): otherwise reject and tell the user to move its
-    // strategies out first, so trade records are never orphaned. There is no archive state.
+    // Delete a workspace only when the currently visible grid is empty. Hidden history/archived
+    // records are moved back to All Stocks/Trade History first so they do not block deleting an
+    // apparently empty workspace tab.
     private void deleteWorkspaceTab(String workspaceId, String currentName) {
-        int strategyCount = workspaceService.strategiesIn(workspaceId).size();
-        if (strategyCount > 0) {
+        List<Strategy> assignedStrategies = workspaceService.strategiesIn(workspaceId);
+        long visibleStrategyCount = assignedStrategies.stream()
+                .map(this::managedStrategyFor)
+                .filter(this::includeInCurrentStrategiesTab)
+                .count();
+        if (visibleStrategyCount > 0) {
             JOptionPane.showMessageDialog(this,
-                    "Can't delete \"" + currentName + "\": it still owns " + strategyCount
-                            + " strategy(ies). Move them to another strategy (or All Stocks) first.",
+                    "Can't delete \"" + currentName + "\": it still owns " + visibleStrategyCount
+                            + " visible stock" + (visibleStrategyCount == 1 ? "" : "s")
+                            + ". Move or remove the visible rows first.",
                     "Delete Strategy Workspace", JOptionPane.WARNING_MESSAGE);
             return;
         }
+        int hiddenStrategyCount = assignedStrategies.size();
         int choice = JOptionPane.showConfirmDialog(this,
-                "Delete the empty strategy workspace \"" + currentName + "\"?",
+                "Delete the empty strategy workspace \"" + currentName + "\"?"
+                        + (hiddenStrategyCount > 0
+                        ? "\n\n" + hiddenStrategyCount + " hidden history/archived record"
+                        + (hiddenStrategyCount == 1 ? " is" : "s are")
+                        + " assigned to this workspace and will be moved back to All Stocks/Trade History."
+                        : ""),
                 "Delete Strategy Workspace", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
         if (choice != JOptionPane.YES_OPTION) {
             return;
+        }
+        if (hiddenStrategyCount > 0) {
+            for (Strategy strategy : assignedStrategies) {
+                strategy.setWorkspaceId(null);
+                strategyRepository.save(strategy);
+            }
         }
         WorkspaceService.DeleteResult result = strategyWorkspaceTabs.deleteWorkspace(workspaceId);
         if (result == WorkspaceService.DeleteResult.DELETED) {
             log("[WORKSPACE] Deleted empty strategy workspace '" + currentName + "'.");
             userActionLog.completed("Delete Workspace", currentName);
         }
+    }
+
+    private ManagedStrategy managedStrategyFor(Strategy strategy) {
+        if (strategy == null) {
+            return null;
+        }
+        return strategies.stream()
+                .filter(entry -> entry.strategy.id().equals(strategy.id()))
+                .findFirst()
+                .orElseGet(() -> new ManagedStrategy(strategy));
     }
 
     private void createWorkspaceFromTemplate(StrategyWorkspaceTemplate template) {
