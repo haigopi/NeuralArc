@@ -51,6 +51,7 @@ import com.neuralarc.util.ThemeColors;
 import org.json.JSONArray;
 
 import javax.swing.*;
+import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
@@ -175,8 +176,8 @@ public class TradingFrame extends JFrame {
     private static final Color TABLE_SELECTION_BORDER   = ThemeColors.color("NeuralArc.Table.selectionBorder", new Color(66, 133, 244)); // left accent stripe on selected row
     private static final Color TABLE_SELECTION_BAR_BG   = ThemeColors.color("NeuralArc.Table.selectionBarBackground", new Color(170, 198, 245)); // progress-bar unfilled on selected row
     private static final Color TABLE_ROW_BG_EVEN        = ThemeColors.color("NeuralArc.Table.rowBackgroundEven", new Color(245, 247, 250));
-    private static final Color TABLE_ROW_BG_ODD         = ThemeColors.color("NeuralArc.Table.rowBackgroundOdd", new Color(255, 255, 255));
-    private static final Color TABLE_GRID_COLOR         = ThemeColors.color("NeuralArc.Table.gridColor", new Color(226, 231, 238));
+    private static final Color TABLE_ROW_BG_ODD         = ThemeColors.color("NeuralArc.Table.rowBackgroundOdd", new Color(239, 243, 248));
+    private static final Color TABLE_GRID_COLOR         = ThemeColors.color("NeuralArc.Table.gridColor", new Color(202, 209, 219));
     private static final Color PNL_POSITIVE_FG        = PnlCellStyleSupport.POSITIVE;
     private static final Color PNL_NEGATIVE_FG        = PnlCellStyleSupport.NEGATIVE;
     private static final Color STATUS_TEXT_RUNNING = ThemeColors.color("NeuralArc.statusRunning", new Color(46, 125, 50));
@@ -343,11 +344,14 @@ public class TradingFrame extends JFrame {
             if (c instanceof JComponent jc) {
                 if (rowSelected && column == 0) {
                     jc.setBorder(BorderFactory.createCompoundBorder(
-                            BorderFactory.createMatteBorder(0, 3, 0, 0, TABLE_SELECTION_BORDER),
-                            BorderFactory.createEmptyBorder(0, 7, 0, 10)
+                            BorderFactory.createMatteBorder(0, 0, 1, 1, TABLE_GRID_COLOR),
+                            BorderFactory.createCompoundBorder(
+                                    BorderFactory.createMatteBorder(0, 3, 0, 0, TABLE_SELECTION_BORDER),
+                                    BorderFactory.createEmptyBorder(0, 7, 0, 10)
+                            )
                     ));
                 } else if (rowSelected) {
-                    jc.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
+                    jc.setBorder(tableCellBorder(0, 10, 0, 10));
                 }
             }
             return c;
@@ -6481,6 +6485,13 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    private Border tableCellBorder(int top, int left, int bottom, int right) {
+        return BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 1, TABLE_GRID_COLOR),
+                BorderFactory.createEmptyBorder(top, left, bottom, right)
+        );
+    }
+
 
     private final class StatusRowRenderer extends DefaultTableCellRenderer {
         @Override
@@ -6528,7 +6539,7 @@ public class TradingFrame extends JFrame {
             // Border is managed by prepareRenderer for selected rows (accent stripe on col 0);
             // for unselected rows set the standard inset border here.
             if (!isSelected) {
-                setBorder(new EmptyBorder(0, 10, 0, 10));
+                setBorder(tableCellBorder(0, 10, 0, 10));
             }
             return this;
         }
@@ -6567,7 +6578,7 @@ public class TradingFrame extends JFrame {
             } else {
                 setBackground(row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD);
                 setForeground(PnlCellStyleSupport.foregroundFor(value, table.getForeground()));
-                setBorder(new EmptyBorder(0, 10, 0, 10));
+                setBorder(tableCellBorder(0, 10, 0, 10));
             }
             setHorizontalAlignment(SwingConstants.LEFT);
             return this;
@@ -6668,6 +6679,7 @@ public class TradingFrame extends JFrame {
             } else {
                 setBackground(row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD);
             }
+            setBorder(tableCellBorder(5, 10, 5, 10));
             progressBar.setValue(viewModel.progress());
             progressBar.setBackground(viewModel.trackBackground());
             progressBar.setForeground(viewModel.progressForeground());
@@ -6753,6 +6765,7 @@ public class TradingFrame extends JFrame {
                     : TooltipStyler.text("Promote is available only for eligible PAPER strategies."));
             deleteButton.setToolTipText(TooltipStyler.text("Delete this strategy from Current Strategies."));
             setBackground(selectionAwareRowColor(isSelected, row));
+            setBorder(tableCellBorder(5, 0, 0, 0));
             return this;
         }
     }
