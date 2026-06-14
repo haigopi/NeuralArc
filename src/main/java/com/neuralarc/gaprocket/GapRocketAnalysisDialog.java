@@ -94,6 +94,7 @@ public final class GapRocketAnalysisDialog extends JDialog {
         help.setFont(help.getFont().deriveFont(Font.PLAIN, 10f));
         GridBagConstraints labelConstraints = constraints(0, row, GridBagConstraints.NORTHWEST, 0);
         GridBagConstraints fieldConstraints = constraints(1, row, GridBagConstraints.WEST, 1);
+        styleField(component);
         panel.add(label, labelConstraints);
         panel.add(component, fieldConstraints);
         row++;
@@ -101,6 +102,17 @@ public final class GapRocketAnalysisDialog extends JDialog {
         helpConstraints.insets = new Insets(0, 8, 8, 0);
         panel.add(help, helpConstraints);
         return row + 1;
+    }
+
+    private void styleField(JComponent component) {
+        Font compact = component.getFont().deriveFont(Font.PLAIN, 10f);
+        component.setFont(compact);
+        if (component instanceof JComboBox<?> comboBox) {
+            comboBox.setFont(compact);
+        }
+        if (component instanceof JCheckBox checkBox) {
+            checkBox.setOpaque(false);
+        }
     }
 
     private GridBagConstraints constraints(int x, int y, int anchor, double weightx) {

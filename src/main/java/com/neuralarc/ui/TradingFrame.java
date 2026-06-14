@@ -12,7 +12,12 @@ import com.neuralarc.db.SqliteStrategyOrderRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
 import com.neuralarc.db.SqliteWorkspaceRepository;
 import com.neuralarc.gaprocket.GapRocketAnalysisDialog;
+import com.neuralarc.gaprocket.GapRocketAnalyzer;
+import com.neuralarc.gaprocket.GapRocketConfig;
+import com.neuralarc.gaprocket.GapRocketRecommendation;
 import com.neuralarc.gaprocket.GapRocketPanel;
+import com.neuralarc.gaprocket.GapRocketSampleScanner;
+import com.neuralarc.gaprocket.GapRocketStrategyFactory;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.GitHubReleaseUpdateService;
@@ -360,6 +365,7 @@ public class TradingFrame extends JFrame {
     private final JPanel currentStrategiesSearchPanel = createGridSearchPanel("Search stocks:", currentStrategiesSearchField);
     private final JPanel tradeHistorySearchPanel = createGridSearchPanel("Search stocks:", tradeHistorySearchField);
     private JPanel headerPanel;
+    private GapRocketConfig lastGapRocketConfig;
     private CardLayout strategiesGridCardLayout;
     private JPanel strategiesGridCardPanel;
     private BottomStatusBars bottomStatusBars;
@@ -5658,9 +5664,74 @@ public class TradingFrame extends JFrame {
     }
 
     private void openGapRocketAnalysisDialog() {
-        GapRocketAnalysisDialog dialog = new GapRocketAnalysisDialog(this, selectedViewMode, null);
+        GapRocketAnalysisDialog dialog = new GapRocketAnalysisDialog(this, selectedViewMode, lastGapRocketConfig);
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
+        if (!dialog.accepted()) {
+            return;
+        }
+        lastGapRocketConfig = dialog.config();
+        addGapRocketRecommendations(lastGapRocketConfig, dialog.executeRequested());
+    }
+
+    private void addGapRocketRecommendations(GapRocketConfig config, boolean executeRequested) {
+        if (selectedWorkspaceId == null || !isSelectedGapRocketWorkspace()) {
+            return;
+        }
+        GapRocketAnalyzer analyzer = new GapRocketAnalyzer(java.time.Clock.systemUTC(), this::log);
+        List<GapRocketRecommendation> recommendations = analyzer.analyze(new GapRocketSampleScanner().candidates(), config);
+        if (recommendations.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "No Gap-and-Go candidates met the current filters. Try lowering the gap, volume, relative-volume, or catalyst requirements.",
+                    "Gap-and-Go Analysis",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        GapRocketStrategyFactory factory = new GapRocketStrategyFactory();
+        int added = 0;
+        int skipped = 0;
+        for (GapRocketRecommendation recommendation : recommendations) {
+            if (gapRocketSymbolAlreadyTracked(recommendation.symbol(), config.mode())) {
+                skipped++;
+                log("[Gap Rocket] Skipped " + recommendation.symbol() + ": already tracked in this strategy tab.");
+                continue;
+            }
+            Strategy strategy = factory.toStrategy(
+                    recommendation,
+                    selectedWorkspaceId,
+                    executeRequested,
+                    settingsDialog.appliedDefaultStrategyPollingSeconds()
+            );
+            strategyRepository.save(strategy);
+            added++;
+            log("[Gap Rocket] Added " + recommendation.symbol()
+                    + " score=" + recommendation.strategyScore()
+                    + " plannedEntry=$" + recommendation.plannedEntryPrice().toPlainString()
+                    + " mode=" + recommendation.mode()
+                    + (executeRequested ? " monitoring enabled" : " recommendation only")
+                    + ".");
+        }
+        syncStrategiesFromRepository();
+        refreshStrategyTableData();
+        applyCurrentStrategiesRowFilter();
+        refreshWorkspaceSummary();
+        refreshGapRocketEmptyState();
+        updateStatusBar();
+        JOptionPane.showMessageDialog(this,
+                "Added " + added + " Gap-and-Go candidate" + (added == 1 ? "" : "s")
+                        + " to Gap Rocket."
+                        + (skipped > 0 ? "\nSkipped " + skipped + " duplicate symbol" + (skipped == 1 ? "" : "s") + "." : "")
+                        + "\nNo broker orders were submitted.",
+                "Gap-and-Go Analysis",
+                JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private boolean gapRocketSymbolAlreadyTracked(String symbol, StrategyMode mode) {
+        return strategies.stream()
+                .map(entry -> entry.strategy)
+                .anyMatch(strategy -> strategy.mode() == mode
+                        && selectedWorkspaceId.equals(strategy.workspaceId())
+                        && strategy.symbol().equalsIgnoreCase(symbol));
     }
 
     // Builds the per-tab P&L summary for the selected workspace (or All Stocks) from cached
