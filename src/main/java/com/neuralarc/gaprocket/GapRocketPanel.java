@@ -7,7 +7,7 @@ public final class GapRocketPanel extends JPanel {
     public static final String DESCRIPTION_TITLE = "Description:";
     public static final String DESCRIPTION = "Scan premarket gap-up stocks, rank the strongest movers, and add the best candidates to this strategy grid for review.";
     public static final String EXAMPLE_TITLE = "Example:";
-    public static final String EXAMPLE = "NVDA is up 7% premarket after earnings, trades 5M shares before the open, holds 6x relative volume, and retests the opening-range high before becoming Ready to Buy.";
+    public static final String EXAMPLE = "A candidate stock is up 7% premarket after earnings, trades 5M shares before the open, holds 6x relative volume, and retests the opening-range high before becoming Ready to Buy.";
     public static final String FIELD_GUIDANCE = "Know before you make a next move:\n"
             + "VWAP is the volume-weighted average price; a VWAP pullback looks for price to hold near that intraday fair-value line.\n"
             + "Market Trend Filter can require SPY Green, QQQ Green, or either benchmark to confirm a supportive broad-market backdrop.\n"

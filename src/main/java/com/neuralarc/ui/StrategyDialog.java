@@ -26,7 +26,6 @@ import javax.swing.*;
 import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
-import javax.swing.plaf.basic.BasicTabbedPaneUI;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -34,13 +33,10 @@ import java.awt.Container;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
-import java.awt.FontMetrics;
-import java.awt.Graphics;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
-import java.awt.Rectangle;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.io.InputStream;
@@ -242,6 +238,7 @@ public class StrategyDialog extends JDialog {
         styleTabs();
         tabs.addTab("Current Strategy", buildCurrentStrategyTab());
         tabs.addTab("Auto Analyze", buildAutoAnalyzeTab());
+        installTabLabels(tabs);
         add(tabs, BorderLayout.CENTER);
 
         JPanel actions = new JPanel(new BorderLayout());
@@ -1040,57 +1037,40 @@ public class StrategyDialog extends JDialog {
     }
 
     private void styleTabs() {
-        tabs.setOpaque(false);
-        tabs.setBackground(DIALOG_BG);
+        tabs.setOpaque(true);
+        tabs.setBackground(INPUT_BG);
         tabs.setForeground(TAB_UNSELECTED_TEXT);
         tabs.setFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
         tabs.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(TAB_BORDER, 1, true),
-                new EmptyBorder(2, 2, 2, 2)
+                new EmptyBorder(1, 1, 1, 1)
         ));
-        tabs.setUI(new BasicTabbedPaneUI() {
-            @Override
-            protected void installDefaults() {
-                super.installDefaults();
-                selectedTabPadInsets = new Insets(0, 0, 0, 0);
-                tabInsets = new Insets(8, 14, 8, 14);
-                contentBorderInsets = new Insets(1, 0, 0, 0);
-            }
+        tabs.addChangeListener(ignored -> refreshTabLabels(tabs));
+    }
 
-            @Override
-            protected void paintTabBackground(Graphics g, int tabPlacement, int tabIndex,
-                                              int x, int y, int w, int h, boolean isSelected) {
-                g.setColor(isSelected ? TAB_SELECTED_BG : TAB_UNSELECTED_BG);
-                g.fillRoundRect(x, y, w, h, 10, 10);
-            }
+    private void installTabLabels(JTabbedPane tabPane) {
+        for (int i = 0; i < tabPane.getTabCount(); i++) {
+            JLabel label = new JLabel(tabPane.getTitleAt(i), JLabel.CENTER);
+            label.setFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
+            label.setOpaque(true);
+            label.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createMatteBorder(0, 0, 1, 0, TAB_BORDER),
+                    new EmptyBorder(6, 14, 6, 14)
+            ));
+            tabPane.setTabComponentAt(i, label);
+        }
+        refreshTabLabels(tabPane);
+    }
 
-            @Override
-            protected void paintTabBorder(Graphics g, int tabPlacement, int tabIndex,
-                                          int x, int y, int w, int h, boolean isSelected) {
-                g.setColor(TAB_BORDER);
-                g.drawRoundRect(x, y, w - 1, h - 1, 10, 10);
+    private void refreshTabLabels(JTabbedPane tabPane) {
+        for (int i = 0; i < tabPane.getTabCount(); i++) {
+            Component component = tabPane.getTabComponentAt(i);
+            if (component instanceof JLabel label) {
+                boolean selected = i == tabPane.getSelectedIndex();
+                label.setForeground(selected ? TAB_SELECTED_TEXT : TAB_UNSELECTED_TEXT);
+                label.setBackground(selected ? TAB_SELECTED_BG : TAB_UNSELECTED_BG);
             }
-
-            @Override
-            protected void paintContentBorder(Graphics g, int tabPlacement, int selectedIndex) {
-                g.setColor(TAB_BORDER);
-                g.drawLine(0, calculateTabAreaHeight(tabPlacement, runCount, maxTabHeight), tabs.getWidth(), calculateTabAreaHeight(tabPlacement, runCount, maxTabHeight));
-            }
-
-            @Override
-            protected void paintText(Graphics g, int tabPlacement, Font font, FontMetrics metrics,
-                                     int tabIndex, String title, Rectangle textRect, boolean isSelected) {
-                g.setFont(font);
-                g.setColor(isSelected ? TAB_SELECTED_TEXT : TAB_UNSELECTED_TEXT);
-                g.drawString(title, textRect.x, textRect.y + metrics.getAscent());
-            }
-
-            @Override
-            protected void paintFocusIndicator(Graphics g, int tabPlacement, Rectangle[] rects, int tabIndex,
-                                               Rectangle iconRect, Rectangle textRect, boolean isSelected) {
-                // Intentionally omitted for cleaner enterprise-style tabs.
-            }
-        });
+        }
     }
 
     private void onSave() {

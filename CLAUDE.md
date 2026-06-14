@@ -36,3 +36,5 @@ Be consistant in the UI look and feel with the rest of the application
 **State model:** strategy lifecycle state, broker order status, and reconciled broker position are related but distinct — when changing status behavior, verify lifecycle transitions, order-status mapping, and position-aware UI labels together.
 
 **Safety defaults:** paper mode by default; live trading only via explicit configuration. Never log or persist API keys/secrets in plaintext; telemetry is opt-in.
+
+**Market data discipline:** Stock discovery and scanner features must use live broker/market-data integrations only. Paper mode is broker-backed simulation, not a demo-data mode; never ship hardcoded stock tickers, canned prices, or synthetic scanner candidates in runtime paths. If live data or credentials are unavailable, show an empty/credential-required state.

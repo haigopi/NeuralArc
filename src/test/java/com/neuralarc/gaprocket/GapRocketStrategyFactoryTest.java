@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -35,11 +34,4 @@ class GapRocketStrategyFactoryTest {
         assertTrue(strategy.lastEvent().contains("No broker order was submitted"));
     }
 
-    @Test
-    void sampleScannerProducesCandidatesThatCanPopulateGrid() {
-        List<GapRocketRecommendation> recommendations = new GapRocketAnalyzer(null, null)
-                .analyze(new GapRocketSampleScanner().candidates(), GapRocketConfig.defaults(StrategyMode.PAPER));
-        assertFalse(recommendations.isEmpty());
-        assertTrue(recommendations.stream().allMatch(r -> r.strategyScore() >= GapRocketAnalyzer.MINIMUM_RECOMMENDATION_SCORE));
-    }
 }

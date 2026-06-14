@@ -153,6 +153,8 @@
   - connection or stream lifecycle behavior: update `ConnectionLifecycleCoordinatorTest` and/or `TradeStreamLifecycleCoordinatorTest`
 
 ## Privacy and integration constraints
+- Market-data and stock discovery features must use live broker/market-data integrations only. Do not ship hardcoded stock tickers, canned stock prices, or synthetic scanner candidates in runtime paths; if live data is unavailable, show an empty/credential-required state instead of demo rows.
+- Paper mode is still broker-backed simulation mode and must use the same live market data boundaries as live mode. Do not treat paper mode as permission to use stale sample stock data.
 - Never log or publish API keys or secrets.
 - Telemetry remains opt-in.
 - Local credentials and app state remain local unless a feature explicitly states otherwise.
