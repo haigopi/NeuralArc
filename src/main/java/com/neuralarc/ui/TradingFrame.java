@@ -5340,6 +5340,7 @@ public class TradingFrame extends JFrame {
         gapRocketAnalyzeButton.setVisible(false);
         gapRocketAnalyzeButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         gapRocketAnalyzeButton.setFocusPainted(false);
+        gapRocketAnalyzeButton.setToolTipText(TooltipStyler.text(GapRocketPanel.EMPTY_STATE_TEXT, 420));
         gapRocketAnalyzeButton.addActionListener(event -> openGapRocketAnalysisDialog());
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 2));
         actions.setOpaque(false);
@@ -5675,9 +5676,9 @@ public class TradingFrame extends JFrame {
         if (selectedWorkspaceId == null) {
             return 0;
         }
-        return strategies.stream()
-                .filter(this::includeInCurrentStrategiesTab)
-                .filter(entry -> selectedWorkspaceId.equals(entry.strategy.workspaceId()))
+        return strategyRepository.findAll().stream()
+                .filter(strategy -> strategy.mode() == selectedViewMode)
+                .filter(strategy -> selectedWorkspaceId.equals(strategy.workspaceId()))
                 .count();
     }
 
@@ -5749,10 +5750,7 @@ public class TradingFrame extends JFrame {
                 + ". No broker orders were submitted.";
         log(summary);
         if (added == 0 && skipped > 0) {
-            JOptionPane.showMessageDialog(this,
-                    "No new Gap-and-Go candidates were added because the qualifying symbols are already in this Gap Rocket tab.",
-                    "Gap-and-Go Analysis",
-                    JOptionPane.INFORMATION_MESSAGE);
+            log("[Gap Rocket] Qualifying symbols are already in this tab; showing the existing grid.");
         }
     }
 
