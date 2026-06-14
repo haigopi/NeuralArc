@@ -3,6 +3,7 @@ package com.neuralarc.gaprocket;
 import com.neuralarc.model.StrategyMode;
 
 import javax.swing.*;
+import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.math.BigDecimal;
 
@@ -47,24 +48,73 @@ public final class GapRocketAnalysisDialog extends JDialog {
     }
 
     private JPanel build() {
-        JPanel panel = new JPanel(new GridLayout(0, 2, 8, 6));
-        panel.add(new JLabel("Minimum Premarket Gap %")); panel.add(minGap);
-        panel.add(new JLabel("Minimum Premarket Volume")); panel.add(minVolume);
-        panel.add(new JLabel("Minimum Stock Price")); panel.add(minPrice);
-        panel.add(new JLabel("Minimum Relative Volume")); panel.add(minRelVolume);
-        panel.add(new JLabel("Maximum Stock Price")); panel.add(maxPrice);
-        panel.add(catalystRequired); panel.add(new JLabel("Earnings, FDA/biotech, analyst, contract, breaking news"));
-        panel.add(new JLabel("Market Trend Filter")); panel.add(trend);
-        panel.add(new JLabel("Entry Style")); panel.add(entry);
-        panel.add(new JLabel("Opening Range Duration")); panel.add(range);
-        panel.add(new JLabel("Stop Loss %")); panel.add(stop);
-        panel.add(new JLabel("Take Profit %")); panel.add(target);
-        panel.add(new JLabel("Max Stocks to Add")); panel.add(maxStocks);
-        panel.add(new JLabel("Execution Frequency")); panel.add(frequency);
-        panel.add(new JLabel("Mode")); panel.add(new JLabel(mode.name()));
+        JPanel fields = new JPanel(new GridBagLayout());
+        fields.setOpaque(false);
+        int row = 0;
+        row = addField(fields, row, "Minimum Premarket Gap %", minGap,
+                "Only include stocks already above the previous close by at least this percent before the open. Example: 5 means +5% or higher.");
+        row = addField(fields, row, "Minimum Premarket Volume", minVolume,
+                "Require enough premarket shares traded to avoid thin, hard-to-fill movers. Default is 1,000,000 shares.");
+        row = addField(fields, row, "Minimum Stock Price", minPrice,
+                "Reject very low-priced stocks below this value before scoring.");
+        row = addField(fields, row, "Minimum Relative Volume", minRelVolume,
+                "Require current activity to be meaningfully higher than normal. Example: 2 means at least 2x typical volume.");
+        row = addField(fields, row, "Maximum Stock Price", maxPrice,
+                "Optional cap for high-priced stocks. Leave blank to allow any price above the minimum.");
+        row = addField(fields, row, "News Catalyst Required", catalystRequired,
+                "When enabled, candidates need a reason for the gap such as earnings, FDA/biotech news, analyst upgrades, contracts, partnerships, or breaking news.");
+        row = addField(fields, row, "Market Trend Filter", trend,
+                "Require SPY, QQQ, or either index to be green so long ideas align with the morning market tone. Disabled skips this check.");
+        row = addField(fields, row, "Entry Style", entry,
+                "Choose how the strategy waits after the open: opening-range breakout, breakout retest, VWAP pullback, or manual review only.");
+        row = addField(fields, row, "Opening Range Duration", range,
+                "How long after 9:30 AM ET to build the opening high/low before evaluating breakout or pullback entries.");
+        row = addField(fields, row, "Gap-and-Go Stop Loss %", stop,
+                "Planned risk from the entry price. NeuralArc uses this for strategy-level planning instead of broker blended position accounting.");
+        row = addField(fields, row, "Gap-and-Go Take Profit %", target,
+                "Planned reward target from the entry price for this Gap-and-Go setup.");
+        row = addField(fields, row, "Max Stocks to Add", maxStocks,
+                "Limit how many qualifying recommendations are added to the Gap Rocket grid after scoring.");
+        row = addField(fields, row, "Execution Frequency", frequency,
+                "How often this scanner should run when scheduled. Manual means it only runs when you click Analyze.");
+        addField(fields, row, "Mode", new JLabel(mode.name()),
+                "Uses the current NeuralArc mode automatically. Paper and Live candidates remain isolated.");
+
         JPanel wrapper = new JPanel(new BorderLayout(8, 8));
-        wrapper.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
-        wrapper.add(panel, BorderLayout.CENTER);
+        wrapper.setBorder(new EmptyBorder(12, 12, 12, 12));
+        wrapper.add(fields, BorderLayout.CENTER);
+        wrapper.add(buttons(), BorderLayout.SOUTH);
+        return wrapper;
+    }
+
+    private int addField(JPanel panel, int row, String labelText, JComponent component, String description) {
+        JLabel label = new JLabel(labelText);
+        label.setFont(label.getFont().deriveFont(Font.BOLD, 11f));
+        JLabel help = new JLabel("<html><div style='width:360px;color:#6f7785;'>" + description + "</div></html>");
+        help.setFont(help.getFont().deriveFont(Font.PLAIN, 10f));
+        GridBagConstraints labelConstraints = constraints(0, row, GridBagConstraints.NORTHWEST, 0);
+        GridBagConstraints fieldConstraints = constraints(1, row, GridBagConstraints.WEST, 1);
+        panel.add(label, labelConstraints);
+        panel.add(component, fieldConstraints);
+        row++;
+        GridBagConstraints helpConstraints = constraints(1, row, GridBagConstraints.WEST, 1);
+        helpConstraints.insets = new Insets(0, 8, 8, 0);
+        panel.add(help, helpConstraints);
+        return row + 1;
+    }
+
+    private GridBagConstraints constraints(int x, int y, int anchor, double weightx) {
+        GridBagConstraints constraints = new GridBagConstraints();
+        constraints.gridx = x;
+        constraints.gridy = y;
+        constraints.anchor = anchor;
+        constraints.weightx = weightx;
+        constraints.insets = new Insets(3, 4, 3, 8);
+        constraints.fill = x == 1 ? GridBagConstraints.HORIZONTAL : GridBagConstraints.NONE;
+        return constraints;
+    }
+
+    private JPanel buttons() {
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton cancel = new JButton("Cancel");
         JButton analyze = new JButton("Analyze");
@@ -72,9 +122,10 @@ public final class GapRocketAnalysisDialog extends JDialog {
         cancel.addActionListener(event -> dispose());
         analyze.addActionListener(event -> { accepted = true; executeRequested = false; dispose(); });
         analyzeAndExecute.addActionListener(event -> { accepted = true; executeRequested = true; dispose(); });
-        buttons.add(cancel); buttons.add(analyze); buttons.add(analyzeAndExecute);
-        wrapper.add(buttons, BorderLayout.SOUTH);
-        return wrapper;
+        buttons.add(cancel);
+        buttons.add(analyze);
+        buttons.add(analyzeAndExecute);
+        return buttons;
     }
 
     private void apply(GapRocketConfig c) {

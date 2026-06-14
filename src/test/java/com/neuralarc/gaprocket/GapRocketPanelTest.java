@@ -12,6 +12,8 @@ class GapRocketPanelTest {
         AtomicBoolean opened = new AtomicBoolean(false);
         GapRocketPanel panel = new GapRocketPanel(() -> opened.set(true));
         assertEquals(GapRocketPanel.ANALYZE_BUTTON_TEXT, panel.analyzeButton().getText());
+        assertFalse(GapRocketPanel.EMPTY_STATE_TEXT.contains("Gap Rocket is ready"));
+        assertTrue(GapRocketPanel.EMPTY_STATE_TEXT.contains("NVDA"));
         panel.analyzeButton().doClick();
         assertTrue(opened.get());
     }

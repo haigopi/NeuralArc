@@ -2807,11 +2807,13 @@ public class TradingFrame extends JFrame {
         // tab immediately (no restart) and selects it.
         smartPicksMenu.add(createStatusMenuHeader("New Strategy Workspace"));
         for (StrategyWorkspaceTemplate template : StrategyWorkspaceTemplate.catalog()) {
-            smartPicksMenu.add(createStatusMenuItem(
+            JMenuItem templateItem = createStatusMenuItem(
                     template.name(),
                     "icons/add-stock-strategy.svg",
                     () -> createWorkspaceFromTemplate(template)
-            ));
+            );
+            templateItem.setToolTipText(TooltipStyler.text(template.description(), 360));
+            smartPicksMenu.add(templateItem);
         }
     }
 

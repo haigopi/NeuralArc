@@ -4,7 +4,9 @@ import javax.swing.*;
 import java.awt.*;
 
 public final class GapRocketPanel extends JPanel {
-    public static final String EMPTY_STATE_TEXT = "Gap Rocket is ready.\nAnalyze premarket movers and add recommended stocks to this strategy.";
+    public static final String DESCRIPTION = "Scan premarket gap-up stocks, rank the strongest movers, and add the best candidates to this strategy grid for review.";
+    public static final String EXAMPLE = "Example: NVDA is up 7% premarket after earnings, trades 5M shares before the open, holds 6x relative volume, and retests the opening-range high before becoming Ready to Buy.";
+    public static final String EMPTY_STATE_TEXT = DESCRIPTION + "\n" + EXAMPLE;
     public static final String ANALYZE_BUTTON_TEXT = "Analyze Gap Stocks";
     private final JButton analyzeButton = new JButton(ANALYZE_BUTTON_TEXT);
 
@@ -14,7 +16,11 @@ public final class GapRocketPanel extends JPanel {
         JPanel card = new JPanel();
         card.setOpaque(false);
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-        JLabel text = new JLabel("<html><div style='text-align:center'>Gap Rocket is ready.<br>Analyze premarket movers and add recommended stocks to this strategy.<br><br>Example: NVDA gaps +7% on news with 3x relative volume, then retests the opening-range high.</div></html>");
+        JLabel text = new JLabel("<html><div style='text-align:center; width:420px;'>"
+                + DESCRIPTION
+                + "<br><br>"
+                + EXAMPLE
+                + "</div></html>");
         text.setAlignmentX(Component.CENTER_ALIGNMENT);
         analyzeButton.setAlignmentX(Component.CENTER_ALIGNMENT);
         analyzeButton.addActionListener(e -> { if (onAnalyze != null) onAnalyze.run(); });
