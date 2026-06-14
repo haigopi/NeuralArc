@@ -1,5 +1,7 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.model.Position;
+
 import javax.swing.table.AbstractTableModel;
 import java.util.List;
 import java.util.function.Function;
@@ -39,12 +41,22 @@ final class StrategyGridTableModel extends AbstractTableModel {
         String statusLabel = statusLabelFn.apply(entry);
         return strategyTablePresenter.valueAt(
                 entry.strategy,
-                entry.cachedPosition(),
+                displayPosition(entry),
                 entry.cachedLastSellPrice(),
                 entry.cachedRealizedPnl(),
                 presenterColumnIndex(columnIndex),
                 statusLabel
         );
+    }
+
+    private Position displayPosition(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return new Position("");
+        }
+        if (GapRocketDisplaySupport.suppressBrokerPosition(entry.strategy)) {
+            return new Position(entry.strategy.symbol());
+        }
+        return entry.cachedPosition();
     }
 
     private int presenterColumnIndex(int modelColumnIndex) {

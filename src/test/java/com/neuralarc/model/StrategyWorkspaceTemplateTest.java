@@ -11,6 +11,7 @@ class StrategyWorkspaceTemplateTest {
     @Test
     void catalogContainsExpectedTemplates() {
         List<StrategyWorkspaceTemplate> catalog = StrategyWorkspaceTemplate.catalog();
+        assertTrue(catalog.stream().anyMatch(t -> t.name().equals("Gap Rocket") && t.code().equals("GAPROCKET")));
         assertTrue(catalog.stream().anyMatch(t -> t.name().equals("ORB Engine") && t.code().equals("ORB")));
         assertTrue(catalog.stream().anyMatch(t -> t.name().equals("VWAP Desk")));
         assertTrue(catalog.stream().anyMatch(t -> t.name().equals("Momentum Lab")));

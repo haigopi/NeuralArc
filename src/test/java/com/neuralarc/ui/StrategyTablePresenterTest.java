@@ -682,6 +682,31 @@ class StrategyTablePresenterTest {
         assertEquals("Limit Sell Placed - @ $120.00/8 (New)", label);
     }
 
+
+    @Test
+    void gapRocketRecommendationShowsPendingBaseBuyStatus() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.CREATED);
+        strategy.setCurrentState(StrategyLifecycleState.CREATED);
+        strategy.setLatestOrderStatus("GAP_ROCKET_RECOMMENDED");
+        strategy.setBaseBuyLimitPrice(new BigDecimal("203.60"));
+
+        String label = presenter.displayStatusLabel(strategy, false, false, false);
+
+        assertEquals("Base buy pending to place order @ $203.60", label);
+    }
+
+    @Test
+    void gapRocketRecommendationShowsGapAndGoEntrySource() {
+        Strategy strategy = strategy();
+        strategy.setName("GAP_ROCKET: NVDA PAPER");
+        strategy.setLatestOrderStatus("GAP_ROCKET_RECOMMENDED");
+
+        Object value = presenter.valueAt(strategy, new Position("NVDA"), BigDecimal.ZERO, BigDecimal.ZERO, 9, "");
+
+        assertEquals("Gap and go strategy", value);
+    }
+
     private Strategy strategy() {
         return new Strategy(
                 UUID.randomUUID().toString(),

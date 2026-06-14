@@ -54,7 +54,7 @@ public record StrategyWorkspace(
 
     /**
      * Normalizes a free-text label into a short, uppercase, alphanumeric workspace code
-     * (max 8 chars). Falls back to {@code "STRAT"} when nothing usable remains.
+     * (max 9 chars). Falls back to {@code "STRAT"} when nothing usable remains.
      */
     public static String normalizeCode(String raw) {
         if (raw == null) {
@@ -62,7 +62,7 @@ public record StrategyWorkspace(
         }
         StringBuilder builder = new StringBuilder();
         for (char c : raw.toUpperCase().toCharArray()) {
-            if (Character.isLetterOrDigit(c) && builder.length() < 8) {
+            if (Character.isLetterOrDigit(c) && builder.length() < 9) {
                 builder.append(c);
             }
         }

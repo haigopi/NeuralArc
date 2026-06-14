@@ -85,7 +85,7 @@ final class StrategyWorkspaceTabs {
             for (StrategyWorkspace workspace : active) {
                 JPanel host = new JPanel(new BorderLayout());
                 host.setOpaque(false);
-                tabs.insertTab(tabTitle(workspace), null, host, workspace.name(), insertAt);
+                tabs.insertTab(tabTitle(workspace), null, host, tabTooltip(workspace), insertAt);
                 workspaceIdByTab.add(workspace.id());
                 insertAt++;
             }
@@ -179,6 +179,13 @@ final class StrategyWorkspaceTabs {
     }
 
     private String tabTitle(StrategyWorkspace workspace) {
+        return workspace.name();
+    }
+
+    private String tabTooltip(StrategyWorkspace workspace) {
+        if ("GAPROCKET".equalsIgnoreCase(workspace.code())) {
+            return TooltipStyler.text("Scan premarket gap-up stocks, rank the strongest movers, and track opening-range, breakout-retest, or VWAP-pullback setups in a dedicated morning strategy grid.", 360);
+        }
         return workspace.name();
     }
 }

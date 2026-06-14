@@ -19,6 +19,8 @@ public record StrategyWorkspaceTemplate(String name, String code, String descrip
     /** The Smart Picks strategy-template catalog, in display order. */
     public static List<StrategyWorkspaceTemplate> catalog() {
         return List.of(
+                new StrategyWorkspaceTemplate("Gap Rocket", "GAPROCKET",
+                        "Scan premarket gap-up stocks, rank the strongest movers, and track opening-range, breakout-retest, or VWAP-pullback setups in a dedicated morning strategy grid."),
                 new StrategyWorkspaceTemplate("ORB Engine", "ORB",
                         "Opening-range breakout entries on the first range of the session."),
                 new StrategyWorkspaceTemplate("VWAP Desk", "VWAP",
