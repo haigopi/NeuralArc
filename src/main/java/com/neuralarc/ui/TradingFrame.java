@@ -4778,9 +4778,19 @@ public class TradingFrame extends JFrame {
                 || entry.strategy.pauseReason() == PauseReason.USER_PAUSED)) {
             return true;
         }
+        if (isGapRocketRecommendationRow(entry.strategy)) {
+            return true;
+        }
         // Keep showing rows that still have live exposure on the broker side.
         return entry.strategy.status() == StrategyStatus.ACTIVE
                 || isWaitingForFill(entry.strategy);
+    }
+
+    private boolean isGapRocketRecommendationRow(Strategy strategy) {
+        if (strategy == null || strategy.latestOrderStatus() == null) {
+            return false;
+        }
+        return strategy.latestOrderStatus().startsWith("GAP_ROCKET_");
     }
 
     static boolean includeFailedStrategyInCurrentTab(Strategy strategy) {
