@@ -5170,7 +5170,7 @@ public class TradingFrame extends JFrame {
     }
 
     private String connectionModeStatus(BrokerType brokerType) {
-        return "Alpaca  Mode " + selectedModeLabel();
+        return "Alpaca Mode: " + selectedModeLabel();
     }
 
     private String gridBrokerModeLabel(Strategy strategy) {
