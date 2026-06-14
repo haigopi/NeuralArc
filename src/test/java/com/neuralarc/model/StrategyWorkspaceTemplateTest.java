@@ -14,7 +14,8 @@ class StrategyWorkspaceTemplateTest {
         assertTrue(catalog.stream().anyMatch(t -> t.name().equals("Gap Rocket") && t.code().equals("GAPROCKET")));
         assertTrue(catalog.stream().anyMatch(t -> t.name().equals("ORB Engine") && t.code().equals("ORB")));
         assertTrue(catalog.stream().anyMatch(t -> t.name().equals("VWAP Desk")));
-        assertTrue(catalog.stream().anyMatch(t -> t.name().equals("Momentum Lab")));
+        // "Momentum Lab" was folded into Gap Rocket (the dedicated high-relative-volume scanner).
+        assertFalse(catalog.stream().anyMatch(t -> t.name().equals("Momentum Lab") || t.code().equals("MOMENTUM")));
         assertTrue(catalog.stream().allMatch(t -> t.description() != null && !t.description().isBlank()));
     }
 
