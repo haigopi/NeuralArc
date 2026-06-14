@@ -6265,6 +6265,9 @@ public class TradingFrame extends JFrame {
         if (strategy == null) {
             return new Position("");
         }
+        if (isGapRocketWorkspaceStrategy(strategy) && !hasFilledBuyOrder(strategy.id())) {
+            return new Position(strategy.symbol());
+        }
         HttpAlpacaClient client = alpacaClientForStrategyMode(strategy.mode());
         if (client == null) {
             return new Position(strategy.symbol());
@@ -6994,6 +6997,27 @@ public class TradingFrame extends JFrame {
         streamReconnectAvailable = false;
         cancelTradeStreamReconnectRetry();
         tradeStreamLifecycleCoordinator.stop();
+    }
+
+    private boolean isGapRocketWorkspaceStrategy(Strategy strategy) {
+        if (strategy == null || strategy.workspaceId() == null) {
+            return false;
+        }
+        return workspaceService.findById(strategy.workspaceId())
+                .map(StrategyWorkspace::code)
+                .map(GAP_ROCKET_WORKSPACE_CODE::equalsIgnoreCase)
+                .orElse(false);
+    }
+
+    private boolean hasFilledBuyOrder(String strategyId) {
+        if (strategyId == null || strategyId.isBlank()) {
+            return false;
+        }
+        return strategyOrderRepository.findByStrategyId(strategyId).stream()
+                .filter(order -> order.side() == StrategyOrderSide.BUY)
+                .filter(order -> order.status() == StrategyOrderStatus.FILLED
+                        || order.status() == StrategyOrderStatus.PARTIALLY_FILLED)
+                .anyMatch(order -> order.filledQuantity().compareTo(BigDecimal.ZERO) > 0);
     }
 
 
