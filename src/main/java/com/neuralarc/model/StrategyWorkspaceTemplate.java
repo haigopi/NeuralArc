@@ -25,8 +25,8 @@ public record StrategyWorkspaceTemplate(String name, String code, String descrip
                         "Opening-range breakout entries on the first range of the session."),
                 new StrategyWorkspaceTemplate("VWAP Desk", "VWAP",
                         "Mean-reversion trades around the volume-weighted average price."),
-                new StrategyWorkspaceTemplate("Momentum Lab", "MOMENTUM",
-                        "Captures trending stocks with high relative volume."),
+                // "Momentum Lab" (high relative volume) was folded into Gap Rocket above, which is the
+                // dedicated high-relative-volume momentum scanner — avoid offering two overlapping ones.
                 new StrategyWorkspaceTemplate("Swing Vault", "SWING",
                         "Multi-day swing positions held across sessions."),
                 new StrategyWorkspaceTemplate("Dip Hunter", "DIP",

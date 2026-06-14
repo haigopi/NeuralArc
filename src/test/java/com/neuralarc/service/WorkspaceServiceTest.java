@@ -32,12 +32,12 @@ class WorkspaceServiceTest {
     void createGeneratesUniqueCodePerMode() {
         StrategyWorkspace first = service.create("ORB Engine", StrategyMode.PAPER);
         StrategyWorkspace second = service.create("ORB Engine", StrategyMode.PAPER);
-        assertEquals("ORBENGIN", first.code());
+        assertEquals("ORBENGINE", first.code());
         assertFalse(second.code().equalsIgnoreCase(first.code()), "second code must differ");
 
         // Same code is allowed in a different mode (Paper/Live are isolated).
         StrategyWorkspace live = service.create("ORB Engine", StrategyMode.LIVE);
-        assertEquals("ORBENGIN", live.code());
+        assertEquals("ORBENGINE", live.code());
     }
 
     @Test
