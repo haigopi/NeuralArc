@@ -31,11 +31,11 @@ public final class GapRocketPanel extends JPanel {
         card.setOpaque(false);
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
         JLabel text = new JLabel("<html><div style='text-align:left; width:420px;'>"
-                + "<div style='font-size:9px; color:#5f6673;'><b>" + DESCRIPTION_TITLE + "</b></div>"
-                + "<div style='margin-top:4px; text-align:left;'>" + DESCRIPTION + "</div>"
-                + "<br><div style='font-size:9px; color:#5f6673;'><b>" + EXAMPLE_TITLE + "</b></div>"
-                + "<div style='margin-top:4px; text-align:left;'>" + EXAMPLE + "</div>"
-                + "<br><div style='text-align:left; font-size:9px; color:#5f6673;'>"
+                + "<div style='font-size:12px; color:#ffffff;'><b>" + DESCRIPTION_TITLE + "</b></div>"
+                + "<div style='margin-top:4px; text-align:left; font-size:12px; color:#ffffff;'>" + DESCRIPTION + "</div>"
+                + "<br><div style='font-size:12px; color:#ffffff;'><b>" + EXAMPLE_TITLE + "</b></div>"
+                + "<div style='margin-top:4px; text-align:left; font-size:12px; color:#ffffff;'>" + EXAMPLE + "</div>"
+                + "<br><div style='text-align:left; font-size:12px; color:#ffffff;'>"
                 + "<b>Know before you make a next move:</b>"
                 + "<ul style='margin-top:4px; padding-left:14px;'>"
                 + "<li><b>VWAP:</b> volume-weighted average price; a VWAP pullback looks for price to hold near that intraday fair-value line.</li>"
