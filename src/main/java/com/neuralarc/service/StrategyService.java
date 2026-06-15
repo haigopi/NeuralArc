@@ -281,6 +281,22 @@ public class StrategyService {
         return LimitBuyCancelResult.success(canceledCount);
     }
 
+    /**
+     * Reconcile a strategy's locally stored order statuses against the broker, so an order that is
+     * still "accepted"/"new"/"pending" is never shown as filled after an app restart. Broker state
+     * wins. Safe to call on startup; only non-terminal orders are looked up.
+     */
+    public void refreshOrderStatusesFromBroker(String strategyId) {
+        if (strategyId == null) {
+            return;
+        }
+        strategyRepository.findById(strategyId).ifPresent(strategy -> {
+            if (serviceModeMatches(strategy)) {
+                strategyEngine.refreshOrderStatuses(strategy);
+            }
+        });
+    }
+
     public LimitSellCancelResult cancelPendingLimitSells(String strategyId) {
         Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
         if (maybeStrategy.isEmpty()) {

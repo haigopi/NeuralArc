@@ -360,6 +360,33 @@ class StrategyActionsControllerTest {
     }
 
     @Test
+    void cancelPendingLimitBuyCancelsAtBrokerWhenConfirmed() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        gateway.cancelablePendingLimitBuy = true;
+        gateway.confirmResult = JOptionPane.YES_OPTION;
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.cancelPendingLimitBuy(0);
+
+        assertEquals(1, gateway.confirmCalls);
+        assertEquals(1, gateway.backgroundTasksRun);
+        assertEquals(gateway.entryAt(0).strategy().id(), gateway.canceledLimitBuyStrategyId);
+    }
+
+    @Test
+    void cancelPendingLimitBuyReturnsEarlyWhenNoOpenOrder() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE));
+        gateway.cancelablePendingLimitBuy = false;
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.cancelPendingLimitBuy(0);
+
+        assertEquals(0, gateway.confirmCalls);
+        assertEquals(0, gateway.backgroundTasksRun);
+        assertNull(gateway.canceledLimitBuyStrategyId);
+    }
+
+    @Test
     void deleteCompletedStrategyArchivesWithoutHardDelete() {
         FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.COMPLETED));
         gateway.confirmResult = JOptionPane.YES_OPTION;
@@ -513,6 +540,13 @@ class StrategyActionsControllerTest {
             repositionedStrategyId = strategyId;
             return StrategyService.StrategyCreationResult.success(strategyId, "ord", "alpaca", "client");
         }
+        boolean cancelablePendingLimitBuy;
+        String canceledLimitBuyStrategyId;
+        @Override public StrategyService.LimitBuyCancelResult cancelPendingLimitBuys(Strategy strategy) {
+            canceledLimitBuyStrategyId = strategy.id();
+            return StrategyService.LimitBuyCancelResult.success(1);
+        }
+        @Override public boolean hasCancelablePendingLimitBuy(Strategy strategy) { return cancelablePendingLimitBuy; }
         @Override public void excludeFromPortfolioCaptureIfRunning(String strategyId) { excludedCaptureStrategyId = strategyId; }
         @Override public BigDecimal realizedPnlForStrategy(String strategyId) { return BigDecimal.ZERO; }
         @Override public String closePaperAccountState(Strategy strategy) { return ""; }

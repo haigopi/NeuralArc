@@ -19,6 +19,7 @@ import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.GitHubReleaseUpdateService;
 import com.neuralarc.service.MarketHoursService;
+import com.neuralarc.service.PendingBuyOrderGuard;
 import com.neuralarc.service.OnboardingStateStore;
 import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.service.AsyncLogUploadService;
@@ -756,6 +757,19 @@ public class TradingFrame extends JFrame {
                     return StrategyService.StrategyCreationResult.failed("strategy service is not configured");
                 }
                 return service.repositionExpiredStrategy(strategyId);
+            }
+            @Override public StrategyService.LimitBuyCancelResult cancelPendingLimitBuys(Strategy strategy) {
+                StrategyService service = strategyServiceForMode(strategy.mode());
+                if (service == null) {
+                    return StrategyService.LimitBuyCancelResult.failed(
+                            "Broker client is not configured for " + strategy.mode().name() + " mode.");
+                }
+                return service.cancelPendingLimitBuys(strategy.id());
+            }
+            @Override public boolean hasCancelablePendingLimitBuy(Strategy strategy) {
+                return strategy != null
+                        && PendingBuyOrderGuard.hasCancelablePendingLimitBuy(
+                                strategyOrderRepository.findByStrategyId(strategy.id()));
             }
             @Override public void excludeFromPortfolioCaptureIfRunning(String strategyId) {
                 portfolioCaptureController.excludeStrategyFromActiveCapture(strategyId);
@@ -2927,6 +2941,21 @@ public class TradingFrame extends JFrame {
         strategyActionsController.repositionExpiredStrategy(viewRow);
     }
 
+    private void cancelPendingLimitBuyFromGrid(int viewRow) {
+        strategyActionsController.cancelPendingLimitBuy(viewRow);
+    }
+
+    private boolean rowHasCancelablePendingLimitBuy(int viewRow) {
+        int row = strategyTable.convertRowIndexToModel(viewRow);
+        if (row < 0 || row >= strategies.size()) {
+            return false;
+        }
+        Strategy strategy = strategies.get(row).strategy;
+        return strategy != null
+                && PendingBuyOrderGuard.hasCancelablePendingLimitBuy(
+                        strategyOrderRepository.findByStrategyId(strategy.id()));
+    }
+
     private void previewLivePromotion(int viewRow) {
         strategyActionsController.previewLivePromotion(viewRow);
     }
@@ -3762,6 +3791,51 @@ public class TradingFrame extends JFrame {
         refreshPanels();
         updateStatusBar();
         logExposureStateMismatches("restore");
+        reconcileOpenOrdersWithBrokerOnStartup();
+    }
+
+    /**
+     * On startup, reconcile every locally stored pending order against the broker so an order that is
+     * still accepted/new/pending is never shown as filled after a restart. Broker state wins. Runs on
+     * a background thread; the grid is re-synced on the EDT afterwards. Best-effort: if the broker is
+     * unreachable, local state is left untouched and later polling/streaming will correct it.
+     */
+    private void reconcileOpenOrdersWithBrokerOnStartup() {
+        if (!connectionOk) {
+            return;
+        }
+        List<Strategy> pendingStrategies = new ArrayList<>();
+        for (ManagedStrategy managed : strategies) {
+            if (managed == null || managed.strategy == null) {
+                continue;
+            }
+            boolean hasPending = strategyOrderRepository.findByStrategyId(managed.strategy.id())
+                    .stream().anyMatch(StrategyOrder::isPending);
+            if (hasPending) {
+                pendingStrategies.add(managed.strategy);
+            }
+        }
+        if (pendingStrategies.isEmpty()) {
+            return;
+        }
+        uiPollingExecutor.execute(() -> {
+            for (Strategy strategy : pendingStrategies) {
+                try {
+                    StrategyService service = strategyServiceForMode(strategy.mode());
+                    if (service != null) {
+                        service.refreshOrderStatusesFromBroker(strategy.id());
+                    }
+                } catch (RuntimeException ex) {
+                    log("[RESTORE] Broker order-status refresh failed for " + strategy.symbol() + ": " + ex.getMessage());
+                }
+            }
+            SwingUtilities.invokeLater(() -> {
+                syncStrategiesFromRepository();
+                refreshStrategyTableData();
+                refreshPanels();
+                updateStatusBar();
+            });
+        });
     }
 
     static boolean canSelectFirstRestoredRow(int strategyCount, int visibleRowCount) {
@@ -6911,6 +6985,8 @@ public class TradingFrame extends JFrame {
                 this::buyMoreAtLimitPrice,
                 this::sellStrategyAtMarketPlace,
                 this::repositionExpiredStrategy,
+                this::cancelPendingLimitBuyFromGrid,
+                this::rowHasCancelablePendingLimitBuy,
                 () -> workspaceService.activeWorkspaces(selectedViewMode),
                 this::assignStrategyRowToWorkspace
         ).show(event);
