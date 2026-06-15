@@ -148,8 +148,8 @@ public final class GapRocketAnalysisDialog extends JDialog {
         JPopupMenu menu = new JPopupMenu();
         menu.add(runItem("Analyze now", RunMode.ANALYZE, true));
         menu.add(runItem("Analyze & Execute now", RunMode.ANALYZE_AND_EXECUTE, true));
-        JMenuItem schedule = runItem("Schedule (premarket 9:00–9:25 ET)", RunMode.SCHEDULE, false);
-        schedule.setToolTipText("Autonomous premarket scheduling is enabled in the upcoming scheduling-engine update.");
+        JMenuItem schedule = runItem("Schedule (premarket 9:05 ET, autonomous)", RunMode.SCHEDULE, true);
+        schedule.setToolTipText("Run this scan automatically at 9:05 ET on trading days. NeuralArc must be running at that time.");
         menu.add(schedule);
         run.addActionListener(event -> menu.show(run, 0, run.getHeight()));
 

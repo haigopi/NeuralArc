@@ -1,8 +1,18 @@
 # Implementation Plan — Autonomous Gap-and-Go Discovery, News Analysis & Scheduling
 
-Status: APPROVED FOR IMPLEMENTATION (not yet started)
+Status: Phases 1–4 IMPLEMENTED. Project migrated to Java 21.
 Branch: `claude/epic-gates-jlnwiu`
 Last updated: 2026-06-15
+
+Progress:
+- ✅ Phase 1 — auto-discovery (`GapAndGoDiscoveryService` + wiring + tests)
+- ✅ Phase 2 — news catalysts via AI web search (`NewsCatalystResolver`,
+  enrichment fan-out, defaults reconciled, tests)
+- ✅ Phase 3 — consolidated "Run Gap-and-Go ▾" control (`RunMode`)
+- ✅ Phase 4 — scheduling engine + persistence (`GapAndGoSchedule`,
+  `GapRocketConfigCodec`, `GapAndGoScheduleService`, migration `009`,
+  `SqliteGapAndGoScheduleRepository`, schedule/cancel UI, autonomous run)
+- ✅ Migrated Gradle toolchain + docs from Java 22 to Java 21
 
 This document is self-contained so any AI coding agent (or human) can continue
 the work without re-deriving context. Read `AGENTS.md` and `CLAUDE.md` first —

@@ -194,6 +194,7 @@ public final class AppDatabase {
         applyMigration("006_time_in_force", this::migration006);
         applyMigration("007_base_buy_repost_reduction_percent", this::migration007);
         applyMigration("008_strategy_workspaces", this::migration008);
+        applyMigration("009_gap_and_go_schedules", this::migration009);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -393,6 +394,26 @@ public final class AppDatabase {
             st.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_code_mode ON strategy_workspaces(code, mode)");
         }
         addColumnIfMissing("strategies", "workspace_id", "TEXT");
+    }
+
+    // ── Migration 009 — autonomous gap-and-go schedules ─────────────────────
+
+    private void migration009() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS gap_and_go_schedules (
+                        id                       TEXT PRIMARY KEY,
+                        enabled                  INTEGER NOT NULL DEFAULT 1,
+                        scan_time_et             TEXT NOT NULL,
+                        window_start_et          TEXT NOT NULL,
+                        window_end_et            TEXT NOT NULL,
+                        execute_after_scan       INTEGER NOT NULL DEFAULT 0,
+                        workspace_id             TEXT NOT NULL DEFAULT '',
+                        config_json              TEXT NOT NULL,
+                        updated_at               TEXT NOT NULL
+                    )""");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_gap_schedules_workspace ON gap_and_go_schedules(workspace_id)");
+        }
     }
 
     private void addColumnIfMissing(String table, String column, String definition) throws SQLException {
