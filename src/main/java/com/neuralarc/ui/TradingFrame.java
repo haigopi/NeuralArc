@@ -1579,7 +1579,8 @@ public class TradingFrame extends JFrame {
                 "footerActions");
 
         JLabel appLabel = new JLabel(AppMetadata.name() + "  " + AppMetadata.displayVersion() + " | Patent Pending™");
-        appLabel.setFont(FontLoader.brandingExtraBold(11f));
+        appLabel.setFont(BASE_FONT.deriveFont(Font.PLAIN, 10f));
+
         appLabel.setForeground(new Color(160, 160, 170));
         appLabel.setVerticalAlignment(SwingConstants.CENTER);
         appLabel.setBorder(new EmptyBorder(0, 12, 0, 8));
