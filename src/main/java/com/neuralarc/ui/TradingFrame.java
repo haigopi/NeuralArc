@@ -5768,7 +5768,11 @@ public class TradingFrame extends JFrame {
             return;
         }
         lastGapRocketConfig = dialog.config();
-        addGapRocketRecommendations(lastGapRocketConfig, dialog.executeRequested());
+        switch (dialog.runMode()) {
+            case ANALYZE -> addGapRocketRecommendations(lastGapRocketConfig, false);
+            case ANALYZE_AND_EXECUTE -> addGapRocketRecommendations(lastGapRocketConfig, true);
+            case SCHEDULE -> { /* Wired by the scheduling engine in Phase 4. */ }
+        }
     }
 
     private void addGapRocketRecommendations(GapRocketConfig config, boolean executeRequested) {

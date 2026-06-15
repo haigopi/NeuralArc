@@ -25,7 +25,10 @@ public final class GapRocketAnalysisDialog extends JDialog {
     private final JComboBox<GapRocketConfig.ExecutionFrequency> frequency = new JComboBox<>(GapRocketConfig.ExecutionFrequency.values());
     private final StrategyMode mode;
     private boolean accepted;
-    private boolean executeRequested;
+    private RunMode runMode = RunMode.ANALYZE;
+
+    /** How the operator chose to run the gap-and-go scan from the consolidated control. */
+    public enum RunMode { ANALYZE, ANALYZE_AND_EXECUTE, SCHEDULE }
 
     public GapRocketAnalysisDialog(Window owner, StrategyMode mode, GapRocketConfig existing) {
         super(owner, TITLE, ModalityType.APPLICATION_MODAL);
@@ -37,7 +40,7 @@ public final class GapRocketAnalysisDialog extends JDialog {
 
     public boolean accepted() { return accepted; }
 
-    public boolean executeRequested() { return executeRequested; }
+    public RunMode runMode() { return runMode; }
 
     public GapRocketConfig config() {
         return new GapRocketConfig(new BigDecimal(minGap.getText()), Long.parseLong(minVolume.getText()), new BigDecimal(minPrice.getText()),
@@ -139,15 +142,27 @@ public final class GapRocketAnalysisDialog extends JDialog {
     private JPanel buttons() {
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton cancel = new JButton("Cancel");
-        JButton analyze = new JButton("Analyze");
-        JButton analyzeAndExecute = new JButton("Analyze & Execute");
+        JButton run = new JButton("Run Gap-and-Go  ▾");
         cancel.addActionListener(event -> dispose());
-        analyze.addActionListener(event -> { accepted = true; executeRequested = false; dispose(); });
-        analyzeAndExecute.addActionListener(event -> { accepted = true; executeRequested = true; dispose(); });
+
+        JPopupMenu menu = new JPopupMenu();
+        menu.add(runItem("Analyze now", RunMode.ANALYZE, true));
+        menu.add(runItem("Analyze & Execute now", RunMode.ANALYZE_AND_EXECUTE, true));
+        JMenuItem schedule = runItem("Schedule (premarket 9:00–9:25 ET)", RunMode.SCHEDULE, false);
+        schedule.setToolTipText("Autonomous premarket scheduling is enabled in the upcoming scheduling-engine update.");
+        menu.add(schedule);
+        run.addActionListener(event -> menu.show(run, 0, run.getHeight()));
+
         buttons.add(cancel);
-        buttons.add(analyze);
-        buttons.add(analyzeAndExecute);
+        buttons.add(run);
         return buttons;
+    }
+
+    private JMenuItem runItem(String label, RunMode mode, boolean enabled) {
+        JMenuItem item = new JMenuItem(label);
+        item.setEnabled(enabled);
+        item.addActionListener(event -> { accepted = true; runMode = mode; dispose(); });
+        return item;
     }
 
     private void apply(GapRocketConfig c) {
