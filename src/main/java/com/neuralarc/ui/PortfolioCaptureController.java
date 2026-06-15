@@ -22,6 +22,8 @@ final class PortfolioCaptureController {
     interface Gateway {
         List<ManagedStrategy> strategies();
         StrategyMode selectedViewMode();
+        String selectedWorkspaceId();
+        BigDecimal realizedPnlForStrategy(String strategyId);
         StrategyService.StrategyCreationResult sellPosition(
                 ManagedStrategy entry,
                 SellSubmissionType submissionType,
@@ -48,6 +50,7 @@ final class PortfolioCaptureController {
     private Timer monitoringTimer;
     private PortfolioCaptureConfig activeConfig;
     private StrategyMode activeMode;
+    private String activeWorkspaceId;
     private PortfolioCaptureSnapshot lastSnapshot = PortfolioCaptureSnapshot.empty();
     private PortfolioCaptureAutomationState automationState = PortfolioCaptureAutomationState.STOPPED;
     private int loopCount;
@@ -74,7 +77,7 @@ final class PortfolioCaptureController {
     }
 
     PortfolioCaptureSnapshot currentSnapshot(PortfolioCaptureConfig config) {
-        lastSnapshot = calculator.calculate(strategiesForMode(gateway.selectedViewMode()), config);
+        lastSnapshot = calculator.calculate(strategiesForContext(gateway.selectedViewMode(), gateway.selectedWorkspaceId()), config, gateway::realizedPnlForStrategy);
         return lastSnapshot;
     }
 
@@ -90,8 +93,9 @@ final class PortfolioCaptureController {
     void activateMonitoring(PortfolioCaptureConfig config) {
         activeConfig = config;
         activeMode = gateway.selectedViewMode();
+        activeWorkspaceId = gateway.selectedWorkspaceId();
         stopTimerOnly();
-        lastSnapshot = calculator.calculate(strategiesForMode(activeMode), config);
+        lastSnapshot = calculator.calculate(strategiesForContext(activeMode, activeWorkspaceId), config, gateway::realizedPnlForStrategy);
         stateStore.save(new PortfolioCaptureStateStore.State(
                 true,
                 config,
@@ -117,6 +121,7 @@ final class PortfolioCaptureController {
         stopTimerOnly();
         activeConfig = null;
         activeMode = null;
+        activeWorkspaceId = null;
         stateStore.clear();
         gateway.onMonitoringChanged(false, lastSnapshot, null);
         setAutomationState(PortfolioCaptureAutomationState.STOPPED);
@@ -128,6 +133,7 @@ final class PortfolioCaptureController {
         stopTimerOnly();
         activeConfig = null;
         activeMode = null;
+        activeWorkspaceId = null;
         stateStore.clear();
         setAutomationState(PortfolioCaptureAutomationState.STOPPED);
         gateway.onMonitoringChanged(false, lastSnapshot, null);
@@ -174,7 +180,8 @@ final class PortfolioCaptureController {
             setAutomationState(PortfolioCaptureAutomationState.MONITORING);
         }
         StrategyMode mode = activeMode == null ? gateway.selectedViewMode() : activeMode;
-        lastSnapshot = calculator.calculate(strategiesForMode(mode), activeConfig);
+        String workspaceId = activeMode == null ? gateway.selectedWorkspaceId() : activeWorkspaceId;
+        lastSnapshot = calculator.calculate(strategiesForContext(mode, workspaceId), activeConfig, gateway::realizedPnlForStrategy);
         stateStore.save(new PortfolioCaptureStateStore.State(
                 true,
                 activeConfig,
@@ -220,10 +227,11 @@ final class PortfolioCaptureController {
         new CaptureWorker(snapshot, triggerReason, targetTriggered, executionConfig).execute();
     }
 
-    private List<ManagedStrategy> strategiesForMode(StrategyMode mode) {
+    private List<ManagedStrategy> strategiesForContext(StrategyMode mode, String workspaceId) {
         StrategyMode effectiveMode = mode == null ? StrategyMode.PAPER : mode;
         return gateway.strategies().stream()
                 .filter(entry -> entry != null && entry.strategy != null && entry.strategy.mode() == effectiveMode)
+                .filter(entry -> workspaceId == null || workspaceId.equals(entry.strategy.workspaceId()))
                 .toList();
     }
 

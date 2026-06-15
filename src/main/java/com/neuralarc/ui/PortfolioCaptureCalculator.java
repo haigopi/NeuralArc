@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 final class PortfolioCaptureCalculator {
     private final StrategyOpenPnlCalculator openPnlCalculator;
@@ -20,6 +21,14 @@ final class PortfolioCaptureCalculator {
     }
 
     PortfolioCaptureSnapshot calculate(List<ManagedStrategy> strategies, PortfolioCaptureConfig config) {
+        return calculate(strategies, config, id -> BigDecimal.ZERO);
+    }
+
+    PortfolioCaptureSnapshot calculate(
+            List<ManagedStrategy> strategies,
+            PortfolioCaptureConfig config,
+            Function<String, BigDecimal> realizedPnlByStrategyId
+    ) {
         if (strategies == null || strategies.isEmpty()) {
             return PortfolioCaptureSnapshot.empty();
         }
@@ -30,6 +39,10 @@ final class PortfolioCaptureCalculator {
         BigDecimal pnl = Monetary.zero();
 
         for (ManagedStrategy entry : strategies) {
+            if (entry == null || entry.strategy == null) {
+                continue;
+            }
+            pnl = pnl.add(safe(realizedPnlByStrategyId.apply(entry.strategy.id())));
             if (!eligible(entry, config)) {
                 continue;
             }
@@ -94,6 +107,10 @@ final class PortfolioCaptureCalculator {
             return Monetary.zero();
         }
         return Monetary.round(progress.min(BigDecimal.valueOf(100)));
+    }
+
+    private BigDecimal safe(BigDecimal value) {
+        return Monetary.round(value == null ? BigDecimal.ZERO : value);
     }
 
     private boolean eligible(ManagedStrategy entry, PortfolioCaptureConfig config) {

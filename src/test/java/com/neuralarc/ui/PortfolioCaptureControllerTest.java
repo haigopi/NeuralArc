@@ -164,6 +164,8 @@ class PortfolioCaptureControllerTest {
 
         @Override public List<ManagedStrategy> strategies() { return strategies; }
         @Override public StrategyMode selectedViewMode() { return selectedViewMode; }
+        @Override public String selectedWorkspaceId() { return null; }
+        @Override public BigDecimal realizedPnlForStrategy(String strategyId) { return BigDecimal.ZERO; }
 
         @Override
         public StrategyService.StrategyCreationResult sellPosition(
