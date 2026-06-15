@@ -80,6 +80,7 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.Insets;
 import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
@@ -581,6 +582,8 @@ public class TradingFrame extends JFrame {
                         return strategies;
                     }
                     @Override public StrategyMode selectedViewMode() { return selectedViewMode; }
+                    @Override public String selectedWorkspaceId() { return selectedWorkspaceId; }
+                    @Override public BigDecimal realizedPnlForStrategy(String strategyId) { return TradingFrame.this.realizedPnlForStrategy(strategyId); }
                     @Override
                     public StrategyService.StrategyCreationResult sellPosition(
                             ManagedStrategy entry,
@@ -4618,12 +4621,10 @@ public class TradingFrame extends JFrame {
     }
 
     private void updateUnrealizedSummaries() {
-        String query = normalizeGridSearchQuery(currentStrategiesSearchField.getText());
         StrategyPnlTotalsCalculator.Totals totals = strategyPnlTotalsCalculator.calculate(
                 strategies,
                 entry -> includeInCurrentStrategiesTab(entry)
-                        && entry.strategy.mode() == selectedViewMode
-                        && (query.isBlank() || matchesStockSymbol(entry.strategy.symbol(), query)),
+                        && entry.strategy.mode() == selectedViewMode,
                 this::realizedPnlForStrategy
         );
         if (selectedViewMode == StrategyMode.LIVE) {
@@ -5374,18 +5375,14 @@ public class TradingFrame extends JFrame {
             // (or clip) without ever squeezing the button.
             capturePortfolioIndicator.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
             capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
-            JPanel indicatorControls = new JPanel(new GridBagLayout());
-            indicatorControls.setOpaque(false);
-            GridBagConstraints indicatorGbc = new GridBagConstraints();
-            indicatorGbc.anchor = GridBagConstraints.CENTER;
-            indicatorControls.add(capturePortfolioIndicator, indicatorGbc);
-            panel.add(indicatorControls, BorderLayout.CENTER);
-
             JPanel captureControls = new JPanel(new GridBagLayout());
             captureControls.setOpaque(false);
             GridBagConstraints captureGbc = new GridBagConstraints();
             captureGbc.anchor = GridBagConstraints.CENTER;
             captureControls.add(capturePortfolioButton, captureGbc);
+            captureGbc.gridx = 1;
+            captureGbc.insets = new Insets(0, 8, 0, 0);
+            captureControls.add(capturePortfolioIndicator, captureGbc);
             panel.add(captureControls, BorderLayout.EAST);
         } else if (searchField == tradeHistorySearchField) {
             panel.add(createTradeHistoryGroupByPanel(), BorderLayout.CENTER);

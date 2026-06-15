@@ -45,7 +45,7 @@ class StrategyPnlTotalsCalculatorTest {
         );
 
         assertEquals(new BigDecimal("50.00"), totals.paperUnrealized());
-        assertEquals(new BigDecimal("25.50"), totals.paperRealized());
+        assertEquals(new BigDecimal("1025.49"), totals.paperRealized());
         assertEquals(new BigDecimal("-10.00"), totals.liveUnrealized());
         assertEquals(new BigDecimal("-10.25"), totals.liveRealized());
     }
@@ -118,6 +118,23 @@ class StrategyPnlTotalsCalculatorTest {
     }
 
 
+
+    @Test
+    void captureSnapshotPnlMatchesContextTotalWhenRealizedPnlIsPresent() {
+        ManagedStrategy open = managed("AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        open.setCachedPosition(openPosition("AAPL", "100.00", "115.00", 10));
+        ManagedStrategy closed = managed("MSFT", StrategyMode.PAPER, StrategyStatus.COMPLETED);
+        closed.setCachedPosition(new Position("MSFT"));
+
+        PortfolioCaptureSnapshot snapshot = captureCalculator.calculate(
+                List.of(open, closed),
+                config(true),
+                id -> id.equals(closed.strategy.id()) ? new BigDecimal("-25.00") : BigDecimal.ZERO
+        );
+
+        assertEquals(new BigDecimal("125.00"), snapshot.unrealizedPnl());
+    }
+
     @Test
     void gapRocketPendingRowsDoNotBorrowBrokerSymbolPnl() {
         ManagedStrategy gapRocket = managed("NVDA", StrategyMode.LIVE, StrategyStatus.CREATED);
@@ -133,6 +150,25 @@ class StrategyPnlTotalsCalculatorTest {
 
         assertEquals(new BigDecimal("0.00"), totals.liveUnrealized());
         assertEquals(new BigDecimal("0.00"), totals.liveRealized());
+    }
+
+
+    @Test
+    void allStocksTotalMatchesWorkspaceAllStocksTotalFromSharedInputs() {
+        ManagedStrategy gain = managed("AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        gain.setCachedPosition(openPosition("AAPL", "100.00", "115.00", 10));
+        ManagedStrategy loss = managed("MSFT", StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        loss.setCachedPosition(openPosition("MSFT", "200.00", "190.00", 5));
+
+        StrategyPnlTotalsCalculator.Totals totals = calculator.calculate(
+                List.of(gain, loss),
+                entry -> true,
+                id -> new BigDecimal("-4.90")
+        );
+
+        assertEquals(new BigDecimal("100.00"), totals.paperUnrealized());
+        assertEquals(new BigDecimal("-9.80"), totals.paperRealized());
+        assertEquals(new BigDecimal("90.20"), totals.paperTotal());
     }
 
     private ManagedStrategy managed(String symbol, StrategyMode mode, StrategyStatus status) {

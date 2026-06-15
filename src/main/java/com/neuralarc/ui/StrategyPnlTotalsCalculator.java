@@ -42,23 +42,15 @@ final class StrategyPnlTotalsCalculator {
             if (hasShares && openRow.isEmpty()) {
                 continue;
             }
-            boolean openPosition = openRow.isPresent();
-            BigDecimal pnlValue = openPosition
-                    ? openRow.get().unrealizedPnl()
-                    : safe(realizedPnlByStrategyId.apply(entry.strategy.id()));
+            BigDecimal unrealized = openRow.map(StrategyOpenPnlCalculator.Row::unrealizedPnl).orElse(BigDecimal.ZERO);
+            BigDecimal realized = safe(realizedPnlByStrategyId.apply(entry.strategy.id()));
 
             if (entry.strategy.mode() == StrategyMode.PAPER) {
-                if (openPosition) {
-                    paperUnrealized = paperUnrealized.add(pnlValue);
-                } else {
-                    paperRealized = paperRealized.add(pnlValue);
-                }
+                paperUnrealized = paperUnrealized.add(unrealized);
+                paperRealized = paperRealized.add(realized);
             } else {
-                if (openPosition) {
-                    liveUnrealized = liveUnrealized.add(pnlValue);
-                } else {
-                    liveRealized = liveRealized.add(pnlValue);
-                }
+                liveUnrealized = liveUnrealized.add(unrealized);
+                liveRealized = liveRealized.add(realized);
             }
         }
 
@@ -75,6 +67,14 @@ final class StrategyPnlTotalsCalculator {
             BigDecimal liveUnrealized,
             BigDecimal liveRealized
     ) {
+        BigDecimal paperTotal() {
+            return Monetary.round(paperUnrealized.add(paperRealized));
+        }
+
+        BigDecimal liveTotal() {
+            return Monetary.round(liveUnrealized.add(liveRealized));
+        }
+
         Totals {
             paperUnrealized = Monetary.round(paperUnrealized == null ? BigDecimal.ZERO : paperUnrealized);
             paperRealized = Monetary.round(paperRealized == null ? BigDecimal.ZERO : paperRealized);
