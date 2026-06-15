@@ -101,6 +101,16 @@ scheduling, autonomous execution, and consolidating the UI control.
   grid/state updates on the EDT (repo invariant).
 - **Scheduling reality:** NeuralArc is a local desktop console with no cloud
   cron. The app must be running at the scheduled time; surface this in the UI.
+- **Keep `TradingFrame` thin — extract into separate classes.** `TradingFrame`
+  is already **5000+ lines**. Do NOT pour new gap-and-go logic into it. Put the
+  orchestration (discovery → scan → news enrichment → analyze → schedule →
+  execute) into dedicated, independently testable classes (e.g. a
+  `GapAndGoCoordinator` / controller, plus the services below), mirroring the
+  existing split (`StrategyActionsController`, `PortfolioActionsController`,
+  `TradeStreamLifecycleCoordinator`, `ConnectionLifecycleCoordinator`,
+  `TradingRuntimeSupport`). `TradingFrame` should only **wire** these in and
+  forward UI events — ideally a net-neutral or shrinking line count, not growth.
+  Respect the class-size limits in `AGENTS.md`.
 
 ---
 
@@ -261,6 +271,9 @@ New:
 - `src/main/java/com/neuralarc/service/GapAndGoScheduleService.java`
 - `src/main/java/com/neuralarc/db/SqliteGapAndGoScheduleRepository.java`
 - `src/main/java/com/neuralarc/model/GapAndGoSchedule.java` (schedule record)
+- `src/main/java/com/neuralarc/ui/GapAndGoCoordinator.java` — owns the
+  discovery → scan → enrich → analyze → schedule → execute orchestration and the
+  background/EDT hand-off, so `TradingFrame` only wires it in.
 - Tests mirroring each under `src/test/java/com/neuralarc/...`
 
 Changed:
@@ -272,10 +285,10 @@ Changed:
 - `db/AppDatabase.java` — add `applyMigration("009_gap_and_go_schedules", ...)`
   + `migration009()`.
 
-(Watch class-size limits in `AGENTS.md`; `TradingFrame` is large — push logic
-into a coordinator/controller like the existing
-`StrategyActionsController`/`TradingRuntimeSupport` rather than growing
-`TradingFrame`.)
+(Watch class-size limits in `AGENTS.md`; `TradingFrame` is already 5000+ lines —
+all new behavior goes into `GapAndGoCoordinator` and the services above.
+`TradingFrame` changes should be limited to constructing and wiring these and
+forwarding UI events, keeping its line count flat or shrinking, never growing.)
 
 ---
 
