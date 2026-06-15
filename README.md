@@ -5,7 +5,7 @@ NeuralArc is a local-first Java desktop trading application built with Swing. It
 > Not financial advice. NeuralArc is decision-support and execution software for personal use. It is not a managed brokerage service and does not guarantee profit or loss prevention.
 
 ## Current positioning
-- Desktop-first Java 22 application using Swing and FlatLaf.
+- Desktop-first Java 21 application using Swing and FlatLaf.
 - Alpaca broker integration for paper and live trading workflows.
 - Paper/simulation-first operating model; live trading requires explicit user configuration and is used at the user's own risk.
 - Local-first persistence using SQLite at `~/.neuralarc/neuralarc.db`.
@@ -36,7 +36,7 @@ Important defaults and expectations:
 - Automation can fail because of market conditions, broker API behavior, local machine state, network outages, or configuration mistakes.
 
 ## Requirements
-- Java 22 toolchain.
+- Java 21 toolchain.
 - Gradle wrapper from this repository.
 - Alpaca account and API credentials for trading workflows.
 - `gh` CLI only if creating GitHub releases through the release script.

@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-NeuralArc is a local-first Java 22 Swing desktop trading application (Alpaca broker integration, paper/live modes). Treat it as a long-running stateful operator console, not a stateless web app.
+NeuralArc is a local-first Java 21 Swing desktop trading application (Alpaca broker integration, paper/live modes). Treat it as a long-running stateful operator console, not a stateless web app.
 
 **Read `AGENTS.md` before making changes.** It contains the binding engineering rules for this repo (class-size limits, Swing EDT discipline, strategy-engine and persistence standards, per-area test expectations). The notes below summarize commands and the big picture; `AGENTS.md` is the source of truth for conventions.
 

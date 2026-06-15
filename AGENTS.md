@@ -3,7 +3,7 @@
 ## Scope and stack
 - This is a Gradle Java desktop application built with Swing.
 - Entrypoint: `src/main/java/com/neuralarc/NeuralArc.java`.
-- Java target: Java 22 via `build.gradle`.
+- Java target: Java 21 via `build.gradle`.
 - The app is local-first, desktop-first, and stateful. Treat it like a long-running operator console, not a stateless web app.
 
 ## Non-negotiable code organization rules
