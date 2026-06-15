@@ -42,6 +42,42 @@ class StrategyWorkspaceTabsTest {
         assertTrue(tooltip.contains("VWAP-pullback"));
     }
 
+    @Test
+    void liquidateTabIdsUseStableWorkspaceIdsAndExcludeHistory() throws Exception {
+        InMemoryWorkspaceRepository workspaceRepository = new InMemoryWorkspaceRepository();
+        workspaceRepository.save(new StrategyWorkspace("paper-a", "Duplicated", "CODE1", StrategyMode.PAPER, false, Instant.now(), Instant.now()));
+        workspaceRepository.save(new StrategyWorkspace("live-a", "Duplicated", "CODE1", StrategyMode.LIVE, false, Instant.now(), Instant.now()));
+        WorkspaceService service = new WorkspaceService(workspaceRepository, new EmptyStrategyRepository());
+        JTabbedPane tabs = new JTabbedPane();
+        final StrategyMode[] mode = {StrategyMode.PAPER};
+        final StrategyWorkspaceTabs[] coordinator = new StrategyWorkspaceTabs[1];
+
+        SwingUtilities.invokeAndWait(() -> coordinator[0] = new StrategyWorkspaceTabs(
+                tabs,
+                new JPanel(),
+                new JPanel(),
+                service,
+                () -> mode[0],
+                ignored -> { },
+                () -> "All Stocks",
+                () -> "Trade History"
+        ));
+
+        SwingUtilities.invokeAndWait(() -> tabs.setSelectedIndex(1));
+        assertEquals("workspace:paper-a", coordinator[0].selectedStrategyTabId());
+
+        SwingUtilities.invokeAndWait(() -> {
+            mode[0] = StrategyMode.LIVE;
+            coordinator[0].rebuild();
+            tabs.setSelectedIndex(1);
+        });
+        assertEquals("workspace:live-a", coordinator[0].selectedStrategyTabId());
+
+        SwingUtilities.invokeAndWait(() -> tabs.setSelectedIndex(coordinator[0].historyTabIndex()));
+        assertTrue(coordinator[0].isHistorySelected());
+        assertNull(coordinator[0].selectedStrategyTabId());
+    }
+
     private static final class InMemoryWorkspaceRepository implements WorkspaceRepository {
         private final List<StrategyWorkspace> workspaces = new ArrayList<>();
         @Override public synchronized void save(StrategyWorkspace workspace) { workspaces.removeIf(w -> w.id().equals(workspace.id())); workspaces.add(workspace); }
