@@ -104,6 +104,16 @@ public class StrategyService {
         );
     }
 
+    private boolean serviceModeMatches(Strategy strategy) {
+        return strategy != null && strategy.mode() == defaultStrategyMode;
+    }
+
+    private String serviceModeMismatchMessage(Strategy strategy) {
+        StrategyMode strategyMode = strategy == null ? null : strategy.mode();
+        return "Strategy " + (strategyMode == null ? "mode" : strategyMode.name())
+                + " does not match this " + defaultStrategyMode.name() + " broker service";
+    }
+
     public StrategyCreationResult createAndActivate(Strategy strategy) {
         List<String> errors = validator.validate(strategy);
         if (strategy.mode() == StrategyMode.LIVE && !liveTradingEnabled) {
@@ -246,6 +256,9 @@ public class StrategyService {
             return LimitBuyCancelResult.failed("Strategy not found");
         }
         Strategy strategy = maybeStrategy.get();
+        if (!serviceModeMatches(strategy)) {
+            return LimitBuyCancelResult.failed(serviceModeMismatchMessage(strategy));
+        }
         int canceledCount = pendingLimitOrderCanceler.cancelPendingLimitBuys(strategy);
         if (canceledCount <= 0) {
             return LimitBuyCancelResult.failed("No pending limit buy orders found");
@@ -274,6 +287,9 @@ public class StrategyService {
             return LimitSellCancelResult.failed("Strategy not found");
         }
         Strategy strategy = maybeStrategy.get();
+        if (!serviceModeMatches(strategy)) {
+            return LimitSellCancelResult.failed(serviceModeMismatchMessage(strategy));
+        }
         int canceledCount = pendingLimitOrderCanceler.cancelPendingLimitSells(strategy);
         if (canceledCount <= 0) {
             return LimitSellCancelResult.failed("No pending limit sell orders found");
@@ -657,6 +673,9 @@ public class StrategyService {
             return StrategyCreationResult.failed("Strategy not found");
         }
         Strategy strategy = maybeStrategy.get();
+        if (!serviceModeMatches(strategy)) {
+            return StrategyCreationResult.failed(serviceModeMismatchMessage(strategy));
+        }
         Optional<com.neuralarc.api.AlpacaPositionData> position = alpacaClient.getPosition(strategy.symbol());
         if (position.isEmpty() || !position.get().exists()) {
             return StrategyCreationResult.failed("No open position to close");
