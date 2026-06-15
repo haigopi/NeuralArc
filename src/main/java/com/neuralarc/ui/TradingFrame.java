@@ -11,21 +11,10 @@ import com.neuralarc.db.SqliteStrategyExecutionEventRepository;
 import com.neuralarc.db.SqliteStrategyOrderRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
 import com.neuralarc.db.SqliteWorkspaceRepository;
-import com.neuralarc.db.SqliteGapAndGoScheduleRepository;
 import com.neuralarc.gaprocket.GapRocketAnalysisDialog;
-import com.neuralarc.gaprocket.GapRocketAnalyzer;
 import com.neuralarc.gaprocket.GapRocketConfig;
-import com.neuralarc.gaprocket.GapRocketRecommendation;
 import com.neuralarc.gaprocket.GapRocketPanel;
-import com.neuralarc.gaprocket.GapRocketLiveScanner;
-import com.neuralarc.gaprocket.GapRocketStrategyFactory;
-import com.neuralarc.gaprocket.GapRocketCandidate;
-import com.neuralarc.gaprocket.NewsCatalystResolver;
-import com.neuralarc.model.AiProviderType;
-import com.neuralarc.model.AiRecommendationSettings;
 import com.neuralarc.model.GapAndGoSchedule;
-import com.neuralarc.service.AiRecommendationProviderFactory;
-import com.neuralarc.service.GapAndGoScheduleService;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.GitHubReleaseUpdateService;
@@ -45,8 +34,6 @@ import com.neuralarc.model.StrategyWorkspaceTemplate;
 import com.neuralarc.service.StrategyEngine;
 import com.neuralarc.service.TrendingStocksService;
 import com.neuralarc.service.HttpAlpacaScreenerClient;
-import com.neuralarc.service.AlpacaScreenerException;
-import com.neuralarc.service.GapAndGoDiscoveryService;
 import com.neuralarc.service.WeekendReboundScoreService;
 import com.neuralarc.service.RotatingLogWriter;
 import com.neuralarc.service.SpacesLogUploader;
@@ -372,6 +359,8 @@ public class TradingFrame extends JFrame {
     private final JPanel tradeHistorySearchPanel = createGridSearchPanel("Search stocks:", tradeHistorySearchField);
     private final JButton gapRocketAnalyzeButton = new JButton(GapRocketPanel.ANALYZE_BUTTON_TEXT);
     private final JButton gapRocketPlaceOrdersButton = new JButton("Place All Pending Limit Buys");
+    private final JLabel gapRocketScheduleStatusLabel = new JLabel();
+    private final JButton gapRocketCancelScheduleButton = new JButton("Cancel Schedule");
     private JPanel headerPanel;
     private GapRocketConfig lastGapRocketConfig;
     private CardLayout strategiesGridCardLayout;
@@ -391,8 +380,7 @@ public class TradingFrame extends JFrame {
     private final SqliteStrategyOrderRepository strategyOrderRepository;
     private final SqliteStrategyExecutionEventRepository strategyEventRepository;
     private final SqliteWorkspaceRepository workspaceRepository;
-    private final SqliteGapAndGoScheduleRepository gapAndGoScheduleRepository;
-    private final GapAndGoScheduleService gapAndGoScheduleService;
+    private final GapAndGoCoordinator gapAndGoCoordinator;
     private final WorkspaceService workspaceService;
     // Dynamic strategy-workspace tabs; null workspace = the All Stocks view.
     private StrategyWorkspaceTabs strategyWorkspaceTabs;
@@ -492,10 +480,9 @@ public class TradingFrame extends JFrame {
         strategyOrderRepository = new SqliteStrategyOrderRepository(appDatabase);
         strategyEventRepository = new SqliteStrategyExecutionEventRepository(appDatabase);
         workspaceRepository = new SqliteWorkspaceRepository(appDatabase);
-        gapAndGoScheduleRepository = new SqliteGapAndGoScheduleRepository(appDatabase);
-        gapAndGoScheduleService = new GapAndGoScheduleService(
-                marketHoursService, java.time.Clock.systemUTC(),
-                schedule -> SwingUtilities.invokeLater(() -> runScheduledGapAndGo(schedule)), this::log);
+        gapAndGoCoordinator = new GapAndGoCoordinator(
+                new GapAndGoCoordinatorUi(), appDatabase, strategyRepository,
+                appSettingsService, marketHoursService, uiPollingExecutor);
         workspaceService = new WorkspaceService(workspaceRepository, strategyRepository);
         portfolioRefreshController = new PortfolioRefreshController(
                 strategyRepository,
@@ -5373,8 +5360,18 @@ public class TradingFrame extends JFrame {
         gapRocketPlaceOrdersButton.setFocusPainted(false);
         gapRocketPlaceOrdersButton.setToolTipText(TooltipStyler.text("Submit Alpaca limit buy orders for all Gap Rocket rows still pending order placement. Uses each row's base buy price and current Paper/Live mode."));
         gapRocketPlaceOrdersButton.addActionListener(event -> placeAllGapRocketPendingLimitBuys());
+        gapRocketScheduleStatusLabel.setVisible(false);
+        gapRocketScheduleStatusLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        gapRocketCancelScheduleButton.setVisible(false);
+        gapRocketCancelScheduleButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        gapRocketCancelScheduleButton.setFocusPainted(false);
+        gapRocketCancelScheduleButton.setToolTipText(TooltipStyler.text(
+                "Cancel the autonomous premarket gap-and-go schedule for this workspace.", 320));
+        gapRocketCancelScheduleButton.addActionListener(event -> gapAndGoCoordinator.cancelSchedule());
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 2));
         actions.setOpaque(false);
+        actions.add(gapRocketScheduleStatusLabel);
+        actions.add(gapRocketCancelScheduleButton);
         actions.add(gapRocketPlaceOrdersButton);
         actions.add(gapRocketAnalyzeButton);
         bottom.add(actions, BorderLayout.EAST);
@@ -5701,6 +5698,11 @@ public class TradingFrame extends JFrame {
         boolean showEmptyState = selectedGapRocket && selectedWorkspaceStrategyCount() == 0;
         gapRocketAnalyzeButton.setVisible(selectedGapRocket && !showEmptyState);
         gapRocketPlaceOrdersButton.setVisible(selectedGapRocket && !showEmptyState);
+        boolean scheduled = gapAndGoCoordinator != null
+                && gapAndGoCoordinator.currentSchedule() != null
+                && gapAndGoCoordinator.currentSchedule().enabled();
+        gapRocketScheduleStatusLabel.setVisible(selectedGapRocket && scheduled);
+        gapRocketCancelScheduleButton.setVisible(selectedGapRocket && scheduled);
         strategiesGridCardLayout.show(strategiesGridCardPanel, showEmptyState ? GAP_ROCKET_EMPTY_CARD : STRATEGIES_GRID_CARD);
     }
 
@@ -5766,7 +5768,7 @@ public class TradingFrame extends JFrame {
     }
 
     private boolean isGapRocketPendingOrderPlacement(Strategy strategy) {
-        return strategy != null && "GAP_ROCKET_RECOMMENDED".equalsIgnoreCase(strategy.latestOrderStatus());
+        return GapAndGoCoordinator.isPendingOrderPlacement(strategy);
     }
 
     private void openGapRocketAnalysisDialog() {
@@ -5778,271 +5780,62 @@ public class TradingFrame extends JFrame {
         }
         lastGapRocketConfig = dialog.config();
         switch (dialog.runMode()) {
-            case ANALYZE -> addGapRocketRecommendations(lastGapRocketConfig, false);
-            case ANALYZE_AND_EXECUTE -> addGapRocketRecommendations(lastGapRocketConfig, true);
-            case SCHEDULE -> scheduleGapAndGo(lastGapRocketConfig);
+            case ANALYZE -> gapAndGoCoordinator.analyze(lastGapRocketConfig, false);
+            case ANALYZE_AND_EXECUTE -> gapAndGoCoordinator.analyze(lastGapRocketConfig, true);
+            case SCHEDULE -> gapAndGoCoordinator.scheduleOrCancel(lastGapRocketConfig);
         }
     }
 
     /** Load any persisted gap-and-go schedule and start the autonomous premarket scheduler. */
     public void startBackgroundSchedulers() {
-        gapAndGoScheduleRepository.findAll().stream()
-                .filter(GapAndGoSchedule::enabled)
-                .findFirst()
-                .ifPresent(schedule -> {
-                    gapAndGoScheduleService.setSchedule(schedule);
-                    log("[Gap Rocket] Restored autonomous schedule: scan " + schedule.scanTimeEt()
-                            + " ET for workspace " + schedule.workspaceId()
-                            + (schedule.executeAfterScan() ? " (auto-execute)." : " (recommendation only)."));
-                });
-        gapAndGoScheduleService.start();
+        gapAndGoCoordinator.start();
     }
 
-    /** Register (or cancel) an autonomous premarket gap-and-go schedule for the selected workspace. */
-    private void scheduleGapAndGo(GapRocketConfig config) {
-        if (selectedWorkspaceId == null || !isSelectedGapRocketWorkspace()) {
-            return;
-        }
-        GapAndGoSchedule existing = gapAndGoScheduleService.schedule();
-        if (existing != null && selectedWorkspaceId.equals(existing.workspaceId())) {
-            int cancel = JOptionPane.showConfirmDialog(this,
-                    "An autonomous schedule already runs at " + existing.scanTimeEt() + " ET for this workspace.\n"
-                            + "Cancel it?",
-                    "Gap-and-Go Schedule", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
-            if (cancel == JOptionPane.YES_OPTION) {
-                gapAndGoScheduleService.clearSchedule();
-                gapAndGoScheduleRepository.deleteById(existing.id());
-                log("[Gap Rocket] Autonomous schedule cancelled.");
-            }
-            return;
-        }
-        int execute = JOptionPane.showConfirmDialog(this,
-                "Schedule an autonomous premarket scan at " + GapAndGoSchedule.DEFAULT_SCAN_TIME_ET + " ET on trading days,\n"
-                        + "carrying through the 9:45–11:00 ET execution window.\n\n"
-                        + "Auto-execute trades after each scan? (No = build the recommendation list only.)\n\n"
-                        + "Note: NeuralArc must be running at the scheduled time.",
-                "Gap-and-Go Schedule", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
-        if (execute == JOptionPane.CANCEL_OPTION || execute == JOptionPane.CLOSED_OPTION) {
-            return;
-        }
-        boolean executeAfterScan = execute == JOptionPane.YES_OPTION;
-        GapAndGoSchedule schedule = GapAndGoSchedule.create(selectedWorkspaceId, config, executeAfterScan);
-        gapAndGoScheduleRepository.save(schedule);
-        gapAndGoScheduleService.setSchedule(schedule);
-        log("[Gap Rocket] Autonomous schedule set: scan " + schedule.scanTimeEt() + " ET"
-                + (executeAfterScan ? " with auto-execute." : " (recommendation only).") + " NeuralArc must be running.");
-        JOptionPane.showMessageDialog(this,
-                "Autonomous gap-and-go scan scheduled for " + schedule.scanTimeEt() + " ET on trading days.\n"
-                        + (executeAfterScan ? "Trades will be armed automatically after each scan.\n" : "")
-                        + "NeuralArc must be running at that time.",
-                "Gap-and-Go Schedule", JOptionPane.INFORMATION_MESSAGE);
-    }
-
-    /** Invoked by the scheduler (on the EDT) to run a scan for the schedule's workspace without manual interaction. */
-    private void runScheduledGapAndGo(GapAndGoSchedule schedule) {
-        if (schedule == null) {
-            return;
-        }
-        runGapAndGoScan(schedule.workspaceId(), schedule.config(), schedule.executeAfterScan(), false);
-    }
-
-    private void addGapRocketRecommendations(GapRocketConfig config, boolean executeRequested) {
-        if (selectedWorkspaceId == null || !isSelectedGapRocketWorkspace()) {
-            return;
-        }
-        runGapAndGoScan(selectedWorkspaceId, config, executeRequested, true);
-    }
-
-    /**
-     * Shared gap-and-go scan path used by both the manual dialog and the autonomous scheduler.
-     * Interactive runs surface dialogs and toggle buttons; scheduled runs only log.
-     */
-    private void runGapAndGoScan(String workspaceId, GapRocketConfig config, boolean executeRequested, boolean interactive) {
-        if (!connectionOk || runtimeApiKey.isBlank()) {
-            String message = selectedModeLabel()
-                    + " Alpaca credentials are required before scanning Gap Rocket live market data.";
-            if (interactive) {
-                JOptionPane.showMessageDialog(this, message, "Gap-and-Go Analysis", JOptionPane.WARNING_MESSAGE);
-            } else {
-                log("[Gap Rocket] Scheduled scan skipped: " + message);
-            }
-            return;
-        }
-        if (interactive) {
-            gapRocketAnalyzeButton.setEnabled(false);
-            gapRocketPlaceOrdersButton.setEnabled(false);
-        }
-        uiPollingExecutor.execute(() -> {
-            try {
-                List<String> symbols = resolveGapRocketCandidateSymbols(config);
-                if (symbols.isEmpty()) {
-                    if (interactive) {
-                        SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
-                                "No live gap-and-go candidates were found right now. Try again during the premarket/opening "
-                                        + "window, or enter symbols manually.",
-                                "Gap-and-Go Analysis",
-                                JOptionPane.INFORMATION_MESSAGE));
-                    } else {
-                        log("[Gap Rocket] Scheduled scan found no live candidates right now.");
-                    }
-                    return;
-                }
-                GapRocketLiveScanner scanner = new GapRocketLiveScanner(
-                        new HttpAlpacaMarketDataApi(runtimeApiKey, runtimeApiSecret),
-                        java.time.Clock.systemDefaultZone(),
-                        this::log
-                );
-                GapRocketAnalyzer analyzer = new GapRocketAnalyzer(java.time.Clock.systemUTC(), this::log);
-                List<GapRocketCandidate> scanned = scanner.candidates(symbols);
-                GapRocketConfig effectiveConfig = config;
-                AiRecommendationSettings aiSettings = appSettingsService.loadAiRecommendationSettings();
-                if (isAiProviderConfigured(aiSettings)) {
-                    NewsCatalystResolver resolver = new NewsCatalystResolver(
-                            AiRecommendationProviderFactory.create(aiSettings),
-                            java.time.Clock.systemUTC(),
-                            this::log);
-                    scanned = SmartPicksParallelExecutor.mapPreservingOrder(
-                            scanned, "gap-rocket-news", resolver::enrich, null);
-                } else if (config.newsCatalystRequired()) {
-                    effectiveConfig = config.withNewsCatalystRequired(false);
-                    log("[Gap Rocket] No AI provider configured; ranking on gap/volume only "
-                            + "(news-catalyst filter skipped). Configure an AI provider in Settings to enable it.");
-                }
-                List<GapRocketRecommendation> recommendations = analyzer.analyze(scanned, effectiveConfig);
-                SwingUtilities.invokeLater(() ->
-                        applyGapRocketRecommendations(workspaceId, config, executeRequested, interactive, recommendations));
-            } finally {
-                if (interactive) {
-                    SwingUtilities.invokeLater(() -> {
-                        gapRocketAnalyzeButton.setEnabled(true);
-                        gapRocketPlaceOrdersButton.setEnabled(true);
-                    });
-                }
-            }
-        });
-    }
-
-    /**
-     * Resolve the symbols to scan: an operator's manual entry always wins; otherwise auto-discover
-     * the top live gappers from Alpaca's screener so no manual monitoring is required. Discovery
-     * over-fetches so downstream gap/volume filtering still lands a full grid.
-     */
-    private List<String> resolveGapRocketCandidateSymbols(GapRocketConfig config) {
-        if (!config.candidateSymbols().isEmpty()) {
-            return config.candidateSymbols();
-        }
-        try {
-            GapAndGoDiscoveryService discovery = new GapAndGoDiscoveryService(
-                    new HttpAlpacaScreenerClient(runtimeApiKey, runtimeApiSecret));
-            int target = Math.max(30, config.maxStocksToAdd() * 3);
-            List<String> discovered = discovery.discoverCandidates(config, target);
-            log("[Gap Rocket] Auto-discovered " + discovered.size() + " candidate(s) from Alpaca screener.");
-            return discovered;
-        } catch (AlpacaScreenerException ex) {
-            log("[Gap Rocket] Auto-discovery failed: " + ex.getMessage());
-            return List.of();
-        }
-    }
-
-    /** Lightweight check (no network) for whether the configured AI provider has enough config to attempt news analysis. */
-    private boolean isAiProviderConfigured(AiRecommendationSettings settings) {
-        if (settings == null) {
-            return false;
-        }
-        return settings.providerType() == AiProviderType.OPENAI
-                ? !settings.openAiApiKey().isBlank()
-                : !settings.jetsonHost().isBlank();
-    }
-
-    private void applyGapRocketRecommendations(String workspaceId, GapRocketConfig config, boolean executeRequested,
-                                               boolean interactive, List<GapRocketRecommendation> recommendations) {
-        if (workspaceId == null) {
-            return;
-        }
-        if (recommendations.isEmpty()) {
-            if (interactive) {
-                JOptionPane.showMessageDialog(this,
-                        "No Gap-and-Go candidates met the current live-data filters. Try lowering the gap, volume, relative-volume, catalyst, or price requirements.",
-                        "Gap-and-Go Analysis",
-                        JOptionPane.INFORMATION_MESSAGE);
-            } else {
-                log("[Gap Rocket] Scheduled scan produced no qualifying candidates.");
-            }
-            return;
-        }
-        GapRocketStrategyFactory factory = new GapRocketStrategyFactory();
-        int added = 0;
-        int updated = 0;
-        int skipped = 0;
-        String firstAddedStrategyId = null;
-        for (GapRocketRecommendation recommendation : recommendations) {
-            Optional<Strategy> existing = findGapRocketTrackedStrategy(recommendation.symbol(), config.mode(), workspaceId);
-            if (existing.isPresent()) {
-                Strategy existingStrategy = existing.get();
-                if (isGapRocketPendingOrderPlacement(existingStrategy)) {
-                    existingStrategy.setBaseBuyLimitPrice(recommendation.plannedEntryPrice());
-                    existingStrategy.setStopLossPrice(recommendation.stopLossPrice());
-                    existingStrategy.setTargetSellPrice(recommendation.takeProfitPrice());
-                    existingStrategy.setLastEvent("Gap-and-Go recommendation refreshed: score=" + recommendation.strategyScore()
-                            + ", plannedEntry=$" + recommendation.plannedEntryPrice().toPlainString()
-                            + ", target=$" + recommendation.takeProfitPrice().toPlainString()
-                            + ". No broker order was submitted.");
-                    strategyRepository.save(existingStrategy);
-                    updated++;
-                    log("[Gap Rocket] Updated existing " + recommendation.symbol()
-                            + " plannedEntry=$" + recommendation.plannedEntryPrice().toPlainString()
-                            + " target=$" + recommendation.takeProfitPrice().toPlainString() + ".");
-                } else {
-                    skipped++;
-                    log("[Gap Rocket] Skipped " + recommendation.symbol() + ": already has an order or active state in this strategy tab.");
-                }
-                continue;
-            }
-            Strategy strategy = factory.toStrategy(
-                    recommendation,
-                    workspaceId,
-                    executeRequested,
-                    settingsDialog.appliedDefaultStrategyPollingSeconds()
-            );
-            strategyRepository.save(strategy);
-            if (firstAddedStrategyId == null) {
-                firstAddedStrategyId = strategy.id();
-            }
-            added++;
-            log("[Gap Rocket] Added " + recommendation.symbol()
-                    + " score=" + recommendation.strategyScore()
-                    + " plannedEntry=$" + recommendation.plannedEntryPrice().toPlainString()
-                    + " mode=" + recommendation.mode()
-                    + (executeRequested ? " monitoring enabled" : " recommendation only")
-                    + ".");
-        }
+    /** Refresh the grid after the coordinator applies gap-and-go recommendations (called on the EDT). */
+    private void onGapRocketRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
         syncStrategiesFromRepository();
         refreshStrategyTableData();
         applyCurrentStrategiesRowFilter();
         refreshWorkspaceSummary();
         refreshGapRocketEmptyState();
         updateStatusBar();
-        if (firstAddedStrategyId != null && workspaceId.equals(selectedWorkspaceId)) {
-            String strategyIdToReveal = firstAddedStrategyId;
-            SwingUtilities.invokeLater(() -> selectAndRevealStrategy(strategyIdToReveal));
-        }
-        String summary = "[Gap Rocket] Added " + added + " Gap-and-Go candidate" + (added == 1 ? "" : "s")
-                + " to the visible Gap Rocket grid"
-                + (updated > 0 ? "; refreshed " + updated + " existing pending row" + (updated == 1 ? "" : "s") : "")
-                + (skipped > 0 ? "; skipped " + skipped + " duplicate symbol" + (skipped == 1 ? "" : "s") : "")
-                + ". No broker orders were submitted.";
-        log(summary);
-        if (added == 0 && (updated > 0 || skipped > 0)) {
-            log("[Gap Rocket] Qualifying symbols are already in this tab; showing the existing grid.");
+        if (firstAddedStrategyId != null && firstAddedStrategyId.length() > 0
+                && workspaceId.equals(selectedWorkspaceId)) {
+            SwingUtilities.invokeLater(() -> selectAndRevealStrategy(firstAddedStrategyId));
         }
     }
 
-    private Optional<Strategy> findGapRocketTrackedStrategy(String symbol, StrategyMode mode, String workspaceId) {
-        return strategyRepository.findAll().stream()
-                .filter(strategy -> strategy.mode() == mode)
-                .filter(strategy -> workspaceId.equals(strategy.workspaceId()))
-                .filter(strategy -> strategy.symbol().equalsIgnoreCase(symbol))
-                .findFirst();
+    /** Reflect the current schedule on the Gap Rocket action bar (badge + cancel button). */
+    private void updateGapRocketScheduleBadge(GapAndGoSchedule schedule) {
+        if (gapRocketScheduleStatusLabel == null) {
+            return;
+        }
+        gapRocketScheduleStatusLabel.setText(schedule != null && schedule.enabled()
+                ? "Scheduled: scan " + schedule.scanTimeEt() + " ET"
+                + (schedule.executeAfterScan() ? " (auto-execute)" : "")
+                : "");
+        refreshGapRocketEmptyState();
+    }
+
+    /** Bridges {@link GapAndGoCoordinator}'s needs to this frame without leaking the frame into it. */
+    private final class GapAndGoCoordinatorUi implements GapAndGoCoordinator.Ui {
+        @Override public String runtimeApiKey() { return runtimeApiKey; }
+        @Override public String runtimeApiSecret() { return runtimeApiSecret; }
+        @Override public boolean connectionOk() { return connectionOk; }
+        @Override public String selectedModeLabel() { return TradingFrame.this.selectedModeLabel(); }
+        @Override public int defaultStrategyPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
+        @Override public String selectedWorkspaceId() { return selectedWorkspaceId; }
+        @Override public boolean isGapRocketWorkspaceSelected() { return isSelectedGapRocketWorkspace(); }
+        @Override public void log(String message) { TradingFrame.this.log(message); }
+        @Override public void setScanButtonsEnabled(boolean enabled) {
+            gapRocketAnalyzeButton.setEnabled(enabled);
+            gapRocketPlaceOrdersButton.setEnabled(enabled);
+        }
+        @Override public void onRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
+            onGapRocketRecommendationsApplied(workspaceId, firstAddedStrategyId);
+        }
+        @Override public void onScheduleChanged(GapAndGoSchedule schedule) { updateGapRocketScheduleBadge(schedule); }
+        @Override public java.awt.Component dialogParent() { return TradingFrame.this; }
     }
 
     // Builds the per-tab P&L summary for the selected workspace (or All Stocks) from cached

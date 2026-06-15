@@ -13,6 +13,10 @@ Progress:
   `GapRocketConfigCodec`, `GapAndGoScheduleService`, migration `009`,
   `SqliteGapAndGoScheduleRepository`, schedule/cancel UI, autonomous run)
 - ✅ Migrated Gradle toolchain + docs from Java 22 to Java 21
+- ✅ Phase 5 — extracted `GapAndGoCoordinator` (owns the pipeline + scheduling;
+  `TradingFrame` only bridges via a thin `Ui` gateway), added a schedule
+  badge + cancel button on the Gap Rocket action bar, and fixed the two
+  pre-existing failing tests (status-bar compact spacing; flaky polling await).
 
 This document is self-contained so any AI coding agent (or human) can continue
 the work without re-deriving context. Read `AGENTS.md` and `CLAUDE.md` first —
