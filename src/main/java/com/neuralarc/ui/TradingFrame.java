@@ -1639,9 +1639,28 @@ public class TradingFrame extends JFrame {
         // Put event log and strategy grid in a vertical split so both are always visible
         JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
                 eventLogSection, strategyTabs);
+        // Remember the expanded divider position so collapsing then expanding the Logs section
+        // restores its previous height instead of leaving it stuck collapsed.
+        final int[] expandedLogsDivider = { -1 };
         eventLogSection.addPropertyChangeListener(CollapsibleSectionPanel.COLLAPSED_PROPERTY, event -> {
-            if (Boolean.TRUE.equals(event.getNewValue())) {
-                SwingUtilities.invokeLater(() -> splitPane.setDividerLocation(eventLogSection.getPreferredSize().height));
+            boolean nowCollapsed = Boolean.TRUE.equals(event.getNewValue());
+            if (nowCollapsed) {
+                expandedLogsDivider[0] = splitPane.getDividerLocation();
+                SwingUtilities.invokeLater(() -> {
+                    // Pin the top pane while collapsed so unrelated relayouts (e.g. toggling
+                    // another section) don't hand it space back.
+                    splitPane.setResizeWeight(0.0);
+                    splitPane.setDividerLocation(eventLogSection.getPreferredSize().height);
+                });
+            } else {
+                SwingUtilities.invokeLater(() -> {
+                    splitPane.setResizeWeight(0.5);
+                    if (expandedLogsDivider[0] > 0) {
+                        splitPane.setDividerLocation(expandedLogsDivider[0]);
+                    } else {
+                        splitPane.resetToPreferredSizes();
+                    }
+                });
             }
         });
         splitPane.setResizeWeight(0.5);
