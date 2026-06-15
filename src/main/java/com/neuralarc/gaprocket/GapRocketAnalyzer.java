@@ -25,7 +25,7 @@ public final class GapRocketAnalyzer {
                 .filter(Objects::nonNull)
                 .filter(candidate -> passesFilters(candidate, safeConfig))
                 .map(candidate -> toRecommendation(candidate, safeConfig, score(candidate, safeConfig)))
-                .filter(recommendation -> recommendation.strategyScore() >= MINIMUM_RECOMMENDATION_SCORE)
+                .filter(this::passesScoreThreshold)
                 .sorted(Comparator.comparingInt(GapRocketRecommendation::strategyScore).reversed())
                 .limit(safeConfig.maxStocksToAdd())
                 .toList();
@@ -53,6 +53,15 @@ public final class GapRocketAnalyzer {
                 + (passesTrend(c, cfg.marketTrendFilter()) ? 10 : 0)
                 + (c.spreadPercent() == null || c.spreadPercent().compareTo(new BigDecimal("1")) <= 0 ? 10 : 5);
         return Math.min(100, score);
+    }
+
+    private boolean passesScoreThreshold(GapRocketRecommendation recommendation) {
+        if (recommendation.strategyScore() >= MINIMUM_RECOMMENDATION_SCORE) {
+            return true;
+        }
+        decisionLog.accept("[Gap Rocket] Rejected " + recommendation.symbol() + ": score "
+                + recommendation.strategyScore() + " below minimum " + MINIMUM_RECOMMENDATION_SCORE + ".");
+        return false;
     }
 
     private GapRocketRecommendation toRecommendation(GapRocketCandidate c, GapRocketConfig cfg, int score) {

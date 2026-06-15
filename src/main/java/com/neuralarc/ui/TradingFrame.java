@@ -18,6 +18,11 @@ import com.neuralarc.gaprocket.GapRocketRecommendation;
 import com.neuralarc.gaprocket.GapRocketPanel;
 import com.neuralarc.gaprocket.GapRocketLiveScanner;
 import com.neuralarc.gaprocket.GapRocketStrategyFactory;
+import com.neuralarc.gaprocket.GapRocketCandidate;
+import com.neuralarc.gaprocket.NewsCatalystResolver;
+import com.neuralarc.model.AiProviderType;
+import com.neuralarc.model.AiRecommendationSettings;
+import com.neuralarc.service.AiRecommendationProviderFactory;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.GitHubReleaseUpdateService;
@@ -5796,7 +5801,22 @@ public class TradingFrame extends JFrame {
                         this::log
                 );
                 GapRocketAnalyzer analyzer = new GapRocketAnalyzer(java.time.Clock.systemUTC(), this::log);
-                List<GapRocketRecommendation> recommendations = analyzer.analyze(scanner.candidates(symbols), config);
+                List<GapRocketCandidate> scanned = scanner.candidates(symbols);
+                GapRocketConfig effectiveConfig = config;
+                AiRecommendationSettings aiSettings = appSettingsService.loadAiRecommendationSettings();
+                if (isAiProviderConfigured(aiSettings)) {
+                    NewsCatalystResolver resolver = new NewsCatalystResolver(
+                            AiRecommendationProviderFactory.create(aiSettings),
+                            java.time.Clock.systemUTC(),
+                            this::log);
+                    scanned = SmartPicksParallelExecutor.mapPreservingOrder(
+                            scanned, "gap-rocket-news", resolver::enrich, null);
+                } else if (config.newsCatalystRequired()) {
+                    effectiveConfig = config.withNewsCatalystRequired(false);
+                    log("[Gap Rocket] No AI provider configured; ranking on gap/volume only "
+                            + "(news-catalyst filter skipped). Configure an AI provider in Settings to enable it.");
+                }
+                List<GapRocketRecommendation> recommendations = analyzer.analyze(scanned, effectiveConfig);
                 SwingUtilities.invokeLater(() -> applyGapRocketRecommendations(config, executeRequested, recommendations));
             } finally {
                 SwingUtilities.invokeLater(() -> {
@@ -5827,6 +5847,16 @@ public class TradingFrame extends JFrame {
             log("[Gap Rocket] Auto-discovery failed: " + ex.getMessage());
             return List.of();
         }
+    }
+
+    /** Lightweight check (no network) for whether the configured AI provider has enough config to attempt news analysis. */
+    private boolean isAiProviderConfigured(AiRecommendationSettings settings) {
+        if (settings == null) {
+            return false;
+        }
+        return settings.providerType() == AiProviderType.OPENAI
+                ? !settings.openAiApiKey().isBlank()
+                : !settings.jetsonHost().isBlank();
     }
 
     private void applyGapRocketRecommendations(GapRocketConfig config, boolean executeRequested, List<GapRocketRecommendation> recommendations) {

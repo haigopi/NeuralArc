@@ -15,12 +15,12 @@ public final class GapRocketAnalysisDialog extends JDialog {
     private final JTextField minRelVolume = new JTextField("2", 8);
     private final JTextField maxPrice = new JTextField("", 8);
     private final JTextArea candidateSymbols = new JTextArea(3, 24);
-    private final JCheckBox catalystRequired = new JCheckBox("News Catalyst Required", false);
+    private final JCheckBox catalystRequired = new JCheckBox("News Catalyst Required", true);
     private final JComboBox<GapRocketConfig.MarketTrendFilter> trend = new JComboBox<>(GapRocketConfig.MarketTrendFilter.values());
     private final JComboBox<GapRocketConfig.EntryStyle> entry = new JComboBox<>(GapRocketConfig.EntryStyle.values());
     private final JComboBox<GapRocketConfig.OpeningRangeDuration> range = new JComboBox<>(GapRocketConfig.OpeningRangeDuration.values());
-    private final JTextField stop = new JTextField("1", 8);
-    private final JTextField target = new JTextField("2", 8);
+    private final JTextField stop = new JTextField("5", 8);
+    private final JTextField target = new JTextField("10", 8);
     private final JTextField maxStocks = new JTextField("10", 8);
     private final JComboBox<GapRocketConfig.ExecutionFrequency> frequency = new JComboBox<>(GapRocketConfig.ExecutionFrequency.values());
     private final StrategyMode mode;
@@ -67,7 +67,9 @@ public final class GapRocketAnalysisDialog extends JDialog {
                 "Leave blank to auto-discover the top live gappers from the Alpaca screener. Or enter specific live "
                         + "tickers, separated by commas or spaces, to scan only those. NeuralArc does not use hardcoded stock candidates.");
         row = addField(fields, row, "News Catalyst Required", catalystRequired,
-                "Alpaca market-data scans do not include news. Enable this only when a live news-catalyst source is wired in, otherwise candidates will be rejected.");
+                "Require a fresh news catalyst (earnings, FDA, upgrade, contract, or breaking news) confirmed by the "
+                        + "configured AI provider's live web search. Candidates with no catalyst are rejected. Disable to "
+                        + "rank on gap and volume alone, or if no AI provider is configured.");
         row = addField(fields, row, "Market Trend Filter", trend,
                 "Require SPY, QQQ, or either index to be green so long ideas align with the morning market tone. Disabled skips this check.");
         row = addField(fields, row, "Entry Style", entry,
