@@ -5232,14 +5232,18 @@ public class TradingFrame extends JFrame {
             // (or clip) without ever squeezing the button.
             capturePortfolioIndicator.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
             capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
-            JPanel indicatorControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+            JPanel indicatorControls = new JPanel(new GridBagLayout());
             indicatorControls.setOpaque(false);
-            indicatorControls.add(capturePortfolioIndicator);
+            GridBagConstraints indicatorGbc = new GridBagConstraints();
+            indicatorGbc.anchor = GridBagConstraints.CENTER;
+            indicatorControls.add(capturePortfolioIndicator, indicatorGbc);
             panel.add(indicatorControls, BorderLayout.CENTER);
 
-            JPanel captureControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+            JPanel captureControls = new JPanel(new GridBagLayout());
             captureControls.setOpaque(false);
-            captureControls.add(capturePortfolioButton);
+            GridBagConstraints captureGbc = new GridBagConstraints();
+            captureGbc.anchor = GridBagConstraints.CENTER;
+            captureControls.add(capturePortfolioButton, captureGbc);
             panel.add(captureControls, BorderLayout.EAST);
         } else if (searchField == tradeHistorySearchField) {
             panel.add(createTradeHistoryGroupByPanel(), BorderLayout.CENTER);

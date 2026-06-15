@@ -1387,6 +1387,62 @@ class StrategyServiceTest {
         assertTrue(result.error().contains("open position"));
     }
 
+
+    @Test
+    void closePositionRejectsStrategyFromDifferentBrokerMode() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService liveService = service(
+                strategies,
+                orders,
+                events,
+                alpaca,
+                new AlwaysOpenMarketHoursService(),
+                true,
+                StrategyMode.LIVE,
+                ApplicationMode.LIVE
+        );
+        Strategy paperStrategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategies.save(paperStrategy);
+
+        StrategyService.StrategyCreationResult result = liveService.closePosition(paperStrategy.id(), SellSubmissionType.MARKET);
+
+        assertFalse(result.success());
+        assertTrue(result.error().contains("PAPER"));
+        assertTrue(result.error().contains("LIVE broker service"));
+        assertTrue(alpaca.submittedOrders.isEmpty());
+        assertTrue(alpaca.canceledOrderIds.isEmpty());
+    }
+
+    @Test
+    void cancelPendingLimitBuysRejectsStrategyFromDifferentBrokerMode() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService liveService = service(
+                strategies,
+                orders,
+                events,
+                alpaca,
+                new AlwaysOpenMarketHoursService(),
+                true,
+                StrategyMode.LIVE,
+                ApplicationMode.LIVE
+        );
+        Strategy paperStrategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategies.save(paperStrategy);
+
+        StrategyService.LimitBuyCancelResult result = liveService.cancelPendingLimitBuys(paperStrategy.id());
+
+        assertFalse(result.success());
+        assertTrue(result.error().contains("PAPER"));
+        assertTrue(result.error().contains("LIVE broker service"));
+        assertTrue(alpaca.canceledOrderIds.isEmpty());
+    }
+
     private StrategyService service(
             InMemoryStrategyRepository strategies,
             InMemoryOrderRepository orders,
