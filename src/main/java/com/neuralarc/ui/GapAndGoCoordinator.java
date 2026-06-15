@@ -20,6 +20,7 @@ import com.neuralarc.service.AlpacaScreenerException;
 import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.service.GapAndGoDiscoveryService;
 import com.neuralarc.service.GapAndGoScheduleService;
+import com.neuralarc.service.HttpAlpacaNewsClient;
 import com.neuralarc.service.HttpAlpacaScreenerClient;
 import com.neuralarc.service.MarketHoursService;
 
@@ -226,7 +227,9 @@ final class GapAndGoCoordinator {
                 AiRecommendationSettings aiSettings = appSettingsService.loadAiRecommendationSettings();
                 if (isAiProviderConfigured(aiSettings)) {
                     NewsCatalystResolver resolver = new NewsCatalystResolver(
-                            AiRecommendationProviderFactory.create(aiSettings), Clock.systemUTC(), ui::log);
+                            AiRecommendationProviderFactory.create(aiSettings),
+                            new HttpAlpacaNewsClient(ui.runtimeApiKey(), ui.runtimeApiSecret()),
+                            Clock.systemUTC(), ui::log);
                     scanned = SmartPicksParallelExecutor.mapPreservingOrder(
                             scanned, "gap-rocket-news", resolver::enrich, null);
                 } else if (config.newsCatalystRequired()) {
