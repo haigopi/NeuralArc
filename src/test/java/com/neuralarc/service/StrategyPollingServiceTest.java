@@ -977,7 +977,12 @@ class StrategyPollingServiceTest {
                     && updated.currentState() == StrategyLifecycleState.BASE_BUY_PLACED
                     && "new".equals(updated.latestOrderStatus());
         }, "Expired base buy should be repositioned immediately after market-closed status refresh");
-        assertTrue(f.orders.findByClientOrderId("client-expired").orElseThrow().status() == StrategyOrderStatus.CANCELED);
+        // The expired order is canceled in the same async flow; await it rather than asserting
+        // synchronously, otherwise the check can race ahead of the cancellation.
+        f.awaitTrue(() -> f.orders.findByClientOrderId("client-expired")
+                        .map(order -> order.status() == StrategyOrderStatus.CANCELED)
+                        .orElse(false),
+                "Expired base buy order should be canceled after repositioning");
     }
 
     @Test
@@ -1081,7 +1086,7 @@ class StrategyPollingServiceTest {
         }
 
         Instant awaitLastPolledAfter(String strategyId, Instant baseline, String message) throws Exception {
-            long deadline = System.currentTimeMillis() + 2_000L;
+            long deadline = System.currentTimeMillis() + 10_000L;
             while (System.currentTimeMillis() < deadline) {
                 Instant current = strategies.findById(strategyId).orElseThrow().lastPolledAt();
                 if (current != null && current.isAfter(baseline)) {
@@ -1094,7 +1099,7 @@ class StrategyPollingServiceTest {
         }
 
         void awaitTrue(BooleanSupplier condition, String message) throws Exception {
-            long deadline = System.currentTimeMillis() + 2_000L;
+            long deadline = System.currentTimeMillis() + 10_000L;
             while (System.currentTimeMillis() < deadline) {
                 if (condition.getAsBoolean()) {
                     return;

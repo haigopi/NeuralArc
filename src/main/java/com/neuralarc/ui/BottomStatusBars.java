@@ -29,6 +29,8 @@ final class BottomStatusBars {
     private static final String STATUS_CARD_FULL = "full";
     private static final String STATUS_CARD_COMPACT = "compact";
     private static final String STATUS_SEPARATOR = " • ";
+    // The compact one-line summary uses plain spacing instead of a glyph separator.
+    private static final String COMPACT_SEPARATOR = "   ";
     private static final ZoneId MARKET_TIME_ZONE = ZoneId.of("America/New_York");
     private static final DateTimeFormatter MARKET_TIME_FORMATTER =
             DateTimeFormatter.ofPattern("EEE, MMM d h:mm a 'EST'", Locale.US);
@@ -304,8 +306,8 @@ final class BottomStatusBars {
         String funds = model.availableFundsText() == null || model.availableFundsText().isBlank()
                 ? "-"
                 : model.availableFundsText();
-        return "Broker " + broker + STATUS_SEPARATOR + "Market " + market + STATUS_SEPARATOR + "Funds " + funds
-                + STATUS_SEPARATOR + "Pending " + model.baseBuyPendingText();
+        return "Broker " + broker + COMPACT_SEPARATOR + "Market " + market + COMPACT_SEPARATOR + "Funds " + funds
+                + COMPACT_SEPARATOR + "Pending " + model.baseBuyPendingText();
     }
 
     private String statusBarDetailsHtml(StatusBarPresenter.StatusBarViewModel model) {

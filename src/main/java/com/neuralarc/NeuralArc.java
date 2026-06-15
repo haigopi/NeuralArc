@@ -31,6 +31,7 @@ public class NeuralArc {
             installApplicationIcon(frame);
             installMacApplicationMenu(frame);
             frame.setVisible(true);
+            frame.startBackgroundSchedulers();
 
             SplashScreenWindow splash = new SplashScreenWindow();
             installApplicationIcon(splash);

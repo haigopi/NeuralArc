@@ -15,17 +15,20 @@ public final class GapRocketAnalysisDialog extends JDialog {
     private final JTextField minRelVolume = new JTextField("2", 8);
     private final JTextField maxPrice = new JTextField("", 8);
     private final JTextArea candidateSymbols = new JTextArea(3, 24);
-    private final JCheckBox catalystRequired = new JCheckBox("News Catalyst Required", false);
+    private final JCheckBox catalystRequired = new JCheckBox("News Catalyst Required", true);
     private final JComboBox<GapRocketConfig.MarketTrendFilter> trend = new JComboBox<>(GapRocketConfig.MarketTrendFilter.values());
     private final JComboBox<GapRocketConfig.EntryStyle> entry = new JComboBox<>(GapRocketConfig.EntryStyle.values());
     private final JComboBox<GapRocketConfig.OpeningRangeDuration> range = new JComboBox<>(GapRocketConfig.OpeningRangeDuration.values());
-    private final JTextField stop = new JTextField("1", 8);
-    private final JTextField target = new JTextField("2", 8);
+    private final JTextField stop = new JTextField("5", 8);
+    private final JTextField target = new JTextField("10", 8);
     private final JTextField maxStocks = new JTextField("10", 8);
     private final JComboBox<GapRocketConfig.ExecutionFrequency> frequency = new JComboBox<>(GapRocketConfig.ExecutionFrequency.values());
     private final StrategyMode mode;
     private boolean accepted;
-    private boolean executeRequested;
+    private RunMode runMode = RunMode.ANALYZE;
+
+    /** How the operator chose to run the gap-and-go scan from the consolidated control. */
+    public enum RunMode { ANALYZE, ANALYZE_AND_EXECUTE, SCHEDULE }
 
     public GapRocketAnalysisDialog(Window owner, StrategyMode mode, GapRocketConfig existing) {
         super(owner, TITLE, ModalityType.APPLICATION_MODAL);
@@ -37,7 +40,7 @@ public final class GapRocketAnalysisDialog extends JDialog {
 
     public boolean accepted() { return accepted; }
 
-    public boolean executeRequested() { return executeRequested; }
+    public RunMode runMode() { return runMode; }
 
     public GapRocketConfig config() {
         return new GapRocketConfig(new BigDecimal(minGap.getText()), Long.parseLong(minVolume.getText()), new BigDecimal(minPrice.getText()),
@@ -63,10 +66,13 @@ public final class GapRocketAnalysisDialog extends JDialog {
                 "Require current activity to be meaningfully higher than normal. Example: 2 means at least 2x typical volume.");
         row = addField(fields, row, "Maximum Stock Price", maxPrice,
                 "Optional cap for high-priced stocks. Leave blank to allow any price above the minimum.");
-        row = addField(fields, row, "Candidate Symbols", new JScrollPane(candidateSymbols),
-                "Enter the live tickers to scan, separated by commas or spaces. NeuralArc does not use hardcoded stock candidates.");
+        row = addField(fields, row, "Candidate Symbols (optional)", new JScrollPane(candidateSymbols),
+                "Leave blank to auto-discover the top live gappers from the Alpaca screener. Or enter specific live "
+                        + "tickers, separated by commas or spaces, to scan only those. NeuralArc does not use hardcoded stock candidates.");
         row = addField(fields, row, "News Catalyst Required", catalystRequired,
-                "Alpaca market-data scans do not include news. Enable this only when a live news-catalyst source is wired in, otherwise candidates will be rejected.");
+                "Require a fresh news catalyst (earnings, FDA, upgrade, contract, or breaking news) confirmed by the "
+                        + "configured AI provider's live web search. Candidates with no catalyst are rejected. Disable to "
+                        + "rank on gap and volume alone, or if no AI provider is configured.");
         row = addField(fields, row, "Market Trend Filter", trend,
                 "Require SPY, QQQ, or either index to be green so long ideas align with the morning market tone. Disabled skips this check.");
         row = addField(fields, row, "Entry Style", entry,
@@ -136,15 +142,27 @@ public final class GapRocketAnalysisDialog extends JDialog {
     private JPanel buttons() {
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton cancel = new JButton("Cancel");
-        JButton analyze = new JButton("Analyze");
-        JButton analyzeAndExecute = new JButton("Analyze & Execute");
+        JButton run = new JButton("Run Gap-and-Go  ▾");
         cancel.addActionListener(event -> dispose());
-        analyze.addActionListener(event -> { accepted = true; executeRequested = false; dispose(); });
-        analyzeAndExecute.addActionListener(event -> { accepted = true; executeRequested = true; dispose(); });
+
+        JPopupMenu menu = new JPopupMenu();
+        menu.add(runItem("Analyze now", RunMode.ANALYZE, true));
+        menu.add(runItem("Analyze & Execute now", RunMode.ANALYZE_AND_EXECUTE, true));
+        JMenuItem schedule = runItem("Schedule (premarket 9:05 ET, autonomous)", RunMode.SCHEDULE, true);
+        schedule.setToolTipText("Run this scan automatically at 9:05 ET on trading days. NeuralArc must be running at that time.");
+        menu.add(schedule);
+        run.addActionListener(event -> menu.show(run, 0, run.getHeight()));
+
         buttons.add(cancel);
-        buttons.add(analyze);
-        buttons.add(analyzeAndExecute);
+        buttons.add(run);
         return buttons;
+    }
+
+    private JMenuItem runItem(String label, RunMode mode, boolean enabled) {
+        JMenuItem item = new JMenuItem(label);
+        item.setEnabled(enabled);
+        item.addActionListener(event -> { accepted = true; runMode = mode; dispose(); });
+        return item;
     }
 
     private void apply(GapRocketConfig c) {

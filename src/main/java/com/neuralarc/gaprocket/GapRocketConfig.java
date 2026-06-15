@@ -33,8 +33,8 @@ public record GapRocketConfig(
         minimumPremarketGapPercent = defaultIfNull(minimumPremarketGapPercent, "5");
         minimumStockPrice = defaultIfNull(minimumStockPrice, "5");
         minimumRelativeVolume = defaultIfNull(minimumRelativeVolume, "2");
-        stopLossPercent = defaultIfNull(stopLossPercent, "1");
-        takeProfitPercent = defaultIfNull(takeProfitPercent, "2");
+        stopLossPercent = defaultIfNull(stopLossPercent, "5");
+        takeProfitPercent = defaultIfNull(takeProfitPercent, "10");
         minimumPremarketVolume = minimumPremarketVolume <= 0 ? 1_000_000L : minimumPremarketVolume;
         catalystTypes = catalystTypes == null || catalystTypes.isEmpty()
                 ? EnumSet.allOf(CatalystType.class)
@@ -61,11 +61,19 @@ public record GapRocketConfig(
                 mode, List.of());
     }
 
+    /** Return a copy with the news-catalyst requirement overridden (used to degrade gracefully when no AI provider is configured). */
+    public GapRocketConfig withNewsCatalystRequired(boolean required) {
+        return new GapRocketConfig(minimumPremarketGapPercent, minimumPremarketVolume, minimumStockPrice,
+                minimumRelativeVolume, maximumStockPrice, required, catalystTypes, marketTrendFilter, entryStyle,
+                openingRangeDuration, stopLossPercent, takeProfitPercent, maxStocksToAdd, executionFrequency, mode,
+                candidateSymbols);
+    }
+
     public static GapRocketConfig defaults(StrategyMode mode) {
         return new GapRocketConfig(new BigDecimal("5"), 1_000_000L, new BigDecimal("5"), new BigDecimal("2"),
-                null, false, EnumSet.allOf(CatalystType.class), MarketTrendFilter.EITHER_SPY_OR_QQQ_GREEN,
-                EntryStyle.BREAKOUT_RETEST, OpeningRangeDuration.FIFTEEN_MINUTES, new BigDecimal("1"),
-                new BigDecimal("2"), 10, ExecutionFrequency.MANUAL, mode, List.of());
+                null, true, EnumSet.allOf(CatalystType.class), MarketTrendFilter.EITHER_SPY_OR_QQQ_GREEN,
+                EntryStyle.BREAKOUT_RETEST, OpeningRangeDuration.FIFTEEN_MINUTES, new BigDecimal("5"),
+                new BigDecimal("10"), 10, ExecutionFrequency.MANUAL, mode, List.of());
     }
 
     private static BigDecimal defaultIfNull(BigDecimal value, String fallback) {
