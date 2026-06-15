@@ -26,7 +26,9 @@ import com.neuralarc.service.MarketHoursService;
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import java.time.Clock;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executor;
 
@@ -59,7 +61,8 @@ final class GapAndGoCoordinator {
     private final SqliteStrategyRepository strategyRepository;
     private final AppSettingsService appSettingsService;
     private final SqliteGapAndGoScheduleRepository scheduleRepository;
-    private final GapAndGoScheduleService scheduleService;
+    private final MarketHoursService marketHoursService;
+    private final Map<String, GapAndGoScheduleService> scheduleServicesByWorkspace = new LinkedHashMap<>();
     private final Executor backgroundExecutor;
 
     GapAndGoCoordinator(Ui ui, AppDatabase database, SqliteStrategyRepository strategyRepository,
@@ -69,9 +72,8 @@ final class GapAndGoCoordinator {
         this.strategyRepository = strategyRepository;
         this.appSettingsService = appSettingsService;
         this.backgroundExecutor = backgroundExecutor;
+        this.marketHoursService = marketHoursService == null ? new MarketHoursService() : marketHoursService;
         this.scheduleRepository = new SqliteGapAndGoScheduleRepository(database);
-        this.scheduleService = new GapAndGoScheduleService(marketHoursService, Clock.systemUTC(),
-                schedule -> SwingUtilities.invokeLater(() -> runScheduled(schedule)), ui::log);
     }
 
     static boolean isPendingOrderPlacement(Strategy strategy) {
@@ -80,21 +82,26 @@ final class GapAndGoCoordinator {
 
     /** Load any persisted enabled schedule and start the premarket scheduler. */
     void start() {
-        Optional<GapAndGoSchedule> persisted = scheduleRepository.findAll().stream()
+        scheduleRepository.findAll().stream()
                 .filter(GapAndGoSchedule::enabled)
-                .findFirst();
-        persisted.ifPresent(schedule -> {
-            scheduleService.setSchedule(schedule);
-            ui.log("[Gap Rocket] Restored autonomous schedule: scan " + schedule.scanTimeEt()
-                    + " ET for workspace " + schedule.workspaceId()
-                    + (schedule.executeAfterScan() ? " (auto-execute)." : " (recommendation only)."));
-        });
-        ui.onScheduleChanged(scheduleService.schedule());
-        scheduleService.start();
+                .forEach(schedule -> {
+                    GapAndGoScheduleService service = scheduleServiceForWorkspace(schedule.workspaceId());
+                    service.setSchedule(schedule);
+                    service.start();
+                    ui.log("[Gap Rocket] Restored autonomous schedule: scan " + schedule.scanTimeEt()
+                            + " ET for workspace " + schedule.workspaceId()
+                            + (schedule.executeAfterScan() ? " (auto-execute)." : " (recommendation only)."));
+                });
+        ui.onScheduleChanged(currentSchedule());
     }
 
     GapAndGoSchedule currentSchedule() {
-        return scheduleService.schedule();
+        String workspaceId = ui.selectedWorkspaceId();
+        if (workspaceId == null) {
+            return null;
+        }
+        GapAndGoScheduleService service = scheduleServicesByWorkspace.get(workspaceId);
+        return service == null ? null : service.schedule();
     }
 
     /** Run an interactive scan for the selected workspace. */
@@ -111,7 +118,8 @@ final class GapAndGoCoordinator {
         if (workspaceId == null || !ui.isGapRocketWorkspaceSelected()) {
             return;
         }
-        GapAndGoSchedule existing = scheduleService.schedule();
+        GapAndGoScheduleService selectedScheduleService = scheduleServiceForWorkspace(workspaceId);
+        GapAndGoSchedule existing = selectedScheduleService.schedule();
         if (existing != null && workspaceId.equals(existing.workspaceId())) {
             int cancel = JOptionPane.showConfirmDialog(ui.dialogParent(),
                     "An autonomous schedule already runs at " + existing.scanTimeEt() + " ET for this workspace.\n"
@@ -134,7 +142,8 @@ final class GapAndGoCoordinator {
         boolean executeAfterScan = execute == JOptionPane.YES_OPTION;
         GapAndGoSchedule schedule = GapAndGoSchedule.create(workspaceId, config, executeAfterScan);
         scheduleRepository.save(schedule);
-        scheduleService.setSchedule(schedule);
+        selectedScheduleService.setSchedule(schedule);
+        selectedScheduleService.start();
         ui.onScheduleChanged(schedule);
         ui.log("[Gap Rocket] Autonomous schedule set: scan " + schedule.scanTimeEt() + " ET"
                 + (executeAfterScan ? " with auto-execute." : " (recommendation only).") + " NeuralArc must be running.");
@@ -147,14 +156,26 @@ final class GapAndGoCoordinator {
 
     /** Cancel and forget the current schedule. */
     void cancelSchedule() {
-        GapAndGoSchedule existing = scheduleService.schedule();
+        String workspaceId = ui.selectedWorkspaceId();
+        if (workspaceId == null) {
+            return;
+        }
+        GapAndGoScheduleService selectedScheduleService = scheduleServicesByWorkspace.get(workspaceId);
+        GapAndGoSchedule existing = selectedScheduleService == null ? null : selectedScheduleService.schedule();
         if (existing == null) {
             return;
         }
-        scheduleService.clearSchedule();
+        selectedScheduleService.clearSchedule();
         scheduleRepository.deleteById(existing.id());
         ui.onScheduleChanged(null);
         ui.log("[Gap Rocket] Autonomous schedule cancelled.");
+    }
+
+    private GapAndGoScheduleService scheduleServiceForWorkspace(String workspaceId) {
+        String key = workspaceId == null ? "" : workspaceId;
+        return scheduleServicesByWorkspace.computeIfAbsent(key, ignored ->
+                new GapAndGoScheduleService(marketHoursService, Clock.systemUTC(),
+                        schedule -> SwingUtilities.invokeLater(() -> runScheduled(schedule)), ui::log));
     }
 
     private void runScheduled(GapAndGoSchedule schedule) {
