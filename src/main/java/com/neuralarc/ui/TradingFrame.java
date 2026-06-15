@@ -101,6 +101,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -364,7 +365,7 @@ public class TradingFrame extends JFrame {
     private final JLabel gapRocketScheduleStatusLabel = new JLabel();
     private final JButton gapRocketCancelScheduleButton = new JButton("Cancel Schedule");
     private JPanel headerPanel;
-    private GapRocketConfig lastGapRocketConfig;
+    private final EnumMap<StrategyMode, GapRocketConfig> lastGapRocketConfigs = new EnumMap<>(StrategyMode.class);
     private CardLayout strategiesGridCardLayout;
     private JPanel strategiesGridCardPanel;
     private BottomStatusBars bottomStatusBars;
@@ -1798,6 +1799,7 @@ public class TradingFrame extends JFrame {
         if (strategyWorkspaceTabs != null) {
             strategyWorkspaceTabs.rebuild();
         }
+        updateGapRocketScheduleBadge(gapAndGoCoordinator.currentSchedule());
         refreshCapturePortfolioModeVisibility();
         updateHeaderModeStatus(currentBrokerType);
         refreshStrategyRuntimeServices(
@@ -5758,6 +5760,7 @@ public class TradingFrame extends JFrame {
         applyCurrentStrategiesRowFilter();
         refreshCurrentStrategiesHeading();
         refreshWorkspaceSummary();
+        updateGapRocketScheduleBadge(gapAndGoCoordinator.currentSchedule());
         refreshGapRocketEmptyState();
     }
 
@@ -5769,9 +5772,8 @@ public class TradingFrame extends JFrame {
         boolean showEmptyState = selectedGapRocket && selectedWorkspaceStrategyCount() == 0;
         gapRocketAnalyzeButton.setVisible(selectedGapRocket && !showEmptyState);
         gapRocketPlaceOrdersButton.setVisible(selectedGapRocket && !showEmptyState);
-        boolean scheduled = gapAndGoCoordinator != null
-                && gapAndGoCoordinator.currentSchedule() != null
-                && gapAndGoCoordinator.currentSchedule().enabled();
+        GapAndGoSchedule currentSchedule = gapAndGoCoordinator == null ? null : gapAndGoCoordinator.currentSchedule();
+        boolean scheduled = currentSchedule != null && currentSchedule.enabled();
         gapRocketScheduleStatusLabel.setVisible(selectedGapRocket && scheduled);
         gapRocketCancelScheduleButton.setVisible(selectedGapRocket && scheduled);
         strategiesGridCardLayout.show(strategiesGridCardPanel, showEmptyState ? GAP_ROCKET_EMPTY_CARD : STRATEGIES_GRID_CARD);
@@ -5843,17 +5845,19 @@ public class TradingFrame extends JFrame {
     }
 
     private void openGapRocketAnalysisDialog() {
+        GapRocketConfig lastGapRocketConfig = lastGapRocketConfigs.get(selectedViewMode);
         GapRocketAnalysisDialog dialog = new GapRocketAnalysisDialog(this, selectedViewMode, lastGapRocketConfig);
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
         if (!dialog.accepted()) {
             return;
         }
-        lastGapRocketConfig = dialog.config();
+        GapRocketConfig selectedModeConfig = dialog.config();
+        lastGapRocketConfigs.put(selectedViewMode, selectedModeConfig);
         switch (dialog.runMode()) {
-            case ANALYZE -> gapAndGoCoordinator.analyze(lastGapRocketConfig, false);
-            case ANALYZE_AND_EXECUTE -> gapAndGoCoordinator.analyze(lastGapRocketConfig, true);
-            case SCHEDULE -> gapAndGoCoordinator.scheduleOrCancel(lastGapRocketConfig);
+            case ANALYZE -> gapAndGoCoordinator.analyze(selectedModeConfig, false);
+            case ANALYZE_AND_EXECUTE -> gapAndGoCoordinator.analyze(selectedModeConfig, true);
+            case SCHEDULE -> gapAndGoCoordinator.scheduleOrCancel(selectedModeConfig);
         }
     }
 
