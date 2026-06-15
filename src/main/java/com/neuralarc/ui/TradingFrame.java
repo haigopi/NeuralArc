@@ -239,6 +239,8 @@ public class TradingFrame extends JFrame {
     private boolean updateAvailableFlashOn;
     private Timer capturePortfolioPulseTimer;
     private boolean capturePortfolioPulseOn;
+    private final PortfolioCaptureUiStateStore capturePortfolioUiStates = new PortfolioCaptureUiStateStore();
+    private PortfolioCaptureUiStateStore.Key activeCapturePortfolioUiKey;
     private PortfolioCaptureConfig capturePortfolioConfigForUi;
     private StrategyMode capturePortfolioModeForUi;
 
@@ -2355,6 +2357,10 @@ public class TradingFrame extends JFrame {
     }
 
     private void openPortfolioCaptureDialog() {
+        if (selectedCapturePortfolioUiKey() == null) {
+            return;
+        }
+        activeCapturePortfolioUiKey = selectedCapturePortfolioUiKey();
         userActionLog.started("Liquidate Portfolio");
         PortfolioCaptureDialog dialog = new PortfolioCaptureDialog(
                 this,
@@ -2381,55 +2387,49 @@ public class TradingFrame extends JFrame {
     }
 
     private void updateCapturePortfolioUi(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
+        PortfolioCaptureUiStateStore.Key key = activeCapturePortfolioUiKey == null
+                ? selectedCapturePortfolioUiKey()
+                : activeCapturePortfolioUiKey;
         capturePortfolioConfigForUi = active ? config : null;
-        capturePortfolioModeForUi = active ? selectedViewMode : null;
-        if (active) {
-            capturePortfolioButton.setText("Liquidate Portfolio");
-            startCapturePortfolioPulse();
-        } else {
-            stopCapturePortfolioPulse();
-            capturePortfolioButton.setText("Liquidate Portfolio");
-            capturePortfolioIndicator.setToolTipText(null);
+        capturePortfolioModeForUi = active && key != null ? key.mode() : null;
+        if (key != null) {
+            capturePortfolioUiStates.update(key, capturePortfolioUiStates.state(key)
+                    .withButton("Liquidate Portfolio", true)
+                    .withIndicator(active ? captureIndicatorText(snapshot, config) : "", active));
         }
+        applySelectedCapturePortfolioState();
         updateCapturePortfolioIndicator(snapshot, config);
     }
 
     private void updateCapturePortfolioIndicator(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
-        if (capturePortfolioModeForUi != null && capturePortfolioModeForUi != selectedViewMode) {
-            clearCapturePortfolioIndicatorForMode();
-            return;
+        PortfolioCaptureUiStateStore.Key key = activeCapturePortfolioUiKey == null
+                ? selectedCapturePortfolioUiKey()
+                : activeCapturePortfolioUiKey;
+        String indicatorText = captureIndicatorText(snapshot, config);
+        if (key != null) {
+            capturePortfolioUiStates.update(key, capturePortfolioUiStates.state(key)
+                    .withIndicator(indicatorText, !indicatorText.isBlank()));
         }
+        if (key != null && key.equals(selectedCapturePortfolioUiKey())) {
+            capturePortfolioConfigForUi = config;
+            applySelectedCapturePortfolioState();
+        }
+    }
+
+    private String captureIndicatorText(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
         if (snapshot == null || config == null || config.mode() != PortfolioCaptureMode.TARGET_MONITORING) {
-            capturePortfolioIndicator.setText("");
-            capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
-            capturePortfolioIndicator.setToolTipText(null);
-            return;
+            return "";
         }
-        capturePortfolioConfigForUi = config;
         String targetLabel = config.targetType() == PortfolioCaptureTargetType.PROFIT_PERCENT
                 ? Monetary.round(config.targetValue()) + "%"
                 : "$" + Monetary.round(config.targetValue());
-        capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_ACTIVE_TEXT);
-        capturePortfolioIndicator.setText("Monitoring Active | P&L $" + Monetary.round(snapshot.unrealizedPnl())
+        return "Monitoring Active | P&L $" + Monetary.round(snapshot.unrealizedPnl())
                 + " | Target " + targetLabel
-                + " | Progress " + Monetary.round(snapshot.targetProgressPercent()) + "%");
-        capturePortfolioIndicator.setToolTipText(TooltipStyler.text(
-                "Liquidate Portfolio monitoring is evaluating current portfolio P&L against the configured target.",
-                320
-        ));
+                + " | Progress " + Monetary.round(snapshot.targetProgressPercent()) + "%";
     }
 
     private void refreshCapturePortfolioModeVisibility() {
-        if (capturePortfolioModeForUi == null || capturePortfolioModeForUi == selectedViewMode) {
-            if (capturePortfolioConfigForUi != null && portfolioCaptureController.monitoringActive()) {
-                updateCapturePortfolioIndicator(
-                        portfolioCaptureController.currentSnapshot(capturePortfolioConfigForUi),
-                        capturePortfolioConfigForUi
-                );
-            }
-            return;
-        }
-        clearCapturePortfolioIndicatorForMode();
+        applySelectedCapturePortfolioState();
     }
 
     private void clearCapturePortfolioIndicatorForMode() {
@@ -2437,20 +2437,53 @@ public class TradingFrame extends JFrame {
         capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
         capturePortfolioIndicator.setToolTipText(null);
         capturePortfolioButton.setText("Liquidate Portfolio");
+        capturePortfolioButton.setEnabled(true);
+        stopCapturePortfolioPulse();
+    }
+
+    private PortfolioCaptureUiStateStore.Key selectedCapturePortfolioUiKey() {
+        if (strategyWorkspaceTabs != null && strategyWorkspaceTabs.isHistorySelected()) {
+            return null;
+        }
+        String tabId = strategyWorkspaceTabs == null
+                ? PortfolioCaptureUiStateStore.ALL_STOCKS_TAB_ID
+                : strategyWorkspaceTabs.selectedStrategyTabId();
+        return capturePortfolioUiStates.key(selectedViewMode, tabId);
+    }
+
+    private void applySelectedCapturePortfolioState() {
+        PortfolioCaptureUiStateStore.Key key = selectedCapturePortfolioUiKey();
+        if (key == null) {
+            clearCapturePortfolioIndicatorForMode();
+            return;
+        }
+        PortfolioCaptureUiStateStore.State state = capturePortfolioUiStates.state(key);
+        capturePortfolioButton.setText(state.buttonText());
+        capturePortfolioButton.setEnabled(state.buttonEnabled());
+        capturePortfolioIndicator.setText(state.indicatorText());
+        capturePortfolioIndicator.setForeground(state.monitoringActive() ? CAPTURE_INDICATOR_ACTIVE_TEXT : CAPTURE_INDICATOR_IDLE_TEXT);
+        capturePortfolioIndicator.setToolTipText(state.monitoringActive()
+                ? TooltipStyler.text("Liquidate Portfolio monitoring is evaluating current portfolio P&L against the configured target.", 320)
+                : null);
+        if (state.monitoringActive()) {
+            startCapturePortfolioPulse();
+        } else {
+            stopCapturePortfolioPulse();
+        }
     }
 
     private void updateCaptureAutomationState(PortfolioCaptureAutomationState state, int loopCount, int pendingCanceled) {
         SwingUtilities.invokeLater(() -> {
-            if (capturePortfolioModeForUi != null && capturePortfolioModeForUi != selectedViewMode) {
-                clearCapturePortfolioIndicatorForMode();
-                return;
-            }
             if (state == PortfolioCaptureAutomationState.STOPPED && !portfolioCaptureController.monitoringActive()) {
                 return;
             }
             if (state == PortfolioCaptureAutomationState.PAUSED_MARKET_CLOSED) {
                 stopCapturePortfolioPulse();
-                capturePortfolioButton.setText("Liquidate Portfolio:Auto Paused [Closed Market]");
+                if (activeCapturePortfolioUiKey != null) {
+                    capturePortfolioUiStates.update(activeCapturePortfolioUiKey, capturePortfolioUiStates.state(activeCapturePortfolioUiKey)
+                            .withButton("Liquidate Portfolio:Auto Paused [Closed Market]", true));
+                }
+                applySelectedCapturePortfolioState();
                 capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
                 capturePortfolioIndicator.setToolTipText(TooltipStyler.text(
                         "Liquidate Portfolio automation is configured but paused because the market session is closed. "
@@ -2459,14 +2492,22 @@ public class TradingFrame extends JFrame {
                 ));
             } else if (portfolioCaptureController.monitoringActive()
                     && state == PortfolioCaptureAutomationState.MONITORING) {
-                capturePortfolioButton.setText("Liquidate Portfolio");
+                if (activeCapturePortfolioUiKey != null) {
+                    capturePortfolioUiStates.update(activeCapturePortfolioUiKey, capturePortfolioUiStates.state(activeCapturePortfolioUiKey)
+                            .withButton("Liquidate Portfolio", true));
+                }
+                applySelectedCapturePortfolioState();
                 capturePortfolioButton.setToolTipText(capturePortfolioDefaultTooltip());
                 capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_ACTIVE_TEXT);
-                startCapturePortfolioPulse();
             }
             String suffix = captureAutomationCounterText(loopCount, pendingCanceled);
-            String current = stripCaptureAutomationCounters(capturePortfolioIndicator.getText());
-            capturePortfolioIndicator.setText((current == null || current.isBlank() ? "Monitoring Active" : current) + suffix);
+            String current = activeCapturePortfolioUiKey == null ? capturePortfolioIndicator.getText() : capturePortfolioUiStates.state(activeCapturePortfolioUiKey).indicatorText();
+            String nextIndicator = (current == null || current.isBlank() ? "Monitoring Active" : stripCaptureAutomationCounters(current)) + suffix;
+            if (activeCapturePortfolioUiKey != null) {
+                capturePortfolioUiStates.update(activeCapturePortfolioUiKey, capturePortfolioUiStates.state(activeCapturePortfolioUiKey)
+                        .withIndicator(nextIndicator, true));
+            }
+            applySelectedCapturePortfolioState();
             if (!suffix.isBlank()) {
                 capturePortfolioIndicator.setToolTipText(TooltipStyler.text(captureAutomationCounterTooltip(), 380));
             }
@@ -2667,8 +2708,13 @@ public class TradingFrame extends JFrame {
     }
 
     private void setCapturePortfolioBusy(boolean busy) {
-        capturePortfolioButton.setEnabled(!busy);
-        capturePortfolioButton.setText(busy ? "Liquidating..." : "Liquidate Portfolio");
+        PortfolioCaptureUiStateStore.Key key = activeCapturePortfolioUiKey == null
+                ? selectedCapturePortfolioUiKey()
+                : activeCapturePortfolioUiKey;
+        if (key != null) {
+            capturePortfolioUiStates.update(key, capturePortfolioUiStates.state(key).withBusy(busy));
+        }
+        applySelectedCapturePortfolioState();
     }
 
     private void startCapturePortfolioPulse() {
@@ -5486,6 +5532,7 @@ public class TradingFrame extends JFrame {
             }
         });
         refreshGapRocketEmptyState();
+        applySelectedCapturePortfolioState();
     }
 
     private void applyTradeHistoryRowFilter() {

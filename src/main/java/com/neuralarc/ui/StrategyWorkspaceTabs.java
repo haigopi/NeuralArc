@@ -141,6 +141,21 @@ final class StrategyWorkspaceTabs {
         return workspaceIdByTab.get(index);
     }
 
+    /** Stable internal id for the selected liquidate-capable strategy tab, or null for Trade History. */
+    String selectedStrategyTabId() {
+        int index = tabs.getSelectedIndex();
+        if (index < 0 || index == historyTabIndex()) {
+            return null;
+        }
+        String workspaceId = workspaceIdAt(index);
+        return workspaceId == null ? PortfolioCaptureUiStateStore.ALL_STOCKS_TAB_ID : "workspace:" + workspaceId;
+    }
+
+    boolean isHistorySelected() {
+        int index = tabs.getSelectedIndex();
+        return index >= 0 && index == historyTabIndex();
+    }
+
     /** workspaceId of the tab at {@code tabIndex}, or null. */
     String workspaceIdAt(int tabIndex) {
         if (tabIndex < 0 || tabIndex >= workspaceIdByTab.size()) {
