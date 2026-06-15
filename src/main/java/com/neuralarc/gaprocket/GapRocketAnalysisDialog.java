@@ -63,8 +63,9 @@ public final class GapRocketAnalysisDialog extends JDialog {
                 "Require current activity to be meaningfully higher than normal. Example: 2 means at least 2x typical volume.");
         row = addField(fields, row, "Maximum Stock Price", maxPrice,
                 "Optional cap for high-priced stocks. Leave blank to allow any price above the minimum.");
-        row = addField(fields, row, "Candidate Symbols", new JScrollPane(candidateSymbols),
-                "Enter the live tickers to scan, separated by commas or spaces. NeuralArc does not use hardcoded stock candidates.");
+        row = addField(fields, row, "Candidate Symbols (optional)", new JScrollPane(candidateSymbols),
+                "Leave blank to auto-discover the top live gappers from the Alpaca screener. Or enter specific live "
+                        + "tickers, separated by commas or spaces, to scan only those. NeuralArc does not use hardcoded stock candidates.");
         row = addField(fields, row, "News Catalyst Required", catalystRequired,
                 "Alpaca market-data scans do not include news. Enable this only when a live news-catalyst source is wired in, otherwise candidates will be rejected.");
         row = addField(fields, row, "Market Trend Filter", trend,

@@ -37,6 +37,8 @@ import com.neuralarc.model.StrategyWorkspaceTemplate;
 import com.neuralarc.service.StrategyEngine;
 import com.neuralarc.service.TrendingStocksService;
 import com.neuralarc.service.HttpAlpacaScreenerClient;
+import com.neuralarc.service.AlpacaScreenerException;
+import com.neuralarc.service.GapAndGoDiscoveryService;
 import com.neuralarc.service.WeekendReboundScoreService;
 import com.neuralarc.service.RotatingLogWriter;
 import com.neuralarc.service.SpacesLogUploader;
@@ -5768,13 +5770,6 @@ public class TradingFrame extends JFrame {
         if (selectedWorkspaceId == null || !isSelectedGapRocketWorkspace()) {
             return;
         }
-        if (config.candidateSymbols().isEmpty()) {
-            JOptionPane.showMessageDialog(this,
-                    "Enter at least one live ticker symbol to scan. Gap Rocket no longer uses hardcoded stock candidates.",
-                    "Gap-and-Go Analysis",
-                    JOptionPane.WARNING_MESSAGE);
-            return;
-        }
         if (!connectionOk || runtimeApiKey.isBlank()) {
             JOptionPane.showMessageDialog(this,
                     selectedModeLabel() + " Alpaca credentials are required before scanning Gap Rocket live market data.",
@@ -5786,13 +5781,22 @@ public class TradingFrame extends JFrame {
         gapRocketPlaceOrdersButton.setEnabled(false);
         uiPollingExecutor.execute(() -> {
             try {
+                List<String> symbols = resolveGapRocketCandidateSymbols(config);
+                if (symbols.isEmpty()) {
+                    SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
+                            "No live gap-and-go candidates were found right now. Try again during the premarket/opening "
+                                    + "window, or enter symbols manually.",
+                            "Gap-and-Go Analysis",
+                            JOptionPane.INFORMATION_MESSAGE));
+                    return;
+                }
                 GapRocketLiveScanner scanner = new GapRocketLiveScanner(
                         new HttpAlpacaMarketDataApi(runtimeApiKey, runtimeApiSecret),
                         java.time.Clock.systemDefaultZone(),
                         this::log
                 );
                 GapRocketAnalyzer analyzer = new GapRocketAnalyzer(java.time.Clock.systemUTC(), this::log);
-                List<GapRocketRecommendation> recommendations = analyzer.analyze(scanner.candidates(config.candidateSymbols()), config);
+                List<GapRocketRecommendation> recommendations = analyzer.analyze(scanner.candidates(symbols), config);
                 SwingUtilities.invokeLater(() -> applyGapRocketRecommendations(config, executeRequested, recommendations));
             } finally {
                 SwingUtilities.invokeLater(() -> {
@@ -5801,6 +5805,28 @@ public class TradingFrame extends JFrame {
                 });
             }
         });
+    }
+
+    /**
+     * Resolve the symbols to scan: an operator's manual entry always wins; otherwise auto-discover
+     * the top live gappers from Alpaca's screener so no manual monitoring is required. Discovery
+     * over-fetches so downstream gap/volume filtering still lands a full grid.
+     */
+    private List<String> resolveGapRocketCandidateSymbols(GapRocketConfig config) {
+        if (!config.candidateSymbols().isEmpty()) {
+            return config.candidateSymbols();
+        }
+        try {
+            GapAndGoDiscoveryService discovery = new GapAndGoDiscoveryService(
+                    new HttpAlpacaScreenerClient(runtimeApiKey, runtimeApiSecret));
+            int target = Math.max(30, config.maxStocksToAdd() * 3);
+            List<String> discovered = discovery.discoverCandidates(config, target);
+            log("[Gap Rocket] Auto-discovered " + discovered.size() + " candidate(s) from Alpaca screener.");
+            return discovered;
+        } catch (AlpacaScreenerException ex) {
+            log("[Gap Rocket] Auto-discovery failed: " + ex.getMessage());
+            return List.of();
+        }
     }
 
     private void applyGapRocketRecommendations(GapRocketConfig config, boolean executeRequested, List<GapRocketRecommendation> recommendations) {
