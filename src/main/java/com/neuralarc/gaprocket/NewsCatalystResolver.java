@@ -3,11 +3,15 @@ package com.neuralarc.gaprocket;
 import com.neuralarc.model.AiRecommendationRequest;
 import com.neuralarc.model.AiRecommendationResponse;
 import com.neuralarc.model.AiSourceAnalyzed;
+import com.neuralarc.model.NewsArticle;
 import com.neuralarc.service.AiRecommendationException;
 import com.neuralarc.service.AiRecommendationProvider;
+import com.neuralarc.service.AlpacaNewsClient;
+import com.neuralarc.service.AlpacaNewsException;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -30,12 +34,27 @@ public final class NewsCatalystResolver {
             + "Decide whether there is a fresh news catalyst that could drive a gap-and-go move today. "
             + "Classify the dominant catalyst and summarize it briefly with sources.";
 
+    /** How recent an Alpaca news article must be to count as a live catalyst signal. */
+    static final Duration RECENCY_WINDOW = Duration.ofHours(48);
+    private static final int NEWS_FETCH_LIMIT = 10;
+
     private final AiRecommendationProvider provider;
+    private final AlpacaNewsClient newsClient;
     private final Clock clock;
     private final Consumer<String> log;
 
     public NewsCatalystResolver(AiRecommendationProvider provider, Clock clock, Consumer<String> log) {
+        this(provider, null, clock, log);
+    }
+
+    /**
+     * @param newsClient optional Alpaca news client used as a cheap pre-filter: when present, symbols
+     *                   with no recent news skip the (costly) AI web-search call entirely.
+     */
+    public NewsCatalystResolver(AiRecommendationProvider provider, AlpacaNewsClient newsClient,
+                                Clock clock, Consumer<String> log) {
         this.provider = provider;
+        this.newsClient = newsClient;
         this.clock = clock == null ? Clock.systemUTC() : clock;
         this.log = log == null ? ignored -> { } : log;
     }
@@ -51,6 +70,11 @@ public final class NewsCatalystResolver {
         if (provider == null) {
             return candidate;
         }
+        if (!hasRecentNews(candidate.symbol())) {
+            log.accept("[Gap Rocket] No recent Alpaca news for " + candidate.symbol()
+                    + "; skipping AI catalyst analysis.");
+            return candidate;
+        }
         try {
             AiRecommendationResponse response = provider.analyzeStock(buildRequest(candidate));
             Optional<GapRocketConfig.CatalystType> type = classify(response);
@@ -62,6 +86,27 @@ public final class NewsCatalystResolver {
         } catch (AiRecommendationException ex) {
             log.accept("[Gap Rocket] News analysis unavailable for " + candidate.symbol() + ": " + ex.getMessage());
             return candidate;
+        }
+    }
+
+    /**
+     * Cheap pre-filter: true when the symbol has at least one recent Alpaca news article (or when no
+     * news client is configured / the lookup fails — fail-open so we never suppress a real catalyst
+     * just because the pre-filter was unavailable).
+     */
+    private boolean hasRecentNews(String symbol) {
+        if (newsClient == null) {
+            return true;
+        }
+        try {
+            Instant cutoff = Instant.now(clock).minus(RECENCY_WINDOW);
+            List<NewsArticle> articles = newsClient.latestNews(symbol, NEWS_FETCH_LIMIT);
+            return articles.stream().anyMatch(article -> article.createdAt() != null
+                    && article.createdAt().isAfter(cutoff));
+        } catch (AlpacaNewsException ex) {
+            log.accept("[Gap Rocket] Alpaca news pre-filter unavailable for " + symbol + ": " + ex.getMessage()
+                    + " (continuing with AI analysis).");
+            return true;
         }
     }
 
