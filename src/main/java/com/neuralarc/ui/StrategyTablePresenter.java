@@ -176,10 +176,11 @@ public final class StrategyTablePresenter {
                 && waitingForFill
                 && strategy.latestOrderStatus() != null
                 && !strategy.latestOrderStatus().isBlank()
-                && isManualBuyLatest(strategy)
+                && (isManualBuyLatest(strategy) || pendingManualBuy != null)
                 && !isBrokerUnavailableStatus(normalizedStatus)) {
-            return manualBuyPendingLabel(strategy, pendingManualBuy)
+            String pendingLabel = manualBuyPendingLabel(strategy, pendingManualBuy)
                     + " (" + BrokerOrderStatusUtil.displayLabel(strategy.latestOrderStatus()) + ")";
+            return prependHeldPosition(position, pendingLabel);
         }
         if (strategy.status() == StrategyStatus.ACTIVE
                 && waitingForFill
@@ -268,6 +269,15 @@ public final class StrategyTablePresenter {
             case "MANUAL_EXIT", "CLOSE_POSITION" -> "Manual Exit Sell";
             default -> "";
         };
+    }
+
+    /** Keep an already-filled position visible alongside a separate pending limit-buy order on the same row. */
+    private String prependHeldPosition(Position position, String label) {
+        int shares = position == null ? 0 : position.getTotalShares();
+        if (shares > 0) {
+            return "Position: " + shares + " filled — " + label;
+        }
+        return label;
     }
 
     private boolean isManualBuyLatest(Strategy strategy) {

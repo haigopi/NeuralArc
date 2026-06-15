@@ -11,6 +11,7 @@ import java.awt.event.MouseEvent;
 import java.util.List;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
+import java.util.function.IntPredicate;
 import java.util.function.ObjIntConsumer;
 import java.util.function.Supplier;
 
@@ -23,6 +24,8 @@ final class StrategyGridContextMenu {
     private final IntConsumer buyMoreAtLimitHandler;
     private final IntConsumer sellAtMarketPlaceHandler;
     private final IntConsumer repositionExpiredHandler;
+    private final IntConsumer cancelPendingLimitBuyHandler;
+    private final IntPredicate cancelPendingLimitBuyEnabled;
     private final Supplier<List<StrategyWorkspace>> workspacesProvider;
     // (workspaceId, viewRow) — workspaceId is null to move the row back to All Stocks (unassigned).
     private final ObjIntConsumer<String> assignToWorkspaceHandler;
@@ -36,6 +39,8 @@ final class StrategyGridContextMenu {
             IntConsumer buyMoreAtLimitHandler,
             IntConsumer sellAtMarketPlaceHandler,
             IntConsumer repositionExpiredHandler,
+            IntConsumer cancelPendingLimitBuyHandler,
+            IntPredicate cancelPendingLimitBuyEnabled,
             Supplier<List<StrategyWorkspace>> workspacesProvider,
             ObjIntConsumer<String> assignToWorkspaceHandler
     ) {
@@ -47,6 +52,8 @@ final class StrategyGridContextMenu {
         this.buyMoreAtLimitHandler = buyMoreAtLimitHandler;
         this.sellAtMarketPlaceHandler = sellAtMarketPlaceHandler;
         this.repositionExpiredHandler = repositionExpiredHandler;
+        this.cancelPendingLimitBuyHandler = cancelPendingLimitBuyHandler;
+        this.cancelPendingLimitBuyEnabled = cancelPendingLimitBuyEnabled;
         this.workspacesProvider = workspacesProvider;
         this.assignToWorkspaceHandler = assignToWorkspaceHandler;
     }
@@ -124,6 +131,13 @@ final class StrategyGridContextMenu {
         JMenuItem reposition = item("Reposition Expired Stock");
         reposition.addActionListener(e -> repositionExpiredHandler.accept(viewRow));
         position.add(reposition);
+        if (cancelPendingLimitBuyHandler != null
+                && cancelPendingLimitBuyEnabled != null
+                && cancelPendingLimitBuyEnabled.test(viewRow)) {
+            JMenuItem cancelBuy = item("Cancel Pending Limit Buy");
+            cancelBuy.addActionListener(e -> cancelPendingLimitBuyHandler.accept(viewRow));
+            position.add(cancelBuy);
+        }
         return position;
     }
 

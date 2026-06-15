@@ -109,6 +109,33 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void heldPositionIsShownAlongsidePendingLimitBuy() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategy.setLastEvent("Manual limit buy order submitted");
+        strategy.setLatestOrderStatus("accepted");
+        // Note: lastTriggeredRuleType intentionally NOT MANUAL_BUY — the pending order summary alone
+        // must drive the pending-buy presentation (robust across restart/sync).
+        strategy.setLastTriggeredRuleType("BASE_BUY");
+        Position position = new Position("META");
+        position.applyBuy(1, new BigDecimal("100.00"));
+
+        String label = presenter.displayStatusLabel(
+                strategy,
+                position,
+                false,
+                true,
+                false,
+                false,
+                BigDecimal.ZERO,
+                new StrategyTablePresenter.PendingOrderSummary(new BigDecimal("98.75"), new BigDecimal("2"))
+        );
+
+        assertEquals("Position: 1 filled — Manual Limit Buy Pending Fill - @ $98.75/2 (Accepted)", label);
+    }
+
+    @Test
     void manualMarketBuyPendingStatusIsVisibleInGridStatus() {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.ACTIVE);

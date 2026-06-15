@@ -425,6 +425,68 @@ public final class StrategyActionsController {
         );
     }
 
+    public void cancelPendingLimitBuy(int viewRow) {
+        int row = gateway.toModelRow(viewRow);
+        if (row < 0 || row >= gateway.strategiesSize()) {
+            return;
+        }
+
+        ActionEntry entry = gateway.entryAt(row);
+        Strategy strategy = entry.strategy();
+        if (!gateway.hasCancelablePendingLimitBuy(strategy)) {
+            actionLog.skipped("Cancel Pending Limit Buy " + strategy.symbol(),
+                    "No open pending limit buy order to cancel.");
+            return;
+        }
+
+        String message = "<html><body style='width:340px'>"
+                + "<b>Cancel the pending limit buy for " + strategy.symbol() + "?</b><br><br>"
+                + "This cancels the open buy order at the broker. Any already-filled position is <b>not</b> affected."
+                + "</body></html>";
+        int choice = gateway.confirm(
+                message,
+                "Cancel Pending Limit Buy — " + strategy.symbol(),
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (choice != JOptionPane.YES_OPTION) {
+            actionLog.canceled("Cancel Pending Limit Buy " + strategy.symbol());
+            return;
+        }
+
+        actionLog.started("Cancel Pending Limit Buy " + strategy.symbol());
+        gateway.runBackgroundTask(
+                () -> {
+                    StrategyService.LimitBuyCancelResult result = gateway.cancelPendingLimitBuys(strategy);
+                    if (!result.success()) {
+                        throw new IllegalStateException(result.error());
+                    }
+                },
+                () -> {
+                    gateway.findStrategyById(strategy.id()).ifPresent(entry::syncFrom);
+                    gateway.stopPollingCountdown(strategy.id());
+                    gateway.log("Pending limit buy canceled at broker for symbol " + strategy.symbol() + ".");
+                    actionLog.completed("Cancel Pending Limit Buy " + strategy.symbol());
+                    gateway.publishAnalytics(new AnalyticsEvent("PENDING_LIMIT_BUY_CANCELED").put("symbol", strategy.symbol()));
+                },
+                ex -> {
+                    actionLog.failed("Cancel Pending Limit Buy " + strategy.symbol(), ex.getMessage());
+                    gateway.showMessage(
+                            "Failed to cancel the pending limit buy for " + strategy.symbol() + ": " + ex.getMessage()
+                                    + "\nThe order state was left unchanged.",
+                            "Cancel Failed",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                },
+                () -> {
+                    gateway.refreshStrategyTableRow(row);
+                    gateway.updateSelectedStrategy();
+                    gateway.refreshPanels();
+                    gateway.updateStatusBar();
+                }
+        );
+    }
+
     public void deleteStrategy(int viewRow) {
         int row = gateway.toModelRow(viewRow);
         if (row < 0 || row >= gateway.strategiesSize()) {
@@ -559,6 +621,8 @@ public final class StrategyActionsController {
         StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice);
         StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType);
         StrategyService.StrategyCreationResult repositionExpiredStrategy(String strategyId);
+        StrategyService.LimitBuyCancelResult cancelPendingLimitBuys(Strategy strategy);
+        boolean hasCancelablePendingLimitBuy(Strategy strategy);
         void excludeFromPortfolioCaptureIfRunning(String strategyId);
         BigDecimal realizedPnlForStrategy(String strategyId);
         String closePaperAccountState(Strategy strategy);
