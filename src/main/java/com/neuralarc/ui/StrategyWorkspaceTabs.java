@@ -201,6 +201,9 @@ final class StrategyWorkspaceTabs {
         if ("GAPROCKET".equalsIgnoreCase(workspace.code())) {
             return TooltipStyler.text("Scan premarket gap-up stocks, rank the strongest movers, and track opening-range, breakout-retest, or VWAP-pullback setups in a dedicated morning strategy grid.", 360);
         }
+        if ("ORB".equalsIgnoreCase(workspace.code())) {
+            return TooltipStyler.text("Capture the market's opening range from live Alpaca data, then arm long breakout entries after the range closes.", 360);
+        }
         return workspace.name();
     }
 }
