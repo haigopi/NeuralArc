@@ -63,6 +63,35 @@ class WorkspaceAccountingTest {
     }
 
     @Test
+    void allStocksTotalEqualsSumOfPerWorkspaceTotals() {
+        // Regression: the top status bar (All Stocks aggregate) must equal the sum of every
+        // per-tab total when both are computed from the same accounts — no mismatch.
+        List<WorkspaceAccounting.StrategyAccount> accounts = List.of(
+                account("orb", 10, "100.00", "50.00", "1200.00"),
+                account("orb", 0, "0.00", "30.00", "0.00"),
+                account("vwap", 5, "40.00", "20.00", "620.00"),
+                account(null, 3, "10.00", "5.00", "300.00")        // unassigned
+        );
+        List<WorkspaceAccounting.RealizedSell> sells = List.of(
+                new WorkspaceAccounting.RealizedSell("orb", bd("80.00"), true),
+                new WorkspaceAccounting.RealizedSell("vwap", bd("20.00"), false),
+                new WorkspaceAccounting.RealizedSell(null, bd("5.00"), true)
+        );
+
+        WorkspaceAccounting.Snapshot all = WorkspaceAccounting.forWorkspace(null, accounts, sells);
+        BigDecimal perTabTotal = WorkspaceAccounting.forWorkspace("orb", accounts, sells).total()
+                .add(WorkspaceAccounting.forWorkspace("vwap", accounts, sells).total())
+                .add(WorkspaceAccounting.forWorkspace(null, accounts.stream()
+                                .filter(a -> a.workspaceId() == null).toList(),
+                        sells.stream().filter(s -> s.workspaceId() == null).toList()).total());
+
+        assertEquals(all.total(), perTabTotal);
+        // Open positions and closed trades likewise partition exactly.
+        assertEquals(3, all.openPositions());
+        assertEquals(3, all.closedTrades());
+    }
+
+    @Test
     void emptyWorkspaceProducesZeroes() {
         WorkspaceAccounting.Snapshot snapshot = WorkspaceAccounting.forWorkspace("empty", List.of(), List.of());
         assertEquals(bd("0.00"), snapshot.total());

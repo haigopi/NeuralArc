@@ -262,7 +262,7 @@ public class TradingFrame extends JFrame {
     private final StrategyGridLayoutPresenter strategyGridLayoutPresenter = new StrategyGridLayoutPresenter();
     private final RuleTriggeredHistoryPresenter ruleTriggeredHistoryPresenter = new RuleTriggeredHistoryPresenter();
     private final StrategyTablePresenter strategyTablePresenter = new StrategyTablePresenter();
-    private final StrategyPnlTotalsCalculator strategyPnlTotalsCalculator = new StrategyPnlTotalsCalculator();
+    private final StrategyOpenPnlCalculator openPnlCalculator = new StrategyOpenPnlCalculator();
     private final SystemMetricsPresenter systemMetricsPresenter = new SystemMetricsPresenter();
     private final KillSwitchController killSwitchController;
     private final JButton refreshPortfolioButton = new JButton("Refresh & Reevaluate Portfolio");
@@ -2288,8 +2288,16 @@ public class TradingFrame extends JFrame {
             return;
         }
         button.addMouseListener(new MouseAdapter() {
+            // While a button is flashing (e.g. active Capture/Liquidate monitoring), suppress hover
+            // and press restyling so the flashing animation stays clean and consistent.
+            private boolean flashing() {
+                return !ButtonHoverPolicy.hoverEnabled(button);
+            }
             @Override
             public void mouseEntered(MouseEvent e) {
+                if (flashing()) {
+                    return;
+                }
                 if (button.isEnabled()) {
                     button.setBackground(DARK_BTN_BG_HOVER);
                     button.setBorder(BorderFactory.createCompoundBorder(
@@ -2299,6 +2307,9 @@ public class TradingFrame extends JFrame {
             }
             @Override
             public void mouseExited(MouseEvent e) {
+                if (flashing()) {
+                    return;
+                }
                 button.setBackground(DARK_BTN_BG);
                 button.setBorder(BorderFactory.createCompoundBorder(
                         BorderFactory.createLineBorder(DARK_BTN_BORDER, 1, true),
@@ -2306,6 +2317,9 @@ public class TradingFrame extends JFrame {
             }
             @Override
             public void mousePressed(MouseEvent e) {
+                if (flashing()) {
+                    return;
+                }
                 if (button.isEnabled() && e.getButton() == MouseEvent.BUTTON1) {
                     button.setBackground(DARK_BTN_BG_PRESSED);
                     button.setBorder(BorderFactory.createCompoundBorder(
@@ -2315,6 +2329,9 @@ public class TradingFrame extends JFrame {
             }
             @Override
             public void mouseReleased(MouseEvent e) {
+                if (flashing()) {
+                    return;
+                }
                 if (button.contains(e.getPoint()) && button.isEnabled()) {
                     button.setBackground(DARK_BTN_BG_HOVER);
                     button.setBorder(BorderFactory.createCompoundBorder(
@@ -2443,7 +2460,10 @@ public class TradingFrame extends JFrame {
         String targetLabel = config.targetType() == PortfolioCaptureTargetType.PROFIT_PERCENT
                 ? Monetary.round(config.targetValue()) + "%"
                 : "$" + Monetary.round(config.targetValue());
-        return "Monitoring Active | P&L $" + Monetary.round(snapshot.unrealizedPnl())
+        // Show the same P&L as this tab's bottom summary / the status bar (All Stocks), from the
+        // single centralized source — not the capture calculator's eligible-subset total.
+        BigDecimal contextPnl = computeWorkspaceSnapshot(selectedWorkspaceId).total();
+        return "Monitoring Active | P&L $" + Monetary.round(contextPnl)
                 + " | Target " + targetLabel
                 + " | Progress " + Monetary.round(snapshot.targetProgressPercent()) + "%";
     }
@@ -2454,6 +2474,7 @@ public class TradingFrame extends JFrame {
 
     private void clearCapturePortfolioIndicatorForMode() {
         capturePortfolioIndicator.setText("");
+        capturePortfolioIndicator.setVisible(false);
         capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
         capturePortfolioIndicator.setToolTipText(null);
         capturePortfolioButton.setText("Liquidate Portfolio");
@@ -2480,7 +2501,11 @@ public class TradingFrame extends JFrame {
         PortfolioCaptureUiStateStore.State state = capturePortfolioUiStates.state(key);
         capturePortfolioButton.setText(state.buttonText());
         capturePortfolioButton.setEnabled(state.buttonEnabled());
-        capturePortfolioIndicator.setText(state.indicatorText());
+        // The capture P&L text is shown only while monitoring is enabled for THIS strategy tab,
+        // and rendered rainbow. The stored indicator text stays plain (automation logic parses it).
+        boolean showIndicator = state.monitoringActive() && !state.indicatorText().isBlank();
+        capturePortfolioIndicator.setVisible(showIndicator);
+        capturePortfolioIndicator.setText(showIndicator ? RainbowText.toHtml(state.indicatorText()) : "");
         capturePortfolioIndicator.setForeground(state.monitoringActive() ? CAPTURE_INDICATOR_ACTIVE_TEXT : CAPTURE_INDICATOR_IDLE_TEXT);
         capturePortfolioIndicator.setToolTipText(state.monitoringActive()
                 ? TooltipStyler.text("Liquidate Portfolio monitoring is evaluating current portfolio P&L against the configured target.", 320)
@@ -2750,6 +2775,7 @@ public class TradingFrame extends JFrame {
             capturePortfolioPulseTimer.setInitialDelay(0);
         }
         capturePortfolioButton.setRolloverEnabled(false);
+        capturePortfolioButton.putClientProperty(ButtonHoverPolicy.FLASHING_PROPERTY, Boolean.TRUE);
         capturePortfolioPulseTimer.start();
     }
 
@@ -2764,6 +2790,7 @@ public class TradingFrame extends JFrame {
                 new EmptyBorder(5, 10, 5, 10)
         ));
         capturePortfolioButton.setRolloverEnabled(true);
+        capturePortfolioButton.putClientProperty(ButtonHoverPolicy.FLASHING_PROPERTY, Boolean.FALSE);
     }
 
     private void showPortfolioCaptureSummary(PortfolioCaptureExecutionResult result, boolean targetTriggered) {
@@ -4621,22 +4648,21 @@ public class TradingFrame extends JFrame {
     }
 
     private void updateUnrealizedSummaries() {
-        StrategyPnlTotalsCalculator.Totals totals = strategyPnlTotalsCalculator.calculate(
-                strategies,
-                entry -> includeInCurrentStrategiesTab(entry)
-                        && entry.strategy.mode() == selectedViewMode,
-                this::realizedPnlForStrategy
-        );
+        // Single source of truth: the top status-bar total is the All Stocks aggregate
+        // (forWorkspace(null)) over the exact same per-strategy accounts the tab summary uses.
+        AccountingInputs inputs = buildAccountingInputs(selectedViewMode);
+        WorkspaceAccounting.Snapshot total =
+                WorkspaceAccounting.forWorkspace(null, inputs.accounts(), inputs.sells());
         if (selectedViewMode == StrategyMode.LIVE) {
-            liveUnrealizedSummary.setText("LIVE P&L (Unrealized/Realized): "
-                    + Monetary.round(totals.liveUnrealized()).toPlainString()
+            liveUnrealizedSummary.setText(RainbowText.toHtml("LIVE P&L (Unrealized/Realized): "
+                    + total.unrealized().toPlainString()
                     + " / "
-                    + Monetary.round(totals.liveRealized()).toPlainString());
+                    + total.realized().toPlainString()));
         } else {
-            paperUnrealizedSummary.setText("Paper P&L (Unrealized/Realized): "
-                    + Monetary.round(totals.paperUnrealized()).toPlainString()
+            paperUnrealizedSummary.setText(RainbowText.toHtml("Paper P&L (Unrealized/Realized): "
+                    + total.unrealized().toPlainString()
                     + " / "
-                    + Monetary.round(totals.paperRealized()).toPlainString());
+                    + total.realized().toPlainString()));
         }
         applyHeaderTotalsVisibility();
     }
@@ -5379,10 +5405,13 @@ public class TradingFrame extends JFrame {
             captureControls.setOpaque(false);
             GridBagConstraints captureGbc = new GridBagConstraints();
             captureGbc.anchor = GridBagConstraints.CENTER;
-            captureControls.add(capturePortfolioButton, captureGbc);
-            captureGbc.gridx = 1;
-            captureGbc.insets = new Insets(0, 8, 0, 0);
+            // P&L indicator sits immediately to the LEFT of the Capture/Liquidate button.
+            captureGbc.gridx = 0;
+            captureGbc.insets = new Insets(0, 0, 0, 8);
             captureControls.add(capturePortfolioIndicator, captureGbc);
+            captureGbc.gridx = 1;
+            captureGbc.insets = new Insets(0, 0, 0, 0);
+            captureControls.add(capturePortfolioButton, captureGbc);
             panel.add(captureControls, BorderLayout.EAST);
         } else if (searchField == tradeHistorySearchField) {
             panel.add(createTradeHistoryGroupByPanel(), BorderLayout.CENTER);
@@ -6057,11 +6086,32 @@ public class TradingFrame extends JFrame {
     }
 
     private WorkspaceAccounting.Snapshot computeWorkspaceSnapshot(String workspaceId) {
+        AccountingInputs inputs = buildAccountingInputs(selectedViewMode);
+        return WorkspaceAccounting.forWorkspace(workspaceId, inputs.accounts(), inputs.sells());
+    }
+
+    /** Bundle of per-strategy accounts + realized sells for a mode — the single P&L input set. */
+    private record AccountingInputs(
+            java.util.List<WorkspaceAccounting.StrategyAccount> accounts,
+            java.util.List<WorkspaceAccounting.RealizedSell> sells
+    ) {
+    }
+
+    /**
+     * Builds the canonical per-strategy accounting inputs for a mode — the single source of truth
+     * shared by the top status bar (All Stocks aggregate), every tab summary, and Capture Portfolio.
+     * Open P&L is taken from {@link StrategyOpenPnlCalculator} (Gap-Rocket suppression + zero-cost/
+     * price guards) and realized from the replayed fills, so every consumer sees identical numbers.
+     */
+    private AccountingInputs buildAccountingInputs(StrategyMode mode) {
         java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.systemDefault());
         java.util.List<WorkspaceAccounting.StrategyAccount> accounts = new java.util.ArrayList<>();
         java.util.List<WorkspaceAccounting.RealizedSell> sells = new java.util.ArrayList<>();
         for (ManagedStrategy entry : strategies) {
-            if (entry.strategy.mode() != selectedViewMode) {
+            if (entry == null || entry.strategy == null || entry.strategy.mode() != mode) {
+                continue;
+            }
+            if (!includeInCurrentStrategiesTab(entry)) {
                 continue;
             }
             String entryWorkspaceId = entry.strategy.workspaceId();
@@ -6072,18 +6122,14 @@ public class TradingFrame extends JFrame {
             for (WorkspaceAccounting.RealizedSell sell : strategySells) {
                 realized = realized.add(sell.realizedPnl());
             }
-            Position position = GapRocketDisplaySupport.suppressBrokerPosition(entry.strategy)
-                    ? new Position(entry.strategy.symbol())
-                    : entry.cachedPosition();
+            java.util.Optional<StrategyOpenPnlCalculator.Row> openRow = openPnlCalculator.openRow(entry);
+            int shares = openRow.map(StrategyOpenPnlCalculator.Row::shares).orElse(0);
+            BigDecimal unrealized = openRow.map(StrategyOpenPnlCalculator.Row::unrealizedPnl).orElse(BigDecimal.ZERO);
+            BigDecimal marketValue = openRow.map(StrategyOpenPnlCalculator.Row::marketValue).orElse(BigDecimal.ZERO);
             accounts.add(new WorkspaceAccounting.StrategyAccount(
-                    entryWorkspaceId,
-                    position.getTotalShares(),
-                    position.unrealizedPnl(),
-                    realized,
-                    position.marketValue()
-            ));
+                    entryWorkspaceId, shares, unrealized, realized, marketValue));
         }
-        return WorkspaceAccounting.forWorkspace(workspaceId, accounts, sells);
+        return new AccountingInputs(accounts, sells);
     }
 
     // Reconstructs realized P&L per individual sell (one RealizedSell per filled sell), replaying
