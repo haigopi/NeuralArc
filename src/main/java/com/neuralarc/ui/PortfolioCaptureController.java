@@ -155,6 +155,14 @@ final class PortfolioCaptureController {
         return monitoringTimer != null && monitoringTimer.isRunning();
     }
 
+    PortfolioCaptureSnapshot lastSnapshot() {
+        return lastSnapshot;
+    }
+
+    PortfolioCaptureConfig activeConfig() {
+        return activeConfig;
+    }
+
     void excludeStrategyFromActiveCapture(String strategyId) {
         if (strategyId == null || strategyId.isBlank() || !executing.get()) {
             return;

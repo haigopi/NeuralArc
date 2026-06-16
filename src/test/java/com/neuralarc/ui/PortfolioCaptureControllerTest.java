@@ -197,7 +197,8 @@ class PortfolioCaptureControllerTest {
         @Override public String runSmartPicksAutomation(PortfolioCaptureConfig config) { return ""; }
         @Override public boolean tradingSessionOpen() { return true; }
         @Override public String nextTradingSessionOpenDisplay() { return ""; }
-        @Override public void onMonitoringChanged(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) { }
+        @Override public void onMonitoringChanged(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config,
+                                                  StrategyMode mode, String workspaceId) { }
         @Override public void onSnapshotUpdated(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) { }
         @Override public void onAutomationStateChanged(PortfolioCaptureAutomationState state, int loopCount, int pendingCanceled) { }
         @Override public void onExecutionStarted() { }

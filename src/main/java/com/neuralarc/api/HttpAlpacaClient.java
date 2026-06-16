@@ -558,41 +558,14 @@ public class HttpAlpacaClient implements AlpacaClient {
         if (!LOGGER.isLoggable(Level.INFO)) {
             return;
         }
-        String suffix = body == null || body.isBlank() ? "" : System.lineSeparator() + "body=" + formatBodyForLog(body);
-        LOGGER.info(() -> "Request: " + endpoint + suffix);
+        LOGGER.info(() -> "Request: " + method + " " + endpoint);
     }
 
     private void logResponse(String method, String endpoint, int statusCode, String body) {
         if (!LOGGER.isLoggable(Level.INFO)) {
             return;
         }
-        LOGGER.info(() -> " -> Response: " + endpoint
-                + " status=" + statusCode
-                + System.lineSeparator() + "body=" + formatBodyForLog(body));
-    }
-
-    private String formatBodyForLog(String body) {
-        if (body == null || body.isBlank()) {
-            return "<empty>";
-        }
-        String pretty = tryPrettyJson(body);
-        int maxLength = 4000;
-        return pretty.length() <= maxLength ? pretty : pretty.substring(0, maxLength) + System.lineSeparator() + "...";
-    }
-
-    private String tryPrettyJson(String body) {
-        String trimmed = body == null ? "" : body.trim();
-        try {
-            if (trimmed.startsWith("{")) {
-                return new JSONObject(trimmed).toString(2);
-            }
-            if (trimmed.startsWith("[")) {
-                return new JSONArray(trimmed).toString(2);
-            }
-        } catch (Exception ignored) {
-            // Fall through to plain text formatting for non-JSON or malformed content.
-        }
-        return trimmed.replaceAll("\\s+", " ").trim();
+        LOGGER.info(() -> " -> Response: " + method + " " + endpoint + " status=" + statusCode);
     }
 
     private void recordRequestId(String source, String method, String endpoint, HttpResponse<String> response) {

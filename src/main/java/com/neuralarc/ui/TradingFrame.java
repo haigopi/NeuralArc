@@ -2513,6 +2513,37 @@ public class TradingFrame extends JFrame {
         return capturePortfolioUiStates.key(mode == null ? selectedViewMode : mode, tabId);
     }
 
+    /**
+     * Recompute the Liquidate Portfolio indicator P&L on the same refresh cycle as the status bar,
+     * so its P&L (the centralized context total) stays in lock-step with the top status bar / tab
+     * summary instead of lagging at the slower monitoring-tick cadence.
+     */
+    private void refreshActiveCaptureIndicator() {
+        if (portfolioCaptureController.monitoringActive()) {
+            updateCapturePortfolioIndicator(
+                    portfolioCaptureController.lastSnapshot(),
+                    portfolioCaptureController.activeConfig());
+        }
+    }
+
+    /**
+     * Replace the P&L amount in a stored capture-indicator string with the live centralized context
+     * total (computeWorkspaceSnapshot for the selected tab), so the displayed capture P&L always
+     * matches the top status bar / tab summary. Target/progress/automation counters are preserved.
+     */
+    private String withLiveCapturePnl(String storedIndicatorText) {
+        if (storedIndicatorText == null || storedIndicatorText.isBlank()) {
+            return storedIndicatorText == null ? "" : storedIndicatorText;
+        }
+        if (!storedIndicatorText.matches(".*P&L \\$-?[0-9.]+.*")) {
+            return storedIndicatorText;
+        }
+        String livePnl = Monetary.round(computeWorkspaceSnapshot(selectedWorkspaceId).total()).toPlainString();
+        return storedIndicatorText.replaceFirst(
+                "P&L \\$-?[0-9.]+",
+                java.util.regex.Matcher.quoteReplacement("P&L $" + livePnl));
+    }
+
     private void applySelectedCapturePortfolioState() {
         PortfolioCaptureUiStateStore.Key key = selectedCapturePortfolioUiKey();
         if (key == null) {
@@ -2523,10 +2554,13 @@ public class TradingFrame extends JFrame {
         capturePortfolioButton.setText(state.buttonText());
         capturePortfolioButton.setEnabled(state.buttonEnabled());
         // The capture P&L text is shown only while monitoring is enabled for THIS strategy tab,
-        // and rendered rainbow. The stored indicator text stays plain (automation logic parses it).
+        // and rendered rainbow. The P&L amount is re-derived live from the single centralized source
+        // at paint time so it stays in lock-step with the top status bar / tab summary (the stored
+        // string can be stale, e.g. computed before broker positions loaded).
         boolean showIndicator = state.monitoringActive() && !state.indicatorText().isBlank();
+        String indicatorText = showIndicator ? withLiveCapturePnl(state.indicatorText()) : "";
         capturePortfolioIndicator.setVisible(showIndicator);
-        capturePortfolioIndicator.setText(showIndicator ? RainbowText.toHtml(state.indicatorText()) : "");
+        capturePortfolioIndicator.setText(showIndicator ? RainbowText.toHtml(indicatorText) : "");
         capturePortfolioIndicator.setForeground(state.monitoringActive() ? CAPTURE_INDICATOR_ACTIVE_TEXT : CAPTURE_INDICATOR_IDLE_TEXT);
         capturePortfolioIndicator.setToolTipText(state.monitoringActive()
                 ? TooltipStyler.text("Liquidate Portfolio monitoring is evaluating current portfolio P&L against the configured target.", 320)
@@ -4408,6 +4442,7 @@ public class TradingFrame extends JFrame {
     private void refreshPanels() {
         lastBrokerBackedUiRefreshAtMillis = System.currentTimeMillis();
         updateUnrealizedSummaries();
+        refreshActiveCaptureIndicator();
         ManagedStrategy entry = selectedManagedStrategy();
         if (entry == null) {
             positionSummary.setText("Position: -");
