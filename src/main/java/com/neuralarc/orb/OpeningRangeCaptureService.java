@@ -15,7 +15,7 @@ import java.util.Comparator;
 import java.util.List;
 
 public final class OpeningRangeCaptureService {
-    static final ZoneId EASTERN = ZoneId.of("America/New_York");
+    public static final ZoneId EASTERN = ZoneId.of("America/New_York");
     private static final LocalTime REGULAR_OPEN_ET = LocalTime.of(9, 30);
     private final AlpacaMarketDataApi marketDataApi;
 

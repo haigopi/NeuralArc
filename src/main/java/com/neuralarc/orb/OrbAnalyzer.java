@@ -49,10 +49,18 @@ public final class OrbAnalyzer {
         int score = score(s, c, cfg);
         String rationale = "ORB long breakout: range " + s.low().setScale(2, RoundingMode.HALF_UP).toPlainString()
                 + "-" + s.high().setScale(2, RoundingMode.HALF_UP).toPlainString()
-                + ", range%=" + s.rangePercent().setScale(2, RoundingMode.HALF_UP).toPlainString();
+                + ", range%=" + s.rangePercent().setScale(2, RoundingMode.HALF_UP).toPlainString()
+                + aiRationale(c);
         return new OrbRecommendation(s.symbol(), s.high().setScale(2, RoundingMode.HALF_UP), s.low().setScale(2, RoundingMode.HALF_UP),
                 entry, stop, target, score, rationale, cfg.riskPercent(), s.rangePercent(), cfg.rangeDurationMinutes(),
                 OrbStatus.RANGE_CAPTURED, cfg.mode(), Instant.now(clock));
+    }
+
+    private String aiRationale(OrbCandidate candidate) {
+        if (candidate == null || candidate.aiSummary().isBlank()) {
+            return "";
+        }
+        return ", AI context=" + candidate.aiSummary();
     }
 
     private int score(OpeningRangeSnapshot s, OrbCandidate c, OrbConfig cfg) {
@@ -60,7 +68,8 @@ public final class OrbAnalyzer {
         BigDecimal relVol = c == null ? BigDecimal.ZERO : c.relativeVolume();
         int volumeScore = bounded(relVol, cfg.minimumRelativeVolume(), new BigDecimal("5.00"), 35);
         int spreadScore = c == null || c.spreadPercent() == null ? 10 : c.spreadPercent().compareTo(new BigDecimal("0.50")) <= 0 ? 20 : 10;
-        return Math.min(100, rangeScore + volumeScore + spreadScore);
+        int aiScore = c == null || c.aiSummary().isBlank() ? 0 : 10;
+        return Math.min(100, rangeScore + volumeScore + spreadScore + aiScore);
     }
 
     private boolean reject(OpeningRangeSnapshot snapshot, String reason) {
