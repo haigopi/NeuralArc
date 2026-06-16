@@ -2474,6 +2474,7 @@ public class TradingFrame extends JFrame {
 
     private void clearCapturePortfolioIndicatorForMode() {
         capturePortfolioIndicator.setText("");
+        capturePortfolioIndicator.setVisible(false);
         capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
         capturePortfolioIndicator.setToolTipText(null);
         capturePortfolioButton.setText("Liquidate Portfolio");
@@ -2500,7 +2501,11 @@ public class TradingFrame extends JFrame {
         PortfolioCaptureUiStateStore.State state = capturePortfolioUiStates.state(key);
         capturePortfolioButton.setText(state.buttonText());
         capturePortfolioButton.setEnabled(state.buttonEnabled());
-        capturePortfolioIndicator.setText(state.indicatorText());
+        // The capture P&L text is shown only while monitoring is enabled for THIS strategy tab,
+        // and rendered rainbow. The stored indicator text stays plain (automation logic parses it).
+        boolean showIndicator = state.monitoringActive() && !state.indicatorText().isBlank();
+        capturePortfolioIndicator.setVisible(showIndicator);
+        capturePortfolioIndicator.setText(showIndicator ? RainbowText.toHtml(state.indicatorText()) : "");
         capturePortfolioIndicator.setForeground(state.monitoringActive() ? CAPTURE_INDICATOR_ACTIVE_TEXT : CAPTURE_INDICATOR_IDLE_TEXT);
         capturePortfolioIndicator.setToolTipText(state.monitoringActive()
                 ? TooltipStyler.text("Liquidate Portfolio monitoring is evaluating current portfolio P&L against the configured target.", 320)
