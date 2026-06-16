@@ -12,7 +12,9 @@ class StrategyWorkspaceTemplateTest {
     void catalogContainsExpectedTemplates() {
         List<StrategyWorkspaceTemplate> catalog = StrategyWorkspaceTemplate.catalog();
         assertTrue(catalog.stream().anyMatch(t -> t.name().equals("Gap Rocket") && t.code().equals("GAPROCKET")));
-        assertTrue(catalog.stream().anyMatch(t -> t.name().equals("ORB Engine") && t.code().equals("ORB")));
+        assertTrue(catalog.stream().anyMatch(t -> t.name().equals("ORB Engine") && t.code().equals("ORB")
+                && t.description().contains("5/15/30 minute regular-session range")
+                && t.description().contains("ORB Engine grid")));
         assertTrue(catalog.stream().anyMatch(t -> t.name().equals("VWAP Desk")));
         // "Momentum Lab" was folded into Gap Rocket (the dedicated high-relative-volume scanner).
         assertFalse(catalog.stream().anyMatch(t -> t.name().equals("Momentum Lab") || t.code().equals("MOMENTUM")));

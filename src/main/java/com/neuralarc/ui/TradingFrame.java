@@ -14,6 +14,9 @@ import com.neuralarc.db.SqliteWorkspaceRepository;
 import com.neuralarc.gaprocket.GapRocketAnalysisDialog;
 import com.neuralarc.gaprocket.GapRocketConfig;
 import com.neuralarc.gaprocket.GapRocketPanel;
+import com.neuralarc.orb.OrbAnalysisDialog;
+import com.neuralarc.orb.OrbConfig;
+import com.neuralarc.orb.OrbPanel;
 import com.neuralarc.model.GapAndGoSchedule;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.FeedbackEmailService;
@@ -351,8 +354,10 @@ public class TradingFrame extends JFrame {
     };
     private final JTable filledOrdersTable = new JTable(filledOrdersTableModel);
     private static final String GAP_ROCKET_WORKSPACE_CODE = "GAPROCKET";
+    private static final String ORB_WORKSPACE_CODE = "ORB";
     private static final String STRATEGIES_GRID_CARD = "strategiesGrid";
     private static final String GAP_ROCKET_EMPTY_CARD = "gapRocketEmpty";
+    private static final String ORB_EMPTY_CARD = "orbEmpty";
     private final JTabbedPane strategyTabs = new JTabbedPane();
     private final JTextField currentStrategiesSearchField = new JTextField(24);
     private final JTextField tradeHistorySearchField = new JTextField(24);
@@ -366,8 +371,10 @@ public class TradingFrame extends JFrame {
     private final JButton gapRocketPlaceOrdersButton = new JButton("Place All Pending Limit Buys");
     private final JLabel gapRocketScheduleStatusLabel = new JLabel();
     private final JButton gapRocketCancelScheduleButton = new JButton("Cancel Schedule");
+    private final JButton orbAnalyzeButton = new JButton(OrbPanel.ANALYZE_BUTTON_TEXT);
     private JPanel headerPanel;
     private final EnumMap<StrategyMode, GapRocketConfig> lastGapRocketConfigs = new EnumMap<>(StrategyMode.class);
+    private final EnumMap<StrategyMode, OrbConfig> lastOrbConfigs = new EnumMap<>(StrategyMode.class);
     private CardLayout strategiesGridCardLayout;
     private JPanel strategiesGridCardPanel;
     private BottomStatusBars bottomStatusBars;
@@ -386,6 +393,7 @@ public class TradingFrame extends JFrame {
     private final SqliteStrategyExecutionEventRepository strategyEventRepository;
     private final SqliteWorkspaceRepository workspaceRepository;
     private final GapAndGoCoordinator gapAndGoCoordinator;
+    private final OrbCoordinator orbCoordinator;
     private final WorkspaceService workspaceService;
     // Dynamic strategy-workspace tabs; null workspace = the All Stocks view.
     private StrategyWorkspaceTabs strategyWorkspaceTabs;
@@ -488,6 +496,8 @@ public class TradingFrame extends JFrame {
         gapAndGoCoordinator = new GapAndGoCoordinator(
                 new GapAndGoCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, uiPollingExecutor);
+        orbCoordinator = new OrbCoordinator(new OrbCoordinatorUi(), strategyRepository,
+                appSettingsService, uiPollingExecutor);
         workspaceService = new WorkspaceService(workspaceRepository, strategyRepository);
         portfolioRefreshController = new PortfolioRefreshController(
                 strategyRepository,
@@ -4878,7 +4888,7 @@ public class TradingFrame extends JFrame {
         }
         refreshFilledOrdersTableData();
         refreshGridSearchVisibility();
-        refreshGapRocketEmptyState();
+        refreshStrategyWorkspaceEmptyState();
         preservingSelection = false;
         SwingUtilities.invokeLater(this::restoreSelectedRow);
     }
@@ -4900,7 +4910,7 @@ public class TradingFrame extends JFrame {
             refreshFilledOrdersTableData();
             strategyTable.clearSelection();
             selectedStrategyId = null;
-            refreshGapRocketEmptyState();
+            refreshStrategyWorkspaceEmptyState();
             return;
         }
         // Row count can change between polls; full refresh keeps sorter/model indexes consistent.
@@ -4910,7 +4920,7 @@ public class TradingFrame extends JFrame {
         strategyTableModel.fireTableDataChanged();
         refreshFilledOrdersTableData();
         refreshGridSearchVisibility();
-        refreshGapRocketEmptyState();
+        refreshStrategyWorkspaceEmptyState();
         preservingSelection = false;
         SwingUtilities.invokeLater(() -> {
             restoreSelectedRow();
@@ -5514,6 +5524,7 @@ public class TradingFrame extends JFrame {
         strategiesGridCardPanel.setOpaque(false);
         strategiesGridCardPanel.add(grid, STRATEGIES_GRID_CARD);
         strategiesGridCardPanel.add(new GapRocketPanel(this::openGapRocketAnalysisDialog, true), GAP_ROCKET_EMPTY_CARD);
+        strategiesGridCardPanel.add(new OrbPanel(this::openOrbAnalysisDialog), ORB_EMPTY_CARD);
         strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
         return strategiesGridCardPanel;
     }
@@ -5540,12 +5551,18 @@ public class TradingFrame extends JFrame {
         gapRocketCancelScheduleButton.setToolTipText(TooltipStyler.text(
                 "Cancel the autonomous premarket gap-and-go schedule for this workspace.", 320));
         gapRocketCancelScheduleButton.addActionListener(event -> gapAndGoCoordinator.cancelSchedule());
+        orbAnalyzeButton.setVisible(false);
+        orbAnalyzeButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        orbAnalyzeButton.setFocusPainted(false);
+        orbAnalyzeButton.setToolTipText(TooltipStyler.text(OrbPanel.EMPTY_STATE_TEXT, 420));
+        orbAnalyzeButton.addActionListener(event -> openOrbAnalysisDialog());
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 2));
         actions.setOpaque(false);
         actions.add(gapRocketScheduleStatusLabel);
         actions.add(gapRocketCancelScheduleButton);
         actions.add(gapRocketPlaceOrdersButton);
         actions.add(gapRocketAnalyzeButton);
+        actions.add(orbAnalyzeButton);
         bottom.add(actions, BorderLayout.EAST);
         return bottom;
     }
@@ -5634,7 +5651,7 @@ public class TradingFrame extends JFrame {
                 return query.isBlank() || matchesStockSymbol(managedStrategy.strategy.symbol(), query);
             }
         });
-        refreshGapRocketEmptyState();
+        refreshStrategyWorkspaceEmptyState();
         applySelectedCapturePortfolioState();
     }
 
@@ -5861,22 +5878,31 @@ public class TradingFrame extends JFrame {
         refreshCurrentStrategiesHeading();
         refreshWorkspaceSummary();
         updateGapRocketScheduleBadge(gapAndGoCoordinator.currentSchedule());
-        refreshGapRocketEmptyState();
+        refreshStrategyWorkspaceEmptyState();
     }
 
-    private void refreshGapRocketEmptyState() {
+    private void refreshStrategyWorkspaceEmptyState() {
         if (strategiesGridCardLayout == null || strategiesGridCardPanel == null) {
             return;
         }
         boolean selectedGapRocket = isSelectedGapRocketWorkspace();
-        boolean showEmptyState = selectedGapRocket && selectedWorkspaceStrategyCount() == 0;
-        gapRocketAnalyzeButton.setVisible(selectedGapRocket && !showEmptyState);
-        gapRocketPlaceOrdersButton.setVisible(selectedGapRocket && !showEmptyState);
+        boolean selectedOrb = isSelectedOrbWorkspace();
+        boolean showGapRocketEmptyState = selectedGapRocket && selectedWorkspaceStrategyCount() == 0;
+        boolean showOrbEmptyState = selectedOrb && selectedWorkspaceStrategyCount() == 0;
+        gapRocketAnalyzeButton.setVisible(selectedGapRocket && !showGapRocketEmptyState);
+        gapRocketPlaceOrdersButton.setVisible(selectedGapRocket && !showGapRocketEmptyState);
+        orbAnalyzeButton.setVisible(selectedOrb && !showOrbEmptyState);
         GapAndGoSchedule currentSchedule = gapAndGoCoordinator == null ? null : gapAndGoCoordinator.currentSchedule();
         boolean scheduled = currentSchedule != null && currentSchedule.enabled();
         gapRocketScheduleStatusLabel.setVisible(selectedGapRocket && scheduled);
         gapRocketCancelScheduleButton.setVisible(selectedGapRocket && scheduled);
-        strategiesGridCardLayout.show(strategiesGridCardPanel, showEmptyState ? GAP_ROCKET_EMPTY_CARD : STRATEGIES_GRID_CARD);
+        if (showGapRocketEmptyState) {
+            strategiesGridCardLayout.show(strategiesGridCardPanel, GAP_ROCKET_EMPTY_CARD);
+        } else if (showOrbEmptyState) {
+            strategiesGridCardLayout.show(strategiesGridCardPanel, ORB_EMPTY_CARD);
+        } else {
+            strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
+        }
     }
 
     private boolean isSelectedGapRocketWorkspace() {
@@ -5886,6 +5912,16 @@ public class TradingFrame extends JFrame {
         return workspaceService.findById(selectedWorkspaceId)
                 .map(StrategyWorkspace::code)
                 .map(GAP_ROCKET_WORKSPACE_CODE::equalsIgnoreCase)
+                .orElse(false);
+    }
+
+    private boolean isSelectedOrbWorkspace() {
+        if (selectedWorkspaceId == null) {
+            return false;
+        }
+        return workspaceService.findById(selectedWorkspaceId)
+                .map(StrategyWorkspace::code)
+                .map(ORB_WORKSPACE_CODE::equalsIgnoreCase)
                 .orElse(false);
     }
 
@@ -5961,6 +5997,19 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    private void openOrbAnalysisDialog() {
+        OrbConfig lastOrbConfig = lastOrbConfigs.get(selectedViewMode);
+        OrbAnalysisDialog dialog = new OrbAnalysisDialog(this, selectedViewMode, lastOrbConfig);
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+        if (!dialog.accepted()) {
+            return;
+        }
+        OrbConfig selectedModeConfig = dialog.config();
+        lastOrbConfigs.put(selectedViewMode, selectedModeConfig);
+        orbCoordinator.run(selectedModeConfig, dialog.runMode());
+    }
+
     /** Load any persisted gap-and-go schedule and start the autonomous premarket scheduler. */
     public void startBackgroundSchedulers() {
         gapAndGoCoordinator.start();
@@ -5972,7 +6021,21 @@ public class TradingFrame extends JFrame {
         refreshStrategyTableData();
         applyCurrentStrategiesRowFilter();
         refreshWorkspaceSummary();
-        refreshGapRocketEmptyState();
+        refreshStrategyWorkspaceEmptyState();
+        updateStatusBar();
+        if (firstAddedStrategyId != null && firstAddedStrategyId.length() > 0
+                && workspaceId.equals(selectedWorkspaceId)) {
+            SwingUtilities.invokeLater(() -> selectAndRevealStrategy(firstAddedStrategyId));
+        }
+    }
+
+    /** Refresh the grid after the coordinator applies ORB recommendations (called on the EDT). */
+    private void onOrbRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
+        syncStrategiesFromRepository();
+        refreshStrategyTableData();
+        applyCurrentStrategiesRowFilter();
+        refreshWorkspaceSummary();
+        refreshStrategyWorkspaceEmptyState();
         updateStatusBar();
         if (firstAddedStrategyId != null && firstAddedStrategyId.length() > 0
                 && workspaceId.equals(selectedWorkspaceId)) {
@@ -5989,7 +6052,7 @@ public class TradingFrame extends JFrame {
                 ? "Scheduled: scan " + schedule.scanTimeEt() + " ET"
                 + (schedule.executeAfterScan() ? " (auto-execute)" : "")
                 : "");
-        refreshGapRocketEmptyState();
+        refreshStrategyWorkspaceEmptyState();
     }
 
     /** Bridges {@link GapAndGoCoordinator}'s needs to this frame without leaking the frame into it. */
@@ -6010,6 +6073,23 @@ public class TradingFrame extends JFrame {
             onGapRocketRecommendationsApplied(workspaceId, firstAddedStrategyId);
         }
         @Override public void onScheduleChanged(GapAndGoSchedule schedule) { updateGapRocketScheduleBadge(schedule); }
+        @Override public java.awt.Component dialogParent() { return TradingFrame.this; }
+    }
+
+    /** Bridges {@link OrbCoordinator}'s needs to this frame without leaking the frame into it. */
+    private final class OrbCoordinatorUi implements OrbCoordinator.Ui {
+        @Override public String runtimeApiKey() { return runtimeApiKey; }
+        @Override public String runtimeApiSecret() { return runtimeApiSecret; }
+        @Override public boolean connectionOk() { return connectionOk; }
+        @Override public String selectedModeLabel() { return TradingFrame.this.selectedModeLabel(); }
+        @Override public int defaultStrategyPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
+        @Override public String selectedWorkspaceId() { return selectedWorkspaceId; }
+        @Override public boolean isOrbWorkspaceSelected() { return isSelectedOrbWorkspace(); }
+        @Override public void log(String message) { TradingFrame.this.log(message); }
+        @Override public void setAnalyzeButtonEnabled(boolean enabled) { orbAnalyzeButton.setEnabled(enabled); }
+        @Override public void onRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
+            onOrbRecommendationsApplied(workspaceId, firstAddedStrategyId);
+        }
         @Override public java.awt.Component dialogParent() { return TradingFrame.this; }
     }
 
@@ -6282,7 +6362,7 @@ public class TradingFrame extends JFrame {
         log("[WORKSPACE] Opened strategy workspace '" + workspace.name() + "' (" + workspace.code() + ") in "
                 + selectedModeLabel() + " mode.");
         userActionLog.completed("Open Workspace", workspace.name());
-        refreshGapRocketEmptyState();
+        refreshStrategyWorkspaceEmptyState();
     }
 
     // Context-menu action: move the strategy in the clicked row into a workspace (or back to

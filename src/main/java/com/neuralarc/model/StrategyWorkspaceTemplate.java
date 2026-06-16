@@ -22,7 +22,7 @@ public record StrategyWorkspaceTemplate(String name, String code, String descrip
                 new StrategyWorkspaceTemplate("Gap Rocket", "GAPROCKET",
                         "Scan premarket gap-up stocks, rank the strongest movers, and track opening-range, breakout-retest, or VWAP-pullback setups in a dedicated morning strategy grid."),
                 new StrategyWorkspaceTemplate("ORB Engine", "ORB",
-                        "Opening-range breakout entries on the first range of the session."),
+                        "Capture the first 5/15/30 minute regular-session range, rank live breakout candidates, and arm planned entries in a dedicated ORB Engine grid."),
                 new StrategyWorkspaceTemplate("VWAP Desk", "VWAP",
                         "Mean-reversion trades around the volume-weighted average price."),
                 // "Momentum Lab" (high relative volume) was folded into Gap Rocket above, which is the
