@@ -607,8 +607,9 @@ public class TradingFrame extends JFrame {
                     @Override public boolean tradingSessionOpen() { return TradingFrame.this.isMarketOpenForUi(); }
                     @Override public String nextTradingSessionOpenDisplay() { return TradingFrame.this.nextTradingSessionOpenDisplay(); }
                     @Override
-                    public void onMonitoringChanged(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
-                        TradingFrame.this.updateCapturePortfolioUi(active, snapshot, config);
+                    public void onMonitoringChanged(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config,
+                                                    StrategyMode mode, String workspaceId) {
+                        TradingFrame.this.updateCapturePortfolioUi(active, snapshot, config, mode, workspaceId);
                     }
                     @Override
                     public void onSnapshotUpdated(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
@@ -2433,10 +2434,13 @@ public class TradingFrame extends JFrame {
         }
     }
 
-    private void updateCapturePortfolioUi(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
-        PortfolioCaptureUiStateStore.Key key = activeCapturePortfolioUiKey == null
-                ? selectedCapturePortfolioUiKey()
-                : activeCapturePortfolioUiKey;
+    private void updateCapturePortfolioUi(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config,
+                                          StrategyMode mode, String workspaceId) {
+        PortfolioCaptureUiStateStore.Key contextKey = capturePortfolioUiKey(mode, workspaceId);
+        PortfolioCaptureUiStateStore.Key key = active
+                ? contextKey
+                : activeCapturePortfolioUiKey == null ? contextKey : activeCapturePortfolioUiKey;
+        activeCapturePortfolioUiKey = active ? key : null;
         capturePortfolioConfigForUi = active ? config : null;
         capturePortfolioModeForUi = active && key != null ? key.mode() : null;
         if (key != null) {
@@ -2500,6 +2504,13 @@ public class TradingFrame extends JFrame {
                 ? PortfolioCaptureUiStateStore.ALL_STOCKS_TAB_ID
                 : strategyWorkspaceTabs.selectedStrategyTabId();
         return capturePortfolioUiStates.key(selectedViewMode, tabId);
+    }
+
+    private PortfolioCaptureUiStateStore.Key capturePortfolioUiKey(StrategyMode mode, String workspaceId) {
+        String tabId = workspaceId == null || workspaceId.isBlank()
+                ? PortfolioCaptureUiStateStore.ALL_STOCKS_TAB_ID
+                : "workspace:" + workspaceId;
+        return capturePortfolioUiStates.key(mode == null ? selectedViewMode : mode, tabId);
     }
 
     private void applySelectedCapturePortfolioState() {
@@ -4664,15 +4675,15 @@ public class TradingFrame extends JFrame {
         WorkspaceAccounting.Snapshot total =
                 WorkspaceAccounting.forWorkspace(null, inputs.accounts(), inputs.sells());
         if (selectedViewMode == StrategyMode.LIVE) {
-            liveUnrealizedSummary.setText(RainbowText.toHtml("LIVE P&L (Unrealized/Realized): "
+            liveUnrealizedSummary.setText("LIVE P&L (Unrealized/Realized): "
                     + total.unrealized().toPlainString()
                     + " / "
-                    + total.realized().toPlainString()));
+                    + total.realized().toPlainString());
         } else {
-            paperUnrealizedSummary.setText(RainbowText.toHtml("Paper P&L (Unrealized/Realized): "
+            paperUnrealizedSummary.setText("Paper P&L (Unrealized/Realized): "
                     + total.unrealized().toPlainString()
                     + " / "
-                    + total.realized().toPlainString()));
+                    + total.realized().toPlainString());
         }
         applyHeaderTotalsVisibility();
     }

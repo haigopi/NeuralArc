@@ -68,7 +68,7 @@ final class PortfolioCaptureDialog extends JDialog {
     private final JTextField percentField = new JTextField("5", 8);
     private final JTextField amountField = new JTextField("500", 8);
     private final JCheckBox includeLosses = new JCheckBox("Include losses in net P/L", true);
-    private final JTextField intervalField = new JTextField("1", 5);
+    private final JTextField intervalField = new JTextField("45", 5);
     private final JCheckBox activeOnly = new JCheckBox("Active strategies only", true);
     private final JRadioButton executeOnce = new JRadioButton("Execute once", true);
     private final JRadioButton reenterOnce = new JRadioButton("Liquidate, then re-enter once");
@@ -363,7 +363,7 @@ final class PortfolioCaptureDialog extends JDialog {
         try {
             interval = Integer.parseInt(intervalField.getText().trim());
         } catch (NumberFormatException ex) {
-            interval = 1;
+            interval = 45;
         }
         if (interval <= 0) {
             JOptionPane.showMessageDialog(this, "Monitoring interval must be greater than zero.",
@@ -487,7 +487,7 @@ final class PortfolioCaptureDialog extends JDialog {
         try {
             return Math.max(1, Integer.parseInt(intervalField.getText().trim()));
         } catch (NumberFormatException ex) {
-            return 1;
+            return 45;
         }
     }
 

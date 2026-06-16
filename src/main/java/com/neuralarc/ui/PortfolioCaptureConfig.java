@@ -26,7 +26,7 @@ record PortfolioCaptureConfig(
                 PortfolioCaptureTargetType.PROFIT_AMOUNT,
                 BigDecimal.ZERO,
                 true,
-                1,
+                45,
                 true,
                 true,
                 PortfolioCaptureExecutionFlow.EXECUTE_ONCE_AND_STOP,

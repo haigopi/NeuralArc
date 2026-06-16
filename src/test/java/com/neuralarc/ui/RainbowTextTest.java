@@ -9,14 +9,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RainbowTextTest {
 
     @Test
-    void wrapsEachVisibleCharWithACycledColor() {
+    void wrapsEachVisibleCharWithASeamlessGradientColor() {
         String html = RainbowText.toHtml("PL");
         assertTrue(html.startsWith("<html>"));
         assertTrue(html.endsWith("</html>"));
-        // Two visible chars → two font tags with different colors (rainbow cycling).
+        // Two visible chars → two font tags with colors from one end-to-end gradient.
         assertEquals(2, countOccurrences(html, "<font color='#"));
         assertTrue(html.contains(">P</font>"));
         assertTrue(html.contains(">L</font>"));
+    }
+
+    @Test
+    void appliesSpectrumOnceWithoutRepeatingForLongText() {
+        String html = RainbowText.toHtml("ABCDEFGHI");
+        assertEquals(9, countOccurrences(html, "<font color='#"));
+        assertEquals(1, countOccurrences(html, "#E63946"));
     }
 
     @Test

@@ -34,7 +34,7 @@ final class PortfolioCaptureStateStore {
                     targetType,
                     new BigDecimal(json.optString("targetValue", "0")),
                     json.optBoolean("includeLosses", true),
-                    Math.max(1, json.optInt("monitoringIntervalSeconds", 1)),
+                    Math.max(1, json.optInt("monitoringIntervalSeconds", 45)),
                     json.optBoolean("autoStopAfterExecution", true),
                     json.optBoolean("includeOnlyActiveStrategies", true),
                     PortfolioCaptureExecutionFlow.valueOf(json.optString(
@@ -53,7 +53,10 @@ final class PortfolioCaptureStateStore {
             );
             Instant lastTimestamp = parseInstant(json.optString("lastMonitoringTimestamp", ""));
             BigDecimal lastValue = new BigDecimal(json.optString("lastCalculatedPortfolioValue", "0"));
-            return Optional.of(new State(enabled, config, lastTimestamp, Monetary.round(lastValue)));
+            StrategyMode mode = StrategyMode.valueOf(json.optString("mode", StrategyMode.PAPER.name()));
+            String workspaceId = json.optString("workspaceId", "");
+            return Optional.of(new State(enabled, config, lastTimestamp, Monetary.round(lastValue),
+                    mode, workspaceId.isBlank() ? null : workspaceId));
         } catch (Exception ex) {
             return Optional.empty();
         }
@@ -78,6 +81,8 @@ final class PortfolioCaptureStateStore {
             json.put("autoCleanPendingBeforeCycle", state.config().autoCleanPendingBeforeCycle());
             json.put("lastMonitoringTimestamp", state.lastMonitoringTimestamp() == null ? "" : state.lastMonitoringTimestamp().toString());
             json.put("lastCalculatedPortfolioValue", state.lastCalculatedPortfolioValue());
+            json.put("mode", state.mode() == null ? StrategyMode.PAPER.name() : state.mode().name());
+            json.put("workspaceId", state.workspaceId() == null ? "" : state.workspaceId());
             Files.writeString(stateFile, json.toString(2), StandardCharsets.UTF_8);
         } catch (IOException ignored) {
             // Monitoring state is recoverability metadata. Logging is handled by the caller.
@@ -85,7 +90,7 @@ final class PortfolioCaptureStateStore {
     }
 
     void clear() {
-        save(new State(false, PortfolioCaptureConfig.captureNow(), null, Monetary.zero()));
+        save(new State(false, PortfolioCaptureConfig.captureNow(), null, Monetary.zero(), StrategyMode.PAPER, null));
     }
 
     private Instant parseInstant(String value) {
@@ -99,7 +104,9 @@ final class PortfolioCaptureStateStore {
             boolean enabled,
             PortfolioCaptureConfig config,
             Instant lastMonitoringTimestamp,
-            BigDecimal lastCalculatedPortfolioValue
+            BigDecimal lastCalculatedPortfolioValue,
+            StrategyMode mode,
+            String workspaceId
     ) {
     }
 }

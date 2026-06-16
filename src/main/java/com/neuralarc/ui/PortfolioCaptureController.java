@@ -33,7 +33,8 @@ final class PortfolioCaptureController {
         String runSmartPicksAutomation(PortfolioCaptureConfig config);
         boolean tradingSessionOpen();
         String nextTradingSessionOpenDisplay();
-        void onMonitoringChanged(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config);
+        void onMonitoringChanged(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config,
+                                 StrategyMode mode, String workspaceId);
         void onSnapshotUpdated(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config);
         void onAutomationStateChanged(PortfolioCaptureAutomationState state, int loopCount, int pendingCanceled);
         void onExecutionStarted();
@@ -84,29 +85,35 @@ final class PortfolioCaptureController {
     void restoreIfNeeded() {
         stateStore.load().ifPresent(state -> {
             if (state.enabled() && state.config().targetValue().compareTo(BigDecimal.ZERO) > 0) {
-                activateMonitoring(state.config());
+                activateMonitoring(state.config(), state.mode(), state.workspaceId());
                 gateway.log("[Portfolio Liquidation] Monitoring restored after startup.");
             }
         });
     }
 
     void activateMonitoring(PortfolioCaptureConfig config) {
+        activateMonitoring(config, gateway.selectedViewMode(), gateway.selectedWorkspaceId());
+    }
+
+    private void activateMonitoring(PortfolioCaptureConfig config, StrategyMode mode, String workspaceId) {
         activeConfig = config;
-        activeMode = gateway.selectedViewMode();
-        activeWorkspaceId = gateway.selectedWorkspaceId();
+        activeMode = mode == null ? StrategyMode.PAPER : mode;
+        activeWorkspaceId = workspaceId;
         stopTimerOnly();
         lastSnapshot = calculator.calculate(strategiesForContext(activeMode, activeWorkspaceId), config, gateway::realizedPnlForStrategy);
         stateStore.save(new PortfolioCaptureStateStore.State(
                 true,
                 config,
                 Instant.now(),
-                lastSnapshot.marketValue()
+                lastSnapshot.marketValue(),
+                activeMode,
+                activeWorkspaceId
         ));
         int delayMillis = Math.max(1, config.monitoringIntervalSeconds()) * 1000;
         monitoringTimer = new Timer(delayMillis, ignored -> evaluateMonitoringTick());
         monitoringTimer.setInitialDelay(0);
         monitoringTimer.start();
-        gateway.onMonitoringChanged(true, lastSnapshot, config);
+        gateway.onMonitoringChanged(true, lastSnapshot, config, activeMode, activeWorkspaceId);
         setAutomationState(PortfolioCaptureAutomationState.MONITORING);
         gateway.log("[Portfolio Liquidation] Monitoring activated. Target "
                 + config.targetType() + "=" + Monetary.round(config.targetValue())
@@ -118,17 +125,21 @@ final class PortfolioCaptureController {
     }
 
     void deactivateMonitoring() {
+        StrategyMode mode = activeMode;
+        String workspaceId = activeWorkspaceId;
         stopTimerOnly();
         activeConfig = null;
         activeMode = null;
         activeWorkspaceId = null;
         stateStore.clear();
-        gateway.onMonitoringChanged(false, lastSnapshot, null);
+        gateway.onMonitoringChanged(false, lastSnapshot, null, mode, workspaceId);
         setAutomationState(PortfolioCaptureAutomationState.STOPPED);
         gateway.log("[Portfolio Liquidation] Monitoring deactivated.");
     }
 
     void emergencyStop() {
+        StrategyMode mode = activeMode;
+        String workspaceId = activeWorkspaceId;
         emergencyStopRequested = true;
         stopTimerOnly();
         activeConfig = null;
@@ -136,7 +147,7 @@ final class PortfolioCaptureController {
         activeWorkspaceId = null;
         stateStore.clear();
         setAutomationState(PortfolioCaptureAutomationState.STOPPED);
-        gateway.onMonitoringChanged(false, lastSnapshot, null);
+        gateway.onMonitoringChanged(false, lastSnapshot, null, mode, workspaceId);
         gateway.log("[Portfolio Liquidation] Emergency stop used. Automation stopped.");
     }
 
@@ -186,7 +197,9 @@ final class PortfolioCaptureController {
                 true,
                 activeConfig,
                 Instant.now(),
-                lastSnapshot.marketValue()
+                lastSnapshot.marketValue(),
+                mode,
+                workspaceId
         ));
         gateway.onSnapshotUpdated(lastSnapshot, activeConfig);
         if (calculator.targetReached(lastSnapshot, activeConfig)) {
@@ -344,7 +357,7 @@ final class PortfolioCaptureController {
             } finally {
                 executing.set(false);
                 if (targetTriggered && !executionConfig.continuousLoop()) {
-                    gateway.onMonitoringChanged(false, lastSnapshot, null);
+                    gateway.onMonitoringChanged(false, lastSnapshot, null, activeMode, activeWorkspaceId);
                 }
             }
         }
