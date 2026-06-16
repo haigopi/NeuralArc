@@ -558,14 +558,44 @@ public class HttpAlpacaClient implements AlpacaClient {
         if (!LOGGER.isLoggable(Level.INFO)) {
             return;
         }
-        LOGGER.info(() -> "Request: " + method + " " + endpoint);
+        String suffix = ApiRequestLogConfig.isVerboseJsonLogging() && body != null && !body.isBlank()
+                ? System.lineSeparator() + "body=" + formatBodyForLog(body)
+                : "";
+        LOGGER.info(() -> "Request: " + method + " " + endpoint + suffix);
     }
 
     private void logResponse(String method, String endpoint, int statusCode, String body) {
         if (!LOGGER.isLoggable(Level.INFO)) {
             return;
         }
-        LOGGER.info(() -> " -> Response: " + method + " " + endpoint + " status=" + statusCode);
+        String suffix = ApiRequestLogConfig.isVerboseJsonLogging() && body != null && !body.isBlank()
+                ? System.lineSeparator() + "body=" + formatBodyForLog(body)
+                : "";
+        LOGGER.info(() -> " -> Response: " + method + " " + endpoint + " status=" + statusCode + suffix);
+    }
+
+    private String formatBodyForLog(String body) {
+        if (body == null || body.isBlank()) {
+            return "<empty>";
+        }
+        String pretty = tryPrettyJson(body);
+        int maxLength = 4000;
+        return pretty.length() <= maxLength ? pretty : pretty.substring(0, maxLength) + System.lineSeparator() + "...";
+    }
+
+    private String tryPrettyJson(String body) {
+        String trimmed = body == null ? "" : body.trim();
+        try {
+            if (trimmed.startsWith("{")) {
+                return new JSONObject(trimmed).toString(2);
+            }
+            if (trimmed.startsWith("[")) {
+                return new JSONArray(trimmed).toString(2);
+            }
+        } catch (Exception ignored) {
+            // Fall through to plain text formatting for non-JSON or malformed content.
+        }
+        return trimmed.replaceAll("\\s+", " ").trim();
     }
 
     private void recordRequestId(String source, String method, String endpoint, HttpResponse<String> response) {

@@ -447,6 +447,7 @@ public class TradingFrame extends JFrame {
     private AsyncLogUploadService asyncLogUploadService;
 
     public TradingFrame() {
+        com.neuralarc.api.ApiRequestLogConfig.setVerboseJsonLogging(appSettingsService.loadVerboseApiJsonLoggingEnabled());
         liveModeBlinkTimer = new Timer(500, ignored -> toggleLiveHeaderBlink());
         liveModeBlinkTimer.setInitialDelay(0);
         logFlushTimer = new Timer(10000, ignored -> flushLogsToFile());

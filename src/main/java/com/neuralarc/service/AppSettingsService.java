@@ -27,7 +27,9 @@ public class AppSettingsService {
     public static final int DEFAULT_STRATEGY_POLLING_SECONDS = 60;
     public static final boolean DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED = true;
     public static final boolean DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED = true;
+    public static final boolean DEFAULT_VERBOSE_API_JSON_LOGGING = false;
 
+    private static final String KEY_VERBOSE_API_JSON_LOGGING = "logging.verboseApiJson";
     private static final String KEY_USER_EMAIL = "userEmail";
     private static final String KEY_TELEMETRY_ENABLED = "telemetryEnabled";
     private static final String KEY_AUTO_PAUSE = "autoPausePollingWhenMarketClosed";
@@ -145,6 +147,19 @@ public class AppSettingsService {
         String key = readSetting("credentials." + keySuffix + ".apiKey", true);
         String secret = readSetting("credentials." + keySuffix + ".apiSecret", true);
         return new String[]{key, secret};
+    }
+
+    /** Verbose broker API JSON logging (pretty-printed request/response bodies). Default OFF. */
+    public boolean loadVerboseApiJsonLoggingEnabled() {
+        return parseBoolean(readSetting(KEY_VERBOSE_API_JSON_LOGGING, false), DEFAULT_VERBOSE_API_JSON_LOGGING);
+    }
+
+    public void saveVerboseApiJsonLoggingEnabled(boolean enabled) throws IOException {
+        try {
+            writeSetting(KEY_VERBOSE_API_JSON_LOGGING, String.valueOf(enabled), false);
+        } catch (SQLException ex) {
+            throw new IOException("Failed to persist verbose API JSON logging setting", ex);
+        }
     }
 
     public AiRecommendationSettings loadAiRecommendationSettings() {
