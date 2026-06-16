@@ -332,29 +332,20 @@ public class AlpacaTradingApi implements TradingApi {
         if (!LOGGER.isLoggable(Level.INFO)) {
             return;
         }
-        String suffix = body == null || body.isBlank() ? "" : System.lineSeparator() + "body=" + formatBodyForLog(body);
-        LOGGER.info(() -> "Request: " + endpoint + suffix);
+        String suffix = ApiRequestLogConfig.isVerboseJsonLogging() && body != null && !body.isBlank()
+                ? System.lineSeparator() + "body=" + formatBodyForLog(body)
+                : "";
+        LOGGER.info(() -> "Request: " + method + " " + endpoint + suffix);
     }
 
     private void logResponse(String method, String endpoint, int statusCode, String body) {
         if (!LOGGER.isLoggable(Level.INFO)) {
             return;
         }
-        LOGGER.info(() -> " -> Response: " + endpoint
-                + " status=" + statusCode
-                + System.lineSeparator() + "body=" + formatBodyForLog(body));
-    }
-
-    private void logFailure(String method, String endpoint, Exception ex) {
-        LOGGER.log(Level.WARNING, "Alpaca API failure: " + method + " " + endpoint, ex);
-    }
-
-    private void recordRequestId(String source, String method, String endpoint, HttpResponse<String> response) {
-        String requestId = response.headers().firstValue(REQUEST_ID_HEADER).orElse("");
-        if (!requestId.isBlank()) {
-            LOGGER.info(() -> "Alpaca Request ID [" + source + "]: " + requestId + " (" + method + " " + endpoint + ")");
-            requestIdStore.record(source, method, endpoint, requestId);
-        }
+        String suffix = ApiRequestLogConfig.isVerboseJsonLogging() && body != null && !body.isBlank()
+                ? System.lineSeparator() + "body=" + formatBodyForLog(body)
+                : "";
+        LOGGER.info(() -> " -> Response: " + method + " " + endpoint + " status=" + statusCode + suffix);
     }
 
     private String formatBodyForLog(String body) {
@@ -379,6 +370,18 @@ public class AlpacaTradingApi implements TradingApi {
             // Fall through to plain text formatting for non-JSON or malformed content.
         }
         return trimmed.replaceAll("\\s+", " ").trim();
+    }
+
+    private void logFailure(String method, String endpoint, Exception ex) {
+        LOGGER.log(Level.WARNING, "Alpaca API failure: " + method + " " + endpoint, ex);
+    }
+
+    private void recordRequestId(String source, String method, String endpoint, HttpResponse<String> response) {
+        String requestId = response.headers().firstValue(REQUEST_ID_HEADER).orElse("");
+        if (!requestId.isBlank()) {
+            LOGGER.info(() -> "Alpaca Request ID [" + source + "]: " + requestId + " (" + method + " " + endpoint + ")");
+            requestIdStore.record(source, method, endpoint, requestId);
+        }
     }
 
     private String extractErrorMessage(String responseBody, int statusCode) {

@@ -56,6 +56,7 @@ public class SettingsDialog extends JDialog {
     private final JLabel apiSecretLabel = new JLabel("API secret:");
     private final JTextField endpointField = new JTextField(AppMetadata.analyticsEndpointDefault(), 25);
     private final JCheckBox telemetryEnabled = new JCheckBox("Send daily diagnostic logs", true);
+    private final JCheckBox verboseApiJsonLogging = new JCheckBox("Pretty-print broker API JSON in logs", AppSettingsService.DEFAULT_VERBOSE_API_JSON_LOGGING);
     private final JCheckBox autoPausePollingWhenMarketClosed = new JCheckBox("Auto pause polling when market is closed", AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED);
     private final JCheckBox extendedHoursTradingEnabled = new JCheckBox("Enable extended-hours trading", AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED);
     private final JCheckBox allowDuplicateSymbolStrategies = new JCheckBox("Allow multiple strategies for the same symbol", AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES);
@@ -167,6 +168,13 @@ public class SettingsDialog extends JDialog {
         );
         addFormRow(diagnosticsPanel, 0, "Diagnostics:", telemetryEnabled, true);
         addFormRow(diagnosticsPanel, 1, "", diagnosticsDescription, false);
+        JLabel verboseApiJsonDescription = mutedDescription(
+                "Pretty-prints every broker API request and response body (JSON) into the logs. This produces a very "
+                        + "large volume of logs and consumes a lot of storage. Recommended: leave this OFF; enable only "
+                        + "temporarily when debugging broker requests."
+        );
+        addFormRow(diagnosticsPanel, 2, "", verboseApiJsonLogging, true);
+        addFormRow(diagnosticsPanel, 3, "", verboseApiJsonDescription, false);
 
         JPanel marketHoursPanel = new JPanel(new GridBagLayout());
         marketHoursPanel.setOpaque(false);
@@ -462,6 +470,8 @@ public class SettingsDialog extends JDialog {
                     defaultResubmitOnExpiryEnabled()
             ));
             appSettingsService.saveEndpoint(getEndpoint());
+            appSettingsService.saveVerboseApiJsonLoggingEnabled(verboseApiJsonLogging.isSelected());
+            com.neuralarc.api.ApiRequestLogConfig.setVerboseJsonLogging(verboseApiJsonLogging.isSelected());
             appSettingsService.saveAiRecommendationSettings(aiRecommendationSettingsPanel.settings());
             for (ApplicationMode mode : ApplicationMode.values()) {
                 String[] creds = credentialCache.get(mode);
@@ -527,6 +537,7 @@ public class SettingsDialog extends JDialog {
         appliedSettings = appSettingsService.load();
         emailField.setText(appliedSettings.userEmail());
         endpointField.setText(appSettingsService.loadEndpoint());
+        verboseApiJsonLogging.setSelected(appSettingsService.loadVerboseApiJsonLoggingEnabled());
         telemetryEnabled.setSelected(appliedSettings.telemetryEnabled());
         autoPausePollingWhenMarketClosed.setSelected(appliedSettings.autoPausePollingWhenMarketClosed());
         extendedHoursTradingEnabled.setSelected(appliedSettings.extendedHoursTradingEnabled());

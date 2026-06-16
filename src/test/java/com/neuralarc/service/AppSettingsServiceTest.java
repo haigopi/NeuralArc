@@ -24,6 +24,20 @@ class AppSettingsServiceTest {
     Path tempDir;
 
     @Test
+    void verboseApiJsonLoggingDefaultsOffAndPersists() throws Exception {
+        AppSettingsService service = new AppSettingsService(tempDir.resolve("settings-logging.db"));
+
+        org.junit.jupiter.api.Assertions.assertFalse(service.loadVerboseApiJsonLoggingEnabled(),
+                "verbose API JSON logging must default to OFF");
+
+        service.saveVerboseApiJsonLoggingEnabled(true);
+        org.junit.jupiter.api.Assertions.assertTrue(service.loadVerboseApiJsonLoggingEnabled());
+
+        service.saveVerboseApiJsonLoggingEnabled(false);
+        org.junit.jupiter.api.Assertions.assertFalse(service.loadVerboseApiJsonLoggingEnabled());
+    }
+
+    @Test
     void persistsAutoPauseAndExtendedHoursSettings() throws Exception {
         AppSettingsService service = new AppSettingsService(tempDir.resolve("settings.properties"));
         AppSettingsService.AppSettings expected = new AppSettingsService.AppSettings(

@@ -558,17 +558,20 @@ public class HttpAlpacaClient implements AlpacaClient {
         if (!LOGGER.isLoggable(Level.INFO)) {
             return;
         }
-        String suffix = body == null || body.isBlank() ? "" : System.lineSeparator() + "body=" + formatBodyForLog(body);
-        LOGGER.info(() -> "Request: " + endpoint + suffix);
+        String suffix = ApiRequestLogConfig.isVerboseJsonLogging() && body != null && !body.isBlank()
+                ? System.lineSeparator() + "body=" + formatBodyForLog(body)
+                : "";
+        LOGGER.info(() -> "Request: " + method + " " + endpoint + suffix);
     }
 
     private void logResponse(String method, String endpoint, int statusCode, String body) {
         if (!LOGGER.isLoggable(Level.INFO)) {
             return;
         }
-        LOGGER.info(() -> " -> Response: " + endpoint
-                + " status=" + statusCode
-                + System.lineSeparator() + "body=" + formatBodyForLog(body));
+        String suffix = ApiRequestLogConfig.isVerboseJsonLogging() && body != null && !body.isBlank()
+                ? System.lineSeparator() + "body=" + formatBodyForLog(body)
+                : "";
+        LOGGER.info(() -> " -> Response: " + method + " " + endpoint + " status=" + statusCode + suffix);
     }
 
     private String formatBodyForLog(String body) {
