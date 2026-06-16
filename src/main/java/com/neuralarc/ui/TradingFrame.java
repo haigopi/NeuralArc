@@ -2460,7 +2460,10 @@ public class TradingFrame extends JFrame {
         String targetLabel = config.targetType() == PortfolioCaptureTargetType.PROFIT_PERCENT
                 ? Monetary.round(config.targetValue()) + "%"
                 : "$" + Monetary.round(config.targetValue());
-        return "Monitoring Active | P&L $" + Monetary.round(snapshot.unrealizedPnl())
+        // Show the same P&L as this tab's bottom summary / the status bar (All Stocks), from the
+        // single centralized source — not the capture calculator's eligible-subset total.
+        BigDecimal contextPnl = computeWorkspaceSnapshot(selectedWorkspaceId).total();
+        return "Monitoring Active | P&L $" + Monetary.round(contextPnl)
                 + " | Target " + targetLabel
                 + " | Progress " + Monetary.round(snapshot.targetProgressPercent()) + "%";
     }
@@ -4646,15 +4649,15 @@ public class TradingFrame extends JFrame {
         WorkspaceAccounting.Snapshot total =
                 WorkspaceAccounting.forWorkspace(null, inputs.accounts(), inputs.sells());
         if (selectedViewMode == StrategyMode.LIVE) {
-            liveUnrealizedSummary.setText("LIVE P&L (Unrealized/Realized): "
+            liveUnrealizedSummary.setText(RainbowText.toHtml("LIVE P&L (Unrealized/Realized): "
                     + total.unrealized().toPlainString()
                     + " / "
-                    + total.realized().toPlainString());
+                    + total.realized().toPlainString()));
         } else {
-            paperUnrealizedSummary.setText("Paper P&L (Unrealized/Realized): "
+            paperUnrealizedSummary.setText(RainbowText.toHtml("Paper P&L (Unrealized/Realized): "
                     + total.unrealized().toPlainString()
                     + " / "
-                    + total.realized().toPlainString());
+                    + total.realized().toPlainString()));
         }
         applyHeaderTotalsVisibility();
     }
