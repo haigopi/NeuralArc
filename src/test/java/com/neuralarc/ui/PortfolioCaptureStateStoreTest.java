@@ -38,7 +38,8 @@ class PortfolioCaptureStateStoreTest {
         );
         Instant timestamp = Instant.parse("2026-05-15T14:30:00Z");
 
-        store.save(new PortfolioCaptureStateStore.State(true, config, timestamp, new BigDecimal("12345.67")));
+        store.save(new PortfolioCaptureStateStore.State(true, config, timestamp, new BigDecimal("12345.67"),
+                StrategyMode.LIVE, "workspace-1"));
 
         Optional<PortfolioCaptureStateStore.State> restored = store.load();
         assertTrue(restored.isPresent());
@@ -55,6 +56,8 @@ class PortfolioCaptureStateStoreTest {
         assertTrue(restored.get().config().autoCleanPendingBeforeCycle());
         assertEquals(timestamp, restored.get().lastMonitoringTimestamp());
         assertEquals(new BigDecimal("12345.67"), restored.get().lastCalculatedPortfolioValue());
+        assertEquals(StrategyMode.LIVE, restored.get().mode());
+        assertEquals("workspace-1", restored.get().workspaceId());
     }
 
     @Test
@@ -73,6 +76,7 @@ class PortfolioCaptureStateStoreTest {
         Optional<PortfolioCaptureStateStore.State> restored = store.load();
         assertTrue(restored.isPresent());
         assertEquals(PortfolioCaptureSmartPicksStrategy.DIVERSIFIED_TOP_20, restored.get().config().reentrySmartPicksStrategy());
+        assertEquals(45, restored.get().config().monitoringIntervalSeconds());
     }
 
     @Test

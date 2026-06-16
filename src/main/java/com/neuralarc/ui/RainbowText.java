@@ -4,9 +4,8 @@ import java.awt.Color;
 import java.util.Locale;
 
 /**
- * Renders a string as rainbow-colored HTML for Swing labels (each visible character cycles through
- * the spectrum). Used for the prominent P&L total text so the rainbow styling is centralized and
- * unit-testable rather than hand-rolled at each call site.
+ * Renders a string as rainbow-colored HTML for Swing labels. The spectrum is applied once across
+ * the full visible text so the gradient reads as one seamless band rather than a repeating pattern.
  */
 final class RainbowText {
     // Red, orange, yellow-ish, green, blue, indigo, violet.
@@ -27,16 +26,17 @@ final class RainbowText {
         if (text == null || text.isEmpty()) {
             return text == null ? "" : "";
         }
+        int visibleCount = visibleCharacterCount(text);
         StringBuilder html = new StringBuilder("<html>");
-        int colorIndex = 0;
+        int visibleIndex = 0;
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             if (Character.isWhitespace(c)) {
                 html.append(c == '\n' ? "<br>" : "&nbsp;");
                 continue;
             }
-            Color color = SPECTRUM[colorIndex % SPECTRUM.length];
-            colorIndex++;
+            Color color = gradientColor(visibleIndex, visibleCount);
+            visibleIndex++;
             html.append("<font color='#")
                     .append(hex(color))
                     .append("'>")
@@ -44,6 +44,34 @@ final class RainbowText {
                     .append("</font>");
         }
         return html.append("</html>").toString();
+    }
+
+    private static int visibleCharacterCount(String text) {
+        int count = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (!Character.isWhitespace(text.charAt(i))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static Color gradientColor(int visibleIndex, int visibleCount) {
+        if (visibleCount <= 1) {
+            return SPECTRUM[0];
+        }
+        double scaled = (visibleIndex / (double) (visibleCount - 1)) * (SPECTRUM.length - 1);
+        int lower = (int) Math.floor(scaled);
+        int upper = Math.min(SPECTRUM.length - 1, lower + 1);
+        double fraction = scaled - lower;
+        return blend(SPECTRUM[lower], SPECTRUM[upper], fraction);
+    }
+
+    private static Color blend(Color start, Color end, double fraction) {
+        int red = (int) Math.round(start.getRed() + (end.getRed() - start.getRed()) * fraction);
+        int green = (int) Math.round(start.getGreen() + (end.getGreen() - start.getGreen()) * fraction);
+        int blue = (int) Math.round(start.getBlue() + (end.getBlue() - start.getBlue()) * fraction);
+        return new Color(red, green, blue);
     }
 
     private static String hex(Color color) {
