@@ -46,10 +46,13 @@ public final class GapAndGoDiscoveryService {
 
         LinkedHashSet<String> selected = new LinkedHashSet<>();
 
-        // Primary source: market movers (gainers carry price + percent_change for a real gap filter).
+        // Primary source: market movers sorted by gap strength. No gap pre-filter here — the
+        // scanner re-checks each candidate against live bars; pre-filtering would exclude genuine
+        // gappers on quieter days when the screener's percent_change is slightly below the minimum.
         JSONObject movers = screener.getMarketMovers(Math.max(10, limit * 2));
         List<Gainer> gainers = parseGainers(movers).stream()
-                .filter(g -> passesGapFilter(g, safeConfig))
+                .filter(g -> !g.symbol.isBlank())
+                .filter(g -> passesPriceBoundsFilter(g, safeConfig))
                 .sorted(Comparator.comparing((Gainer g) -> g.changePercent).reversed())
                 .toList();
         for (Gainer gainer : gainers) {
@@ -75,22 +78,15 @@ public final class GapAndGoDiscoveryService {
         return result;
     }
 
-    private static boolean passesGapFilter(Gainer gainer, GapRocketConfig config) {
-        if (gainer.symbol.isBlank()) {
+    private static boolean passesPriceBoundsFilter(Gainer gainer, GapRocketConfig config) {
+        if (gainer.price.compareTo(BigDecimal.ZERO) <= 0) {
+            return true; // no price data — let the scanner decide
+        }
+        if (gainer.price.compareTo(config.minimumStockPrice()) < 0) {
             return false;
         }
-        if (gainer.changePercent.compareTo(config.minimumPremarketGapPercent()) < 0) {
-            return false;
-        }
-        // Apply price bounds only when the screener supplied a usable price.
-        if (gainer.price.compareTo(BigDecimal.ZERO) > 0) {
-            if (gainer.price.compareTo(config.minimumStockPrice()) < 0) {
-                return false;
-            }
-            return config.maximumStockPrice() == null
-                    || gainer.price.compareTo(config.maximumStockPrice()) <= 0;
-        }
-        return true;
+        return config.maximumStockPrice() == null
+                || gainer.price.compareTo(config.maximumStockPrice()) <= 0;
     }
 
     private static List<Gainer> parseGainers(JSONObject body) {

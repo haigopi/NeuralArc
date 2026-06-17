@@ -18,6 +18,7 @@ import com.neuralarc.orb.OrbAnalysisDialog;
 import com.neuralarc.orb.OrbConfig;
 import com.neuralarc.orb.OrbPanel;
 import com.neuralarc.model.GapAndGoSchedule;
+import com.neuralarc.model.OrbSchedule;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.GitHubReleaseUpdateService;
@@ -372,6 +373,8 @@ public class TradingFrame extends JFrame {
     private final JLabel gapRocketScheduleStatusLabel = new JLabel();
     private final JButton gapRocketCancelScheduleButton = new JButton("Cancel Schedule");
     private final JButton orbAnalyzeButton = new JButton(OrbPanel.ANALYZE_BUTTON_TEXT);
+    private final JLabel orbScheduleStatusLabel = new JLabel();
+    private final JButton orbCancelScheduleButton = new JButton("Cancel Schedule");
     private JPanel headerPanel;
     private final EnumMap<StrategyMode, GapRocketConfig> lastGapRocketConfigs = new EnumMap<>(StrategyMode.class);
     private final EnumMap<StrategyMode, OrbConfig> lastOrbConfigs = new EnumMap<>(StrategyMode.class);
@@ -497,8 +500,8 @@ public class TradingFrame extends JFrame {
         gapAndGoCoordinator = new GapAndGoCoordinator(
                 new GapAndGoCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, uiPollingExecutor);
-        orbCoordinator = new OrbCoordinator(new OrbCoordinatorUi(), strategyRepository,
-                appSettingsService, uiPollingExecutor);
+        orbCoordinator = new OrbCoordinator(new OrbCoordinatorUi(), appDatabase, strategyRepository,
+                appSettingsService, marketHoursService, uiPollingExecutor);
         workspaceService = new WorkspaceService(workspaceRepository, strategyRepository);
         portfolioRefreshController = new PortfolioRefreshController(
                 strategyRepository,
@@ -5603,12 +5606,22 @@ public class TradingFrame extends JFrame {
         orbAnalyzeButton.setFocusPainted(false);
         orbAnalyzeButton.setToolTipText(TooltipStyler.text(OrbPanel.EMPTY_STATE_TEXT, 420));
         orbAnalyzeButton.addActionListener(event -> openOrbAnalysisDialog());
+        orbScheduleStatusLabel.setVisible(false);
+        orbScheduleStatusLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        orbCancelScheduleButton.setVisible(false);
+        orbCancelScheduleButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        orbCancelScheduleButton.setFocusPainted(false);
+        orbCancelScheduleButton.setToolTipText(TooltipStyler.text(
+                "Cancel the autonomous post-range ORB schedule for this workspace.", 320));
+        orbCancelScheduleButton.addActionListener(event -> orbCoordinator.cancelSchedule());
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 2));
         actions.setOpaque(false);
         actions.add(gapRocketScheduleStatusLabel);
         actions.add(gapRocketCancelScheduleButton);
         actions.add(gapRocketPlaceOrdersButton);
         actions.add(gapRocketAnalyzeButton);
+        actions.add(orbScheduleStatusLabel);
+        actions.add(orbCancelScheduleButton);
         actions.add(orbAnalyzeButton);
         bottom.add(actions, BorderLayout.EAST);
         return bottom;
@@ -5939,10 +5952,14 @@ public class TradingFrame extends JFrame {
         gapRocketAnalyzeButton.setVisible(selectedGapRocket && !showGapRocketEmptyState);
         gapRocketPlaceOrdersButton.setVisible(selectedGapRocket && !showGapRocketEmptyState);
         orbAnalyzeButton.setVisible(selectedOrb && !showOrbEmptyState);
-        GapAndGoSchedule currentSchedule = gapAndGoCoordinator == null ? null : gapAndGoCoordinator.currentSchedule();
-        boolean scheduled = currentSchedule != null && currentSchedule.enabled();
-        gapRocketScheduleStatusLabel.setVisible(selectedGapRocket && scheduled);
-        gapRocketCancelScheduleButton.setVisible(selectedGapRocket && scheduled);
+        GapAndGoSchedule currentGapSchedule = gapAndGoCoordinator == null ? null : gapAndGoCoordinator.currentSchedule();
+        boolean gapScheduled = currentGapSchedule != null && currentGapSchedule.enabled();
+        gapRocketScheduleStatusLabel.setVisible(selectedGapRocket && gapScheduled);
+        gapRocketCancelScheduleButton.setVisible(selectedGapRocket && gapScheduled);
+        OrbSchedule currentOrbSchedule = orbCoordinator == null ? null : orbCoordinator.currentSchedule();
+        boolean orbScheduled = currentOrbSchedule != null && currentOrbSchedule.enabled();
+        orbScheduleStatusLabel.setVisible(selectedOrb && orbScheduled);
+        orbCancelScheduleButton.setVisible(selectedOrb && orbScheduled);
         if (showGapRocketEmptyState) {
             strategiesGridCardLayout.show(strategiesGridCardPanel, GAP_ROCKET_EMPTY_CARD);
         } else if (showOrbEmptyState) {
@@ -6057,9 +6074,10 @@ public class TradingFrame extends JFrame {
         orbCoordinator.run(selectedModeConfig, dialog.runMode());
     }
 
-    /** Load any persisted gap-and-go schedule and start the autonomous premarket scheduler. */
+    /** Load any persisted schedules and start the autonomous schedulers. */
     public void startBackgroundSchedulers() {
         gapAndGoCoordinator.start();
+        orbCoordinator.start();
     }
 
     /** Refresh the grid after the coordinator applies gap-and-go recommendations (called on the EDT). */
@@ -6102,6 +6120,18 @@ public class TradingFrame extends JFrame {
         refreshStrategyWorkspaceEmptyState();
     }
 
+    /** Reflect the current ORB schedule on the action bar (badge + cancel button). */
+    private void updateOrbScheduleBadge(OrbSchedule schedule) {
+        if (orbScheduleStatusLabel == null) {
+            return;
+        }
+        orbScheduleStatusLabel.setText(schedule != null && schedule.enabled()
+                ? "Scheduled: analysis " + schedule.rangeAnalysisTimeEt() + " ET"
+                + (schedule.executeAfterRangeClose() ? " (auto-execute)" : "")
+                : "");
+        refreshStrategyWorkspaceEmptyState();
+    }
+
     /** Bridges {@link GapAndGoCoordinator}'s needs to this frame without leaking the frame into it. */
     private final class GapAndGoCoordinatorUi implements GapAndGoCoordinator.Ui {
         @Override public String runtimeApiKey() { return runtimeApiKey; }
@@ -6137,6 +6167,7 @@ public class TradingFrame extends JFrame {
         @Override public void onRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
             onOrbRecommendationsApplied(workspaceId, firstAddedStrategyId);
         }
+        @Override public void onScheduleChanged(OrbSchedule schedule) { updateOrbScheduleBadge(schedule); }
         @Override public java.awt.Component dialogParent() { return TradingFrame.this; }
     }
 

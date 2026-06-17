@@ -123,8 +123,8 @@ public final class OrbAnalysisDialog extends JDialog {
         JPopupMenu menu = new JPopupMenu();
         menu.add(runItem("Analyze now", OrbRunMode.ANALYZE_NOW, true));
         menu.add(runItem("Analyze & Arm now", OrbRunMode.ANALYZE_AND_ARM_NOW, true));
-        JMenuItem schedule = runItem("Schedule open", OrbRunMode.SCHEDULE, false);
-        schedule.setToolTipText("ORB scheduling is planned for a later phase; use Analyze now while NeuralArc is open.");
+        JMenuItem schedule = runItem("Schedule open", OrbRunMode.SCHEDULE, true);
+        schedule.setToolTipText("Schedule an autonomous ORB analysis after the opening range closes on each trading day. NeuralArc must be running at that time.");
         menu.add(schedule);
         run.addActionListener(event -> menu.show(run, 0, run.getHeight()));
         buttons.add(cancel); buttons.add(run);
