@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +36,8 @@ public final class OrbAnalyzer {
         if (snapshot == null) return false;
         if (!snapshot.complete()) return reject(snapshot, snapshot.rejectionReason().isBlank() ? "incomplete opening range" : snapshot.rejectionReason());
         if (snapshot.rangePercent().compareTo(config.minimumRangePercent()) < 0) return reject(snapshot, "opening range below minimum percent");
+        LocalTime nowEt = LocalTime.ofInstant(clock.instant(), OpeningRangeCaptureService.EASTERN);
+        if (nowEt.isAfter(config.latestEntryTimeEt())) return reject(snapshot, "past latest entry time " + config.latestEntryTimeEt() + " ET");
         return true;
     }
 
