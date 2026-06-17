@@ -33,15 +33,17 @@ public final class GapRocketLiveScanner {
         if (symbols == null || symbols.isEmpty()) {
             return List.of();
         }
-        List<GapRocketCandidate> candidates = new ArrayList<>();
         LocalDate today = LocalDate.now(clock);
+        boolean spyGreen = isIndexGreen("SPY", today);
+        boolean qqqGreen = isIndexGreen("QQQ", today);
+        List<GapRocketCandidate> candidates = new ArrayList<>();
         for (String symbol : symbols.stream()
                 .map(GapRocketLiveScanner::normalizeSymbol)
                 .filter(normalized -> !normalized.isBlank())
                 .distinct()
                 .toList()) {
             try {
-                buildCandidate(symbol, today).ifPresent(candidates::add);
+                buildCandidate(symbol, today, spyGreen, qqqGreen).ifPresent(candidates::add);
             } catch (AlpacaMarketDataException ex) {
                 log.accept("[Gap Rocket] Skipped " + symbol + ": " + ex.getMessage());
             }
@@ -49,7 +51,22 @@ public final class GapRocketLiveScanner {
         return candidates;
     }
 
-    private java.util.Optional<GapRocketCandidate> buildCandidate(String symbol, LocalDate today) throws AlpacaMarketDataException {
+    private boolean isIndexGreen(String symbol, LocalDate today) {
+        try {
+            List<MarketBar> dailyBars = marketDataApi.getDailyBars(symbol, today.minusDays(5), today);
+            List<MarketBar> intradayBars = marketDataApi.getIntradayBars(symbol, today, today, 1);
+            MarketBar prevDay = previousDailyBar(dailyBars, today);
+            MarketBar latest = latestBar(intradayBars, dailyBars);
+            if (prevDay == null || latest == null || prevDay.close().compareTo(BigDecimal.ZERO) <= 0) return true;
+            BigDecimal current = valid(latest.close()) ? latest.close() : latest.open();
+            return valid(current) && current.compareTo(prevDay.close()) > 0;
+        } catch (AlpacaMarketDataException ex) {
+            log.accept("[Gap Rocket] Could not fetch " + symbol + " for trend check; assuming green: " + ex.getMessage());
+            return true;
+        }
+    }
+
+    private java.util.Optional<GapRocketCandidate> buildCandidate(String symbol, LocalDate today, boolean spyGreen, boolean qqqGreen) throws AlpacaMarketDataException {
         List<MarketBar> dailyBars = marketDataApi.getDailyBars(symbol, today.minusDays(20), today);
         List<MarketBar> intradayBars = marketDataApi.getIntradayBars(symbol, today, today, 1);
         MarketBar previousDaily = previousDailyBar(dailyBars, today);
@@ -88,8 +105,8 @@ public final class GapRocketLiveScanner {
                 Monetary.round(low),
                 null,
                 "Live Alpaca market-data scan; no hardcoded ticker or price was used.",
-                true,
-                true,
+                spyGreen,
+                qqqGreen,
                 spreadPercent,
                 volume.compareTo(BigDecimal.ZERO) > 0,
                 Monetary.round(current)
