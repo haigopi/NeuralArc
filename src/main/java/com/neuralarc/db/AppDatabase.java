@@ -195,6 +195,7 @@ public final class AppDatabase {
         applyMigration("007_base_buy_repost_reduction_percent", this::migration007);
         applyMigration("008_strategy_workspaces", this::migration008);
         applyMigration("009_gap_and_go_schedules", this::migration009);
+        applyMigration("010_orb_schedules",         this::migration010);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -413,6 +414,25 @@ public final class AppDatabase {
                         updated_at               TEXT NOT NULL
                     )""");
             st.execute("CREATE INDEX IF NOT EXISTS idx_gap_schedules_workspace ON gap_and_go_schedules(workspace_id)");
+        }
+    }
+
+    // ── Migration 010 — autonomous ORB schedules ────────────────────────────
+
+    private void migration010() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS orb_schedules (
+                        id                        TEXT PRIMARY KEY,
+                        enabled                   INTEGER NOT NULL DEFAULT 1,
+                        range_analysis_time_et    TEXT NOT NULL,
+                        window_end_et             TEXT NOT NULL,
+                        execute_after_range_close INTEGER NOT NULL DEFAULT 0,
+                        workspace_id              TEXT NOT NULL DEFAULT '',
+                        config_json               TEXT NOT NULL,
+                        updated_at                TEXT NOT NULL
+                    )""");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_orb_schedules_workspace ON orb_schedules(workspace_id)");
         }
     }
 

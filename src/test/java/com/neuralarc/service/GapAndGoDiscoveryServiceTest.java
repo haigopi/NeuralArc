@@ -40,18 +40,20 @@ class GapAndGoDiscoveryServiceTest {
     }
 
     @Test
-    void filtersOutBelowMinimumGapAndOutOfPriceRange() throws Exception {
+    void filtersOutOfPriceRangeButKeepsLowGapGainers() throws Exception {
+        // Discovery no longer pre-filters by gap — that is the scanner's job. Only price bounds apply.
         JSONObject movers = new JSONObject().put("gainers", new JSONArray()
-                .put(gainer("LOWGAP", "30.00", "3.0"))   // below min gap
-                .put(gainer("CHEAP", "2.00", "9.0"))      // below min price
-                .put(gainer("PRICEY", "500.00", "9.0"))   // above max price
+                .put(gainer("LOWGAP", "30.00", "3.0"))   // below min gap, but within price range → kept
+                .put(gainer("CHEAP", "2.00", "9.0"))      // below min price → filtered
+                .put(gainer("PRICEY", "500.00", "9.0"))   // above max price → filtered
                 .put(gainer("GOOD", "25.00", "7.0")));
         FakeScreener screener = new FakeScreener(movers, new JSONObject());
 
         List<String> result = new GapAndGoDiscoveryService(screener)
                 .discoverCandidates(config("5", "5", "100", 10), 10);
 
-        assertEquals(List.of("GOOD"), result);
+        // Sorted by changePercent descending: GOOD (7%) before LOWGAP (3%)
+        assertEquals(List.of("GOOD", "LOWGAP"), result);
     }
 
     @Test

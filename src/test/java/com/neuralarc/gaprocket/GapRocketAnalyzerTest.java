@@ -16,7 +16,7 @@ class GapRocketAnalyzerTest {
     @Test
     void defaultsMatchDialogRequirements() {
         GapRocketConfig cfg = GapRocketConfig.defaults(StrategyMode.LIVE);
-        assertEquals(new BigDecimal("3"), cfg.minimumPremarketGapPercent());
+        assertEquals(new BigDecimal("2"), cfg.minimumPremarketGapPercent());
         assertEquals(500_000L, cfg.minimumPremarketVolume());
         assertEquals(new BigDecimal("5"), cfg.minimumStockPrice());
         assertEquals(new BigDecimal("1.5"), cfg.minimumRelativeVolume());

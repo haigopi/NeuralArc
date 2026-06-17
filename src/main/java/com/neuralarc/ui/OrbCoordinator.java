@@ -1,9 +1,12 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.api.HttpAlpacaMarketDataApi;
+import com.neuralarc.db.AppDatabase;
+import com.neuralarc.db.SqliteOrbScheduleRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
 import com.neuralarc.model.AiProviderType;
 import com.neuralarc.model.AiRecommendationSettings;
+import com.neuralarc.model.OrbSchedule;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.orb.OpeningRangeCaptureService;
 import com.neuralarc.orb.OpeningRangeSnapshot;
@@ -19,12 +22,16 @@ import com.neuralarc.service.AiRecommendationProviderFactory;
 import com.neuralarc.service.AlpacaScreenerException;
 import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.service.HttpAlpacaScreenerClient;
+import com.neuralarc.service.MarketHoursService;
+import com.neuralarc.service.OrbScheduleService;
 
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executor;
 
@@ -43,20 +50,27 @@ final class OrbCoordinator {
         void log(String message);
         void setAnalyzeButtonEnabled(boolean enabled);
         void onRecommendationsApplied(String workspaceId, String firstAddedStrategyId);
+        void onScheduleChanged(OrbSchedule schedule);
         java.awt.Component dialogParent();
     }
 
     private final Ui ui;
     private final SqliteStrategyRepository strategyRepository;
     private final AppSettingsService appSettingsService;
+    private final SqliteOrbScheduleRepository scheduleRepository;
+    private final MarketHoursService marketHoursService;
+    private final Map<String, OrbScheduleService> scheduleServicesByWorkspace = new LinkedHashMap<>();
     private final Executor backgroundExecutor;
 
-    OrbCoordinator(Ui ui, SqliteStrategyRepository strategyRepository,
-                   AppSettingsService appSettingsService, Executor backgroundExecutor) {
+    OrbCoordinator(Ui ui, AppDatabase database, SqliteStrategyRepository strategyRepository,
+                   AppSettingsService appSettingsService, MarketHoursService marketHoursService,
+                   Executor backgroundExecutor) {
         this.ui = ui;
         this.strategyRepository = strategyRepository;
         this.appSettingsService = appSettingsService;
         this.backgroundExecutor = backgroundExecutor;
+        this.marketHoursService = marketHoursService == null ? new MarketHoursService() : marketHoursService;
+        this.scheduleRepository = new SqliteOrbScheduleRepository(database);
     }
 
     static boolean isPendingOrderPlacement(Strategy strategy) {
@@ -64,17 +78,116 @@ final class OrbCoordinator {
                 || ARMED_STATUS.equalsIgnoreCase(strategy.latestOrderStatus()));
     }
 
+    /** Load any persisted enabled schedule and start the post-range scheduler. */
+    void start() {
+        scheduleRepository.findAll().stream()
+                .filter(OrbSchedule::enabled)
+                .forEach(schedule -> {
+                    OrbScheduleService service = scheduleServiceForWorkspace(schedule.workspaceId());
+                    service.setSchedule(schedule);
+                    service.start();
+                    ui.log("[ORB] Restored autonomous schedule: analysis " + schedule.rangeAnalysisTimeEt()
+                            + " ET for workspace " + schedule.workspaceId()
+                            + (schedule.executeAfterRangeClose() ? " (auto-execute)." : " (recommendation only)."));
+                });
+        ui.onScheduleChanged(currentSchedule());
+    }
+
+    OrbSchedule currentSchedule() {
+        String workspaceId = ui.selectedWorkspaceId();
+        if (workspaceId == null) {
+            return null;
+        }
+        OrbScheduleService service = scheduleServicesByWorkspace.get(workspaceId);
+        return service == null ? null : service.schedule();
+    }
+
     void run(OrbConfig config, OrbRunMode mode) {
         if (ui.selectedWorkspaceId() == null || !ui.isOrbWorkspaceSelected()) {
             return;
         }
         if (mode == OrbRunMode.SCHEDULE) {
-            JOptionPane.showMessageDialog(ui.dialogParent(),
-                    "ORB scheduling is planned for the scheduling phase. Use Analyze now while NeuralArc is open.",
-                    "ORB Engine", JOptionPane.INFORMATION_MESSAGE);
+            scheduleOrCancel(config);
             return;
         }
         runAnalysis(ui.selectedWorkspaceId(), config, mode == OrbRunMode.ANALYZE_AND_ARM_NOW);
+    }
+
+    /** Register a new schedule, or offer to cancel the existing one for the selected workspace. */
+    void scheduleOrCancel(OrbConfig config) {
+        String workspaceId = ui.selectedWorkspaceId();
+        if (workspaceId == null || !ui.isOrbWorkspaceSelected()) {
+            return;
+        }
+        OrbScheduleService selectedService = scheduleServiceForWorkspace(workspaceId);
+        OrbSchedule existing = selectedService.schedule();
+        if (existing != null && workspaceId.equals(existing.workspaceId())) {
+            int cancel = JOptionPane.showConfirmDialog(ui.dialogParent(),
+                    "An autonomous ORB schedule already runs at " + existing.rangeAnalysisTimeEt()
+                            + " ET for this workspace.\nCancel it?",
+                    "ORB Schedule", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+            if (cancel == JOptionPane.YES_OPTION) {
+                cancelSchedule();
+            }
+            return;
+        }
+        OrbConfig safeConfig = config == null ? OrbConfig.defaults(null) : config;
+        String analysisTime = OrbSchedule.create(workspaceId, safeConfig, false).rangeAnalysisTimeEt().toString();
+        int execute = JOptionPane.showConfirmDialog(ui.dialogParent(),
+                "Schedule an autonomous ORB analysis at " + analysisTime + " ET on trading days\n"
+                        + "(after the " + safeConfig.rangeDurationMinutes() + "-minute opening range closes),\n"
+                        + "within the execution window up to " + safeConfig.latestEntryTimeEt() + " ET.\n\n"
+                        + "Auto-execute trades after analysis? (No = build the recommendation list only.)\n\n"
+                        + "Note: NeuralArc must be running at the scheduled time.",
+                "ORB Schedule", JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
+        if (execute == JOptionPane.CANCEL_OPTION || execute == JOptionPane.CLOSED_OPTION) {
+            return;
+        }
+        boolean executeAfterRangeClose = execute == JOptionPane.YES_OPTION;
+        OrbSchedule schedule = OrbSchedule.create(workspaceId, safeConfig, executeAfterRangeClose);
+        scheduleRepository.save(schedule);
+        selectedService.setSchedule(schedule);
+        selectedService.start();
+        ui.onScheduleChanged(schedule);
+        ui.log("[ORB] Autonomous schedule set: analysis " + schedule.rangeAnalysisTimeEt() + " ET"
+                + (executeAfterRangeClose ? " with auto-execute." : " (recommendation only).")
+                + " NeuralArc must be running.");
+        JOptionPane.showMessageDialog(ui.dialogParent(),
+                "Autonomous ORB analysis scheduled for " + schedule.rangeAnalysisTimeEt() + " ET on trading days.\n"
+                        + (executeAfterRangeClose ? "Trades will be armed automatically after each analysis.\n" : "")
+                        + "NeuralArc must be running at that time.",
+                "ORB Schedule", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    /** Cancel and forget the current schedule for the selected workspace. */
+    void cancelSchedule() {
+        String workspaceId = ui.selectedWorkspaceId();
+        if (workspaceId == null) {
+            return;
+        }
+        OrbScheduleService selectedService = scheduleServicesByWorkspace.get(workspaceId);
+        OrbSchedule existing = selectedService == null ? null : selectedService.schedule();
+        if (existing == null) {
+            return;
+        }
+        selectedService.clearSchedule();
+        scheduleRepository.deleteById(existing.id());
+        ui.onScheduleChanged(null);
+        ui.log("[ORB] Autonomous schedule cancelled.");
+    }
+
+    private OrbScheduleService scheduleServiceForWorkspace(String workspaceId) {
+        String key = workspaceId == null ? "" : workspaceId;
+        return scheduleServicesByWorkspace.computeIfAbsent(key, ignored ->
+                new OrbScheduleService(marketHoursService, Clock.systemUTC(),
+                        schedule -> SwingUtilities.invokeLater(() -> runScheduled(schedule)), ui::log));
+    }
+
+    private void runScheduled(OrbSchedule schedule) {
+        if (schedule == null) {
+            return;
+        }
+        runAnalysis(schedule.workspaceId(), schedule.config(), schedule.executeAfterRangeClose());
     }
 
     private void runAnalysis(String workspaceId, OrbConfig config, boolean armRequested) {

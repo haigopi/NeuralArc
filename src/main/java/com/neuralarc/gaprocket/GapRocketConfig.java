@@ -30,7 +30,7 @@ public record GapRocketConfig(
     public static final LocalTime PRIMARY_WINDOW_END_ET = LocalTime.of(11, 0);
 
     public GapRocketConfig {
-        minimumPremarketGapPercent = defaultIfNull(minimumPremarketGapPercent, "3");
+        minimumPremarketGapPercent = defaultIfNull(minimumPremarketGapPercent, "2");
         minimumStockPrice = defaultIfNull(minimumStockPrice, "5");
         minimumRelativeVolume = defaultIfNull(minimumRelativeVolume, "1.5");
         stopLossPercent = defaultIfNull(stopLossPercent, "5");
@@ -70,7 +70,7 @@ public record GapRocketConfig(
     }
 
     public static GapRocketConfig defaults(StrategyMode mode) {
-        return new GapRocketConfig(new BigDecimal("3"), 500_000L, new BigDecimal("5"), new BigDecimal("1.5"),
+        return new GapRocketConfig(new BigDecimal("2"), 500_000L, new BigDecimal("5"), new BigDecimal("1.5"),
                 null, true, EnumSet.allOf(CatalystType.class), MarketTrendFilter.EITHER_SPY_OR_QQQ_GREEN,
                 EntryStyle.BREAKOUT_RETEST, OpeningRangeDuration.FIFTEEN_MINUTES, new BigDecimal("5"),
                 new BigDecimal("10"), 10, ExecutionFrequency.MANUAL, mode, List.of());
