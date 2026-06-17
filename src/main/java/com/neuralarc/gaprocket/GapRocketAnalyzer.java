@@ -10,7 +10,7 @@ import java.util.Objects;
 import java.util.function.Consumer;
 
 public final class GapRocketAnalyzer {
-    public static final int MINIMUM_RECOMMENDATION_SCORE = 70;
+    public static final int MINIMUM_RECOMMENDATION_SCORE = 65;
     private final Clock clock;
     private final Consumer<String> decisionLog;
 
@@ -40,7 +40,7 @@ public final class GapRocketAnalyzer {
         if (cfg.newsCatalystRequired() && (c.catalystType() == null || c.catalystSummary() == null || c.catalystSummary().isBlank())) return reject(c, "missing catalyst");
         if (cfg.newsCatalystRequired() && !cfg.catalystTypes().contains(c.catalystType())) return reject(c, "catalyst type not selected");
         if (!passesTrend(c, cfg.marketTrendFilter())) return reject(c, "market trend filter failed");
-        if (c.spreadPercent() != null && c.spreadPercent().compareTo(new BigDecimal("2.5")) > 0) return reject(c, "spread too wide");
+        if (c.spreadPercent() != null && c.spreadPercent().compareTo(new BigDecimal("3.5")) > 0) return reject(c, "spread too wide");
         decisionLog.accept("[Gap Rocket] Accepted " + c.symbol() + " for scoring.");
         return true;
     }

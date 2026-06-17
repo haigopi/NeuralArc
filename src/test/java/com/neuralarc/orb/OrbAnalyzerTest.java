@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +35,47 @@ class OrbAnalyzerTest {
         assertEquals(new BigDecimal("104.13"), rec.target());
         assertTrue(rec.score() > 0);
         assertEquals(OrbStatus.RANGE_CAPTURED, rec.status());
+    }
+
+    @Test
+    void rejectsSnapshotsPastLatestEntryTime() {
+        // Clock is 11:30 AM ET; latestEntryTimeEt defaults to 11:00 ET → should reject.
+        Clock noonEt = Clock.fixed(Instant.parse("2026-06-15T15:30:00Z"), ZoneId.of("America/New_York"));
+        List<String> log = new ArrayList<>();
+        OrbAnalyzer analyzer = new OrbAnalyzer(noonEt, log::add);
+        OpeningRangeSnapshot snapshot = new OpeningRangeSnapshot("TSLA", Instant.parse("2026-06-15T13:30:00Z"),
+                Instant.parse("2026-06-15T13:45:00Z"), new BigDecimal("202.00"), new BigDecimal("198.00"),
+                new BigDecimal("1000000"), 15, true, "");
+
+        assertTrue(analyzer.analyze(List.of(snapshot), List.of(), OrbConfig.defaults(StrategyMode.PAPER)).isEmpty());
+        assertTrue(log.stream().anyMatch(line -> line.contains("past latest entry time")));
+    }
+
+    @Test
+    void acceptsSnapshotBeforeLatestEntryTime() {
+        // Clock is 10:00 AM ET (14:00 UTC in EDT); latestEntryTimeEt defaults to 11:00 ET → should accept.
+        Clock earlyEt = Clock.fixed(Instant.parse("2026-06-15T14:00:00Z"), ZoneId.of("America/New_York"));
+        OrbAnalyzer analyzer = new OrbAnalyzer(earlyEt, null);
+        OpeningRangeSnapshot snapshot = new OpeningRangeSnapshot("AAPL", Instant.parse("2026-06-15T13:30:00Z"),
+                Instant.parse("2026-06-15T13:45:00Z"), new BigDecimal("150.00"), new BigDecimal("148.00"),
+                new BigDecimal("800000"), 15, true, "");
+
+        assertFalse(analyzer.analyze(List.of(snapshot), List.of(), OrbConfig.defaults(StrategyMode.PAPER)).isEmpty());
+    }
+
+    @Test
+    void defaultConfigRejectedValuesResetToDefaults() {
+        OrbConfig negativeInputs = new OrbConfig(15, new BigDecimal("-1"), null,
+                new BigDecimal("-5"), new BigDecimal("0"), 10,
+                new BigDecimal("0"), null, new BigDecimal("-2"), new BigDecimal("-0.5"),
+                LocalTime.of(11, 0), List.of(), true, false, StrategyMode.PAPER);
+
+        assertEquals(new BigDecimal("0.10"), negativeInputs.entryBufferPercent());
+        assertEquals(new BigDecimal("1.00"), negativeInputs.riskPercent());
+        assertEquals(new BigDecimal("3.00"), negativeInputs.takeProfitPercent());
+        assertEquals(new BigDecimal("1.00"), negativeInputs.minimumPrice());
+        assertEquals(new BigDecimal("1.50"), negativeInputs.minimumRelativeVolume());
+        assertEquals(new BigDecimal("0.20"), negativeInputs.minimumRangePercent());
     }
 
     @Test

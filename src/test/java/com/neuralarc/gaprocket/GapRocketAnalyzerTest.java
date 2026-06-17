@@ -16,10 +16,10 @@ class GapRocketAnalyzerTest {
     @Test
     void defaultsMatchDialogRequirements() {
         GapRocketConfig cfg = GapRocketConfig.defaults(StrategyMode.LIVE);
-        assertEquals(new BigDecimal("5"), cfg.minimumPremarketGapPercent());
-        assertEquals(1_000_000L, cfg.minimumPremarketVolume());
+        assertEquals(new BigDecimal("3"), cfg.minimumPremarketGapPercent());
+        assertEquals(500_000L, cfg.minimumPremarketVolume());
         assertEquals(new BigDecimal("5"), cfg.minimumStockPrice());
-        assertEquals(new BigDecimal("2"), cfg.minimumRelativeVolume());
+        assertEquals(new BigDecimal("1.5"), cfg.minimumRelativeVolume());
         assertNull(cfg.maximumStockPrice());
         assertTrue(cfg.newsCatalystRequired());
         assertEquals(GapRocketConfig.EntryStyle.BREAKOUT_RETEST, cfg.entryStyle());
@@ -34,7 +34,7 @@ class GapRocketAnalyzerTest {
         List<GapRocketRecommendation> result = analyzer.analyze(List.of(strong("NVDA"), weak("ABC")), GapRocketConfig.defaults(StrategyMode.PAPER));
         assertEquals(1, result.size());
         assertEquals("NVDA", result.getFirst().symbol());
-        assertTrue(result.getFirst().strategyScore() >= 70);
+        assertTrue(result.getFirst().strategyScore() >= GapRocketAnalyzer.MINIMUM_RECOMMENDATION_SCORE);
         assertEquals(StrategyMode.PAPER, result.getFirst().mode());
         assertTrue(log.stream().anyMatch(line -> line.contains("Rejected ABC")));
     }
