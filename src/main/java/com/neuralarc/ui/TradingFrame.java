@@ -227,10 +227,11 @@ public class TradingFrame extends JFrame {
     private static final Color HEADER_STATUS_LIVE_ACTIVE = new Color(46, 125, 50);
     private static final Color HEADER_STATUS_LIVE_ACTIVE_DIM = Color.WHITE;
     private final JTextPane eventLog = new JTextPane();
-    private final JButton addStrategyButton = new JButton("Add New Stock Strategy");
+    private final JButton addStrategyButton = new JButton("New Strategy");
     private final JButton smartPicksButton = new JButton("Smart Picks");
     private final JPopupMenu smartPicksMenu = new JPopupMenu();
-    private final JButton portfolioActionsButton = new JButton("Portfolio Actions");
+    private final JButton riskDashboardButton = new JButton("Risk");
+    private final JButton portfolioActionsButton = new JButton("Portfolio");
     private final JButton settingsButton = new JButton("Settings");
     private final JButton legalDisclosureButton = new JButton("Legal Disclosure");
     private final Timer liveModeBlinkTimer;
@@ -273,7 +274,7 @@ public class TradingFrame extends JFrame {
     private final StrategyOpenPnlCalculator openPnlCalculator = new StrategyOpenPnlCalculator();
     private final SystemMetricsPresenter systemMetricsPresenter = new SystemMetricsPresenter();
     private final KillSwitchController killSwitchController;
-    private final JButton refreshPortfolioButton = new JButton("Refresh & Reevaluate Portfolio");
+    private final JButton refreshPortfolioButton = new JButton("Refresh");
     private final JButton capturePortfolioButton = new JButton("Liquidate Portfolio");
     private final JLabel capturePortfolioIndicator = new JLabel("");
     private final JButton footerActionsButton = new JButton("Actions");
@@ -414,7 +415,6 @@ public class TradingFrame extends JFrame {
     private String selectedWorkspaceId;
     private final WorkspaceSummaryPresenter workspaceSummaryPresenter = new WorkspaceSummaryPresenter();
     private final JLabel workspaceSummaryLabel = new JLabel(" ");
-    private final RiskDashboardPresenter riskDashboardPresenter = new RiskDashboardPresenter();
     private boolean connectionOk;
     private boolean connectionRetryPending;
     private boolean appLaunchedPublished;
@@ -1167,6 +1167,7 @@ public class TradingFrame extends JFrame {
         headerControlsPanel.add(addStrategyButton);
         headerControlsPanel.add(smartPicksButton);
         headerControlsPanel.add(refreshPortfolioButton);
+        headerControlsPanel.add(riskDashboardButton);
         headerControlsPanel.add(portfolioActionsButton);
         headerControlsPanel.add(settingsButton);
 
@@ -1592,8 +1593,6 @@ public class TradingFrame extends JFrame {
         ));
 
         footerActionsMenu.add(createStatusMenuHeader("Support"));
-        footerActionsMenu.add(createStatusMenuItem("Strategy Risk Dashboard", "icons/portfolio.svg",
-                this::openRiskDashboard));
         footerActionsMenu.add(createStatusMenuItem("Submit Bug", "icons/submit-bug.svg",
                 this::openSubmitBugDialog));
         footerActionsMenu.add(createStatusMenuItem("Request New Feature", "icons/request-new-feature.svg",
@@ -1989,15 +1988,27 @@ public class TradingFrame extends JFrame {
         styleHeaderButton(addStrategyButton);
         styleHeaderButton(smartPicksButton, true);
         styleHeaderButton(refreshPortfolioButton);
+        styleHeaderButton(riskDashboardButton);
         styleCompactHeaderButton(capturePortfolioButton);
         styleHeaderButton(portfolioActionsButton, true);
         styleHeaderButton(settingsButton);
         applyButtonIcon(addStrategyButton, "icons/add-stock-strategy.svg", 16);
         applyButtonIcon(smartPicksButton, "icons/smart-picks.svg", 16);
         applyButtonIcon(refreshPortfolioButton, "icons/refresh.svg", 16);
+        applyButtonIcon(riskDashboardButton, "icons/portfolio.svg", 16);
         applyButtonIcon(capturePortfolioButton, "icons/portfolio.svg", 16);
         applyButtonIcon(portfolioActionsButton, "icons/portfolio.svg", 16);
         applyButtonIcon(settingsButton, "icons/settings.svg", 16);
+        riskDashboardButton.setToolTipText(TooltipStyler.text(
+                "Open the Strategy Risk Dashboard: exposure charts, open P&L, and risk advisories "
+                        + "(possible losers to protect, possible winners-in-losing to wait on, and cut-loss candidates).",
+                340
+        ));
+        riskDashboardButton.addActionListener(e -> openRiskDashboard());
+        addStrategyButton.setToolTipText(TooltipStyler.text(
+                "Add a new stock strategy (symbol, entry, stop, target, and automation) to the current mode.", 320));
+        portfolioActionsButton.setToolTipText(TooltipStyler.text(
+                "Portfolio actions: bulk operations across your strategies and positions.", 320));
         refreshPortfolioButton.setToolTipText(TooltipStyler.text(
                 "Refetches Alpaca positions and quote data, updates matching Current Strategies, and recalculates grid P&L.",
                 320
@@ -2044,7 +2055,7 @@ public class TradingFrame extends JFrame {
 
     private void setPortfolioRefreshButtonBusy(boolean busy) {
         refreshPortfolioButton.setEnabled(!busy);
-        refreshPortfolioButton.setText(busy ? "Refreshing..." : "Refresh & Reevaluate Portfolio");
+        refreshPortfolioButton.setText(busy ? "Refreshing..." : "Refresh");
     }
 
     private CollapsibleSectionPanel createDetailSection(JLabel titleLabel, JLabel contentLabel) {
@@ -6303,6 +6314,7 @@ public class TradingFrame extends JFrame {
     // snapshots on the EDT, fetches Alpaca positions off-EDT for reconciliation, then renders.
     private void openRiskDashboard() {
         java.util.List<com.neuralarc.analytics.RiskAnalytics.Holding> holdings = new java.util.ArrayList<>();
+        java.util.List<com.neuralarc.analytics.RiskAnalytics.PositionInput> positionInputs = new java.util.ArrayList<>();
         java.util.List<ReconciliationService.SymbolPosition> localPositions = new java.util.ArrayList<>();
         for (ManagedStrategy entry : strategies) {
             if (entry.strategy.mode() != selectedViewMode) {
@@ -6322,9 +6334,15 @@ public class TradingFrame extends JFrame {
                         entry.strategy.symbol(),
                         BigDecimal.valueOf(position.getTotalShares()),
                         position.getAverageCost()));
+                positionInputs.add(new com.neuralarc.analytics.RiskAnalytics.PositionInput(
+                        entry.strategy.symbol(), workspaceLabel,
+                        BigDecimal.valueOf(position.getTotalShares()), position.getAverageCost(),
+                        position.getLastPrice(), entry.strategy.stopLossPrice(), entry.strategy.targetSellPrice()));
             }
         }
         com.neuralarc.analytics.RiskAnalytics.Report riskReport = com.neuralarc.analytics.RiskAnalytics.analyze(holdings);
+        java.util.List<com.neuralarc.analytics.RiskAnalytics.PositionRisk> positionRisks =
+                com.neuralarc.analytics.RiskAnalytics.classify(positionInputs);
         HttpAlpacaClient client = alpacaClientForMode(selectedApplicationMode());
         String modeLabel = selectedModeLabel();
 
@@ -6352,8 +6370,8 @@ public class TradingFrame extends JFrame {
                     reconciliation = new ReconciliationService().reconcile(localPositions, java.util.List.of());
                     log("[RISK] Could not fetch broker positions for reconciliation: " + ex.getMessage());
                 }
-                String html = riskDashboardPresenter.buildHtml(modeLabel, riskReport, reconciliation);
-                new RiskDashboardDialog(TradingFrame.this, html).setVisible(true);
+                RiskDashboardPanel panel = new RiskDashboardPanel(modeLabel, riskReport, positionRisks, reconciliation);
+                new RiskDashboardDialog(TradingFrame.this, panel).setVisible(true);
             }
         }.execute();
     }
