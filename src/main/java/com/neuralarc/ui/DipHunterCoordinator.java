@@ -98,7 +98,13 @@ final class DipHunterCoordinator {
             return null;
         }
         DipHunterScheduleService service = scheduleServicesByWorkspace.get(workspaceId);
-        return service == null ? null : service.schedule();
+        DipHunterSchedule inMemory = service == null ? null : service.schedule();
+        if (inMemory != null) {
+            return inMemory;
+        }
+        return scheduleRepository.findByWorkspaceId(workspaceId)
+                .filter(DipHunterSchedule::enabled)
+                .orElse(null);
     }
 
     /** Run an interactive scan for the selected workspace. */
@@ -117,6 +123,15 @@ final class DipHunterCoordinator {
         }
         DipHunterScheduleService selectedScheduleService = scheduleServiceForWorkspace(workspaceId);
         DipHunterSchedule existing = selectedScheduleService.schedule();
+        if (existing == null) {
+            existing = scheduleRepository.findByWorkspaceId(workspaceId)
+                    .filter(DipHunterSchedule::enabled)
+                    .orElse(null);
+            if (existing != null) {
+                selectedScheduleService.setSchedule(existing);
+                selectedScheduleService.start();
+            }
+        }
         if (existing != null && workspaceId.equals(existing.workspaceId())) {
             int cancel = JOptionPane.showConfirmDialog(ui.dialogParent(),
                     "An autonomous Dip Hunter schedule already runs at " + existing.scanTimeEt() + " ET for this workspace.\n"

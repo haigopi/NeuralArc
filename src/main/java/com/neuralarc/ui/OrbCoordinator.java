@@ -99,7 +99,13 @@ final class OrbCoordinator {
             return null;
         }
         OrbScheduleService service = scheduleServicesByWorkspace.get(workspaceId);
-        return service == null ? null : service.schedule();
+        OrbSchedule inMemory = service == null ? null : service.schedule();
+        if (inMemory != null) {
+            return inMemory;
+        }
+        return scheduleRepository.findByWorkspaceId(workspaceId)
+                .filter(OrbSchedule::enabled)
+                .orElse(null);
     }
 
     void run(OrbConfig config, OrbRunMode mode) {
@@ -121,6 +127,15 @@ final class OrbCoordinator {
         }
         OrbScheduleService selectedService = scheduleServiceForWorkspace(workspaceId);
         OrbSchedule existing = selectedService.schedule();
+        if (existing == null) {
+            existing = scheduleRepository.findByWorkspaceId(workspaceId)
+                    .filter(OrbSchedule::enabled)
+                    .orElse(null);
+            if (existing != null) {
+                selectedService.setSchedule(existing);
+                selectedService.start();
+            }
+        }
         if (existing != null && workspaceId.equals(existing.workspaceId())) {
             int cancel = JOptionPane.showConfirmDialog(ui.dialogParent(),
                     "An autonomous ORB schedule already runs at " + existing.rangeAnalysisTimeEt()
