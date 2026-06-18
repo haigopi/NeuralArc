@@ -196,6 +196,7 @@ public final class AppDatabase {
         applyMigration("008_strategy_workspaces", this::migration008);
         applyMigration("009_gap_and_go_schedules", this::migration009);
         applyMigration("010_orb_schedules",         this::migration010);
+        applyMigration("011_dip_hunter_schedules",   this::migration011);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -433,6 +434,26 @@ public final class AppDatabase {
                         updated_at                TEXT NOT NULL
                     )""");
             st.execute("CREATE INDEX IF NOT EXISTS idx_orb_schedules_workspace ON orb_schedules(workspace_id)");
+        }
+    }
+
+    // ── Migration 011 — autonomous Dip Hunter schedules ─────────────────────
+
+    private void migration011() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS dip_hunter_schedules (
+                        id                       TEXT PRIMARY KEY,
+                        enabled                  INTEGER NOT NULL DEFAULT 1,
+                        scan_time_et             TEXT NOT NULL,
+                        window_start_et          TEXT NOT NULL,
+                        window_end_et            TEXT NOT NULL,
+                        execute_after_scan       INTEGER NOT NULL DEFAULT 0,
+                        workspace_id             TEXT NOT NULL DEFAULT '',
+                        config_json              TEXT NOT NULL,
+                        updated_at               TEXT NOT NULL
+                    )""");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_dip_hunter_schedules_workspace ON dip_hunter_schedules(workspace_id)");
         }
     }
 

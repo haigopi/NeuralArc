@@ -16,9 +16,30 @@ class StrategyWorkspaceTemplateTest {
                 && t.description().contains("5/15/30 minute regular-session range")
                 && t.description().contains("ORB Engine grid")));
         assertTrue(catalog.stream().anyMatch(t -> t.name().equals("VWAP Desk")));
+        assertTrue(catalog.stream().anyMatch(t -> t.name().equals("Dip Hunter") && t.code().equals("DIP")));
         // "Momentum Lab" was folded into Gap Rocket (the dedicated high-relative-volume scanner).
         assertFalse(catalog.stream().anyMatch(t -> t.name().equals("Momentum Lab") || t.code().equals("MOMENTUM")));
         assertTrue(catalog.stream().allMatch(t -> t.description() != null && !t.description().isBlank()));
+    }
+
+    @Test
+    void onlyImplementedStrategiesAreEnabled() {
+        List<StrategyWorkspaceTemplate> catalog = StrategyWorkspaceTemplate.catalog();
+        // Implemented, dedicated scanners (plus the always-usable generic workspaces).
+        assertTrue(implemented(catalog, "GAPROCKET"));
+        assertTrue(implemented(catalog, "ORB"));
+        assertTrue(implemented(catalog, "DIP"));
+        assertTrue(implemented(catalog, "MANUAL"));
+        assertTrue(implemented(catalog, StrategyWorkspaceTemplate.CUSTOM_CODE));
+        // Placeholders that are advertised but not yet implemented.
+        assertFalse(implemented(catalog, "VWAP"));
+        assertFalse(implemented(catalog, "SWING"));
+        assertFalse(implemented(catalog, "SHIELD"));
+        assertFalse(implemented(catalog, "EARNINGS"));
+    }
+
+    private static boolean implemented(List<StrategyWorkspaceTemplate> catalog, String code) {
+        return catalog.stream().filter(t -> t.code().equals(code)).findFirst().orElseThrow().implemented();
     }
 
     @Test

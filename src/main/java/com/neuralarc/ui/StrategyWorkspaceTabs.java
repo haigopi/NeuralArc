@@ -204,6 +204,9 @@ final class StrategyWorkspaceTabs {
         if ("ORB".equalsIgnoreCase(workspace.code())) {
             return TooltipStyler.text("Capture the market's opening range from live Alpaca data, then arm long breakout entries after the range closes.", 360);
         }
+        if ("DIP".equalsIgnoreCase(workspace.code())) {
+            return TooltipStyler.text("Scan strong, up-trending stocks that have pulled back from a recent high, rank the best bounce setups on live data, and track planned entries in a dedicated Dip Hunter grid.", 360);
+        }
         return workspace.name();
     }
 }
