@@ -17,8 +17,12 @@ import com.neuralarc.gaprocket.GapRocketPanel;
 import com.neuralarc.orb.OrbAnalysisDialog;
 import com.neuralarc.orb.OrbConfig;
 import com.neuralarc.orb.OrbPanel;
+import com.neuralarc.diphunter.DipHunterAnalysisDialog;
+import com.neuralarc.diphunter.DipHunterConfig;
+import com.neuralarc.diphunter.DipHunterPanel;
 import com.neuralarc.model.GapAndGoSchedule;
 import com.neuralarc.model.OrbSchedule;
+import com.neuralarc.model.DipHunterSchedule;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.GitHubReleaseUpdateService;
@@ -356,9 +360,11 @@ public class TradingFrame extends JFrame {
     private final JTable filledOrdersTable = new JTable(filledOrdersTableModel);
     private static final String GAP_ROCKET_WORKSPACE_CODE = "GAPROCKET";
     private static final String ORB_WORKSPACE_CODE = "ORB";
+    private static final String DIP_HUNTER_WORKSPACE_CODE = "DIP";
     private static final String STRATEGIES_GRID_CARD = "strategiesGrid";
     private static final String GAP_ROCKET_EMPTY_CARD = "gapRocketEmpty";
     private static final String ORB_EMPTY_CARD = "orbEmpty";
+    private static final String DIP_HUNTER_EMPTY_CARD = "dipHunterEmpty";
     private final JTabbedPane strategyTabs = new JTabbedPane();
     private final JTextField currentStrategiesSearchField = new JTextField(24);
     private final JTextField tradeHistorySearchField = new JTextField(24);
@@ -375,9 +381,13 @@ public class TradingFrame extends JFrame {
     private final JButton orbAnalyzeButton = new JButton(OrbPanel.ANALYZE_BUTTON_TEXT);
     private final JLabel orbScheduleStatusLabel = new JLabel();
     private final JButton orbCancelScheduleButton = new JButton("Cancel Schedule");
+    private final JButton dipHunterAnalyzeButton = new JButton(DipHunterPanel.ANALYZE_BUTTON_TEXT);
+    private final JLabel dipHunterScheduleStatusLabel = new JLabel();
+    private final JButton dipHunterCancelScheduleButton = new JButton("Cancel Schedule");
     private JPanel headerPanel;
     private final EnumMap<StrategyMode, GapRocketConfig> lastGapRocketConfigs = new EnumMap<>(StrategyMode.class);
     private final EnumMap<StrategyMode, OrbConfig> lastOrbConfigs = new EnumMap<>(StrategyMode.class);
+    private final EnumMap<StrategyMode, DipHunterConfig> lastDipHunterConfigs = new EnumMap<>(StrategyMode.class);
     private CardLayout strategiesGridCardLayout;
     private JPanel strategiesGridCardPanel;
     private BottomStatusBars bottomStatusBars;
@@ -397,6 +407,7 @@ public class TradingFrame extends JFrame {
     private final SqliteWorkspaceRepository workspaceRepository;
     private final GapAndGoCoordinator gapAndGoCoordinator;
     private final OrbCoordinator orbCoordinator;
+    private final DipHunterCoordinator dipHunterCoordinator;
     private final WorkspaceService workspaceService;
     // Dynamic strategy-workspace tabs; null workspace = the All Stocks view.
     private StrategyWorkspaceTabs strategyWorkspaceTabs;
@@ -501,6 +512,8 @@ public class TradingFrame extends JFrame {
                 new GapAndGoCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, uiPollingExecutor);
         orbCoordinator = new OrbCoordinator(new OrbCoordinatorUi(), appDatabase, strategyRepository,
+                appSettingsService, marketHoursService, uiPollingExecutor);
+        dipHunterCoordinator = new DipHunterCoordinator(new DipHunterCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, uiPollingExecutor);
         workspaceService = new WorkspaceService(workspaceRepository, strategyRepository);
         portfolioRefreshController = new PortfolioRefreshController(
@@ -2986,11 +2999,15 @@ public class TradingFrame extends JFrame {
         smartPicksMenu.add(createStatusMenuHeader("New Strategy Workspace"));
         for (StrategyWorkspaceTemplate template : StrategyWorkspaceTemplate.catalog()) {
             JMenuItem templateItem = createStatusMenuItem(
-                    template.name(),
+                    template.implemented() ? template.name() : template.name() + "  (Coming soon)",
                     "icons/add-stock-strategy.svg",
                     () -> createWorkspaceFromTemplate(template)
             );
-            templateItem.setToolTipText(TooltipStyler.text(template.description(), 360));
+            // Strategies without a dedicated scanner are advertised but disabled until implemented.
+            templateItem.setEnabled(template.implemented());
+            templateItem.setToolTipText(TooltipStyler.text(template.implemented()
+                    ? template.description()
+                    : template.description() + " — coming soon; this strategy is not implemented yet.", 360));
             smartPicksMenu.add(templateItem);
         }
     }
@@ -5575,6 +5592,7 @@ public class TradingFrame extends JFrame {
         strategiesGridCardPanel.add(grid, STRATEGIES_GRID_CARD);
         strategiesGridCardPanel.add(new GapRocketPanel(this::openGapRocketAnalysisDialog, true), GAP_ROCKET_EMPTY_CARD);
         strategiesGridCardPanel.add(new OrbPanel(this::openOrbAnalysisDialog), ORB_EMPTY_CARD);
+        strategiesGridCardPanel.add(new DipHunterPanel(this::openDipHunterAnalysisDialog, true), DIP_HUNTER_EMPTY_CARD);
         strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
         return strategiesGridCardPanel;
     }
@@ -5614,6 +5632,19 @@ public class TradingFrame extends JFrame {
         orbCancelScheduleButton.setToolTipText(TooltipStyler.text(
                 "Cancel the autonomous post-range ORB schedule for this workspace.", 320));
         orbCancelScheduleButton.addActionListener(event -> orbCoordinator.cancelSchedule());
+        dipHunterAnalyzeButton.setVisible(false);
+        dipHunterAnalyzeButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        dipHunterAnalyzeButton.setFocusPainted(false);
+        dipHunterAnalyzeButton.setToolTipText(TooltipStyler.text(DipHunterPanel.EMPTY_STATE_TEXT, 420));
+        dipHunterAnalyzeButton.addActionListener(event -> openDipHunterAnalysisDialog());
+        dipHunterScheduleStatusLabel.setVisible(false);
+        dipHunterScheduleStatusLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        dipHunterCancelScheduleButton.setVisible(false);
+        dipHunterCancelScheduleButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        dipHunterCancelScheduleButton.setFocusPainted(false);
+        dipHunterCancelScheduleButton.setToolTipText(TooltipStyler.text(
+                "Cancel the autonomous Dip Hunter schedule for this workspace.", 320));
+        dipHunterCancelScheduleButton.addActionListener(event -> dipHunterCoordinator.cancelSchedule());
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 2));
         actions.setOpaque(false);
         actions.add(gapRocketScheduleStatusLabel);
@@ -5623,6 +5654,9 @@ public class TradingFrame extends JFrame {
         actions.add(orbScheduleStatusLabel);
         actions.add(orbCancelScheduleButton);
         actions.add(orbAnalyzeButton);
+        actions.add(dipHunterScheduleStatusLabel);
+        actions.add(dipHunterCancelScheduleButton);
+        actions.add(dipHunterAnalyzeButton);
         bottom.add(actions, BorderLayout.EAST);
         return bottom;
     }
@@ -5947,11 +5981,14 @@ public class TradingFrame extends JFrame {
         }
         boolean selectedGapRocket = isSelectedGapRocketWorkspace();
         boolean selectedOrb = isSelectedOrbWorkspace();
+        boolean selectedDipHunter = isSelectedDipHunterWorkspace();
         boolean showGapRocketEmptyState = selectedGapRocket && selectedWorkspaceStrategyCount() == 0;
         boolean showOrbEmptyState = selectedOrb && selectedWorkspaceStrategyCount() == 0;
+        boolean showDipHunterEmptyState = selectedDipHunter && selectedWorkspaceStrategyCount() == 0;
         gapRocketAnalyzeButton.setVisible(selectedGapRocket && !showGapRocketEmptyState);
         gapRocketPlaceOrdersButton.setVisible(selectedGapRocket && !showGapRocketEmptyState);
         orbAnalyzeButton.setVisible(selectedOrb && !showOrbEmptyState);
+        dipHunterAnalyzeButton.setVisible(selectedDipHunter && !showDipHunterEmptyState);
         GapAndGoSchedule currentGapSchedule = gapAndGoCoordinator == null ? null : gapAndGoCoordinator.currentSchedule();
         boolean gapScheduled = currentGapSchedule != null && currentGapSchedule.enabled();
         gapRocketScheduleStatusLabel.setVisible(selectedGapRocket && gapScheduled);
@@ -5960,10 +5997,16 @@ public class TradingFrame extends JFrame {
         boolean orbScheduled = currentOrbSchedule != null && currentOrbSchedule.enabled();
         orbScheduleStatusLabel.setVisible(selectedOrb && orbScheduled);
         orbCancelScheduleButton.setVisible(selectedOrb && orbScheduled);
+        DipHunterSchedule currentDipSchedule = dipHunterCoordinator == null ? null : dipHunterCoordinator.currentSchedule();
+        boolean dipScheduled = currentDipSchedule != null && currentDipSchedule.enabled();
+        dipHunterScheduleStatusLabel.setVisible(selectedDipHunter && dipScheduled);
+        dipHunterCancelScheduleButton.setVisible(selectedDipHunter && dipScheduled);
         if (showGapRocketEmptyState) {
             strategiesGridCardLayout.show(strategiesGridCardPanel, GAP_ROCKET_EMPTY_CARD);
         } else if (showOrbEmptyState) {
             strategiesGridCardLayout.show(strategiesGridCardPanel, ORB_EMPTY_CARD);
+        } else if (showDipHunterEmptyState) {
+            strategiesGridCardLayout.show(strategiesGridCardPanel, DIP_HUNTER_EMPTY_CARD);
         } else {
             strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
         }
@@ -5986,6 +6029,16 @@ public class TradingFrame extends JFrame {
         return workspaceService.findById(selectedWorkspaceId)
                 .map(StrategyWorkspace::code)
                 .map(ORB_WORKSPACE_CODE::equalsIgnoreCase)
+                .orElse(false);
+    }
+
+    private boolean isSelectedDipHunterWorkspace() {
+        if (selectedWorkspaceId == null) {
+            return false;
+        }
+        return workspaceService.findById(selectedWorkspaceId)
+                .map(StrategyWorkspace::code)
+                .map(DIP_HUNTER_WORKSPACE_CODE::equalsIgnoreCase)
                 .orElse(false);
     }
 
@@ -6074,10 +6127,28 @@ public class TradingFrame extends JFrame {
         orbCoordinator.run(selectedModeConfig, dialog.runMode());
     }
 
+    private void openDipHunterAnalysisDialog() {
+        DipHunterConfig lastDipHunterConfig = lastDipHunterConfigs.get(selectedViewMode);
+        DipHunterAnalysisDialog dialog = new DipHunterAnalysisDialog(this, selectedViewMode, lastDipHunterConfig);
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+        if (!dialog.accepted()) {
+            return;
+        }
+        DipHunterConfig selectedModeConfig = dialog.config();
+        lastDipHunterConfigs.put(selectedViewMode, selectedModeConfig);
+        switch (dialog.runMode()) {
+            case ANALYZE -> dipHunterCoordinator.analyze(selectedModeConfig, false);
+            case ANALYZE_AND_EXECUTE -> dipHunterCoordinator.analyze(selectedModeConfig, true);
+            case SCHEDULE -> dipHunterCoordinator.scheduleOrCancel(selectedModeConfig);
+        }
+    }
+
     /** Load any persisted schedules and start the autonomous schedulers. */
     public void startBackgroundSchedulers() {
         gapAndGoCoordinator.start();
         orbCoordinator.start();
+        dipHunterCoordinator.start();
     }
 
     /** Refresh the grid after the coordinator applies gap-and-go recommendations (called on the EDT). */
@@ -6096,6 +6167,20 @@ public class TradingFrame extends JFrame {
 
     /** Refresh the grid after the coordinator applies ORB recommendations (called on the EDT). */
     private void onOrbRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
+        syncStrategiesFromRepository();
+        refreshStrategyTableData();
+        applyCurrentStrategiesRowFilter();
+        refreshWorkspaceSummary();
+        refreshStrategyWorkspaceEmptyState();
+        updateStatusBar();
+        if (firstAddedStrategyId != null && firstAddedStrategyId.length() > 0
+                && workspaceId.equals(selectedWorkspaceId)) {
+            SwingUtilities.invokeLater(() -> selectAndRevealStrategy(firstAddedStrategyId));
+        }
+    }
+
+    /** Refresh the grid after the coordinator applies Dip Hunter recommendations (called on the EDT). */
+    private void onDipHunterRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
         syncStrategiesFromRepository();
         refreshStrategyTableData();
         applyCurrentStrategiesRowFilter();
@@ -6128,6 +6213,18 @@ public class TradingFrame extends JFrame {
         orbScheduleStatusLabel.setText(schedule != null && schedule.enabled()
                 ? "Scheduled: analysis " + schedule.rangeAnalysisTimeEt() + " ET"
                 + (schedule.executeAfterRangeClose() ? " (auto-execute)" : "")
+                : "");
+        refreshStrategyWorkspaceEmptyState();
+    }
+
+    /** Reflect the current Dip Hunter schedule on the action bar (badge + cancel button). */
+    private void updateDipHunterScheduleBadge(DipHunterSchedule schedule) {
+        if (dipHunterScheduleStatusLabel == null) {
+            return;
+        }
+        dipHunterScheduleStatusLabel.setText(schedule != null && schedule.enabled()
+                ? "Scheduled: scan " + schedule.scanTimeEt() + " ET"
+                + (schedule.executeAfterScan() ? " (auto-execute)" : "")
                 : "");
         refreshStrategyWorkspaceEmptyState();
     }
@@ -6168,6 +6265,24 @@ public class TradingFrame extends JFrame {
             onOrbRecommendationsApplied(workspaceId, firstAddedStrategyId);
         }
         @Override public void onScheduleChanged(OrbSchedule schedule) { updateOrbScheduleBadge(schedule); }
+        @Override public java.awt.Component dialogParent() { return TradingFrame.this; }
+    }
+
+    /** Bridges {@link DipHunterCoordinator}'s needs to this frame without leaking the frame into it. */
+    private final class DipHunterCoordinatorUi implements DipHunterCoordinator.Ui {
+        @Override public String runtimeApiKey() { return runtimeApiKey; }
+        @Override public String runtimeApiSecret() { return runtimeApiSecret; }
+        @Override public boolean connectionOk() { return connectionOk; }
+        @Override public String selectedModeLabel() { return TradingFrame.this.selectedModeLabel(); }
+        @Override public int defaultStrategyPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
+        @Override public String selectedWorkspaceId() { return selectedWorkspaceId; }
+        @Override public boolean isDipHunterWorkspaceSelected() { return isSelectedDipHunterWorkspace(); }
+        @Override public void log(String message) { TradingFrame.this.log(message); }
+        @Override public void setScanButtonsEnabled(boolean enabled) { dipHunterAnalyzeButton.setEnabled(enabled); }
+        @Override public void onRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
+            onDipHunterRecommendationsApplied(workspaceId, firstAddedStrategyId);
+        }
+        @Override public void onScheduleChanged(DipHunterSchedule schedule) { updateDipHunterScheduleBadge(schedule); }
         @Override public java.awt.Component dialogParent() { return TradingFrame.this; }
     }
 
