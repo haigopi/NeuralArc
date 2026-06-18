@@ -42,6 +42,21 @@ class SqliteOrbScheduleRepositoryTest {
     }
 
     @Test
+    void persistsAcrossRepositoryInstancesForAppRestart() {
+        Path dbPath = tempDir.resolve("neuralarc.db");
+        SqliteOrbScheduleRepository first = new SqliteOrbScheduleRepository(AppDatabase.open(dbPath));
+        first.save(schedule("s1", "w1", true));
+
+        SqliteOrbScheduleRepository restarted = new SqliteOrbScheduleRepository(AppDatabase.open(dbPath));
+
+        OrbSchedule loaded = restarted.findByWorkspaceId("w1").orElseThrow();
+        assertEquals("s1", loaded.id());
+        assertTrue(loaded.enabled());
+        assertTrue(loaded.executeAfterRangeClose());
+        assertEquals(StrategyMode.LIVE, loaded.config().mode());
+    }
+
+    @Test
     void findsByWorkspaceId() {
         SqliteOrbScheduleRepository repo = repository();
         repo.save(schedule("s1", "w1", false));

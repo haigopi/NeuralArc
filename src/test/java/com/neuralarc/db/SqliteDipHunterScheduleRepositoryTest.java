@@ -42,6 +42,21 @@ class SqliteDipHunterScheduleRepositoryTest {
     }
 
     @Test
+    void persistsAcrossRepositoryInstancesForAppRestart() {
+        Path dbPath = tempDir.resolve("neuralarc.db");
+        SqliteDipHunterScheduleRepository first = new SqliteDipHunterScheduleRepository(AppDatabase.open(dbPath));
+        first.save(schedule("s1", "w1", true));
+
+        SqliteDipHunterScheduleRepository restarted = new SqliteDipHunterScheduleRepository(AppDatabase.open(dbPath));
+
+        DipHunterSchedule loaded = restarted.findByWorkspaceId("w1").orElseThrow();
+        assertEquals("s1", loaded.id());
+        assertTrue(loaded.enabled());
+        assertTrue(loaded.executeAfterScan());
+        assertEquals(StrategyMode.LIVE, loaded.config().mode());
+    }
+
+    @Test
     void findsByWorkspaceId() {
         SqliteDipHunterScheduleRepository repo = repository();
         repo.save(schedule("s1", "w1", false));
