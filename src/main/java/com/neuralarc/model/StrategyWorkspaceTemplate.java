@@ -39,7 +39,7 @@ public record StrategyWorkspaceTemplate(String name, String code, String descrip
                 // "Momentum Lab" (high relative volume) was folded into Gap Rocket above, which is the
                 // dedicated high-relative-volume momentum scanner — avoid offering two overlapping ones.
                 new StrategyWorkspaceTemplate("Swing Vault", "SWING",
-                        "Multi-day swing positions held across sessions.", false),
+                        "Scan strong, up-trending stocks that have pulled back to a rising moving-average support zone on the daily chart, rank the best multi-day swing setups on live data, and track planned entries (target = recent high) in a dedicated Swing Vault grid.", true),
                 new StrategyWorkspaceTemplate("Profit Shield", "SHIELD",
                         "Defensive book focused on protecting realized gains.", false),
                 new StrategyWorkspaceTemplate("Earnings Hunter", "EARNINGS",

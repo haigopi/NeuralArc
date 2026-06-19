@@ -16,6 +16,9 @@ class StrategyWorkspaceTemplateTest {
                 && t.description().contains("5/15/30 minute regular-session range")
                 && t.description().contains("ORB Engine grid")));
         assertTrue(catalog.stream().anyMatch(t -> t.name().equals("VWAP Desk")));
+        assertTrue(catalog.stream().anyMatch(t -> t.name().equals("Swing Vault") && t.code().equals("SWING")
+                && t.description().contains("pulled back")
+                && t.description().contains("Swing Vault grid")));
         assertTrue(catalog.stream().anyMatch(t -> t.name().equals("Dip Hunter") && t.code().equals("DIP")));
         // "Momentum Lab" was folded into Gap Rocket (the dedicated high-relative-volume scanner).
         assertFalse(catalog.stream().anyMatch(t -> t.name().equals("Momentum Lab") || t.code().equals("MOMENTUM")));
@@ -30,10 +33,10 @@ class StrategyWorkspaceTemplateTest {
         assertTrue(implemented(catalog, "ORB"));
         assertTrue(implemented(catalog, "DIP"));
         assertTrue(implemented(catalog, "VWAP"));
+        assertTrue(implemented(catalog, "SWING"));
         assertTrue(implemented(catalog, "MANUAL"));
         assertTrue(implemented(catalog, StrategyWorkspaceTemplate.CUSTOM_CODE));
         // Placeholders that are advertised but not yet implemented.
-        assertFalse(implemented(catalog, "SWING"));
         assertFalse(implemented(catalog, "SHIELD"));
         assertFalse(implemented(catalog, "EARNINGS"));
     }

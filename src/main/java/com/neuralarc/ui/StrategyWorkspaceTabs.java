@@ -210,6 +210,9 @@ final class StrategyWorkspaceTabs {
         if ("VWAP".equalsIgnoreCase(workspace.code())) {
             return TooltipStyler.text("Scan still-strong stocks trading at a discount below their intraday VWAP, rank the best mean-reversion setups on live data, and track planned entries (target = VWAP) in a dedicated VWAP Desk grid.", 360);
         }
+        if ("SWING".equalsIgnoreCase(workspace.code())) {
+            return TooltipStyler.text("Scan strong, up-trending stocks that have pulled back to a rising moving-average support zone on the daily chart, rank the best multi-day swing setups on live data, and track planned entries (target = recent high) in a dedicated Swing Vault grid.", 360);
+        }
         return workspace.name();
     }
 }

@@ -202,6 +202,98 @@ public class HelpDialog extends JDialog {
         }
     };
 
+    private static final String[][] STRATEGY_PLAYBOOK_FAQS = {
+        {
+            "Strategy Workspaces - What are the built-in strategies?",
+            "Smart Picks ships several dedicated scanners, each living in its own workspace tab with its own grid.\n\n" +
+            "- Gap Rocket: premarket gap-up momentum.\n" +
+            "- ORB Engine: opening-range breakouts.\n" +
+            "- Dip Hunter: pullback bounces in strong names.\n" +
+            "- VWAP Desk: intraday mean-reversion around VWAP.\n" +
+            "- Swing Vault: multi-day swing setups on the daily chart.\n\n" +
+            "Each scanner uses live Alpaca market data only and builds a recommendation list for review. Nothing is " +
+            "traded automatically unless you choose Analyze & Execute or schedule an auto-execute run. The entries below " +
+            "explain what each strategy means, how it works, when to act, what to understand, and the risk involved."
+        },
+        {
+            "Gap Rocket - Premarket gap-up momentum",
+            "What it means: Gap Rocket looks for stocks opening sharply higher than the prior close on heavy premarket interest.\n\n" +
+            "How it works: It ranks the strongest premarket gappers from live data and tracks opening-range, breakout-retest, " +
+            "or VWAP-pullback entries in the morning grid.\n\n" +
+            "When to act: Around the open, when a ranked candidate confirms its setup. Gap Rocket is a fast morning strategy, " +
+            "so candidates can change quickly in the first minutes of trading.\n\n" +
+            "Important to understand: A gap needs real volume and a catalyst behind it; an empty state means no live candidate " +
+            "currently qualifies, not that the app is broken.\n\n" +
+            "Risk: Gaps are volatile and can reverse hard ('gap and crap'). Use the stop loss, size positions small, and do not " +
+            "chase a move that has already run far from your planned entry."
+        },
+        {
+            "ORB Engine - Opening-range breakouts",
+            "What it means: The Opening Range Breakout captures the high and low of the first 5, 15, or 30 minutes, then trades a " +
+            "break above that range.\n\n" +
+            "How it works: ORB Engine measures the opening range from live Alpaca data and arms long breakout entries once the " +
+            "range has closed, ranking live breakout candidates in its grid.\n\n" +
+            "When to act: After your chosen opening-range window closes and price breaks the range high. Acting before the range " +
+            "completes means there is no confirmed level yet.\n\n" +
+            "Important to understand: The range length you pick changes the trade — a 5-minute range triggers earlier and noisier, " +
+            "a 30-minute range is slower but steadier.\n\n" +
+            "Risk: Breakouts can be false and snap back into the range. Keep the stop just inside the range and accept that some " +
+            "breakouts will fail; do not widen the stop to avoid being wrong."
+        },
+        {
+            "Dip Hunter - Pullback bounces in strong names",
+            "What it means: Dip Hunter buys controlled pullbacks in stocks that are still in an uptrend, expecting a bounce.\n\n" +
+            "How it works: It scans strong, up-trending names that have eased back from a recent high, scores the best bounce " +
+            "setups on live data, and tracks planned entries in its grid.\n\n" +
+            "When to act: When a strong name has pulled back into the configured range and the trend is still intact. Acting on a " +
+            "name whose trend has already broken defeats the strategy.\n\n" +
+            "Important to understand: A dip is only attractive while the larger uptrend holds. The Minimum/Maximum Pullback % " +
+            "settings keep you out of both shallow noise and full breakdowns.\n\n" +
+            "Risk: A 'dip' can become a sustained downtrend. The stop loss protects against a pullback that keeps falling; honour " +
+            "it rather than averaging down into weakness."
+        },
+        {
+            "VWAP Desk - Intraday mean-reversion around VWAP",
+            "What it means: VWAP is the volume-weighted average price, the day's fair-value line. VWAP Desk buys a stock trading " +
+            "at a discount below its intraday VWAP, expecting it to revert back toward that line.\n\n" +
+            "How it works: It scans still-strong names stretched below VWAP, confirms the broader uptrend (50/200-day moving " +
+            "averages) and relative volume, and plans an entry with VWAP itself as the target.\n\n" +
+            "When to act: Intraday, during the regular session, when a quality name is meaningfully below VWAP but not breaking " +
+            "down. It is not a premarket or after-hours setup.\n\n" +
+            "Important to understand: The Minimum/Maximum Discount % bounds separate a tradeable stretch from an outright " +
+            "breakdown. Reversion is an expectation, not a guarantee — sometimes price keeps falling.\n\n" +
+            "Risk: A discount below VWAP can deepen if the stock is genuinely weak. Respect the stop loss and the maximum-discount " +
+            "filter so a mean-reversion buy does not turn into catching a falling knife."
+        },
+        {
+            "Swing Vault - Multi-day swing setups on the daily chart",
+            "What it means: Swing Vault holds positions across several sessions. It buys strong, up-trending stocks that have " +
+            "pulled back to a rising moving-average support zone on the daily chart, aiming for a swing back toward the recent high.\n\n" +
+            "How it works: Because the hold is multi-day, it works on daily bars rather than intraday ticks. It confirms the daily " +
+            "uptrend (price above the 50-day, and optionally the 200-day, moving average, or the full 20/50/200 stack aligned), " +
+            "measures the pullback from the recent swing high, checks that the entry sits near rising support, and plans a target " +
+            "back toward that high with a stop below support. Scheduled runs scan once per trading day.\n\n" +
+            "When to act: During the regular session when a confirmed uptrend has pulled back into the configured range near " +
+            "support. Because it is a swing strategy, you are planning a hold of days to weeks, not minutes.\n\n" +
+            "Important to understand: Swing Vault holds overnight and over weekends, so positions are exposed to gaps from news " +
+            "and earnings while the market is closed. The Reward/Risk figure shows the trade-off back toward the recent high " +
+            "before you commit. Confirm there is no earnings report inside your intended hold window.\n\n" +
+            "Risk: Overnight and weekend gaps can move price past your stop before it can act, so a daily stop is not a guaranteed " +
+            "exit price. Size positions for a multi-day hold, keep risk per trade small, and avoid holding through known events " +
+            "unless that is your intent."
+        },
+        {
+            "Strategies - Scheduling and auto-execute",
+            "Each dedicated scanner can run manually or on an autonomous schedule.\n\n" +
+            "- Analyze now builds a recommendation list without trading.\n" +
+            "- Analyze & Execute arms trades from the recommendations immediately.\n" +
+            "- Schedule runs the scan automatically at its set time on trading days, optionally auto-executing after each scan.\n\n" +
+            "NeuralArc is a local desktop console, so the app must be running at the scheduled time — there is no cloud cron. " +
+            "Schedules are saved locally and restored after a restart, and weekends and US market holidays are skipped " +
+            "automatically. Start in paper mode and review behavior before enabling auto-execute or live trading."
+        }
+    };
+
     private static final String[][] STRATEGY_DIALOG_GUIDE = {
         {
             "Add New Stock Strategy - What is this dialog for?",
@@ -428,6 +520,7 @@ public class HelpDialog extends JDialog {
         tabs.setFont(FontLoader.ui(Font.PLAIN, 12f));
         tabs.addTab("Customer Benefits", buildFaqScrollPane(CUSTOMER_FAQS));
         tabs.addTab("Technical Highlights", buildFaqScrollPane(TECHNICAL_FAQS));
+        tabs.addTab("Strategy Playbook", buildFaqScrollPane(STRATEGY_PLAYBOOK_FAQS));
         tabs.addTab("Strategy Dialog", buildFaqScrollPane(STRATEGY_DIALOG_GUIDE));
         tabs.addTab("Settings Dialog", buildFaqScrollPane(SETTINGS_DIALOG_GUIDE));
         tabs.addTab("Other Dialogs", buildFaqScrollPane(OTHER_DIALOG_GUIDE));
