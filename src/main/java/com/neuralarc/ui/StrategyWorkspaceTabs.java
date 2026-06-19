@@ -207,6 +207,9 @@ final class StrategyWorkspaceTabs {
         if ("DIP".equalsIgnoreCase(workspace.code())) {
             return TooltipStyler.text("Scan strong, up-trending stocks that have pulled back from a recent high, rank the best bounce setups on live data, and track planned entries in a dedicated Dip Hunter grid.", 360);
         }
+        if ("VWAP".equalsIgnoreCase(workspace.code())) {
+            return TooltipStyler.text("Scan still-strong stocks trading at a discount below their intraday VWAP, rank the best mean-reversion setups on live data, and track planned entries (target = VWAP) in a dedicated VWAP Desk grid.", 360);
+        }
         return workspace.name();
     }
 }

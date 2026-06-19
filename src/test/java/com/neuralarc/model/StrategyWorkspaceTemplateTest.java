@@ -29,10 +29,10 @@ class StrategyWorkspaceTemplateTest {
         assertTrue(implemented(catalog, "GAPROCKET"));
         assertTrue(implemented(catalog, "ORB"));
         assertTrue(implemented(catalog, "DIP"));
+        assertTrue(implemented(catalog, "VWAP"));
         assertTrue(implemented(catalog, "MANUAL"));
         assertTrue(implemented(catalog, StrategyWorkspaceTemplate.CUSTOM_CODE));
         // Placeholders that are advertised but not yet implemented.
-        assertFalse(implemented(catalog, "VWAP"));
         assertFalse(implemented(catalog, "SWING"));
         assertFalse(implemented(catalog, "SHIELD"));
         assertFalse(implemented(catalog, "EARNINGS"));
