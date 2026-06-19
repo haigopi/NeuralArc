@@ -10,6 +10,7 @@ import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.RecommendationAction;
 import com.neuralarc.model.RecommendationType;
 import com.neuralarc.model.ShortTermMarketMode;
+import com.neuralarc.model.AutoAdjustRiskConfig;
 import com.neuralarc.model.StrategyConfig;
 import com.neuralarc.model.StrategyRecommendation;
 import com.neuralarc.model.ThresholdType;
@@ -121,6 +122,13 @@ public class StrategyDialog extends JDialog {
     private final JTextField loss2PriceField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
     private final JTextField loss2QtyField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
     private final JCheckBox lossBuyLevelsEnabled = new JCheckBox("Enable Loss Buy Levels", true);
+    private final JCheckBox autoAdjustEnabled = new JCheckBox("Enable Auto Adjustment", false);
+    private final JTextField autoAdjustDaysField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
+    private final JTextField autoAdjustPercentField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
+    private final JCheckBox autoAdjustAfterCloseEnabled = new JCheckBox("Adjust only after market close", true);
+    private final JCheckBox autoAdjustOnDecreaseEnabled = new JCheckBox("Adjust on price decrease", true);
+    private final JCheckBox autoAdjustOnIncreaseEnabled = new JCheckBox("Adjust on price increase", true);
+    private JPanel autoAdjustSection;
     private final JTextField pollingField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
     private final JCheckBox repeatCycleAfterProfitExitEnabled = new JCheckBox("Repeat cycle after profitable exit", false);
     private final JCheckBox resubmitOnExpiryEnabled = new JCheckBox("Resubmit strategy on expiry", false);
@@ -227,6 +235,7 @@ public class StrategyDialog extends JDialog {
         configureTooltips();
         wireStopLossFields();
         wireLossBuyLevelFields();
+        wireAutoAdjustFields();
         styleInputs();
 
         // Pre-fill Auto Analyze symbol from the strategy config if available
@@ -240,6 +249,7 @@ public class StrategyDialog extends JDialog {
         tabs.addTab("Auto Analyze", buildAutoAnalyzeTab());
         installTabLabels(tabs);
         add(tabs, BorderLayout.CENTER);
+        updateAutoAdjustState(); // now that the section exists, reflect the current toggle state
 
         JPanel actions = new JPanel(new BorderLayout());
         actions.setBorder(new EmptyBorder(0, OUTER_PADDING, OUTER_PADDING, OUTER_PADDING));
@@ -335,9 +345,27 @@ public class StrategyDialog extends JDialog {
                 "Optional staged buys below the base price. These can lower average cost, but they also increase position size and capital at risk."
         );
 
+        JPanel autoAdjustSubPanel = new JPanel(new GridBagLayout());
+        autoAdjustSubPanel.setBorder(createSubSectionBorder("Auto Adjust Risk & Stop Loss"));
+        prepareSubSection(autoAdjustSubPanel);
+        addRow(autoAdjustSubPanel, "Enable Auto Adjustment:", autoAdjustEnabled);
+        addRow(autoAdjustSubPanel, "Days to monitor:", autoAdjustDaysField);
+        addRow(autoAdjustSubPanel, "Adjustment % per day:", autoAdjustPercentField);
+        addRow(autoAdjustSubPanel, "After market close:", autoAdjustAfterCloseEnabled);
+        addRow(autoAdjustSubPanel, "On price decrease:", autoAdjustOnDecreaseEnabled);
+        addRow(autoAdjustSubPanel, "On price increase:", autoAdjustOnIncreaseEnabled);
+        autoAdjustSection = describedSection(
+                autoAdjustSubPanel,
+                "Automatically moves the stop-loss and loss buy levels by the configured percent each day, "
+                        + "after market close, following the stock's movement for the set number of days, then stops. "
+                        + "Available only while Stop Loss and Loss Buy Levels are enabled."
+        );
+
         riskContent.add(stopLossSection);
         riskContent.add(Box.createVerticalStrut(SECTION_GAP));
         riskContent.add(lossBuySection);
+        riskContent.add(Box.createVerticalStrut(SECTION_GAP));
+        riskContent.add(autoAdjustSection);
         riskPanel.add(riskContent);
 
         JPanel executionPanel = new JPanel(new GridBagLayout());
@@ -876,6 +904,7 @@ public class StrategyDialog extends JDialog {
         loss1QtyField.setEnabled(enabled);
         loss2PriceField.setEnabled(enabled);
         loss2QtyField.setEnabled(enabled);
+        updateAutoAdjustState();
     }
 
     private void styleInput(JTextField input) {
@@ -965,9 +994,21 @@ public class StrategyDialog extends JDialog {
         repeatCycleAfterProfitExitEnabled.setSelected(config.repeatCycleAfterProfitExitEnabled());
         resubmitOnExpiryEnabled.setSelected(config.resubmitOnExpiryEnabled());
         baseBuyRepostReductionPercentField.setText(config.baseBuyRepostReductionPercent().toPlainString());
+        applyAutoAdjustConfig(config.autoAdjustRisk());
         profitControlsPanel.applyConfig(config);
         updateStopLossFieldState();
         updateLossBuyFieldState();
+    }
+
+    private void applyAutoAdjustConfig(AutoAdjustRiskConfig autoAdjust) {
+        AutoAdjustRiskConfig safe = autoAdjust == null ? AutoAdjustRiskConfig.disabled() : autoAdjust;
+        autoAdjustEnabled.setSelected(safe.enabled());
+        autoAdjustDaysField.setText(String.valueOf(safe.monitoringDays()));
+        autoAdjustPercentField.setText(safe.dailyAdjustmentPercent().toPlainString());
+        autoAdjustAfterCloseEnabled.setSelected(safe.applyAfterMarketClose());
+        autoAdjustOnDecreaseEnabled.setSelected(safe.adjustOnDecrease());
+        autoAdjustOnIncreaseEnabled.setSelected(safe.adjustOnIncrease());
+        updateAutoAdjustState();
     }
 
     private void applyDialogDefaults() {
@@ -988,6 +1029,9 @@ public class StrategyDialog extends JDialog {
         repeatCycleAfterProfitExitEnabled.setSelected(defaultRepeatCycleAfterProfitExitEnabled);
         resubmitOnExpiryEnabled.setSelected(defaultResubmitOnExpiryEnabled);
         baseBuyRepostReductionPercentField.setText(StrategyConfig.DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT.toPlainString());
+        applyAutoAdjustConfig(AutoAdjustRiskConfig.disabled());
+        autoAdjustDaysField.setText("3");
+        autoAdjustPercentField.setText("5.00");
         profitControlsPanel.applyConfig(new StrategyConfig(  // Apply defaults to profit controls panel
                 DEFAULTS.symbol(),
                 new BigDecimal(DEFAULTS.baseBuyPrice()),
@@ -1143,6 +1187,43 @@ public class StrategyDialog extends JDialog {
             int lossBuyLevel2Qty = lossBuysOn ? Integer.parseInt(loss2QtyField.getText().trim()) : 0;
             BigDecimal baseBuyRepostReductionPercent = parseRepostReductionPercent();
 
+            // Auto Adjust Risk & Stop Loss is only meaningful when Stop Loss and Loss Buy Levels are on.
+            boolean autoAdjustOn = stopLossOn && lossBuysOn && autoAdjustEnabled.isSelected();
+            int autoAdjustDays = 0;
+            BigDecimal autoAdjustPercent = BigDecimal.ZERO;
+            if (autoAdjustOn) {
+                autoAdjustDays = Integer.parseInt(autoAdjustDaysField.getText().trim());
+                autoAdjustPercent = new BigDecimal(autoAdjustPercentField.getText().trim());
+                if (autoAdjustDays <= 0) {
+                    JOptionPane.showMessageDialog(this,
+                            "Number of days to monitor must be greater than zero when Auto Adjustment is enabled.",
+                            "Invalid Auto Adjustment",
+                            JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+                if (autoAdjustPercent.compareTo(BigDecimal.ZERO) <= 0) {
+                    JOptionPane.showMessageDialog(this,
+                            "Adjustment percentage per day must be greater than zero when Auto Adjustment is enabled.",
+                            "Invalid Auto Adjustment",
+                            JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+                if (!autoAdjustOnDecreaseEnabled.isSelected() && !autoAdjustOnIncreaseEnabled.isSelected()) {
+                    JOptionPane.showMessageDialog(this,
+                            "Enable adjustment on price decrease, price increase, or both.",
+                            "Invalid Auto Adjustment",
+                            JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+            }
+            AutoAdjustRiskConfig autoAdjustRisk = new AutoAdjustRiskConfig(
+                    autoAdjustOn,
+                    autoAdjustDays,
+                    autoAdjustPercent,
+                    autoAdjustAfterCloseEnabled.isSelected(),
+                    autoAdjustOnDecreaseEnabled.isSelected(),
+                    autoAdjustOnIncreaseEnabled.isSelected());
+
             // Get profit control data from the panel
             ProfitControlMode profitControlModeFromUI = profitControlsPanel.getSelectedMode();
             if ((profitControlModeFromUI == ProfitControlMode.AUTOMATIC_STOP_SELL
@@ -1212,7 +1293,8 @@ public class StrategyDialog extends JDialog {
                     profitControlsPanel.getTrailingValue(),
                     resubmitOnExpiryEnabled.isSelected(),
                     baseBuyRepostReductionPercent,
-                    (TimeInForce) timeInForceBox.getSelectedItem()
+                    (TimeInForce) timeInForceBox.getSelectedItem(),
+                    autoAdjustRisk
             );
             setVisible(false);
         } catch (NumberFormatException ex) {
@@ -1292,6 +1374,39 @@ public class StrategyDialog extends JDialog {
 
     private void updateStopLossFieldState() {
         stopLossField.setEnabled(stopLossEnabled.isSelected());
+        updateAutoAdjustState();
+    }
+
+    private void wireAutoAdjustFields() {
+        autoAdjustEnabled.addActionListener(e -> updateAutoAdjustState());
+        updateAutoAdjustState();
+    }
+
+    /**
+     * The Auto Adjust sub-section is only meaningful when both Stop Loss and Loss Buy Levels are
+     * enabled, so it is hidden otherwise. Within it, the detail fields are enabled only when the
+     * operator has turned the auto adjustment on.
+     */
+    /**
+     * Auto Adjust Risk &amp; Stop Loss is only meaningful while both Stop Loss and Loss Buy Levels are
+     * enabled. Exposed as a static seam so the rule is unit-testable without constructing the dialog.
+     */
+    static boolean autoAdjustAvailable(boolean stopLossEnabled, boolean lossBuyLevelsEnabled) {
+        return stopLossEnabled && lossBuyLevelsEnabled;
+    }
+
+    private void updateAutoAdjustState() {
+        boolean available = autoAdjustAvailable(stopLossEnabled.isSelected(), lossBuyLevelsEnabled.isSelected());
+        if (autoAdjustSection != null) {
+            autoAdjustSection.setVisible(available);
+        }
+        autoAdjustEnabled.setEnabled(available);
+        boolean detailsEnabled = available && autoAdjustEnabled.isSelected();
+        autoAdjustDaysField.setEnabled(detailsEnabled);
+        autoAdjustPercentField.setEnabled(detailsEnabled);
+        autoAdjustAfterCloseEnabled.setEnabled(detailsEnabled);
+        autoAdjustOnDecreaseEnabled.setEnabled(detailsEnabled);
+        autoAdjustOnIncreaseEnabled.setEnabled(detailsEnabled);
     }
 
 

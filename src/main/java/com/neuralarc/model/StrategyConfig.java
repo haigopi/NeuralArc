@@ -34,7 +34,8 @@ public record StrategyConfig(
         BigDecimal automaticStopSellTrailingValue,
         boolean resubmitOnExpiryEnabled,
         BigDecimal baseBuyRepostReductionPercent,
-        TimeInForce timeInForce
+        TimeInForce timeInForce,
+        AutoAdjustRiskConfig autoAdjustRisk
 ) {
     public static final BigDecimal DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT = new BigDecimal("2.00");
 
@@ -60,6 +61,53 @@ public record StrategyConfig(
         automaticStopSellTrailingValue = Monetary.round(automaticStopSellTrailingValue);
         baseBuyRepostReductionPercent = normalizeBaseBuyRepostReductionPercent(baseBuyRepostReductionPercent);
         timeInForce = timeInForce == null ? TimeInForce.DAY : timeInForce;
+        autoAdjustRisk = autoAdjustRisk == null ? AutoAdjustRiskConfig.disabled() : autoAdjustRisk;
+    }
+
+    /**
+     * Backward-compatible constructor for the 30-argument shape that predates the Auto Adjust Risk
+     * &amp; Stop Loss feature. Existing call sites (factories, legacy code, tests) keep compiling and
+     * default the new configuration to disabled.
+     */
+    public StrategyConfig(
+            String symbol,
+            BigDecimal baseBuyPrice,
+            int baseBuyQty,
+            boolean stopLossEnabled,
+            BigDecimal stopLoss,
+            boolean sellTriggerEnabled,
+            BigDecimal sellTriggerPrice,
+            BigDecimal lossBuyLevel1Price,
+            int lossBuyLevel1Qty,
+            BigDecimal lossBuyLevel2Price,
+            int lossBuyLevel2Qty,
+            boolean lossBuyLevelsEnabled,
+            boolean optionalLossExitEnabled,
+            BigDecimal optionalLossExitPrice,
+            int pollingSeconds,
+            boolean paperTrading,
+            boolean alpacaTrailingStopEnabled,
+            boolean profitHoldEnabled,
+            ProfitHoldType profitHoldType,
+            BigDecimal profitHoldPercent,
+            BigDecimal profitHoldAmount,
+            boolean repeatCycleAfterProfitExitEnabled,
+            ProfitControlMode profitControlMode,
+            ThresholdType automaticStopSellThresholdType,
+            BigDecimal automaticStopSellThreshold,
+            TrailingType automaticStopSellTrailingType,
+            BigDecimal automaticStopSellTrailingValue,
+            boolean resubmitOnExpiryEnabled,
+            BigDecimal baseBuyRepostReductionPercent,
+            TimeInForce timeInForce
+    ) {
+        this(symbol, baseBuyPrice, baseBuyQty, stopLossEnabled, stopLoss, sellTriggerEnabled, sellTriggerPrice,
+                lossBuyLevel1Price, lossBuyLevel1Qty, lossBuyLevel2Price, lossBuyLevel2Qty, lossBuyLevelsEnabled,
+                optionalLossExitEnabled, optionalLossExitPrice, pollingSeconds, paperTrading, alpacaTrailingStopEnabled,
+                profitHoldEnabled, profitHoldType, profitHoldPercent, profitHoldAmount, repeatCycleAfterProfitExitEnabled,
+                profitControlMode, automaticStopSellThresholdType, automaticStopSellThreshold,
+                automaticStopSellTrailingType, automaticStopSellTrailingValue, resubmitOnExpiryEnabled,
+                baseBuyRepostReductionPercent, timeInForce, AutoAdjustRiskConfig.disabled());
     }
 
     public StrategyConfig(

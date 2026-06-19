@@ -124,7 +124,8 @@ final class ManagedStrategy {
                 strategy.automaticStopSellTrailingValue(),
                 strategy.resubmitOnExpiryEnabled(),
                 strategy.baseBuyRepostReductionPercent(),
-                strategy.timeInForce()
+                strategy.timeInForce(),
+                strategy.autoAdjustRiskConfig()
         );
     }
 

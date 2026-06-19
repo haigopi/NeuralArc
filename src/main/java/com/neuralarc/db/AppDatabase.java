@@ -199,6 +199,7 @@ public final class AppDatabase {
         applyMigration("011_dip_hunter_schedules",   this::migration011);
         applyMigration("012_vwap_schedules",         this::migration012);
         applyMigration("013_swing_schedules",        this::migration013);
+        applyMigration("014_auto_adjust_risk",       this::migration014);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -497,6 +498,20 @@ public final class AppDatabase {
                     )""");
             st.execute("CREATE INDEX IF NOT EXISTS idx_swing_schedules_workspace ON swing_schedules(workspace_id)");
         }
+    }
+
+    // ── Migration 014 — Auto Adjust Risk & Stop Loss (per-strategy columns) ──
+
+    private void migration014() throws SQLException {
+        addColumnIfMissing("strategies", "auto_adjust_enabled", "INTEGER NOT NULL DEFAULT 0");
+        addColumnIfMissing("strategies", "auto_adjust_monitoring_days", "INTEGER NOT NULL DEFAULT 0");
+        addColumnIfMissing("strategies", "auto_adjust_daily_percent", "TEXT NOT NULL DEFAULT '0.00'");
+        addColumnIfMissing("strategies", "auto_adjust_after_close", "INTEGER NOT NULL DEFAULT 1");
+        addColumnIfMissing("strategies", "auto_adjust_on_decrease", "INTEGER NOT NULL DEFAULT 1");
+        addColumnIfMissing("strategies", "auto_adjust_on_increase", "INTEGER NOT NULL DEFAULT 1");
+        addColumnIfMissing("strategies", "auto_adjust_day_count", "INTEGER NOT NULL DEFAULT 0");
+        addColumnIfMissing("strategies", "auto_adjust_last_date", "TEXT NOT NULL DEFAULT ''");
+        addColumnIfMissing("strategies", "auto_adjust_reference_price", "TEXT NOT NULL DEFAULT '0.00'");
     }
 
     private void addColumnIfMissing(String table, String column, String definition) throws SQLException {
