@@ -8,6 +8,7 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.FlowLayout;
 import java.awt.Font;
 
@@ -19,6 +20,17 @@ public class HelpDialog extends JDialog {
             UIManager.getColor("Label.foreground") != null ? UIManager.getColor("Label.foreground") : new Color(45, 45, 50));
     private static final Color SECTION_TITLE_FG = ThemeColors.color("NeuralArc.Section.titleForeground",
             UIManager.getColor("Label.foreground") != null ? UIManager.getColor("Label.foreground") : new Color(40, 40, 120));
+
+    // Tab styling mirrors the app's strategy tabs (see StrategyDialog) so the Help dialog reads as
+    // part of the same application rather than a default Swing tabbed pane.
+    private static final Color INPUT_BG = UIManager.getColor("TextField.background") != null
+            ? UIManager.getColor("TextField.background")
+            : Color.WHITE;
+    private static final Color TAB_BORDER = ThemeColors.color("NeuralArc.Section.border", new Color(204, 214, 225));
+    private static final Color TAB_SELECTED_BG = new Color(235, 244, 252);
+    private static final Color TAB_UNSELECTED_BG = new Color(246, 248, 250);
+    private static final Color TAB_SELECTED_TEXT = new Color(11, 84, 132);
+    private static final Color TAB_UNSELECTED_TEXT = new Color(75, 85, 99);
 
     private static final Font HEADING_FONT = FontLoader.ui(Font.BOLD, 12f);
     private static final Font BODY_FONT    = FontLoader.ui(Font.PLAIN, 13);
@@ -207,9 +219,9 @@ public class HelpDialog extends JDialog {
             "Strategy Workspaces - What are the built-in strategies?",
             "Smart Picks ships several dedicated scanners, each living in its own workspace tab with its own grid.\n\n" +
             "- Gap Rocket: premarket gap-up momentum.\n" +
-            "- ORB Engine: opening-range breakouts.\n" +
+            "- ORB Engine: Opening Range Breakout (ORB) — breakouts of the session's opening range.\n" +
             "- Dip Hunter: pullback bounces in strong names.\n" +
-            "- VWAP Desk: intraday mean-reversion around VWAP.\n" +
+            "- VWAP Desk: intraday mean-reversion around the Volume-Weighted Average Price (VWAP).\n" +
             "- Swing Vault: multi-day swing setups on the daily chart.\n\n" +
             "Each scanner uses live Alpaca market data only and builds a recommendation list for review. Nothing is " +
             "traded automatically unless you choose Analyze & Execute or schedule an auto-execute run. The entries below " +
@@ -219,7 +231,7 @@ public class HelpDialog extends JDialog {
             "Gap Rocket - Premarket gap-up momentum",
             "What it means: Gap Rocket looks for stocks opening sharply higher than the prior close on heavy premarket interest.\n\n" +
             "How it works: It ranks the strongest premarket gappers from live data and tracks opening-range, breakout-retest, " +
-            "or VWAP-pullback entries in the morning grid.\n\n" +
+            "or VWAP (Volume-Weighted Average Price) pullback entries in the morning grid.\n\n" +
             "When to act: Around the open, when a ranked candidate confirms its setup. Gap Rocket is a fast morning strategy, " +
             "so candidates can change quickly in the first minutes of trading.\n\n" +
             "Important to understand: A gap needs real volume and a catalyst behind it; an empty state means no live candidate " +
@@ -228,9 +240,9 @@ public class HelpDialog extends JDialog {
             "chase a move that has already run far from your planned entry."
         },
         {
-            "ORB Engine - Opening-range breakouts",
-            "What it means: The Opening Range Breakout captures the high and low of the first 5, 15, or 30 minutes, then trades a " +
-            "break above that range.\n\n" +
+            "ORB Engine (Opening Range Breakout) - Opening-range breakouts",
+            "What it means: ORB stands for Opening Range Breakout. It captures the high and low of the first 5, 15, or 30 minutes, " +
+            "then trades a break above that range.\n\n" +
             "How it works: ORB Engine measures the opening range from live Alpaca data and arms long breakout entries once the " +
             "range has closed, ranking live breakout candidates in its grid.\n\n" +
             "When to act: After your chosen opening-range window closes and price breaks the range high. Acting before the range " +
@@ -253,8 +265,8 @@ public class HelpDialog extends JDialog {
             "it rather than averaging down into weakness."
         },
         {
-            "VWAP Desk - Intraday mean-reversion around VWAP",
-            "What it means: VWAP is the volume-weighted average price, the day's fair-value line. VWAP Desk buys a stock trading " +
+            "VWAP Desk (Volume-Weighted Average Price) - Intraday mean-reversion around VWAP",
+            "What it means: VWAP is the Volume-Weighted Average Price, the day's fair-value line. VWAP Desk buys a stock trading " +
             "at a discount below its intraday VWAP, expecting it to revert back toward that line.\n\n" +
             "How it works: It scans still-strong names stretched below VWAP, confirms the broader uptrend (50/200-day moving " +
             "averages) and relative volume, and plans an entry with VWAP itself as the target.\n\n" +
@@ -516,14 +528,14 @@ public class HelpDialog extends JDialog {
         setLayout(new BorderLayout(0, 0));
         getContentPane().setBackground(CONTENT_BG);
         JTabbedPane tabs = new JTabbedPane();
-        tabs.setBorder(new EmptyBorder(0, 0, 0, 0));
-        tabs.setFont(FontLoader.ui(Font.PLAIN, 12f));
         tabs.addTab("Customer Benefits", buildFaqScrollPane(CUSTOMER_FAQS));
         tabs.addTab("Technical Highlights", buildFaqScrollPane(TECHNICAL_FAQS));
         tabs.addTab("Strategy Playbook", buildFaqScrollPane(STRATEGY_PLAYBOOK_FAQS));
         tabs.addTab("Strategy Dialog", buildFaqScrollPane(STRATEGY_DIALOG_GUIDE));
         tabs.addTab("Settings Dialog", buildFaqScrollPane(SETTINGS_DIALOG_GUIDE));
         tabs.addTab("Other Dialogs", buildFaqScrollPane(OTHER_DIALOG_GUIDE));
+        styleTabs(tabs);
+        installTabLabels(tabs);
         add(tabs, BorderLayout.CENTER);
 
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT));
@@ -537,6 +549,43 @@ public class HelpDialog extends JDialog {
 
         DialogSizing.packAndFit(this, 760, 560);
         setLocationRelativeTo(owner);
+    }
+
+    private void styleTabs(JTabbedPane tabs) {
+        tabs.setOpaque(true);
+        tabs.setBackground(INPUT_BG);
+        tabs.setForeground(TAB_UNSELECTED_TEXT);
+        tabs.setFont(FontLoader.ui(Font.BOLD, 12f));
+        tabs.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(TAB_BORDER, 1, true),
+                new EmptyBorder(1, 1, 1, 1)
+        ));
+        tabs.addChangeListener(ignored -> refreshTabLabels(tabs));
+    }
+
+    private void installTabLabels(JTabbedPane tabPane) {
+        for (int i = 0; i < tabPane.getTabCount(); i++) {
+            JLabel label = new JLabel(tabPane.getTitleAt(i), JLabel.CENTER);
+            label.setFont(FontLoader.ui(Font.BOLD, 12f));
+            label.setOpaque(true);
+            label.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createMatteBorder(0, 0, 1, 0, TAB_BORDER),
+                    new EmptyBorder(6, 14, 6, 14)
+            ));
+            tabPane.setTabComponentAt(i, label);
+        }
+        refreshTabLabels(tabPane);
+    }
+
+    private void refreshTabLabels(JTabbedPane tabPane) {
+        for (int i = 0; i < tabPane.getTabCount(); i++) {
+            Component component = tabPane.getTabComponentAt(i);
+            if (component instanceof JLabel label) {
+                boolean selected = i == tabPane.getSelectedIndex();
+                label.setForeground(selected ? TAB_SELECTED_TEXT : TAB_UNSELECTED_TEXT);
+                label.setBackground(selected ? TAB_SELECTED_BG : TAB_UNSELECTED_BG);
+            }
+        }
     }
 
     private JPanel buildFaqPanel(String title, String body) {
