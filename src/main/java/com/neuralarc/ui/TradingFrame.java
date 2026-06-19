@@ -20,9 +20,13 @@ import com.neuralarc.orb.OrbPanel;
 import com.neuralarc.diphunter.DipHunterAnalysisDialog;
 import com.neuralarc.diphunter.DipHunterConfig;
 import com.neuralarc.diphunter.DipHunterPanel;
+import com.neuralarc.vwap.VwapAnalysisDialog;
+import com.neuralarc.vwap.VwapConfig;
+import com.neuralarc.vwap.VwapPanel;
 import com.neuralarc.model.GapAndGoSchedule;
 import com.neuralarc.model.OrbSchedule;
 import com.neuralarc.model.DipHunterSchedule;
+import com.neuralarc.model.VwapSchedule;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.GitHubReleaseUpdateService;
@@ -362,10 +366,12 @@ public class TradingFrame extends JFrame {
     private static final String GAP_ROCKET_WORKSPACE_CODE = "GAPROCKET";
     private static final String ORB_WORKSPACE_CODE = "ORB";
     private static final String DIP_HUNTER_WORKSPACE_CODE = "DIP";
+    private static final String VWAP_WORKSPACE_CODE = "VWAP";
     private static final String STRATEGIES_GRID_CARD = "strategiesGrid";
     private static final String GAP_ROCKET_EMPTY_CARD = "gapRocketEmpty";
     private static final String ORB_EMPTY_CARD = "orbEmpty";
     private static final String DIP_HUNTER_EMPTY_CARD = "dipHunterEmpty";
+    private static final String VWAP_EMPTY_CARD = "vwapEmpty";
     private final JTabbedPane strategyTabs = new JTabbedPane();
     private final JTextField currentStrategiesSearchField = new JTextField(24);
     private final JTextField tradeHistorySearchField = new JTextField(24);
@@ -385,10 +391,14 @@ public class TradingFrame extends JFrame {
     private final JButton dipHunterAnalyzeButton = new JButton(DipHunterPanel.ANALYZE_BUTTON_TEXT);
     private final JLabel dipHunterScheduleStatusLabel = new JLabel();
     private final JButton dipHunterCancelScheduleButton = new JButton("Cancel Schedule");
+    private final JButton vwapAnalyzeButton = new JButton(VwapPanel.ANALYZE_BUTTON_TEXT);
+    private final JLabel vwapScheduleStatusLabel = new JLabel();
+    private final JButton vwapCancelScheduleButton = new JButton("Cancel Schedule");
     private JPanel headerPanel;
     private final EnumMap<StrategyMode, GapRocketConfig> lastGapRocketConfigs = new EnumMap<>(StrategyMode.class);
     private final EnumMap<StrategyMode, OrbConfig> lastOrbConfigs = new EnumMap<>(StrategyMode.class);
     private final EnumMap<StrategyMode, DipHunterConfig> lastDipHunterConfigs = new EnumMap<>(StrategyMode.class);
+    private final EnumMap<StrategyMode, VwapConfig> lastVwapConfigs = new EnumMap<>(StrategyMode.class);
     private CardLayout strategiesGridCardLayout;
     private JPanel strategiesGridCardPanel;
     private BottomStatusBars bottomStatusBars;
@@ -409,6 +419,7 @@ public class TradingFrame extends JFrame {
     private final GapAndGoCoordinator gapAndGoCoordinator;
     private final OrbCoordinator orbCoordinator;
     private final DipHunterCoordinator dipHunterCoordinator;
+    private final VwapCoordinator vwapCoordinator;
     private final WorkspaceService workspaceService;
     // Dynamic strategy-workspace tabs; null workspace = the All Stocks view.
     private StrategyWorkspaceTabs strategyWorkspaceTabs;
@@ -514,6 +525,8 @@ public class TradingFrame extends JFrame {
         orbCoordinator = new OrbCoordinator(new OrbCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, uiPollingExecutor);
         dipHunterCoordinator = new DipHunterCoordinator(new DipHunterCoordinatorUi(), appDatabase, strategyRepository,
+                appSettingsService, marketHoursService, uiPollingExecutor);
+        vwapCoordinator = new VwapCoordinator(new VwapCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, uiPollingExecutor);
         workspaceService = new WorkspaceService(workspaceRepository, strategyRepository);
         portfolioRefreshController = new PortfolioRefreshController(
@@ -5604,6 +5617,7 @@ public class TradingFrame extends JFrame {
         strategiesGridCardPanel.add(new GapRocketPanel(this::openGapRocketAnalysisDialog, true), GAP_ROCKET_EMPTY_CARD);
         strategiesGridCardPanel.add(new OrbPanel(this::openOrbAnalysisDialog), ORB_EMPTY_CARD);
         strategiesGridCardPanel.add(new DipHunterPanel(this::openDipHunterAnalysisDialog, true), DIP_HUNTER_EMPTY_CARD);
+        strategiesGridCardPanel.add(new VwapPanel(this::openVwapAnalysisDialog, true), VWAP_EMPTY_CARD);
         strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
         return strategiesGridCardPanel;
     }
@@ -5656,6 +5670,19 @@ public class TradingFrame extends JFrame {
         dipHunterCancelScheduleButton.setToolTipText(TooltipStyler.text(
                 "Cancel the autonomous Dip Hunter schedule for this workspace.", 320));
         dipHunterCancelScheduleButton.addActionListener(event -> dipHunterCoordinator.cancelSchedule());
+        vwapAnalyzeButton.setVisible(false);
+        vwapAnalyzeButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        vwapAnalyzeButton.setFocusPainted(false);
+        vwapAnalyzeButton.setToolTipText(TooltipStyler.text(VwapPanel.EMPTY_STATE_TEXT, 420));
+        vwapAnalyzeButton.addActionListener(event -> openVwapAnalysisDialog());
+        vwapScheduleStatusLabel.setVisible(false);
+        vwapScheduleStatusLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        vwapCancelScheduleButton.setVisible(false);
+        vwapCancelScheduleButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        vwapCancelScheduleButton.setFocusPainted(false);
+        vwapCancelScheduleButton.setToolTipText(TooltipStyler.text(
+                "Cancel the autonomous VWAP Desk schedule for this workspace.", 320));
+        vwapCancelScheduleButton.addActionListener(event -> vwapCoordinator.cancelSchedule());
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 2));
         actions.setOpaque(false);
         actions.add(gapRocketScheduleStatusLabel);
@@ -5668,6 +5695,9 @@ public class TradingFrame extends JFrame {
         actions.add(dipHunterScheduleStatusLabel);
         actions.add(dipHunterCancelScheduleButton);
         actions.add(dipHunterAnalyzeButton);
+        actions.add(vwapScheduleStatusLabel);
+        actions.add(vwapCancelScheduleButton);
+        actions.add(vwapAnalyzeButton);
         bottom.add(actions, BorderLayout.EAST);
         return bottom;
     }
@@ -5993,13 +6023,16 @@ public class TradingFrame extends JFrame {
         boolean selectedGapRocket = isSelectedGapRocketWorkspace();
         boolean selectedOrb = isSelectedOrbWorkspace();
         boolean selectedDipHunter = isSelectedDipHunterWorkspace();
+        boolean selectedVwap = isSelectedVwapWorkspace();
         boolean showGapRocketEmptyState = selectedGapRocket && selectedWorkspaceStrategyCount() == 0;
         boolean showOrbEmptyState = selectedOrb && selectedWorkspaceStrategyCount() == 0;
         boolean showDipHunterEmptyState = selectedDipHunter && selectedWorkspaceStrategyCount() == 0;
+        boolean showVwapEmptyState = selectedVwap && selectedWorkspaceStrategyCount() == 0;
         gapRocketAnalyzeButton.setVisible(selectedGapRocket && !showGapRocketEmptyState);
         gapRocketPlaceOrdersButton.setVisible(selectedGapRocket && !showGapRocketEmptyState);
         orbAnalyzeButton.setVisible(selectedOrb && !showOrbEmptyState);
         dipHunterAnalyzeButton.setVisible(selectedDipHunter && !showDipHunterEmptyState);
+        vwapAnalyzeButton.setVisible(selectedVwap && !showVwapEmptyState);
         GapAndGoSchedule currentGapSchedule = gapAndGoCoordinator == null ? null : gapAndGoCoordinator.currentSchedule();
         boolean gapScheduled = currentGapSchedule != null && currentGapSchedule.enabled();
         gapRocketScheduleStatusLabel.setVisible(selectedGapRocket && gapScheduled);
@@ -6012,12 +6045,18 @@ public class TradingFrame extends JFrame {
         boolean dipScheduled = currentDipSchedule != null && currentDipSchedule.enabled();
         dipHunterScheduleStatusLabel.setVisible(selectedDipHunter && dipScheduled);
         dipHunterCancelScheduleButton.setVisible(selectedDipHunter && dipScheduled);
+        VwapSchedule currentVwapSchedule = vwapCoordinator == null ? null : vwapCoordinator.currentSchedule();
+        boolean vwapScheduled = currentVwapSchedule != null && currentVwapSchedule.enabled();
+        vwapScheduleStatusLabel.setVisible(selectedVwap && vwapScheduled);
+        vwapCancelScheduleButton.setVisible(selectedVwap && vwapScheduled);
         if (showGapRocketEmptyState) {
             strategiesGridCardLayout.show(strategiesGridCardPanel, GAP_ROCKET_EMPTY_CARD);
         } else if (showOrbEmptyState) {
             strategiesGridCardLayout.show(strategiesGridCardPanel, ORB_EMPTY_CARD);
         } else if (showDipHunterEmptyState) {
             strategiesGridCardLayout.show(strategiesGridCardPanel, DIP_HUNTER_EMPTY_CARD);
+        } else if (showVwapEmptyState) {
+            strategiesGridCardLayout.show(strategiesGridCardPanel, VWAP_EMPTY_CARD);
         } else {
             strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
         }
@@ -6050,6 +6089,16 @@ public class TradingFrame extends JFrame {
         return workspaceService.findById(selectedWorkspaceId)
                 .map(StrategyWorkspace::code)
                 .map(DIP_HUNTER_WORKSPACE_CODE::equalsIgnoreCase)
+                .orElse(false);
+    }
+
+    private boolean isSelectedVwapWorkspace() {
+        if (selectedWorkspaceId == null) {
+            return false;
+        }
+        return workspaceService.findById(selectedWorkspaceId)
+                .map(StrategyWorkspace::code)
+                .map(VWAP_WORKSPACE_CODE::equalsIgnoreCase)
                 .orElse(false);
     }
 
@@ -6155,11 +6204,29 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    private void openVwapAnalysisDialog() {
+        VwapConfig lastVwapConfig = lastVwapConfigs.get(selectedViewMode);
+        VwapAnalysisDialog dialog = new VwapAnalysisDialog(this, selectedViewMode, lastVwapConfig);
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+        if (!dialog.accepted()) {
+            return;
+        }
+        VwapConfig selectedModeConfig = dialog.config();
+        lastVwapConfigs.put(selectedViewMode, selectedModeConfig);
+        switch (dialog.runMode()) {
+            case ANALYZE -> vwapCoordinator.analyze(selectedModeConfig, false);
+            case ANALYZE_AND_EXECUTE -> vwapCoordinator.analyze(selectedModeConfig, true);
+            case SCHEDULE -> vwapCoordinator.scheduleOrCancel(selectedModeConfig);
+        }
+    }
+
     /** Load any persisted schedules and start the autonomous schedulers. */
     public void startBackgroundSchedulers() {
         gapAndGoCoordinator.start();
         orbCoordinator.start();
         dipHunterCoordinator.start();
+        vwapCoordinator.start();
     }
 
     /** Refresh the grid after the coordinator applies gap-and-go recommendations (called on the EDT). */
@@ -6204,6 +6271,20 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    /** Refresh the grid after the coordinator applies VWAP Desk recommendations (called on the EDT). */
+    private void onVwapRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
+        syncStrategiesFromRepository();
+        refreshStrategyTableData();
+        applyCurrentStrategiesRowFilter();
+        refreshWorkspaceSummary();
+        refreshStrategyWorkspaceEmptyState();
+        updateStatusBar();
+        if (firstAddedStrategyId != null && firstAddedStrategyId.length() > 0
+                && workspaceId.equals(selectedWorkspaceId)) {
+            SwingUtilities.invokeLater(() -> selectAndRevealStrategy(firstAddedStrategyId));
+        }
+    }
+
     /** Reflect the current schedule on the Gap Rocket action bar (badge + cancel button). */
     private void updateGapRocketScheduleBadge(GapAndGoSchedule schedule) {
         if (gapRocketScheduleStatusLabel == null) {
@@ -6234,6 +6315,18 @@ public class TradingFrame extends JFrame {
             return;
         }
         dipHunterScheduleStatusLabel.setText(schedule != null && schedule.enabled()
+                ? "Scheduled: scan " + schedule.scanTimeEt() + " ET"
+                + (schedule.executeAfterScan() ? " (auto-execute)" : "")
+                : "");
+        refreshStrategyWorkspaceEmptyState();
+    }
+
+    /** Reflect the current VWAP Desk schedule on the action bar (badge + cancel button). */
+    private void updateVwapScheduleBadge(VwapSchedule schedule) {
+        if (vwapScheduleStatusLabel == null) {
+            return;
+        }
+        vwapScheduleStatusLabel.setText(schedule != null && schedule.enabled()
                 ? "Scheduled: scan " + schedule.scanTimeEt() + " ET"
                 + (schedule.executeAfterScan() ? " (auto-execute)" : "")
                 : "");
@@ -6294,6 +6387,24 @@ public class TradingFrame extends JFrame {
             onDipHunterRecommendationsApplied(workspaceId, firstAddedStrategyId);
         }
         @Override public void onScheduleChanged(DipHunterSchedule schedule) { updateDipHunterScheduleBadge(schedule); }
+        @Override public java.awt.Component dialogParent() { return TradingFrame.this; }
+    }
+
+    /** Bridges {@link VwapCoordinator}'s needs to this frame without leaking the frame into it. */
+    private final class VwapCoordinatorUi implements VwapCoordinator.Ui {
+        @Override public String runtimeApiKey() { return runtimeApiKey; }
+        @Override public String runtimeApiSecret() { return runtimeApiSecret; }
+        @Override public boolean connectionOk() { return connectionOk; }
+        @Override public String selectedModeLabel() { return TradingFrame.this.selectedModeLabel(); }
+        @Override public int defaultStrategyPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
+        @Override public String selectedWorkspaceId() { return selectedWorkspaceId; }
+        @Override public boolean isVwapWorkspaceSelected() { return isSelectedVwapWorkspace(); }
+        @Override public void log(String message) { TradingFrame.this.log(message); }
+        @Override public void setScanButtonsEnabled(boolean enabled) { vwapAnalyzeButton.setEnabled(enabled); }
+        @Override public void onRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
+            onVwapRecommendationsApplied(workspaceId, firstAddedStrategyId);
+        }
+        @Override public void onScheduleChanged(VwapSchedule schedule) { updateVwapScheduleBadge(schedule); }
         @Override public java.awt.Component dialogParent() { return TradingFrame.this; }
     }
 

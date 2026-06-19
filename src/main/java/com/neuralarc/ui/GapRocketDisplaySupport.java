@@ -11,11 +11,11 @@ final class GapRocketDisplaySupport {
             return false;
         }
         String latest = strategy.latestOrderStatus() == null ? "" : strategy.latestOrderStatus();
-        if (latest.startsWith("GAP_ROCKET_") || latest.startsWith("DIP_HUNTER_")) {
+        if (latest.startsWith("GAP_ROCKET_") || latest.startsWith("DIP_HUNTER_") || latest.startsWith("VWAP_")) {
             return true;
         }
         String name = strategy.name() == null ? "" : strategy.name().toUpperCase();
-        if (!name.contains("GAP_ROCKET") && !name.contains("DIP_HUNTER")) {
+        if (!name.contains("GAP_ROCKET") && !name.contains("DIP_HUNTER") && !name.contains("VWAP_DESK")) {
             return false;
         }
         StrategyLifecycleState state = strategy.currentState();

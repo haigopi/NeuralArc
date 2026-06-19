@@ -35,7 +35,7 @@ public record StrategyWorkspaceTemplate(String name, String code, String descrip
                 new StrategyWorkspaceTemplate("Dip Hunter", "DIP",
                         "Scan strong up-trending names that have pulled back from a recent high, rank the best bounce setups on live data, and track planned entries in a dedicated Dip Hunter grid.", true),
                 new StrategyWorkspaceTemplate("VWAP Desk", "VWAP",
-                        "Mean-reversion trades around the volume-weighted average price.", false),
+                        "Scan still-strong names trading at a discount below their intraday VWAP, rank the best mean-reversion setups on live data, and track planned entries (target = VWAP) in a dedicated VWAP Desk grid.", true),
                 // "Momentum Lab" (high relative volume) was folded into Gap Rocket above, which is the
                 // dedicated high-relative-volume momentum scanner — avoid offering two overlapping ones.
                 new StrategyWorkspaceTemplate("Swing Vault", "SWING",
