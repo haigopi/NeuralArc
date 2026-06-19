@@ -198,6 +198,7 @@ public final class AppDatabase {
         applyMigration("010_orb_schedules",         this::migration010);
         applyMigration("011_dip_hunter_schedules",   this::migration011);
         applyMigration("012_vwap_schedules",         this::migration012);
+        applyMigration("013_swing_schedules",        this::migration013);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -475,6 +476,26 @@ public final class AppDatabase {
                         updated_at               TEXT NOT NULL
                     )""");
             st.execute("CREATE INDEX IF NOT EXISTS idx_vwap_schedules_workspace ON vwap_schedules(workspace_id)");
+        }
+    }
+
+    // ── Migration 013 — autonomous Swing Vault schedules ────────────────────
+
+    private void migration013() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS swing_schedules (
+                        id                       TEXT PRIMARY KEY,
+                        enabled                  INTEGER NOT NULL DEFAULT 1,
+                        scan_time_et             TEXT NOT NULL,
+                        window_start_et          TEXT NOT NULL,
+                        window_end_et            TEXT NOT NULL,
+                        execute_after_scan       INTEGER NOT NULL DEFAULT 0,
+                        workspace_id             TEXT NOT NULL DEFAULT '',
+                        config_json              TEXT NOT NULL,
+                        updated_at               TEXT NOT NULL
+                    )""");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_swing_schedules_workspace ON swing_schedules(workspace_id)");
         }
     }
 
