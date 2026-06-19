@@ -1,5 +1,6 @@
 package com.neuralarc.db;
 
+import com.neuralarc.model.AutoAdjustRiskConfig;
 import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
@@ -189,8 +190,11 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     automatic_stop_sell_threshold, automatic_stop_sell_trailing_type,
                     automatic_stop_sell_trailing_value,
                     resubmit_on_expiry_enabled, base_buy_repost_reduction_percent, time_in_force,
-                    created_at, updated_at, workspace_id
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    created_at, updated_at, workspace_id,
+                    auto_adjust_enabled, auto_adjust_monitoring_days, auto_adjust_daily_percent,
+                    auto_adjust_after_close, auto_adjust_on_decrease, auto_adjust_on_increase,
+                    auto_adjust_day_count, auto_adjust_last_date, auto_adjust_reference_price
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name, symbol=excluded.symbol,
                     mode=excluded.mode, status=excluded.status, current_state=excluded.current_state,
@@ -239,7 +243,16 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     time_in_force=excluded.time_in_force,
                     created_at=excluded.created_at,
                     updated_at=excluded.updated_at,
-                    workspace_id=excluded.workspace_id
+                    workspace_id=excluded.workspace_id,
+                    auto_adjust_enabled=excluded.auto_adjust_enabled,
+                    auto_adjust_monitoring_days=excluded.auto_adjust_monitoring_days,
+                    auto_adjust_daily_percent=excluded.auto_adjust_daily_percent,
+                    auto_adjust_after_close=excluded.auto_adjust_after_close,
+                    auto_adjust_on_decrease=excluded.auto_adjust_on_decrease,
+                    auto_adjust_on_increase=excluded.auto_adjust_on_increase,
+                    auto_adjust_day_count=excluded.auto_adjust_day_count,
+                    auto_adjust_last_date=excluded.auto_adjust_last_date,
+                    auto_adjust_reference_price=excluded.auto_adjust_reference_price
                 """;
         try (PreparedStatement ps = db.get().prepareStatement(sql)) {
             bindStrategy(ps, s);
@@ -274,8 +287,11 @@ public final class SqliteStrategyRepository implements StrategyRepository {
                     automatic_stop_sell_threshold, automatic_stop_sell_trailing_type,
                     automatic_stop_sell_trailing_value,
                     resubmit_on_expiry_enabled, base_buy_repost_reduction_percent, time_in_force,
-                    created_at, updated_at, workspace_id
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    created_at, updated_at, workspace_id,
+                    auto_adjust_enabled, auto_adjust_monitoring_days, auto_adjust_daily_percent,
+                    auto_adjust_after_close, auto_adjust_on_decrease, auto_adjust_on_increase,
+                    auto_adjust_day_count, auto_adjust_last_date, auto_adjust_reference_price
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             bindStrategy(ps, s);
@@ -338,7 +354,16 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         ps.setString(i++, s.timeInForce() == null ? TimeInForce.DAY.name() : s.timeInForce().name());
         ps.setString(i++, s.createdAt().toString());
         ps.setString(i++, s.updatedAt().toString());
-        ps.setString(i, s.workspaceId());
+        ps.setString(i++, s.workspaceId());
+        ps.setInt(i++, s.autoAdjustRiskEnabled() ? 1 : 0);
+        ps.setInt(i++, s.autoAdjustMonitoringDays());
+        ps.setString(i++, s.autoAdjustDailyPercent().toPlainString());
+        ps.setInt(i++, s.autoAdjustAfterMarketClose() ? 1 : 0);
+        ps.setInt(i++, s.autoAdjustOnDecrease() ? 1 : 0);
+        ps.setInt(i++, s.autoAdjustOnIncrease() ? 1 : 0);
+        ps.setInt(i++, s.autoAdjustDayCount());
+        ps.setString(i++, s.autoAdjustLastAdjustedDate() == null ? "" : s.autoAdjustLastAdjustedDate());
+        ps.setString(i, s.autoAdjustReferencePrice().toPlainString());
     }
 
     private Strategy fromResultSet(ResultSet rs) throws SQLException {
@@ -398,6 +423,16 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         s.setBaseBuyRepostReductionPercent(decimal(rs, "base_buy_repost_reduction_percent"));
         s.setTimeInForce(safeTimeInForce(rs.getString("time_in_force")));
         s.setWorkspaceId(rs.getString("workspace_id"));
+        s.applyAutoAdjustConfig(new AutoAdjustRiskConfig(
+                rs.getInt("auto_adjust_enabled") == 1,
+                rs.getInt("auto_adjust_monitoring_days"),
+                decimal(rs, "auto_adjust_daily_percent"),
+                rs.getInt("auto_adjust_after_close") == 1,
+                rs.getInt("auto_adjust_on_decrease") == 1,
+                rs.getInt("auto_adjust_on_increase") == 1));
+        s.setAutoAdjustDayCount(rs.getInt("auto_adjust_day_count"));
+        s.setAutoAdjustLastAdjustedDate(rs.getString("auto_adjust_last_date"));
+        s.setAutoAdjustReferencePrice(decimal(rs, "auto_adjust_reference_price"));
         return s;
     }
 
@@ -456,6 +491,16 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         s.setBaseBuyRepostReductionPercent(decimal(o, "baseBuyRepostReductionPercent"));
         s.setTimeInForce(safeTimeInForce(o.optString("timeInForce", "DAY")));
         s.setWorkspaceId(o.optString("workspaceId", null));
+        s.applyAutoAdjustConfig(new AutoAdjustRiskConfig(
+                o.optBoolean("autoAdjustRiskEnabled", false),
+                o.optInt("autoAdjustMonitoringDays", 0),
+                decimal(o, "autoAdjustDailyPercent"),
+                o.optBoolean("autoAdjustAfterMarketClose", true),
+                o.optBoolean("autoAdjustOnDecrease", true),
+                o.optBoolean("autoAdjustOnIncrease", true)));
+        s.setAutoAdjustDayCount(o.optInt("autoAdjustDayCount", 0));
+        s.setAutoAdjustLastAdjustedDate(o.optString("autoAdjustLastAdjustedDate", ""));
+        s.setAutoAdjustReferencePrice(decimal(o, "autoAdjustReferencePrice"));
         return s;
     }
 
@@ -513,6 +558,15 @@ public final class SqliteStrategyRepository implements StrategyRepository {
         if (s.workspaceId() != null) {
             o.put("workspaceId", s.workspaceId());
         }
+        o.put("autoAdjustRiskEnabled", s.autoAdjustRiskEnabled());
+        o.put("autoAdjustMonitoringDays", s.autoAdjustMonitoringDays());
+        o.put("autoAdjustDailyPercent", s.autoAdjustDailyPercent().toPlainString());
+        o.put("autoAdjustAfterMarketClose", s.autoAdjustAfterMarketClose());
+        o.put("autoAdjustOnDecrease", s.autoAdjustOnDecrease());
+        o.put("autoAdjustOnIncrease", s.autoAdjustOnIncrease());
+        o.put("autoAdjustDayCount", s.autoAdjustDayCount());
+        o.put("autoAdjustLastAdjustedDate", s.autoAdjustLastAdjustedDate() == null ? "" : s.autoAdjustLastAdjustedDate());
+        o.put("autoAdjustReferencePrice", s.autoAdjustReferencePrice().toPlainString());
         return o;
     }
 

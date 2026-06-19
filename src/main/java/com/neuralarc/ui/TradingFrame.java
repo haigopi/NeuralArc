@@ -32,6 +32,7 @@ import com.neuralarc.model.DipHunterSchedule;
 import com.neuralarc.model.VwapSchedule;
 import com.neuralarc.model.SwingSchedule;
 import com.neuralarc.service.AutoAnalyzeResultStore;
+import com.neuralarc.service.AutoRiskAdjustmentService;
 import com.neuralarc.service.FeedbackEmailService;
 import com.neuralarc.service.GitHubReleaseUpdateService;
 import com.neuralarc.service.MarketHoursService;
@@ -431,6 +432,7 @@ public class TradingFrame extends JFrame {
     private final DipHunterCoordinator dipHunterCoordinator;
     private final VwapCoordinator vwapCoordinator;
     private final SwingCoordinator swingCoordinator;
+    private final AutoRiskAdjustmentService autoRiskAdjustmentService;
     private final WorkspaceService workspaceService;
     // Dynamic strategy-workspace tabs; null workspace = the All Stocks view.
     private StrategyWorkspaceTabs strategyWorkspaceTabs;
@@ -541,6 +543,8 @@ public class TradingFrame extends JFrame {
                 appSettingsService, marketHoursService, uiPollingExecutor);
         swingCoordinator = new SwingCoordinator(new SwingCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, uiPollingExecutor);
+        autoRiskAdjustmentService = new AutoRiskAdjustmentService(strategyRepository, marketHoursService,
+                java.time.Clock.systemUTC(), this::latestPriceForAutoAdjust, this::log);
         workspaceService = new WorkspaceService(workspaceRepository, strategyRepository);
         portfolioRefreshController = new PortfolioRefreshController(
                 strategyRepository,
@@ -4397,6 +4401,11 @@ public class TradingFrame extends JFrame {
         updatedStrategy.setLatestOrderStatus(entry.strategy.latestOrderStatus());
         updatedStrategy.setLatestAlpacaOrderId(entry.strategy.latestAlpacaOrderId());
         updatedStrategy.setLastError(entry.strategy.lastError());
+        // Preserve the auto-adjust per-day progress across edits so changing config does not silently
+        // restart the monitoring window or revert the day's already-applied adjustment.
+        updatedStrategy.setAutoAdjustDayCount(entry.strategy.autoAdjustDayCount());
+        updatedStrategy.setAutoAdjustLastAdjustedDate(entry.strategy.autoAdjustLastAdjustedDate());
+        updatedStrategy.setAutoAdjustReferencePrice(entry.strategy.autoAdjustReferencePrice());
         StrategyService modeAwareService = strategyServiceForMode(entry.strategy.mode());
         if (modeAwareService == null) {
             userActionLog.failed("Edit Strategy " + entry.strategy.symbol(), entry.strategy.mode() + " broker client is not configured.");
@@ -6294,6 +6303,24 @@ public class TradingFrame extends JFrame {
         dipHunterCoordinator.start();
         vwapCoordinator.start();
         swingCoordinator.start();
+        autoRiskAdjustmentService.start();
+    }
+
+    /**
+     * Latest cached price for a strategy, used by the after-close Auto Adjust Risk &amp; Stop Loss
+     * runner. Reads the cached position snapshot only (no broker call); returns {@code null} when no
+     * price is known yet so the adjuster safely skips that strategy for the day.
+     */
+    private BigDecimal latestPriceForAutoAdjust(Strategy strategy) {
+        if (strategy == null) {
+            return null;
+        }
+        ManagedStrategy entry = findStrategyById(strategy.id());
+        if (entry == null) {
+            return null;
+        }
+        BigDecimal price = entry.cachedPosition().getLastPrice();
+        return price != null && price.signum() > 0 ? price : null;
     }
 
     /** Refresh the grid after the coordinator applies gap-and-go recommendations (called on the EDT). */

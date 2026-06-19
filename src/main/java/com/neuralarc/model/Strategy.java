@@ -62,6 +62,19 @@ public class Strategy {
     // null means "unassigned" — the strategy shows under the All Stocks view and is never
     // auto-migrated into a workspace. Kept out of the constructor for backward compatibility.
     private String workspaceId;
+    // Auto Adjust Risk & Stop Loss. The configured intent is mirrored from StrategyConfig; the
+    // per-day progress (day count, last adjusted date, reference price) is runtime state that the
+    // market-close adjuster advances and persists. Kept out of the constructor for backward
+    // compatibility; populated via setters in fromConfig and the repository.
+    private boolean autoAdjustRiskEnabled;
+    private int autoAdjustMonitoringDays;
+    private BigDecimal autoAdjustDailyPercent = BigDecimal.ZERO;
+    private boolean autoAdjustAfterMarketClose = true;
+    private boolean autoAdjustOnDecrease = true;
+    private boolean autoAdjustOnIncrease = true;
+    private int autoAdjustDayCount;
+    private String autoAdjustLastAdjustedDate = "";
+    private BigDecimal autoAdjustReferencePrice = BigDecimal.ZERO;
 
     public Strategy(
             String id,
@@ -272,6 +285,7 @@ public class Strategy {
         strategy.setResubmitOnExpiryEnabled(config.resubmitOnExpiryEnabled());
         strategy.setBaseBuyRepostReductionPercent(config.baseBuyRepostReductionPercent());
         strategy.setTimeInForce(config.timeInForce());
+        strategy.applyAutoAdjustConfig(config.autoAdjustRisk());
         return strategy;
     }
 
@@ -461,5 +475,53 @@ public class Strategy {
     public void setWorkspaceId(String value) {
         this.workspaceId = value == null || value.isBlank() ? null : value.trim();
         touch();
+    }
+
+    // ── Auto Adjust Risk & Stop Loss ────────────────────────────────────────
+
+    public boolean autoAdjustRiskEnabled() { return autoAdjustRiskEnabled; }
+    public int autoAdjustMonitoringDays() { return autoAdjustMonitoringDays; }
+    public BigDecimal autoAdjustDailyPercent() { return autoAdjustDailyPercent; }
+    public boolean autoAdjustAfterMarketClose() { return autoAdjustAfterMarketClose; }
+    public boolean autoAdjustOnDecrease() { return autoAdjustOnDecrease; }
+    public boolean autoAdjustOnIncrease() { return autoAdjustOnIncrease; }
+    public int autoAdjustDayCount() { return autoAdjustDayCount; }
+    public String autoAdjustLastAdjustedDate() { return autoAdjustLastAdjustedDate; }
+    public BigDecimal autoAdjustReferencePrice() { return autoAdjustReferencePrice; }
+
+    public void setAutoAdjustRiskEnabled(boolean enabled) { this.autoAdjustRiskEnabled = enabled; touch(); }
+    public void setAutoAdjustMonitoringDays(int days) { this.autoAdjustMonitoringDays = Math.max(0, days); touch(); }
+    public void setAutoAdjustDailyPercent(BigDecimal value) {
+        BigDecimal normalized = money(value);
+        this.autoAdjustDailyPercent = normalized.signum() < 0 ? BigDecimal.ZERO : normalized;
+        touch();
+    }
+    public void setAutoAdjustAfterMarketClose(boolean value) { this.autoAdjustAfterMarketClose = value; touch(); }
+    public void setAutoAdjustOnDecrease(boolean value) { this.autoAdjustOnDecrease = value; touch(); }
+    public void setAutoAdjustOnIncrease(boolean value) { this.autoAdjustOnIncrease = value; touch(); }
+    public void setAutoAdjustDayCount(int count) { this.autoAdjustDayCount = Math.max(0, count); touch(); }
+    public void setAutoAdjustLastAdjustedDate(String value) { this.autoAdjustLastAdjustedDate = normalizeText(value); touch(); }
+    public void setAutoAdjustReferencePrice(BigDecimal value) {
+        BigDecimal normalized = money(value);
+        this.autoAdjustReferencePrice = normalized.signum() < 0 ? BigDecimal.ZERO : normalized;
+        touch();
+    }
+
+    /** Mirror the configured auto-adjust intent onto this strategy (leaves per-day progress untouched). */
+    public void applyAutoAdjustConfig(AutoAdjustRiskConfig config) {
+        AutoAdjustRiskConfig safe = config == null ? AutoAdjustRiskConfig.disabled() : config;
+        this.autoAdjustRiskEnabled = safe.enabled();
+        this.autoAdjustMonitoringDays = safe.monitoringDays();
+        this.autoAdjustDailyPercent = safe.dailyAdjustmentPercent();
+        this.autoAdjustAfterMarketClose = safe.applyAfterMarketClose();
+        this.autoAdjustOnDecrease = safe.adjustOnDecrease();
+        this.autoAdjustOnIncrease = safe.adjustOnIncrease();
+        touch();
+    }
+
+    /** The configured auto-adjust intent for this strategy (excludes per-day runtime progress). */
+    public AutoAdjustRiskConfig autoAdjustRiskConfig() {
+        return new AutoAdjustRiskConfig(autoAdjustRiskEnabled, autoAdjustMonitoringDays, autoAdjustDailyPercent,
+                autoAdjustAfterMarketClose, autoAdjustOnDecrease, autoAdjustOnIncrease);
     }
 }
