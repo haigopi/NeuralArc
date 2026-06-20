@@ -87,11 +87,6 @@ public class StrategyDialog extends JDialog {
     private static final Color TEXT_MUTED = UIManager.getColor("Label.disabledForeground") != null
             ? UIManager.getColor("Label.disabledForeground")
             : new Color(130, 130, 130);
-    private static final Color TAB_BORDER = ThemeColors.color("NeuralArc.Section.border", new Color(204, 214, 225));
-    private static final Color TAB_SELECTED_BG = new Color(235, 244, 252);
-    private static final Color TAB_UNSELECTED_BG = new Color(246, 248, 250);
-    private static final Color TAB_SELECTED_TEXT = new Color(11, 84, 132);
-    private static final Color TAB_UNSELECTED_TEXT = new Color(75, 85, 99);
     private static final Color BUY_BADGE_BG = new Color(219, 241, 229);
     private static final Color BUY_BADGE_TEXT = new Color(22, 110, 62);
     private static final Color WATCH_BADGE_BG = new Color(255, 242, 214);
@@ -244,10 +239,8 @@ public class StrategyDialog extends JDialog {
         }
 
         tabs = new JTabbedPane();
-        styleTabs();
         tabs.addTab("Current Strategy", buildCurrentStrategyTab());
         tabs.addTab("Auto Analyze", buildAutoAnalyzeTab());
-        installTabLabels(tabs);
         add(tabs, BorderLayout.CENTER);
         updateAutoAdjustState(); // now that the section exists, reflect the current toggle state
 
@@ -1080,43 +1073,6 @@ public class StrategyDialog extends JDialog {
         return new BigDecimal(raw);
     }
 
-    private void styleTabs() {
-        tabs.setOpaque(true);
-        tabs.setBackground(INPUT_BG);
-        tabs.setForeground(TAB_UNSELECTED_TEXT);
-        tabs.setFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
-        tabs.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(TAB_BORDER, 1, true),
-                new EmptyBorder(1, 1, 1, 1)
-        ));
-        tabs.addChangeListener(ignored -> refreshTabLabels(tabs));
-    }
-
-    private void installTabLabels(JTabbedPane tabPane) {
-        for (int i = 0; i < tabPane.getTabCount(); i++) {
-            JLabel label = new JLabel(tabPane.getTitleAt(i), JLabel.CENTER);
-            label.setFont(FontLoader.ui(java.awt.Font.BOLD, 12f));
-            label.setOpaque(true);
-            label.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createMatteBorder(0, 0, 1, 0, TAB_BORDER),
-                    new EmptyBorder(6, 14, 6, 14)
-            ));
-            tabPane.setTabComponentAt(i, label);
-        }
-        refreshTabLabels(tabPane);
-    }
-
-    private void refreshTabLabels(JTabbedPane tabPane) {
-        for (int i = 0; i < tabPane.getTabCount(); i++) {
-            Component component = tabPane.getTabComponentAt(i);
-            if (component instanceof JLabel label) {
-                boolean selected = i == tabPane.getSelectedIndex();
-                label.setForeground(selected ? TAB_SELECTED_TEXT : TAB_UNSELECTED_TEXT);
-                label.setBackground(selected ? TAB_SELECTED_BG : TAB_UNSELECTED_BG);
-            }
-        }
-    }
-
     private void onSave() {
         try {
             String symbol = symbolField.getText().trim().toUpperCase();
@@ -1834,7 +1790,7 @@ public class StrategyDialog extends JDialog {
 
     private void styleBadge(JLabel badge, RecommendationAction action) {
         if (action == null) {
-            badge.setBackground(TAB_UNSELECTED_BG);
+            badge.setBackground(INPUT_BG);
             badge.setForeground(TEXT_MUTED);
             return;
         }
