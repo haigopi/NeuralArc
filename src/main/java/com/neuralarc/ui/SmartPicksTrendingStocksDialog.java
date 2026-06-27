@@ -165,6 +165,7 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
             StrategyUniverse universe
     ) {
         super(owner, "Smart Picks - " + displayName(universe), true);
+        DialogCloseActions.bindEscapeToClose(this);
         this.trendingStocksService = Objects.requireNonNull(trendingStocksService);
         this.marketDataApi = Objects.requireNonNull(marketDataApi);
         this.placementHandler = Objects.requireNonNull(placementHandler);

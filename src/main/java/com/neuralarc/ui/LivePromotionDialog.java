@@ -73,11 +73,13 @@ final class LivePromotionDialog extends JDialog {
 
     LivePromotionDialog(Frame owner, StrategyService.LivePromotionPreview preview, String realizedPnl, String unrealizedPnl) {
         super(owner, "Preview Live Promotion", true);
+        DialogCloseActions.bindEscapeToClose(this);
         buildUi(preview, realizedPnl, unrealizedPnl);
     }
 
     LivePromotionDialog(Dialog owner, StrategyService.LivePromotionPreview preview, String realizedPnl, String unrealizedPnl) {
         super(owner, "Preview Live Promotion", true);
+        DialogCloseActions.bindEscapeToClose(this);
         buildUi(preview, realizedPnl, unrealizedPnl);
     }
 

@@ -23,6 +23,7 @@ public class RequestNewFeatureDialog extends JDialog {
 
     public RequestNewFeatureDialog(JFrame owner, String customerEmail, FeedbackEmailService emailService) {
         super(owner, "Request New Feature", true);
+        DialogCloseActions.bindEscapeToClose(this);
         this.customerEmail = customerEmail == null ? "" : customerEmail.trim();
         this.emailService = emailService;
 

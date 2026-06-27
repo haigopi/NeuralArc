@@ -31,6 +31,7 @@ public final class DipHunterAnalysisDialog extends JDialog {
 
     public DipHunterAnalysisDialog(Window owner, StrategyMode mode, DipHunterConfig existing) {
         super(owner, TITLE, ModalityType.APPLICATION_MODAL);
+        com.neuralarc.ui.DialogCloseActions.bindEscapeToClose(this);
         this.mode = mode == null ? StrategyMode.PAPER : mode;
         apply(existing == null ? DipHunterConfig.defaults(this.mode) : existing);
         setContentPane(build());

@@ -29,6 +29,7 @@ public final class VwapAnalysisDialog extends JDialog {
 
     public VwapAnalysisDialog(Window owner, StrategyMode mode, VwapConfig existing) {
         super(owner, TITLE, ModalityType.APPLICATION_MODAL);
+        com.neuralarc.ui.DialogCloseActions.bindEscapeToClose(this);
         this.mode = mode == null ? StrategyMode.PAPER : mode;
         apply(existing == null ? VwapConfig.defaults(this.mode) : existing);
         setContentPane(build());

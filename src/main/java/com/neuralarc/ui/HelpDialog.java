@@ -514,6 +514,7 @@ public class HelpDialog extends JDialog {
 
     public HelpDialog(JFrame owner) {
         super(owner, "Help & FAQ", true);
+        DialogCloseActions.bindEscapeToClose(this);
         setLayout(new BorderLayout(0, 0));
         getContentPane().setBackground(CONTENT_BG);
         JTabbedPane tabs = new JTabbedPane();

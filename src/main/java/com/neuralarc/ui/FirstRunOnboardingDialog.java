@@ -26,6 +26,7 @@ final class FirstRunOnboardingDialog extends JDialog {
 
     FirstRunOnboardingDialog(JFrame owner) {
         super(owner, "Welcome to NeuralArc", true);
+        DialogCloseActions.bindEscapeToClose(this);
         buildUi();
     }
 

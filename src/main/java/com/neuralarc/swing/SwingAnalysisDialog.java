@@ -30,6 +30,7 @@ public final class SwingAnalysisDialog extends JDialog {
 
     public SwingAnalysisDialog(Window owner, StrategyMode mode, SwingConfig existing) {
         super(owner, TITLE, ModalityType.APPLICATION_MODAL);
+        com.neuralarc.ui.DialogCloseActions.bindEscapeToClose(this);
         this.mode = mode == null ? StrategyMode.PAPER : mode;
         apply(existing == null ? SwingConfig.defaults(this.mode) : existing);
         setContentPane(build());

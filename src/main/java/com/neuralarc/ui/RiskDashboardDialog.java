@@ -18,6 +18,7 @@ import java.awt.Frame;
 final class RiskDashboardDialog extends JDialog {
     RiskDashboardDialog(Frame owner, JComponent content) {
         super(owner, "Strategy Risk Dashboard", true);
+        DialogCloseActions.bindEscapeToClose(this);
         setLayout(new BorderLayout());
         getContentPane().setBackground(ChartPalette.CANVAS_BG);
 

@@ -32,6 +32,7 @@ public class SubmitBugDialog extends JDialog {
     SubmitBugDialog(JFrame owner, String customerEmail, FeedbackEmailService emailService,
                     DailyLogBundleService dailyLogBundleService, ApiRequestIdStore apiRequestIdStore) {
         super(owner, "Submit Bug", true);
+        DialogCloseActions.bindEscapeToClose(this);
         this.customerEmail = customerEmail == null ? "" : customerEmail.trim();
         this.emailService = emailService;
         this.dailyLogBundleService = dailyLogBundleService;

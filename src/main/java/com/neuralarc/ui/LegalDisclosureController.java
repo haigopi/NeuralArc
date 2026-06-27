@@ -203,6 +203,7 @@ public final class LegalDisclosureController {
             Consumer<Boolean> acceptanceUpdater
     ) {
         JDialog dialog = new JDialog(owner, "Legal Disclosure", true);
+        DialogCloseActions.bindEscapeToClose(dialog);
         dialog.setLayout(new BorderLayout(10, 10));
         dialog.getRootPane().setBorder(new EmptyBorder(10, 10, 10, 10));
 
@@ -295,4 +296,3 @@ public final class LegalDisclosureController {
         return value + extent >= max;
     }
 }
-

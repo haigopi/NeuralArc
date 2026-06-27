@@ -31,6 +31,7 @@ public final class OrbAnalysisDialog extends JDialog {
 
     public OrbAnalysisDialog(Window owner, StrategyMode mode, OrbConfig existing) {
         super(owner, TITLE, ModalityType.APPLICATION_MODAL);
+        com.neuralarc.ui.DialogCloseActions.bindEscapeToClose(this);
         this.mode = mode == null ? StrategyMode.PAPER : mode;
         apply(existing == null ? OrbConfig.defaults(this.mode) : existing);
         setContentPane(build());

@@ -22,6 +22,7 @@ public class ContactUsDialog extends JDialog {
 
     public ContactUsDialog(JFrame owner, String customerEmail, FeedbackEmailService emailService) {
         super(owner, "Contact Us / Feedback", true);
+        DialogCloseActions.bindEscapeToClose(this);
         this.customerEmail = customerEmail == null ? "" : customerEmail.trim();
         this.emailService = emailService;
 

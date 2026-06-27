@@ -100,6 +100,7 @@ final class PortfolioCaptureDialog extends JDialog {
             boolean monitoringActive
     ) {
         super(owner, "Liquidate Portfolio", true);
+        DialogCloseActions.bindEscapeToClose(this);
         this.snapshotSupplier = snapshotSupplier;
         this.captureNowHandler = captureNowHandler;
         this.activateHandler = activateHandler;

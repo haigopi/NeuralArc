@@ -32,6 +32,7 @@ public final class GapRocketAnalysisDialog extends JDialog {
 
     public GapRocketAnalysisDialog(Window owner, StrategyMode mode, GapRocketConfig existing) {
         super(owner, TITLE, ModalityType.APPLICATION_MODAL);
+        com.neuralarc.ui.DialogCloseActions.bindEscapeToClose(this);
         this.mode = mode == null ? StrategyMode.PAPER : mode;
         apply(existing == null ? GapRocketConfig.defaults(this.mode) : existing);
         setContentPane(build());

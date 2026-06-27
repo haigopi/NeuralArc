@@ -219,6 +219,7 @@ public class StrategyDialog extends JDialog {
                           boolean defaultRepeatCycleAfterProfitExitEnabled,
                           boolean defaultResubmitOnExpiryEnabled) {
         super(owner, initialConfig == null ? "Add Stock Strategy" : "Edit Stock Strategy", true);
+        DialogCloseActions.bindEscapeToClose(this);
         this.marketDataApi = marketDataApi;
         this.resultStore = resultStore;
         this.defaultPollingSeconds = Math.max(1, defaultPollingSeconds);

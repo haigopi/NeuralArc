@@ -25,6 +25,7 @@ public class AboutDialog extends JDialog {
 
   public AboutDialog(JFrame owner) {
     super(owner, "About NeuralArc", true);
+    DialogCloseActions.bindEscapeToClose(this);
     setLayout(new BorderLayout());
     setResizable(false);
 

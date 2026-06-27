@@ -112,6 +112,7 @@ public class SettingsDialog extends JDialog {
 
     SettingsDialog(JFrame owner, AppSettingsService appSettingsService) {
         super(owner, "Settings", true);
+        DialogCloseActions.bindEscapeToClose(this);
         this.appSettingsService = appSettingsService;
         setLayout(new BorderLayout(SECTION_GAP, SECTION_GAP));
 
