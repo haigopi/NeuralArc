@@ -4087,6 +4087,7 @@ public class TradingFrame extends JFrame {
                 config,
                 targetMode
         );
+        NewStrategyWorkspaceAssignment.apply(strategy, selectedWorkspaceId, workspaceService);
         StrategyService modeAwareService = strategyServiceForMode(targetMode);
         if (modeAwareService == null) {
             userActionLog.failed("Add New Stock Strategy", targetMode + " broker client is not configured.");
