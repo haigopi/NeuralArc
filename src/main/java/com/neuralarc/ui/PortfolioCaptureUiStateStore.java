@@ -33,21 +33,25 @@ final class PortfolioCaptureUiStateStore {
         }
     }
 
-    record State(String buttonText, boolean buttonEnabled, String indicatorText, boolean monitoringActive, boolean busy) {
+    record State(String buttonText, boolean buttonEnabled, String indicatorText, boolean monitoringActive, boolean pulseActive, boolean busy) {
         static State idle() {
-            return new State("Liquidate Portfolio", true, "", false, false);
+            return new State("Liquidate Portfolio", true, "", false, false, false);
         }
 
         State withButton(String text, boolean enabled) {
-            return new State(text, enabled, indicatorText, monitoringActive, busy);
+            return new State(text, enabled, indicatorText, monitoringActive, pulseActive, busy);
         }
 
         State withIndicator(String text, boolean active) {
-            return new State(buttonText, buttonEnabled, text == null ? "" : text, active, busy);
+            return new State(buttonText, buttonEnabled, text == null ? "" : text, active, pulseActive, busy);
+        }
+
+        State withPulse(boolean active) {
+            return new State(buttonText, buttonEnabled, indicatorText, monitoringActive, active, busy);
         }
 
         State withBusy(boolean nextBusy) {
-            return new State(nextBusy ? "Liquidating..." : "Liquidate Portfolio", !nextBusy, indicatorText, monitoringActive, nextBusy);
+            return new State(nextBusy ? "Liquidating..." : "Liquidate Portfolio", !nextBusy, indicatorText, monitoringActive, pulseActive, nextBusy);
         }
     }
 }

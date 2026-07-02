@@ -2504,7 +2504,8 @@ public class TradingFrame extends JFrame {
         if (key != null) {
             capturePortfolioUiStates.update(key, capturePortfolioUiStates.state(key)
                     .withButton("Liquidate Portfolio", true)
-                    .withIndicator(active ? captureIndicatorText(snapshot, config) : "", active));
+                    .withIndicator(active ? captureIndicatorText(snapshot, config) : "", active)
+                    .withPulse(active));
         }
         applySelectedCapturePortfolioState();
         updateCapturePortfolioIndicator(snapshot, config);
@@ -2623,7 +2624,7 @@ public class TradingFrame extends JFrame {
         capturePortfolioIndicator.setToolTipText(state.monitoringActive()
                 ? TooltipStyler.text("Liquidate Portfolio monitoring is evaluating current portfolio P&L against the configured target.", 320)
                 : null);
-        if (state.monitoringActive()) {
+        if (state.pulseActive()) {
             startCapturePortfolioPulse();
         } else {
             stopCapturePortfolioPulse();
@@ -2639,7 +2640,8 @@ public class TradingFrame extends JFrame {
                 stopCapturePortfolioPulse();
                 if (activeCapturePortfolioUiKey != null) {
                     capturePortfolioUiStates.update(activeCapturePortfolioUiKey, capturePortfolioUiStates.state(activeCapturePortfolioUiKey)
-                            .withButton("Liquidate Portfolio:Auto Paused [Closed Market]", true));
+                            .withButton("Liquidate Portfolio:Auto Paused [Closed Market]", true)
+                            .withPulse(false));
                 }
                 applySelectedCapturePortfolioState();
                 capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
@@ -2652,7 +2654,8 @@ public class TradingFrame extends JFrame {
                     && state == PortfolioCaptureAutomationState.MONITORING) {
                 if (activeCapturePortfolioUiKey != null) {
                     capturePortfolioUiStates.update(activeCapturePortfolioUiKey, capturePortfolioUiStates.state(activeCapturePortfolioUiKey)
-                            .withButton("Liquidate Portfolio", true));
+                            .withButton("Liquidate Portfolio", true)
+                            .withPulse(true));
                 }
                 applySelectedCapturePortfolioState();
                 capturePortfolioButton.setToolTipText(capturePortfolioDefaultTooltip());

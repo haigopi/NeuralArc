@@ -1045,8 +1045,8 @@ public class StrategyService {
         if (!expired) {
             return StrategyCreationResult.failed("Strategy is not in an expired state");
         }
-        if (!strategyEngine.canAutoRetryFailed(strategy)) {
-            return StrategyCreationResult.failed("Open orders or positions still exist for this symbol");
+        if (!strategyEngine.canAutoResubmitExpiredEntryOrder(strategy)) {
+            return StrategyCreationResult.failed("Expired order is not eligible for automatic resubmission");
         }
 
         cancelPendingLocalOrders(strategy);
@@ -1065,12 +1065,12 @@ public class StrategyService {
                 "{}"
         );
 
-        StrategyOrder order = strategyEngine.submitBaseBuy(strategy, false);
+        StrategyOrder order = strategyEngine.resubmitExpiredEntryOrder(strategy);
         if (order == null || order.alpacaOrderId() == null || order.alpacaOrderId().isBlank()) {
             strategy.setStatus(StrategyStatus.FAILED);
             strategy.setCurrentState(StrategyLifecycleState.FAILED);
             String error = strategy.lastError() == null || strategy.lastError().isBlank()
-                    ? "Failed to submit base buy order"
+                    ? "Failed to resubmit expired order"
                     : strategy.lastError();
             strategy.setLastError(error);
             strategyRepository.save(strategy);

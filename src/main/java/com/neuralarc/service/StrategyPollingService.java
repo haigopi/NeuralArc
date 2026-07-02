@@ -367,9 +367,9 @@ public class StrategyPollingService {
             pollListener.onPollStarted(strategyId);
             strategyEngine.refreshOrderStatuses(strategy);
             strategyRepository.findById(strategyId).ifPresent(updated -> {
-                if (isExpiryResubmitEligible(updated) && strategyEngine.canAutoRetryFailed(updated)) {
+                if (isExpiryResubmitEligible(updated) && strategyEngine.canAutoResubmitExpiredEntryOrder(updated)) {
                     LOGGER.info(() -> "[POLL][MARKET_CLOSED_EXPIRY_RESUBMIT][" + updated.symbol()
-                            + "] Repositioning expired base buy after market-closed status refresh");
+                            + "] Repositioning expired entry order after market-closed status refresh");
                     strategyService.repositionExpiredStrategy(updated.id());
                     strategyRepository.findById(strategyId).ifPresent(resubmitted -> {
                         resubmitted.setLastPolledAt(now);
@@ -421,15 +421,17 @@ public class StrategyPollingService {
             return;
         }
         if (strategy.status() == StrategyStatus.FAILED) {
-            if (!isExpiryResubmitEligible(strategy) || !strategyEngine.canAutoRetryFailed(strategy)) {
+            if (!isExpiryResubmitEligible(strategy) || !strategyEngine.canAutoResubmitExpiredEntryOrder(strategy)) {
                 return;
             }
-            LOGGER.info(() -> "[POLL][EXPIRY_RESUBMIT][" + strategy.symbol() + "] Reactivating expired strategy for automatic resubmission");
-            strategy.setStatus(StrategyStatus.ACTIVE);
-            strategy.setCurrentState(StrategyLifecycleState.CREATED);
-            strategy.setPauseReason(PauseReason.NONE);
-            strategy.clearLastError();
-            strategyRepository.save(strategy);
+            String symbol = strategy.symbol();
+            LOGGER.info(() -> "[POLL][EXPIRY_RESUBMIT][" + symbol + "] Reactivating expired entry order for automatic resubmission");
+            strategyService.repositionExpiredStrategy(strategy.id());
+            maybeStrategy = strategyRepository.findById(strategyId);
+            if (maybeStrategy.isEmpty()) {
+                return;
+            }
+            strategy = maybeStrategy.get();
         }
         if (strategy.status() != StrategyStatus.ACTIVE) {
             return;

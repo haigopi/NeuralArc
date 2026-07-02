@@ -20,4 +20,19 @@ class PortfolioCaptureUiStateStoreTest {
         assertTrue(store.state(liveStrategyA).buttonEnabled());
         assertTrue(store.state(paperStrategyB).buttonEnabled());
     }
+
+    @Test
+    void pausedMonitoringKeepsIndicatorWithoutReenablingPulse() {
+        PortfolioCaptureUiStateStore store = new PortfolioCaptureUiStateStore();
+        PortfolioCaptureUiStateStore.Key key = store.key(StrategyMode.PAPER, "workspace:strategy-a");
+
+        store.update(key, store.state(key).withIndicator("Monitoring Active", true).withPulse(true));
+        store.update(key, store.state(key)
+                .withButton("Liquidate Portfolio:Auto Paused [Closed Market]", true)
+                .withPulse(false));
+        store.update(key, store.state(key).withIndicator("Monitoring Active | Loop 2", true));
+
+        assertTrue(store.state(key).monitoringActive());
+        assertFalse(store.state(key).pulseActive());
+    }
 }

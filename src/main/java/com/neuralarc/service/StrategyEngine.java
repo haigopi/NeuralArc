@@ -33,6 +33,7 @@ public class StrategyEngine {
     private final MarketHoursService marketHoursService;
     private final StrategyProfitControlEvaluator profitControlEvaluator;
     private final TradeEmailNotificationService emailNotificationService;
+    private final ExpiredEntryOrderResubmitter expiredEntryOrderResubmitter;
     private final BaseBuyPriceGuard baseBuyPriceGuard = new BaseBuyPriceGuard();
     private WorkspaceCodeResolver workspaceCodeResolver = WorkspaceCodeResolver.unassigned();
 
@@ -84,6 +85,7 @@ public class StrategyEngine {
         this.appSettingsService = appSettingsService;
         this.marketHoursService = marketHoursService;
         this.emailNotificationService = emailNotificationService;
+        this.expiredEntryOrderResubmitter = new ExpiredEntryOrderResubmitter(orderRepository, alpacaClient);
         this.profitControlEvaluator = new StrategyProfitControlEvaluator(
                 strategyRepository,
                 stateMachine,
@@ -164,7 +166,7 @@ public class StrategyEngine {
         if (strategy.currentState() == StrategyLifecycleState.QUEUED_FOR_OPEN
                 && sessionOpen
                 && (position.isEmpty() || !position.get().exists())
-                && !isStageFilled(orders, StrategyStage.BASE_BUY)
+                && !StrategyStageSupport.isStageFilled(orders, StrategyStage.BASE_BUY)
                 && !hasPendingStage(orders, StrategyStage.BASE_BUY)) {
             submitBaseBuy(strategy, false, latestPrice);
             orders = orderRepository.findByStrategyId(strategy.id());
@@ -236,7 +238,7 @@ public class StrategyEngine {
         }
 
         if (position.isEmpty() || !position.get().exists()) {
-            if (!isStageFilled(orders, StrategyStage.BASE_BUY)) {
+            if (!StrategyStageSupport.isStageFilled(orders, StrategyStage.BASE_BUY)) {
                 submitBaseBuy(strategy, false);
                 return;
             }
@@ -246,9 +248,30 @@ public class StrategyEngine {
     }
 
     public boolean canAutoRetryFailed(Strategy strategy) {
-        List<AlpacaOrderData> remoteOpenOrders = alpacaClient.getOpenOrders(strategy.symbol());
-        Optional<AlpacaPositionData> position = alpacaClient.getPosition(strategy.symbol());
-        return remoteOpenOrders.isEmpty() && (position.isEmpty() || !position.get().exists());
+        return expiredEntryOrderResubmitter.canAutoRetryFailed(strategy);
+    }
+
+    public boolean canAutoResubmitExpiredEntryOrder(Strategy strategy) {
+        return expiredEntryOrderResubmitter.canAutoResubmit(strategy);
+    }
+
+    public StrategyOrder resubmitExpiredEntryOrder(Strategy strategy) {
+        Optional<StrategyStage> stage = expiredEntryOrderResubmitter.resolveStage(strategy);
+        if (stage.isEmpty()) {
+            return null;
+        }
+        return switch (stage.get()) {
+            case BASE_BUY -> submitBaseBuy(strategy, false);
+            case BUY_LIMIT_1 -> submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_1,
+                    strategy.buyLimit1Quantity(), strategy.buyLimit1Price(),
+                    StrategyLifecycleState.BUY_LIMIT_1_PLACED,
+                    "Buy Limit 1 order resubmitted after expiry", false);
+            case BUY_LIMIT_2 -> submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_2,
+                    strategy.buyLimit2Quantity(), strategy.buyLimit2Price(),
+                    StrategyLifecycleState.BUY_LIMIT_2_PLACED,
+                    "Buy Limit 2 order resubmitted after expiry", false);
+            default -> null;
+        };
     }
 
     private boolean ensureRemoteOrderPresence(
@@ -284,22 +307,22 @@ public class StrategyEngine {
             updatedLocalOrderState = true;
         }
 
-        if (!isStageFilled(orders, StrategyStage.BASE_BUY)) {
+        if (!StrategyStageSupport.isStageFilled(orders, StrategyStage.BASE_BUY)) {
             submitBaseBuy(strategy);
             return true;
         }
-        if (isStageFilled(orders, StrategyStage.BASE_BUY)
+        if (StrategyStageSupport.isStageFilled(orders, StrategyStage.BASE_BUY)
                 && strategy.lossBuyLevelsEnabled()
                 && strategy.buyLimit1Quantity() > 0
-                && !isStageFilled(orders, StrategyStage.BUY_LIMIT_1)) {
+                && !StrategyStageSupport.isStageFilled(orders, StrategyStage.BUY_LIMIT_1)) {
             submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_1, strategy.buyLimit1Quantity(), strategy.buyLimit1Price(),
                     StrategyLifecycleState.BUY_LIMIT_1_PLACED, "Buy Limit 1 recreated after missing Alpaca order", true);
             return true;
         }
-        if (isStageFilled(orders, StrategyStage.BUY_LIMIT_1)
+        if (StrategyStageSupport.isStageFilled(orders, StrategyStage.BUY_LIMIT_1)
                 && strategy.lossBuyLevelsEnabled()
                 && strategy.buyLimit2Quantity() > 0
-                && !isStageFilled(orders, StrategyStage.BUY_LIMIT_2)) {
+                && !StrategyStageSupport.isStageFilled(orders, StrategyStage.BUY_LIMIT_2)) {
             submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_2, strategy.buyLimit2Quantity(), strategy.buyLimit2Price(),
                     StrategyLifecycleState.BUY_LIMIT_2_PLACED, "Buy Limit 2 recreated after missing Alpaca order", true);
             return true;
@@ -322,7 +345,7 @@ public class StrategyEngine {
                             + " > triggerPrice=" + strategy.buyLimit1Price().toPlainString(), outcomes);
             return;
         }
-        if (!isStageFilled(orders, StrategyStage.BASE_BUY)) {
+        if (!StrategyStageSupport.isStageFilled(orders, StrategyStage.BASE_BUY)) {
             logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Base buy not fully filled", outcomes);
             return;
         }
@@ -353,7 +376,7 @@ public class StrategyEngine {
                             + " > triggerPrice=" + strategy.buyLimit2Price().toPlainString(), outcomes);
             return;
         }
-        if (!isStageFilled(orders, StrategyStage.BUY_LIMIT_1)) {
+        if (!StrategyStageSupport.isStageFilled(orders, StrategyStage.BUY_LIMIT_1)) {
             logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Buy Limit 1 not fully filled", outcomes);
             return;
         }
@@ -417,7 +440,7 @@ public class StrategyEngine {
         StrategyOrder filledExitOrder = latestFilledExitOrder.get();
         // Defensive exits (e.g., CLOSE_POSITION, STOP_LOSS) always complete the cycle.
         // Manual exits may restart if the strategy is configured to repeat after exit.
-        if (!strategy.restartAfterExitEnabled() || !isProfitableExitStage(filledExitOrder.stage())) {
+        if (!strategy.restartAfterExitEnabled() || !StrategyStageSupport.isProfitableExitStage(filledExitOrder.stage())) {
             stateMachine.transition(strategy, StrategyLifecycleState.COMPLETED,
                     StrategyEventType.STRATEGY_COMPLETED,
                     "Strategy cycle completed",
@@ -635,7 +658,7 @@ public class StrategyEngine {
                 strategy.clearLastError();
                 strategy.setLatestOrderStatus("QUEUED_FOR_OPEN");
                 strategy.setLatestAlpacaOrderId("");
-                strategy.setLastTriggeredRuleType(mapStageToRuleName(stage));
+                strategy.setLastTriggeredRuleType(StrategyStageSupport.ruleNameForStage(stage));
                 stateMachine.transition(strategy, StrategyLifecycleState.QUEUED_FOR_OPEN,
                         StrategyEventType.ORDER_STATUS_UPDATED,
                         "Order queued for next market open after broker rejection",
@@ -657,7 +680,7 @@ public class StrategyEngine {
         emailNotificationService.notifyBuyExpected(strategy, order);
         strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
         strategy.setLatestAlpacaOrderId(submitted.orderId());
-        strategy.setLastTriggeredRuleType(mapStageToRuleName(stage));
+        strategy.setLastTriggeredRuleType(StrategyStageSupport.ruleNameForStage(stage));
         stateMachine.transition(strategy, lifecycleState, StrategyEventType.ORDER_SUBMITTED, message, submitted.rawJson());
         strategyRepository.save(strategy);
         return order;
@@ -721,7 +744,7 @@ public class StrategyEngine {
                 strategy.clearLastError();
                 strategy.setLatestOrderStatus("QUEUED_FOR_OPEN");
                 strategy.setLatestAlpacaOrderId("");
-                strategy.setLastTriggeredRuleType(mapStageToRuleName(stage));
+                strategy.setLastTriggeredRuleType(StrategyStageSupport.ruleNameForStage(stage));
                 stateMachine.transition(strategy, StrategyLifecycleState.QUEUED_FOR_OPEN,
                         StrategyEventType.ORDER_STATUS_UPDATED,
                         "Order queued for next market open after broker rejection",
@@ -743,7 +766,7 @@ public class StrategyEngine {
         notifyImmediateFilledSell(strategy, order);
         strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
         strategy.setLatestAlpacaOrderId(submitted.orderId());
-        strategy.setLastTriggeredRuleType(mapStageToRuleName(stage));
+        strategy.setLastTriggeredRuleType(StrategyStageSupport.ruleNameForStage(stage));
         stateMachine.transition(strategy, lifecycleStateForSubmittedSell(order, lifecycleState), eventType, message, submitted.rawJson());
         strategyRepository.save(strategy);
         return order;
@@ -926,34 +949,16 @@ public class StrategyEngine {
                 || state == StrategyLifecycleState.PROFIT_HOLD_ACTIVE) {
             return false;
         }
-        return orders.stream().noneMatch(order -> isExitStage(order.stage()) && (order.isPending() || order.status() == StrategyOrderStatus.FILLED));
+        return orders.stream().noneMatch(order -> StrategyStageSupport.isExitStage(order.stage())
+                && (order.isPending() || order.status() == StrategyOrderStatus.FILLED));
     }
 
     private Optional<StrategyOrder> latestFilledExitOrder(List<StrategyOrder> orders) {
         return orders.stream()
-                .filter(order -> isExitStage(order.stage()) && order.status() == StrategyOrderStatus.FILLED)
+                .filter(order -> StrategyStageSupport.isExitStage(order.stage()) && order.status() == StrategyOrderStatus.FILLED)
                 .max(Comparator.comparing(StrategyOrder::filledAt,
                         Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())));
-    }
-
-    private boolean isExitStage(StrategyStage stage) {
-        return stage == StrategyStage.TARGET_SELL
-                || stage == StrategyStage.PROFIT_EXIT
-                || stage == StrategyStage.STOP_LOSS
-                || stage == StrategyStage.LOSS_EXIT
-                || stage == StrategyStage.MANUAL_EXIT
-                || stage == StrategyStage.CLOSE_POSITION;
-    }
-
-    private boolean isProfitableExitStage(StrategyStage stage) {
-        return stage == StrategyStage.TARGET_SELL
-                || stage == StrategyStage.PROFIT_EXIT
-                || stage == StrategyStage.MANUAL_EXIT;
-    }
-
-    private boolean isStageFilled(List<StrategyOrder> orders, StrategyStage stage) {
-        return orders.stream().anyMatch(order -> order.stage() == stage && order.status() == StrategyOrderStatus.FILLED);
     }
 
     private void logPoll(Strategy strategy, String scope, String status, String details) {
@@ -973,18 +978,6 @@ public class StrategyEngine {
         if (outcomes != null) {
             outcomes.add(new RuleOutcome(ruleName, status, details));
         }
-    }
-
-    private String mapStageToRuleName(StrategyStage stage) {
-        return switch (stage) {
-            case BASE_BUY -> "BUY_RULE";
-            case BUY_LIMIT_1 -> "LOSS_BUY_RULE";
-            case BUY_LIMIT_2 -> "LOSS_INVESTMENT_BUY_RULE";
-            case TARGET_SELL -> "SELL_RULE";
-            case STOP_LOSS -> "STOP_LOSS_RULE";
-            case LOSS_EXIT, PROFIT_EXIT, MANUAL_BUY, MANUAL_EXIT, CLOSE_POSITION -> stage.name();
-            default -> stage.name();
-        };
     }
 
     private boolean isAutoExecutionAllowed(String strategyId) {

@@ -587,6 +587,56 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void pollCycleResubmitsExpiredFailedBuyLimit1WhenPositionExists() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        strategy.setLatestAlpacaOrderId("ord-expired");
+        strategy.setLastTriggeredRuleType("LOSS_BUY_RULE");
+        strategy.setResubmitOnExpiryEnabled(true);
+        f.strategies.save(strategy);
+        f.orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(),
+                strategy.id(),
+                StrategyStage.BUY_LIMIT_1,
+                "ord-expired",
+                "client-expired",
+                "AAPL",
+                StrategyOrderSide.BUY,
+                StrategyOrderType.LIMIT,
+                new BigDecimal("6.00"),
+                BigDecimal.ZERO,
+                new BigDecimal("5"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                StrategyOrderStatus.SUBMITTED,
+                Instant.now(),
+                Instant.now(),
+                null,
+                "{}"
+        ));
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("8.50"), "{}"));
+        f.alpaca.orderById.clear();
+
+        f.service.pollDueStrategies();
+
+        assertDoesNotThrow(() -> f.awaitTrue(() -> {
+            Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+            return updated.status() == StrategyStatus.ACTIVE
+                    && f.orders.findByStrategyId(strategy.id()).stream()
+                    .anyMatch(order -> order.stage() == StrategyStage.BUY_LIMIT_1 && order.isPending());
+        }, "Expired buy limit 1 should be resubmitted while the base position remains open"));
+
+        Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, updated.status());
+        assertTrue(f.orders.findByStrategyId(strategy.id()).stream()
+                .anyMatch(order -> order.stage() == StrategyStage.BUY_LIMIT_1 && order.isPending()));
+        assertEquals(StrategyOrderStatus.CANCELED, f.orders.findByClientOrderId("client-expired").orElseThrow().status());
+    }
+
+    @Test
     void pollCycleDoesNotResubmitExpiredFailedStrategyWhenDisabled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);

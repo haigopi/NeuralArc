@@ -398,7 +398,7 @@ public final class StrategyTablePresenter {
     }
 
     private String buyLimitActiveLabel(String label, BigDecimal price) {
-        return label + " active"
+        return "Loss " + label.toLowerCase() + " active"
                 + priceDescription(" @ $", price)
                 + " - monitoring loss buy";
     }

@@ -40,7 +40,7 @@ class StrategyTablePresenterTest {
 
         String label = presenter.displayStatusLabel(strategy, false, false, false);
 
-        assertEquals("Buy limit 1 active @ $95.00 - monitoring loss buy", label);
+        assertEquals("Loss buy limit 1 active @ $95.00 - monitoring loss buy", label);
     }
 
     @Test
