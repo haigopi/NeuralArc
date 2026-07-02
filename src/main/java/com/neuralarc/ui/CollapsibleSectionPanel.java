@@ -78,7 +78,8 @@ final class CollapsibleSectionPanel extends JPanel {
 
     @Override
     public Dimension getMinimumSize() {
-        Dimension preferred = getPreferredSize();
-        return new Dimension(0, preferred.height);
+        java.awt.Insets insets = getInsets();
+        int minimumHeight = TITLE_CLICK_HEIGHT + insets.top + insets.bottom;
+        return new Dimension(0, minimumHeight);
     }
 }

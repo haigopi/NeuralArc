@@ -983,6 +983,83 @@
       font-size: .92rem;
     }
 
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 18px;
+      width: 100%;
+    }
+
+    .workflow-card {
+      overflow: hidden;
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, rgba(12, 28, 41, 0.92), rgba(8, 18, 29, 0.84)),
+        rgba(255, 255, 255, 0.035);
+      box-shadow: var(--shadow);
+      text-align: left;
+    }
+
+    .workflow-shot {
+      position: relative;
+      height: 260px;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(124, 246, 196, 0.2), transparent 36%),
+        #0d1d2b;
+    }
+
+    .workflow-shot::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(5, 12, 19, 0.02), rgba(5, 12, 19, 0.34)),
+        radial-gradient(circle at 78% 8%, rgba(143, 217, 255, 0.16), transparent 30%);
+      mix-blend-mode: screen;
+      opacity: .42;
+    }
+
+    .workflow-shot img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: cover;
+      object-position: top center;
+      filter: saturate(0.9) brightness(0.88) contrast(1.06);
+    }
+
+    .workflow-copy {
+      padding: 18px 18px 20px;
+    }
+
+    .workflow-step {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      color: var(--accent);
+      font-size: .78rem;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .workflow-copy h3 {
+      margin: 0 0 10px;
+      font-size: 1.06rem;
+      color: var(--text);
+    }
+
+    .workflow-copy p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.78;
+      font-size: .94rem;
+    }
+
     .tech-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1197,6 +1274,7 @@
       .rest-grid,
       .feature-grid,
       .preview-grid,
+      .workflow-grid,
       .tech-grid,
       .selling-grid {
         grid-template-columns: 1fr;
@@ -1262,6 +1340,10 @@
 
       .preview-visual {
         height: 200px;
+      }
+
+      .workflow-shot {
+        height: 220px;
       }
 
       .trading-flow {
@@ -1463,45 +1545,85 @@ live: manual promotion only</pre>
           <p class="panel-intro panel-intro--wide">Connect Alpaca, tune the strategy, and let NeuralArc watch the market from your own desktop. Continuous monitoring, automated decisions, risk controls, profit protection, and liquidation workflows come together in one operator console.</p>
           <div class="preview-grid">
             <article class="preview-card" data-aos="fade-up" data-aos-delay="60" data-aos-duration="800">
-              <div class="preview-visual"><img src="./images/workflow-dashboard.png" alt="NeuralArc current strategies dashboard"></div>
+              <div class="preview-visual"><img src="./images/workflow-dashboard.png" alt="NeuralArc live trading dashboard showing workspaces, strategy grid, status panels, and operator controls"></div>
               <div class="preview-copy">
-                <h3>Continuous Strategy Command</h3>
-                <p>Watch active strategies, status, price movement, booked results, and P&amp;L in one console. Your machine stays focused on the next rule instead of forcing you to chase every tick.</p>
+                <h3>Run the desk from one live command view</h3>
+                <p>The main dashboard keeps mode, workspaces, strategy rows, portfolio state, and operator actions in one place so the trading loop stays visible.</p>
               </div>
             </article>
             <article class="preview-card" data-aos="fade-up" data-aos-delay="110" data-aos-duration="800">
-              <div class="preview-visual"><img src="./images/workflow-strategy-dialog.png" alt="NeuralArc stock strategy setup dialog"></div>
+              <div class="preview-visual"><img src="./images/workflow-strategy-dialog.png" alt="NeuralArc stock strategy dialog for defining symbol, entry rules, and automated exits"></div>
               <div class="preview-copy">
-                <h3>Automated Decisions</h3>
-                <p>Set buy, sell, risk, and repeat behavior before the trade starts. NeuralArc keeps the workflow disciplined when the market starts moving.</p>
+                <h3>Build the trade plan before the market opens</h3>
+                <p>Define the symbol, buy levels, time in force, risk controls, and exit automation in one workflow before the strategy is saved.</p>
               </div>
             </article>
             <article class="preview-card" data-aos="fade-up" data-aos-delay="160" data-aos-duration="800">
-              <div class="preview-visual"><img src="./images/workflow-profit-controls.png" alt="NeuralArc automated profit control settings"></div>
+              <div class="preview-visual"><img src="./images/workflow-profit-controls.png" alt="NeuralArc profit control settings for sell trigger, automatic stop sell, and profit hold"></div>
               <div class="preview-copy">
-                <h3>Profit Protection Modes</h3>
-                <p>Choose the automated profit strategy that fits the position. Trigger, stop, and trailing controls are built to protect upside while keeping risk visible.</p>
+                <h3>Choose exactly how profits are protected</h3>
+                <p>Switch between sell trigger, broker trailing protection, or local profit hold logic while keeping manual intervention available.</p>
               </div>
             </article>
             <article class="preview-card" data-aos="fade-up" data-aos-delay="60" data-aos-duration="800">
-              <div class="preview-visual"><img src="./images/workflow-portfolio-actions.png" alt="NeuralArc portfolio actions controls"></div>
+              <div class="preview-visual"><img src="./images/workflow-portfolio-actions.png" alt="NeuralArc liquidate portfolio dialog with target monitoring and automated re-entry options"></div>
               <div class="preview-copy">
-                <h3>Automatic Liquidations</h3>
-                <p>Refresh the portfolio, cancel pending buys, liquidate eligible positions, or promote strategies when the setup is ready. The app gives you action buttons for real operating moments.</p>
+                <h3>Automate portfolio liquidation when targets hit</h3>
+                <p>Monitor portfolio-level targets, include or exclude losses, and optionally re-enter with Smart Picks after liquidation completes.</p>
               </div>
             </article>
             <article class="preview-card" data-aos="fade-up" data-aos-delay="110" data-aos-duration="800">
-              <div class="preview-visual"><img src="./images/workflow-current-strategies.png" alt="NeuralArc strategy grid status and actions"></div>
+              <div class="preview-visual"><img src="./images/workflow-current-strategies.png" alt="NeuralArc strategy grid showing active rows, pending limit buys, status text, and polling progress"></div>
               <div class="preview-copy">
-                <h3>Smart Risk Visibility</h3>
-                <p>Each strategy shows the current state, next wait condition, entry source, exit source, and booked outcome. That keeps the desktop running like a trading operations station, not a spreadsheet.</p>
+                <h3>Status text, polling, and row actions stay aligned</h3>
+                <p>Each row shows the current rule in force, whether a broker order is pending, the polling countdown, and the available actions.</p>
               </div>
             </article>
             <article class="preview-card" data-aos="fade-up" data-aos-delay="160" data-aos-duration="800">
-              <div class="preview-visual"><img src="./images/workflow-settings.png" alt="NeuralArc settings and broker configuration"></div>
+              <div class="preview-visual"><img src="./images/workflow-settings.png" alt="NeuralArc settings dialog for broker credentials, notifications, AI provider, and default behavior"></div>
               <div class="preview-copy">
-                <h3>Hands-Free Operating Setup</h3>
-                <p>Broker mode, notifications, polling preferences, and safeguards live in one place. Set the machine up, review the controls, and let the routine work begin.</p>
+                <h3>Configure broker access and operator defaults</h3>
+                <p>Manage connection mode, notifications, AI provider routing, trading-hours behavior, and default strategy settings from one screen.</p>
+              </div>
+            </article>
+          </div>
+        </article>
+
+        <article class="panel" style="grid-column: 1 / -1;" data-aos="fade-up" data-aos-duration="900" data-aos-easing="ease-out-cubic">
+          <span class="section-chip">How It Works</span>
+          <h2>What the product actually does on your desktop.</h2>
+          <p class="panel-intro panel-intro--wide">These screenshots show the normal operator flow: configure the broker boundary, create the trade plan, monitor the live grid, and automate portfolio liquidation when the target condition is reached.</p>
+          <div class="workflow-grid">
+            <article class="workflow-card" data-aos="fade-up" data-aos-delay="60" data-aos-duration="800">
+              <div class="workflow-shot"><img src="./images/workflow-settings.png" alt="NeuralArc settings screen with broker configuration, connection verification, and operator defaults"></div>
+              <div class="workflow-copy">
+                <span class="workflow-step">Step 1 • Connect</span>
+                <h3>Set the broker boundary and operating defaults</h3>
+                <p>Start by choosing paper or live mode, verifying the broker connection, and saving the notification, AI-provider, and trading-hours defaults the desktop should enforce.</p>
+              </div>
+            </article>
+            <article class="workflow-card" data-aos="fade-up" data-aos-delay="100" data-aos-duration="800">
+              <div class="workflow-shot"><img src="./images/workflow-strategy-dialog.png" alt="NeuralArc strategy setup dialog showing symbol, buy rules, and automated exit controls"></div>
+              <div class="workflow-copy">
+                <span class="workflow-step">Step 2 • Configure</span>
+                <h3>Define the strategy contract once</h3>
+                <p>Create the symbol plan with entry price, loss buys, stop loss, profit logic, expiry behavior, and repost rules. NeuralArc stores that contract locally and executes against it while the strategy is active.</p>
+              </div>
+            </article>
+            <article class="workflow-card" data-aos="fade-up" data-aos-delay="140" data-aos-duration="800">
+              <div class="workflow-shot"><img src="./images/workflow-dashboard.png" alt="NeuralArc main dashboard showing strategy tabs, grid status, P and L, and operator controls"></div>
+              <div class="workflow-copy">
+                <span class="workflow-step">Step 3 • Monitor</span>
+                <h3>Monitor the machine from the grid</h3>
+                <p>The dashboard keeps workspace tabs, status labels, unrealized P&amp;L, pending limit buys, and polling progress visible in one place so the operator can verify that runtime behavior still matches the trade plan.</p>
+              </div>
+            </article>
+            <article class="workflow-card" data-aos="fade-up" data-aos-delay="180" data-aos-duration="800">
+              <div class="workflow-shot"><img src="./images/workflow-portfolio-actions.png" alt="NeuralArc portfolio liquidation dialog with target monitoring and post-liquidation automation settings"></div>
+              <div class="workflow-copy">
+                <span class="workflow-step">Step 4 • Act</span>
+                <h3>Automate liquidation when the portfolio target is met</h3>
+                <p>When the portfolio reaches a configured threshold, the operator can trigger one-time liquidation or run a continuous loop that liquidates, re-enters with Smart Picks, and resumes monitoring.</p>
               </div>
             </article>
           </div>
