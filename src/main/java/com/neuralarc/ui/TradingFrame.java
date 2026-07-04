@@ -239,7 +239,7 @@ public class TradingFrame extends JFrame {
     private final JButton addStrategyButton = new JButton("New Strategy");
     private final JButton smartPicksButton = new JButton("Smart Picks");
     private final JPopupMenu smartPicksMenu = new JPopupMenu();
-    private final JButton riskDashboardButton = new JButton("Risk");
+    private final JButton riskDashboardButton = new JButton("Risk Analysis");
     private final JButton portfolioActionsButton = new JButton("Portfolio");
     private final JButton settingsButton = new JButton("Settings");
     private final JButton legalDisclosureButton = new JButton("Legal Disclosure");
@@ -1194,7 +1194,6 @@ public class TradingFrame extends JFrame {
 
         JPanel headerControlsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         headerControlsPanel.setOpaque(false);
-        headerControlsPanel.add(addStrategyButton);
         headerControlsPanel.add(smartPicksButton);
         headerControlsPanel.add(refreshPortfolioButton);
         headerControlsPanel.add(riskDashboardButton);
@@ -1517,6 +1516,7 @@ public class TradingFrame extends JFrame {
                 this::currentStrategiesHeadingText,
                 this::tradeHistoryHeadingText
         );
+        refreshNewStrategyButtonPresentation();
         installWorkspaceTabContextMenu();
         wireGridSearchFields();
         refreshGridSearchVisibility();
@@ -2035,8 +2035,7 @@ public class TradingFrame extends JFrame {
                 340
         ));
         riskDashboardButton.addActionListener(e -> openRiskDashboard());
-        addStrategyButton.setToolTipText(TooltipStyler.text(
-                "Add a new stock strategy (symbol, entry, stop, target, and automation) to the current mode.", 320));
+        refreshNewStrategyButtonPresentation();
         portfolioActionsButton.setToolTipText(TooltipStyler.text(
                 "Portfolio actions: bulk operations across your strategies and positions.", 320));
         refreshPortfolioButton.setToolTipText(TooltipStyler.text(
@@ -3924,6 +3923,9 @@ public class TradingFrame extends JFrame {
             log("[" + strategy.symbol() + "] Synced from Alpaca and resumed locally.");
         }
         applyStartupViewMode(storedStrategies);
+        if (strategyWorkspaceTabs != null) {
+            strategyWorkspaceTabs.rebuild();
+        }
         if (storedStrategies.isEmpty()) {
             refreshPanels();
             updateStatusBar();
@@ -4048,6 +4050,16 @@ public class TradingFrame extends JFrame {
             userActionLog.canceled("Add New Stock Strategy");
             return;
         }
+        if (strategyWorkspaceTabs != null && strategyWorkspaceTabs.isHistorySelected()) {
+            userActionLog.failed("Add New Stock Strategy", "Select All Stocks or a strategy workspace tab first.");
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Switch to All Stocks or a strategy workspace tab before adding a new strategy.",
+                    "Strategy Tab Required",
+                    JOptionPane.WARNING_MESSAGE
+            );
+            return;
+        }
         if (!connectionOk || tradingApi == null) {
             userActionLog.failed("Add New Stock Strategy", "Connection is required before adding a strategy.");
             JOptionPane.showMessageDialog(this, "Please complete Settings and verify the connection before adding a strategy.", "Connection Required", JOptionPane.WARNING_MESSAGE);
@@ -4075,6 +4087,7 @@ public class TradingFrame extends JFrame {
         }
 
         StrategyMode targetMode = selectedViewMode;
+        String targetWorkspaceId = selectedWorkspaceForNewStrategy();
         boolean allowDuplicateSymbols = settingsDialog.appliedAllowDuplicateSymbolStrategies();
         if (DuplicateSymbolPolicy.wouldBeDuplicate(config.symbol(), targetMode, strategyRepository.findAll(), allowDuplicateSymbols)) {
             userActionLog.failed("Add New Stock Strategy", "An active or paused strategy for " + config.symbol() + " already exists.");
@@ -4090,7 +4103,7 @@ public class TradingFrame extends JFrame {
                 config,
                 targetMode
         );
-        NewStrategyWorkspaceAssignment.apply(strategy, selectedWorkspaceId, workspaceService);
+        NewStrategyWorkspaceAssignment.apply(strategy, targetWorkspaceId, workspaceService);
         StrategyService modeAwareService = strategyServiceForMode(targetMode);
         if (modeAwareService == null) {
             userActionLog.failed("Add New Stock Strategy", targetMode + " broker client is not configured.");
@@ -5652,6 +5665,10 @@ public class TradingFrame extends JFrame {
     private JPanel createStrategiesBottomPanel() {
         JPanel bottom = new JPanel(new BorderLayout());
         bottom.setOpaque(false);
+        JPanel actionsStart = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        actionsStart.setOpaque(false);
+        actionsStart.add(addStrategyButton);
+        bottom.add(actionsStart, BorderLayout.WEST);
         bottom.add(workspaceSummaryLabel, BorderLayout.CENTER);
         gapRocketAnalyzeButton.setVisible(false);
         gapRocketAnalyzeButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
@@ -5743,6 +5760,35 @@ public class TradingFrame extends JFrame {
         actions.add(swingAnalyzeButton);
         bottom.add(actions, BorderLayout.EAST);
         return bottom;
+    }
+
+    private void refreshNewStrategyButtonPresentation() {
+        boolean historySelected = strategyWorkspaceTabs != null && strategyWorkspaceTabs.isHistorySelected();
+        addStrategyButton.setVisible(!historySelected);
+        String targetLabel = selectedWorkspaceId == null
+                ? "All Stocks"
+                : workspaceService.findById(selectedWorkspaceId).map(StrategyWorkspace::name).orElse("This Tab");
+        addStrategyButton.setText("New Strategy in " + abbreviateWorkspaceButtonLabel(targetLabel));
+        addStrategyButton.setToolTipText(TooltipStyler.text(
+                "Add a new stock strategy (symbol, entry, stop, target, and automation) directly into "
+                        + targetLabel + " for " + selectedModeLabel() + " mode.",
+                360
+        ));
+    }
+
+    private String selectedWorkspaceForNewStrategy() {
+        if (strategyWorkspaceTabs != null && strategyWorkspaceTabs.isHistorySelected()) {
+            return null;
+        }
+        return selectedWorkspaceId;
+    }
+
+    private String abbreviateWorkspaceButtonLabel(String value) {
+        if (value == null || value.isBlank()) {
+            return "This Tab";
+        }
+        String trimmed = value.trim();
+        return trimmed.length() <= 24 ? trimmed : trimmed.substring(0, 21) + "...";
     }
 
     private JComponent wrapGridWithSearch(JPanel searchPanel, JComponent grid) {
@@ -6049,6 +6095,7 @@ public class TradingFrame extends JFrame {
     private void onWorkspaceTabSelected(String workspaceId) {
         boolean workspaceChanged = !Objects.equals(selectedWorkspaceId, workspaceId);
         selectedWorkspaceId = workspaceId;
+        refreshNewStrategyButtonPresentation();
         if (workspaceChanged && !currentStrategiesSearchField.getText().isBlank()) {
             currentStrategiesSearchField.setText("");
         }
