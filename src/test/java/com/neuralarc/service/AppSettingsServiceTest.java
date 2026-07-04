@@ -90,12 +90,12 @@ class AppSettingsServiceTest {
     }
 
     @Test
-    void allowDuplicateSymbolStrategiesDefaultsToFalseWhenNotPersisted() throws Exception {
+    void allowDuplicateSymbolStrategiesDefaultsToTrueWhenNotPersisted() throws Exception {
         AppSettingsService service = new AppSettingsService(tempDir.resolve("settings-nodup.db"));
-        // load without ever saving the new field — should fall back to default (false)
+        // load without ever saving the new field — should fall back to default (true)
         AppSettingsService.AppSettings loaded = service.load();
 
-        assertFalse(loaded.allowDuplicateSymbolStrategies());
+        assertTrue(loaded.allowDuplicateSymbolStrategies());
         assertFalse(loaded.emailOnBuyExpected());
         assertFalse(loaded.emailOnSellExecuted());
         assertEquals(AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS, loaded.defaultStrategyPollingSeconds());

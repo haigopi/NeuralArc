@@ -81,13 +81,16 @@ public class SmartPicksSimulationPlacementController {
                     selection.stock().symbol(),
                     targetMode,
                     gateway.repository().findAll(),
-                    gateway.allowDuplicateSymbols()
+                    gateway.allowDuplicateSymbols(),
+                    gateway.targetWorkspaceId(),
+                    ""
             )) {
                 skipped++;
                 skippedReasons.add(selection.stock().symbol() + ": duplicate symbol policy blocked a new "
-                        + modeLabel().toLowerCase(Locale.ROOT) + " strategy");
+                        + modeLabel().toLowerCase(Locale.ROOT) + " strategy in this workspace");
                 gateway.log("[Smart Picks] Skipped " + selection.stock().symbol()
-                        + ": duplicate symbol policy blocked a new " + modeLabel().toLowerCase(Locale.ROOT) + " strategy.");
+                        + ": duplicate symbol policy blocked a new " + modeLabel().toLowerCase(Locale.ROOT)
+                        + " strategy in this workspace.");
                 continue;
             }
             BigDecimal effectiveBaseBuyPrice = effectiveBaseBuyPrice(selection, recommendation);
@@ -281,6 +284,10 @@ public class SmartPicksSimulationPlacementController {
         boolean confirmReplaceWaitingPaperStrategy(String symbol);
 
         boolean allowDuplicateSymbols();
+
+        default String targetWorkspaceId() {
+            return null;
+        }
 
         default int defaultStrategyPollingSeconds() {
             return AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS;

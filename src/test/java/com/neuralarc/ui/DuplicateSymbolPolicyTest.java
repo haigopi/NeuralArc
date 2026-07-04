@@ -186,6 +186,34 @@ class DuplicateSymbolPolicyTest {
         assertFalse(DuplicateSymbolPolicy.wouldBeDuplicate("NVDA", StrategyMode.PAPER, List.of(active), true));
     }
 
+    @Test
+    void allowDuplicatesTrueStillBlocksSameWorkspace() {
+        Strategy active = strategy("AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        active.setWorkspaceId("workspace-a");
+
+        assertTrue(DuplicateSymbolPolicy.wouldBeDuplicate(
+                "AAPL", StrategyMode.PAPER, List.of(active), true, "workspace-a", ""));
+    }
+
+    @Test
+    void allowDuplicatesTrueAllowsDifferentWorkspace() {
+        Strategy active = strategy("AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        active.setWorkspaceId("workspace-a");
+
+        assertFalse(DuplicateSymbolPolicy.wouldBeDuplicate(
+                "AAPL", StrategyMode.PAPER, List.of(active), true, "workspace-b", ""));
+    }
+
+    @Test
+    void allowDuplicatesTrueTreatsUnassignedRowsAsSameWorkspace() {
+        Strategy active = strategy("AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE);
+
+        assertTrue(DuplicateSymbolPolicy.wouldBeDuplicate(
+                "AAPL", StrategyMode.PAPER, List.of(active), true, null, ""));
+        assertFalse(DuplicateSymbolPolicy.wouldBeDuplicate(
+                "AAPL", StrategyMode.PAPER, List.of(active), true, "workspace-b", ""));
+    }
+
     // ---- helpers ----
 
     private static Strategy strategy(String symbol, StrategyMode mode, StrategyStatus status) {

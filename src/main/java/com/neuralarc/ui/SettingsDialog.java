@@ -199,8 +199,8 @@ public class SettingsDialog extends JDialog {
         );
 
         JLabel allowDuplicateSymbolsDescription = mutedDescription(
-                "Allows multiple strategies for the same symbol. "
-                        + "When disabled, only one active or paused strategy per symbol is allowed."
+                "Allows multiple strategies for the same symbol across different workspaces. "
+                        + "The same symbol is still blocked inside the same workspace."
         );
 
         JPanel marketHoursContent = new JPanel();

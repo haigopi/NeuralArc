@@ -2800,6 +2800,7 @@ public class TradingFrame extends JFrame {
             }
             @Override public boolean confirmReplaceWaitingPaperStrategy(String symbol) { return true; }
             @Override public boolean allowDuplicateSymbols() { return settingsDialog.appliedAllowDuplicateSymbolStrategies(); }
+            @Override public String targetWorkspaceId() { return null; }
             @Override public int defaultStrategyPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
             @Override public boolean defaultRepeatCycleAfterProfitExitEnabled() { return settingsDialog.appliedDefaultRepeatCycleAfterProfitExitEnabled(); }
             @Override public boolean defaultResubmitOnExpiryEnabled() { return settingsDialog.appliedDefaultResubmitOnExpiryEnabled(); }
@@ -4089,9 +4090,21 @@ public class TradingFrame extends JFrame {
         StrategyMode targetMode = selectedViewMode;
         String targetWorkspaceId = selectedWorkspaceForNewStrategy();
         boolean allowDuplicateSymbols = settingsDialog.appliedAllowDuplicateSymbolStrategies();
-        if (DuplicateSymbolPolicy.wouldBeDuplicate(config.symbol(), targetMode, strategyRepository.findAll(), allowDuplicateSymbols)) {
+        if (DuplicateSymbolPolicy.wouldBeDuplicate(
+                config.symbol(),
+                targetMode,
+                strategyRepository.findAll(),
+                allowDuplicateSymbols,
+                targetWorkspaceId,
+                ""
+        )) {
             userActionLog.failed("Add New Stock Strategy", "An active or paused strategy for " + config.symbol() + " already exists.");
-            JOptionPane.showMessageDialog(this, "An active or paused strategy for this symbol already exists. Use Edit on the grid row.", "Duplicate Symbol", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    duplicateSymbolAlertMessage(config.symbol(), targetWorkspaceId, allowDuplicateSymbols, true),
+                    "Duplicate Symbol",
+                    JOptionPane.WARNING_MESSAGE
+            );
             syncStrategiesFromRepository();
             refreshStrategyTableData();
             return;
@@ -4241,10 +4254,11 @@ public class TradingFrame extends JFrame {
                 return;
             }
             boolean allowDuplicates = settingsDialog.appliedAllowDuplicateSymbolStrategies();
+            String targetWorkspaceId = selectedWorkspaceForNewStrategy();
             if (DuplicateSymbolPolicy.wouldBeDuplicate(
-                    config.symbol(), targetMode, strategyRepository.findAll(), allowDuplicates)) {
+                    config.symbol(), targetMode, strategyRepository.findAll(), allowDuplicates, targetWorkspaceId, "")) {
                 JOptionPane.showMessageDialog(TradingFrame.this,
-                        "An active or paused strategy for this symbol already exists.",
+                        duplicateSymbolAlertMessage(config.symbol(), targetWorkspaceId, allowDuplicates, false),
                         "Duplicate Symbol",
                         JOptionPane.WARNING_MESSAGE);
                 return;
@@ -4255,6 +4269,7 @@ public class TradingFrame extends JFrame {
                     config,
                     targetMode
             );
+            NewStrategyWorkspaceAssignment.apply(strategy, targetWorkspaceId, workspaceService);
             strategy.setLastEvent(smartPicksEntrySourceEvent(selection, strategy.baseBuyLimitPrice(), targetMode));
             StrategyService service = strategyServiceForMode(targetMode);
             if (service == null) {
@@ -4359,6 +4374,7 @@ public class TradingFrame extends JFrame {
                 return choice == JOptionPane.YES_OPTION;
             }
             @Override public boolean allowDuplicateSymbols() { return settingsDialog.appliedAllowDuplicateSymbolStrategies(); }
+            @Override public String targetWorkspaceId() { return selectedWorkspaceForNewStrategy(); }
             @Override public int defaultStrategyPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
             @Override public boolean defaultRepeatCycleAfterProfitExitEnabled() { return settingsDialog.appliedDefaultRepeatCycleAfterProfitExitEnabled(); }
             @Override public boolean defaultResubmitOnExpiryEnabled() { return settingsDialog.appliedDefaultResubmitOnExpiryEnabled(); }
@@ -4403,14 +4419,21 @@ public class TradingFrame extends JFrame {
                 entry.strategy.mode(),
                 strategyRepository.findAll(),
                 allowDuplicateSymbols,
+                entry.strategy.workspaceId(),
                 entry.strategy.id()
         )) {
             userActionLog.failed("Edit Strategy " + entry.strategy.symbol(), "An active or paused strategy for " + updated.symbol() + " already exists.");
-            JOptionPane.showMessageDialog(this, "An active or paused strategy for this symbol already exists.", "Duplicate Symbol", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    duplicateSymbolAlertMessage(updated.symbol(), entry.strategy.workspaceId(), allowDuplicateSymbols, false),
+                    "Duplicate Symbol",
+                    JOptionPane.WARNING_MESSAGE
+            );
             return;
         }
 
         Strategy updatedStrategy = Strategy.fromConfig(entry.strategy.id(), entry.strategy.name(), updated, entry.strategy.mode());
+        updatedStrategy.setWorkspaceId(entry.strategy.workspaceId());
         updatedStrategy.setStatus(entry.strategy.status());
         updatedStrategy.setCurrentState(entry.strategy.currentState());
         updatedStrategy.setLastPolledAt(entry.strategy.lastPolledAt());
@@ -5780,6 +5803,25 @@ public class TradingFrame extends JFrame {
             return null;
         }
         return selectedWorkspaceId;
+    }
+
+    private String duplicateSymbolAlertMessage(
+            String symbol,
+            String workspaceId,
+            boolean allowDuplicateSymbols,
+            boolean suggestEdit
+    ) {
+        String normalizedSymbol = symbol == null || symbol.isBlank() ? "This symbol" : symbol.trim().toUpperCase(Locale.ROOT);
+        if (!allowDuplicateSymbols) {
+            return normalizedSymbol + " already has an active or paused strategy in this mode."
+                    + (suggestEdit ? " Use Edit on the grid row." : "");
+        }
+        String workspaceLabel = workspaceId == null || workspaceId.isBlank()
+                ? "All Stocks"
+                : workspaceService.findById(workspaceId).map(StrategyWorkspace::name).orElse("this workspace");
+        return normalizedSymbol + " already has an active or paused strategy in " + workspaceLabel + ".\n\n"
+                + "This setting allows the same symbol only across different workspaces."
+                + (suggestEdit ? " Move one strategy to another workspace or use Edit on the existing row." : "");
     }
 
     private String abbreviateWorkspaceButtonLabel(String value) {

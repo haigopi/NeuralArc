@@ -21,7 +21,7 @@ import java.util.Properties;
 public class AppSettingsService {
     public static final boolean DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED = true;
     public static final boolean DEFAULT_EXTENDED_HOURS_TRADING_ENABLED = false;
-    public static final boolean DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES = false;
+    public static final boolean DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES = true;
     public static final boolean DEFAULT_EMAIL_ON_BUY_EXPECTED = false;
     public static final boolean DEFAULT_EMAIL_ON_SELL_EXECUTED = false;
     public static final int DEFAULT_STRATEGY_POLLING_SECONDS = 60;
