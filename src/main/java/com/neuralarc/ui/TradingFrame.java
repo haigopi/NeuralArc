@@ -5552,6 +5552,9 @@ public class TradingFrame extends JFrame {
             captureGbc.gridx = 1;
             captureGbc.insets = new Insets(0, 0, 0, 0);
             captureControls.add(capturePortfolioButton, captureGbc);
+            captureGbc.gridx = 2;
+            captureGbc.insets = new Insets(0, 8, 0, 0);
+            captureControls.add(addStrategyButton, captureGbc);
             panel.add(captureControls, BorderLayout.EAST);
         } else if (searchField == tradeHistorySearchField) {
             panel.add(createTradeHistoryGroupByPanel(), BorderLayout.CENTER);
@@ -5665,10 +5668,6 @@ public class TradingFrame extends JFrame {
     private JPanel createStrategiesBottomPanel() {
         JPanel bottom = new JPanel(new BorderLayout());
         bottom.setOpaque(false);
-        JPanel actionsStart = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        actionsStart.setOpaque(false);
-        actionsStart.add(addStrategyButton);
-        bottom.add(actionsStart, BorderLayout.WEST);
         bottom.add(workspaceSummaryLabel, BorderLayout.CENTER);
         gapRocketAnalyzeButton.setVisible(false);
         gapRocketAnalyzeButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
@@ -5940,7 +5939,7 @@ public class TradingFrame extends JFrame {
     }
 
     private void refreshGridSearchVisibility() {
-        boolean showCurrentStrategiesSearch = currentStrategiesStockCountInSelectedWorkspace() >= GRID_SEARCH_MIN_STOCK_COUNT;
+        boolean showCurrentStrategiesSearch = true;
         boolean hasTradeHistoryRows = tradeHistoryStockCount() > 0;
 
         if (!showCurrentStrategiesSearch && !currentStrategiesSearchField.getText().isBlank()) {
