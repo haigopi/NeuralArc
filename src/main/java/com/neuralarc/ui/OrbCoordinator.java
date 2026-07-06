@@ -3,10 +3,12 @@ package com.neuralarc.ui;
 import com.neuralarc.api.HttpAlpacaMarketDataApi;
 import com.neuralarc.db.AppDatabase;
 import com.neuralarc.db.SqliteOrbScheduleRepository;
+import com.neuralarc.db.SqliteScanHistoryRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
 import com.neuralarc.model.AiProviderType;
 import com.neuralarc.model.AiRecommendationSettings;
 import com.neuralarc.model.OrbSchedule;
+import com.neuralarc.model.ScanHistoryEntry;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.orb.OpeningRangeCaptureService;
 import com.neuralarc.orb.OpeningRangeSnapshot;
@@ -58,19 +60,28 @@ final class OrbCoordinator {
     private final SqliteStrategyRepository strategyRepository;
     private final AppSettingsService appSettingsService;
     private final SqliteOrbScheduleRepository scheduleRepository;
+    private final SqliteScanHistoryRepository scanHistoryRepository;
     private final MarketHoursService marketHoursService;
     private final Map<String, OrbScheduleService> scheduleServicesByWorkspace = new LinkedHashMap<>();
     private final Executor backgroundExecutor;
 
     OrbCoordinator(Ui ui, AppDatabase database, SqliteStrategyRepository strategyRepository,
                    AppSettingsService appSettingsService, MarketHoursService marketHoursService,
-                   Executor backgroundExecutor) {
+                   SqliteScanHistoryRepository scanHistoryRepository, Executor backgroundExecutor) {
         this.ui = ui;
         this.strategyRepository = strategyRepository;
         this.appSettingsService = appSettingsService;
         this.backgroundExecutor = backgroundExecutor;
         this.marketHoursService = marketHoursService == null ? new MarketHoursService() : marketHoursService;
         this.scheduleRepository = new SqliteOrbScheduleRepository(database);
+        this.scanHistoryRepository = scanHistoryRepository;
+    }
+
+    private void recordScan(String workspaceId, boolean interactive, String summary) {
+        if (scanHistoryRepository == null || workspaceId == null) {
+            return;
+        }
+        scanHistoryRepository.save(ScanHistoryEntry.now(workspaceId, interactive, summary));
     }
 
     static boolean isPendingOrderPlacement(Strategy strategy) {
@@ -116,7 +127,7 @@ final class OrbCoordinator {
             scheduleOrCancel(config);
             return;
         }
-        runAnalysis(ui.selectedWorkspaceId(), config, mode == OrbRunMode.ANALYZE_AND_ARM_NOW);
+        runAnalysis(ui.selectedWorkspaceId(), config, mode == OrbRunMode.ANALYZE_AND_ARM_NOW, true);
     }
 
     /** Register a new schedule, or offer to cancel the existing one for the selected workspace. */
@@ -202,10 +213,10 @@ final class OrbCoordinator {
         if (schedule == null) {
             return;
         }
-        runAnalysis(schedule.workspaceId(), schedule.config(), schedule.executeAfterRangeClose());
+        runAnalysis(schedule.workspaceId(), schedule.config(), schedule.executeAfterRangeClose(), false);
     }
 
-    private void runAnalysis(String workspaceId, OrbConfig config, boolean armRequested) {
+    private void runAnalysis(String workspaceId, OrbConfig config, boolean armRequested, boolean interactive) {
         if (!ui.connectionOk() || ui.runtimeApiKey().isBlank()) {
             JOptionPane.showMessageDialog(ui.dialogParent(),
                     ui.selectedModeLabel() + " Alpaca credentials are required before scanning ORB live market data.",
@@ -218,6 +229,7 @@ final class OrbCoordinator {
                 OrbConfig safeConfig = config == null ? OrbConfig.defaults(null) : config;
                 List<OrbCandidate> candidates = resolveCandidates(safeConfig);
                 if (candidates.isEmpty()) {
+                    recordScan(workspaceId, interactive, "No live candidates found");
                     SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(ui.dialogParent(),
                             "No live ORB candidates were found right now. Try again during the opening window, or enter symbols manually.",
                             "ORB Engine", JOptionPane.INFORMATION_MESSAGE));
@@ -232,7 +244,7 @@ final class OrbCoordinator {
                         .toList();
                 List<OrbRecommendation> recommendations = new OrbAnalyzer(Clock.systemUTC(), ui::log)
                         .analyze(snapshots, candidates, safeConfig);
-                SwingUtilities.invokeLater(() -> applyRecommendations(workspaceId, safeConfig, armRequested, recommendations));
+                SwingUtilities.invokeLater(() -> applyRecommendations(workspaceId, safeConfig, armRequested, interactive, recommendations));
             } finally {
                 SwingUtilities.invokeLater(() -> ui.setAnalyzeButtonEnabled(true));
             }
@@ -290,8 +302,9 @@ final class OrbCoordinator {
     }
 
     private void applyRecommendations(String workspaceId, OrbConfig config, boolean armRequested,
-                                      List<OrbRecommendation> recommendations) {
+                                      boolean interactive, List<OrbRecommendation> recommendations) {
         if (recommendations.isEmpty()) {
+            recordScan(workspaceId, interactive, "No qualifying candidates");
             JOptionPane.showMessageDialog(ui.dialogParent(),
                     "No ORB candidates met the current live-data filters. Try lowering range, price, or relative-volume requirements.",
                     "ORB Engine", JOptionPane.INFORMATION_MESSAGE);
@@ -327,6 +340,7 @@ final class OrbCoordinator {
             if (firstAddedStrategyId == null) firstAddedStrategyId = strategy.id();
             added++;
         }
+        recordScan(workspaceId, interactive, ScanHistoryEntry.summarize(added, updated, skipped));
         ui.onRecommendationsApplied(workspaceId, firstAddedStrategyId);
         ui.log("[ORB] Added " + added + " ORB candidate" + (added == 1 ? "" : "s")
                 + " to the ORB Engine grid"

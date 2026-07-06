@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 
 final class RuleTriggeredHistoryPresenter {
     private static final String FAILURE_COLOR = "#B71C1C";
+    private static final String FAILURE_BACKGROUND = "#FFF59D";
 
     String buildLabel(String currentRuleText, List<StrategyOrder> orders, Function<Instant, String> timestampFormatter) {
         String current = normalizeCurrentRule(currentRuleText);
@@ -252,7 +253,8 @@ final class RuleTriggeredHistoryPresenter {
     private String historyEntryHtml(String entry) {
         String escaped = escape(entry);
         return isFailureEntry(entry)
-                ? "<span style='color:" + FAILURE_COLOR + ";'>" + escaped + "</span>"
+                ? "<span style='color:" + FAILURE_COLOR + "; background-color:" + FAILURE_BACKGROUND + ";'>"
+                + escaped + "</span>"
                 : escaped;
     }
 

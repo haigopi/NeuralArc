@@ -200,6 +200,7 @@ public final class AppDatabase {
         applyMigration("012_vwap_schedules",         this::migration012);
         applyMigration("013_swing_schedules",        this::migration013);
         applyMigration("014_auto_adjust_risk",       this::migration014);
+        applyMigration("015_strategy_scan_history",   this::migration015);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -512,6 +513,23 @@ public final class AppDatabase {
         addColumnIfMissing("strategies", "auto_adjust_day_count", "INTEGER NOT NULL DEFAULT 0");
         addColumnIfMissing("strategies", "auto_adjust_last_date", "TEXT NOT NULL DEFAULT ''");
         addColumnIfMissing("strategies", "auto_adjust_reference_price", "TEXT NOT NULL DEFAULT '0.00'");
+    }
+
+    // ── Migration 015 — strategy scan history (per-workspace scan run log) ───
+
+    private void migration015() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS strategy_scan_history (
+                        id            TEXT PRIMARY KEY,
+                        workspace_id  TEXT NOT NULL DEFAULT '',
+                        ran_at        TEXT NOT NULL,
+                        trigger       TEXT NOT NULL DEFAULT 'Manual',
+                        summary       TEXT NOT NULL DEFAULT ''
+                    )""");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_scan_history_workspace "
+                    + "ON strategy_scan_history(workspace_id, ran_at)");
+        }
     }
 
     private void addColumnIfMissing(String table, String column, String definition) throws SQLException {

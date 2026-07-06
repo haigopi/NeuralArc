@@ -97,16 +97,16 @@ class StrategyWorkspaceTabsTest {
                 () -> StrategyMode.PAPER,
                 ignored -> { },
                 () -> "All Stocks - Paper (5)",
-                workspace -> workspace.name() + " - Paper (" + count[0] + ")",
+                workspace -> workspace.name() + " [ " + count[0] + " ]",
                 () -> "Trade History"
         ));
 
-        assertEquals("ORB Engine - Paper (2)", tabs.getTitleAt(1));
+        assertEquals("ORB Engine [ 2 ]", tabs.getTitleAt(1));
 
         count[0] = 3;
         SwingUtilities.invokeAndWait(() -> coordinator[0].refreshStrategyTitles());
 
-        assertEquals("ORB Engine - Paper (3)", tabs.getTitleAt(1));
+        assertEquals("ORB Engine [ 3 ]", tabs.getTitleAt(1));
     }
 
     private static final class InMemoryWorkspaceRepository implements WorkspaceRepository {

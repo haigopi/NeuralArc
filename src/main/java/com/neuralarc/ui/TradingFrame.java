@@ -10,6 +10,7 @@ import com.neuralarc.db.AppDatabase;
 import com.neuralarc.db.SqliteStrategyExecutionEventRepository;
 import com.neuralarc.db.SqliteStrategyOrderRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
+import com.neuralarc.db.SqliteScanHistoryRepository;
 import com.neuralarc.db.SqliteWorkspaceRepository;
 import com.neuralarc.gaprocket.GapRocketAnalysisDialog;
 import com.neuralarc.gaprocket.GapRocketConfig;
@@ -221,6 +222,7 @@ public class TradingFrame extends JFrame {
     private static final Color LOG_LINE_EVEN = ThemeColors.color("NeuralArc.Log.lineEven", new Color(63, 72, 82));
     private static final Color LOG_LINE_ODD = ThemeColors.color("NeuralArc.Log.lineOdd", new Color(110, 118, 128));
     private static final Color LOG_LINE_FAILURE = ThemeColors.color("NeuralArc.Log.failure", new Color(183, 28, 28));
+    private static final Color LOG_LINE_FAILURE_BG = ThemeColors.color("NeuralArc.Log.failureBackground", new Color(255, 245, 157));
     private static final int MAX_EVENT_LOG_LINES = 1500;
     private static final long CLOSED_MARKET_RECONCILE_POLL_INTERVAL_MILLIS = 60L * 1000L;
     private static final long CLOSED_MARKET_POLL_INTERVAL_MILLIS = 10L * 60L * 1000L;
@@ -405,6 +407,11 @@ public class TradingFrame extends JFrame {
     private final JButton swingAnalyzeButton = new JButton(SwingPanel.ANALYZE_BUTTON_TEXT);
     private final JLabel swingScheduleStatusLabel = new JLabel();
     private final JButton swingCancelScheduleButton = new JButton("Cancel Schedule");
+    private final ScanHistoryTablePanel gapRocketScanHistoryPanel = new ScanHistoryTablePanel();
+    private final ScanHistoryTablePanel orbScanHistoryPanel = new ScanHistoryTablePanel();
+    private final ScanHistoryTablePanel dipHunterScanHistoryPanel = new ScanHistoryTablePanel();
+    private final ScanHistoryTablePanel vwapScanHistoryPanel = new ScanHistoryTablePanel();
+    private final ScanHistoryTablePanel swingScanHistoryPanel = new ScanHistoryTablePanel();
     private JPanel headerPanel;
     private final EnumMap<StrategyMode, GapRocketConfig> lastGapRocketConfigs = new EnumMap<>(StrategyMode.class);
     private final EnumMap<StrategyMode, OrbConfig> lastOrbConfigs = new EnumMap<>(StrategyMode.class);
@@ -428,6 +435,7 @@ public class TradingFrame extends JFrame {
     private final SqliteStrategyOrderRepository strategyOrderRepository;
     private final SqliteStrategyExecutionEventRepository strategyEventRepository;
     private final SqliteWorkspaceRepository workspaceRepository;
+    private final SqliteScanHistoryRepository scanHistoryRepository;
     private final GapAndGoCoordinator gapAndGoCoordinator;
     private final OrbCoordinator orbCoordinator;
     private final DipHunterCoordinator dipHunterCoordinator;
@@ -533,17 +541,18 @@ public class TradingFrame extends JFrame {
         strategyOrderRepository = new SqliteStrategyOrderRepository(appDatabase);
         strategyEventRepository = new SqliteStrategyExecutionEventRepository(appDatabase);
         workspaceRepository = new SqliteWorkspaceRepository(appDatabase);
+        scanHistoryRepository = new SqliteScanHistoryRepository(appDatabase);
         gapAndGoCoordinator = new GapAndGoCoordinator(
                 new GapAndGoCoordinatorUi(), appDatabase, strategyRepository,
-                appSettingsService, marketHoursService, uiPollingExecutor);
+                appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
         orbCoordinator = new OrbCoordinator(new OrbCoordinatorUi(), appDatabase, strategyRepository,
-                appSettingsService, marketHoursService, uiPollingExecutor);
+                appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
         dipHunterCoordinator = new DipHunterCoordinator(new DipHunterCoordinatorUi(), appDatabase, strategyRepository,
-                appSettingsService, marketHoursService, uiPollingExecutor);
+                appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
         vwapCoordinator = new VwapCoordinator(new VwapCoordinatorUi(), appDatabase, strategyRepository,
-                appSettingsService, marketHoursService, uiPollingExecutor);
+                appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
         swingCoordinator = new SwingCoordinator(new SwingCoordinatorUi(), appDatabase, strategyRepository,
-                appSettingsService, marketHoursService, uiPollingExecutor);
+                appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
         autoRiskAdjustmentService = new AutoRiskAdjustmentService(strategyRepository, marketHoursService,
                 java.time.Clock.systemUTC(), this::latestPriceForAutoAdjust, this::log);
         workspaceService = new WorkspaceService(workspaceRepository, strategyRepository);
@@ -5681,13 +5690,42 @@ public class TradingFrame extends JFrame {
         strategiesGridCardPanel = new JPanel(strategiesGridCardLayout);
         strategiesGridCardPanel.setOpaque(false);
         strategiesGridCardPanel.add(grid, STRATEGIES_GRID_CARD);
-        strategiesGridCardPanel.add(new GapRocketPanel(this::openGapRocketAnalysisDialog, true), GAP_ROCKET_EMPTY_CARD);
-        strategiesGridCardPanel.add(new OrbPanel(this::openOrbAnalysisDialog), ORB_EMPTY_CARD);
-        strategiesGridCardPanel.add(new DipHunterPanel(this::openDipHunterAnalysisDialog, true), DIP_HUNTER_EMPTY_CARD);
-        strategiesGridCardPanel.add(new VwapPanel(this::openVwapAnalysisDialog, true), VWAP_EMPTY_CARD);
-        strategiesGridCardPanel.add(new SwingPanel(this::openSwingAnalysisDialog, true), SWING_EMPTY_CARD);
+        strategiesGridCardPanel.add(
+                wrapEmptyStateWithScanHistory(new GapRocketPanel(this::openGapRocketAnalysisDialog, true),
+                        gapRocketScanHistoryPanel), GAP_ROCKET_EMPTY_CARD);
+        strategiesGridCardPanel.add(
+                wrapEmptyStateWithScanHistory(new OrbPanel(this::openOrbAnalysisDialog),
+                        orbScanHistoryPanel), ORB_EMPTY_CARD);
+        strategiesGridCardPanel.add(
+                wrapEmptyStateWithScanHistory(new DipHunterPanel(this::openDipHunterAnalysisDialog, true),
+                        dipHunterScanHistoryPanel), DIP_HUNTER_EMPTY_CARD);
+        strategiesGridCardPanel.add(
+                wrapEmptyStateWithScanHistory(new VwapPanel(this::openVwapAnalysisDialog, true),
+                        vwapScanHistoryPanel), VWAP_EMPTY_CARD);
+        strategiesGridCardPanel.add(
+                wrapEmptyStateWithScanHistory(new SwingPanel(this::openSwingAnalysisDialog, true),
+                        swingScanHistoryPanel), SWING_EMPTY_CARD);
         strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
         return strategiesGridCardPanel;
+    }
+
+    /**
+     * Stack a strategy's empty-state guidance panel above its recent-scan-history table. The history
+     * table hides itself when there is no history yet, so a first-time strategy shows only the
+     * guidance and Analyze button. The whole stack is centered so it matches the standalone panels.
+     */
+    private JComponent wrapEmptyStateWithScanHistory(JComponent emptyState, ScanHistoryTablePanel historyPanel) {
+        JPanel stack = new JPanel();
+        stack.setOpaque(false);
+        stack.setLayout(new BoxLayout(stack, BoxLayout.Y_AXIS));
+        emptyState.setAlignmentX(Component.CENTER_ALIGNMENT);
+        historyPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        stack.add(emptyState);
+        stack.add(historyPanel);
+        JPanel center = new JPanel(new GridBagLayout());
+        center.setOpaque(false);
+        center.add(stack, new GridBagConstraints());
+        return center;
     }
 
     private JPanel createStrategiesBottomPanel() {
@@ -6198,18 +6236,34 @@ public class TradingFrame extends JFrame {
         swingScheduleStatusLabel.setVisible(selectedSwing && swingScheduled);
         swingCancelScheduleButton.setVisible(selectedSwing && swingScheduled);
         if (showGapRocketEmptyState) {
+            refreshScanHistoryPanel(gapRocketScanHistoryPanel);
             strategiesGridCardLayout.show(strategiesGridCardPanel, GAP_ROCKET_EMPTY_CARD);
         } else if (showOrbEmptyState) {
+            refreshScanHistoryPanel(orbScanHistoryPanel);
             strategiesGridCardLayout.show(strategiesGridCardPanel, ORB_EMPTY_CARD);
         } else if (showDipHunterEmptyState) {
+            refreshScanHistoryPanel(dipHunterScanHistoryPanel);
             strategiesGridCardLayout.show(strategiesGridCardPanel, DIP_HUNTER_EMPTY_CARD);
         } else if (showVwapEmptyState) {
+            refreshScanHistoryPanel(vwapScanHistoryPanel);
             strategiesGridCardLayout.show(strategiesGridCardPanel, VWAP_EMPTY_CARD);
         } else if (showSwingEmptyState) {
+            refreshScanHistoryPanel(swingScanHistoryPanel);
             strategiesGridCardLayout.show(strategiesGridCardPanel, SWING_EMPTY_CARD);
         } else {
             strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
         }
+    }
+
+    /** Load the selected workspace's recent scan history into its empty-state table (EDT-safe cache read). */
+    private void refreshScanHistoryPanel(ScanHistoryTablePanel panel) {
+        if (panel == null) {
+            return;
+        }
+        List<ScanHistoryEntry> entries = selectedWorkspaceId == null
+                ? List.of()
+                : scanHistoryRepository.findRecentByWorkspace(selectedWorkspaceId, ScanHistoryTablePanel.MAX_ROWS);
+        panel.setEntries(entries);
     }
 
     private boolean isSelectedGapRocketWorkspace() {
@@ -6962,10 +7016,10 @@ public class TradingFrame extends JFrame {
 
     private String workspaceStrategiesHeadingText(StrategyWorkspace workspace) {
         if (workspace == null) {
-            return "Workspace - " + selectedModeLabel() + " (0)";
+            return "Workspace [ 0 ]";
         }
         long count = currentStrategiesStockCountInWorkspace(workspace.id());
-        return workspace.name() + " - " + selectedModeLabel() + " (" + count + ")";
+        return workspace.name() + " [ " + count + " ]";
     }
 
     private String tradeHistoryHeadingText() {
@@ -7194,6 +7248,9 @@ public class TradingFrame extends JFrame {
         StyledDocument document = eventLog.getStyledDocument();
         SimpleAttributeSet attributes = new SimpleAttributeSet();
         StyleConstants.setForeground(attributes, logEntryColor(logEntry));
+        if (isFailureLogEntry(logEntry)) {
+            StyleConstants.setBackground(attributes, LOG_LINE_FAILURE_BG);
+        }
         StyleConstants.setFontFamily(attributes, eventLog.getFont().getFamily());
         StyleConstants.setFontSize(attributes, eventLog.getFont().getSize());
         try {

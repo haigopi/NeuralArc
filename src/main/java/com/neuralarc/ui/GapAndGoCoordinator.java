@@ -3,6 +3,7 @@ package com.neuralarc.ui;
 import com.neuralarc.api.HttpAlpacaMarketDataApi;
 import com.neuralarc.db.AppDatabase;
 import com.neuralarc.db.SqliteGapAndGoScheduleRepository;
+import com.neuralarc.db.SqliteScanHistoryRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
 import com.neuralarc.gaprocket.GapRocketAnalyzer;
 import com.neuralarc.gaprocket.GapRocketCandidate;
@@ -14,6 +15,7 @@ import com.neuralarc.gaprocket.NewsCatalystResolver;
 import com.neuralarc.model.AiProviderType;
 import com.neuralarc.model.AiRecommendationSettings;
 import com.neuralarc.model.GapAndGoSchedule;
+import com.neuralarc.model.ScanHistoryEntry;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.service.AiRecommendationProviderFactory;
 import com.neuralarc.service.AlpacaScreenerException;
@@ -62,19 +64,28 @@ final class GapAndGoCoordinator {
     private final SqliteStrategyRepository strategyRepository;
     private final AppSettingsService appSettingsService;
     private final SqliteGapAndGoScheduleRepository scheduleRepository;
+    private final SqliteScanHistoryRepository scanHistoryRepository;
     private final MarketHoursService marketHoursService;
     private final Map<String, GapAndGoScheduleService> scheduleServicesByWorkspace = new LinkedHashMap<>();
     private final Executor backgroundExecutor;
 
     GapAndGoCoordinator(Ui ui, AppDatabase database, SqliteStrategyRepository strategyRepository,
                         AppSettingsService appSettingsService, MarketHoursService marketHoursService,
-                        Executor backgroundExecutor) {
+                        SqliteScanHistoryRepository scanHistoryRepository, Executor backgroundExecutor) {
         this.ui = ui;
         this.strategyRepository = strategyRepository;
         this.appSettingsService = appSettingsService;
         this.backgroundExecutor = backgroundExecutor;
         this.marketHoursService = marketHoursService == null ? new MarketHoursService() : marketHoursService;
         this.scheduleRepository = new SqliteGapAndGoScheduleRepository(database);
+        this.scanHistoryRepository = scanHistoryRepository;
+    }
+
+    private void recordScan(String workspaceId, boolean interactive, String summary) {
+        if (scanHistoryRepository == null || workspaceId == null) {
+            return;
+        }
+        scanHistoryRepository.save(ScanHistoryEntry.now(workspaceId, interactive, summary));
     }
 
     static boolean isPendingOrderPlacement(Strategy strategy) {
@@ -208,6 +219,7 @@ final class GapAndGoCoordinator {
             try {
                 List<String> symbols = resolveCandidateSymbols(config);
                 if (symbols.isEmpty()) {
+                    recordScan(workspaceId, interactive, "No live candidates found");
                     if (interactive) {
                         SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(ui.dialogParent(),
                                 "No live gap-and-go candidates were found right now. Try again during the premarket/opening "
@@ -284,6 +296,7 @@ final class GapAndGoCoordinator {
             return;
         }
         if (recommendations.isEmpty()) {
+            recordScan(workspaceId, interactive, "No qualifying candidates");
             if (interactive) {
                 JOptionPane.showMessageDialog(ui.dialogParent(),
                         "No Gap-and-Go candidates met the current live-data filters. Try lowering the gap, volume, relative-volume, catalyst, or price requirements.",
@@ -334,6 +347,7 @@ final class GapAndGoCoordinator {
                     + " mode=" + recommendation.mode()
                     + (executeRequested ? " monitoring enabled" : " recommendation only") + ".");
         }
+        recordScan(workspaceId, interactive, ScanHistoryEntry.summarize(added, updated, skipped));
         ui.onRecommendationsApplied(workspaceId, firstAddedStrategyId);
         String summary = "[Gap Rocket] Added " + added + " Gap-and-Go candidate" + (added == 1 ? "" : "s")
                 + " to the Gap Rocket grid"

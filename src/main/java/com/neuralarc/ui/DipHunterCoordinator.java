@@ -3,6 +3,7 @@ package com.neuralarc.ui;
 import com.neuralarc.api.HttpAlpacaMarketDataApi;
 import com.neuralarc.db.AppDatabase;
 import com.neuralarc.db.SqliteDipHunterScheduleRepository;
+import com.neuralarc.db.SqliteScanHistoryRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
 import com.neuralarc.diphunter.DipHunterAnalyzer;
 import com.neuralarc.diphunter.DipHunterCandidate;
@@ -11,6 +12,7 @@ import com.neuralarc.diphunter.DipHunterLiveScanner;
 import com.neuralarc.diphunter.DipHunterRecommendation;
 import com.neuralarc.diphunter.DipHunterStrategyFactory;
 import com.neuralarc.model.DipHunterSchedule;
+import com.neuralarc.model.ScanHistoryEntry;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.service.AlpacaScreenerException;
 import com.neuralarc.service.AppSettingsService;
@@ -58,19 +60,28 @@ final class DipHunterCoordinator {
     private final SqliteStrategyRepository strategyRepository;
     private final AppSettingsService appSettingsService;
     private final SqliteDipHunterScheduleRepository scheduleRepository;
+    private final SqliteScanHistoryRepository scanHistoryRepository;
     private final MarketHoursService marketHoursService;
     private final Map<String, DipHunterScheduleService> scheduleServicesByWorkspace = new LinkedHashMap<>();
     private final Executor backgroundExecutor;
 
     DipHunterCoordinator(Ui ui, AppDatabase database, SqliteStrategyRepository strategyRepository,
                          AppSettingsService appSettingsService, MarketHoursService marketHoursService,
-                         Executor backgroundExecutor) {
+                         SqliteScanHistoryRepository scanHistoryRepository, Executor backgroundExecutor) {
         this.ui = ui;
         this.strategyRepository = strategyRepository;
         this.appSettingsService = appSettingsService;
         this.backgroundExecutor = backgroundExecutor;
         this.marketHoursService = marketHoursService == null ? new MarketHoursService() : marketHoursService;
         this.scheduleRepository = new SqliteDipHunterScheduleRepository(database);
+        this.scanHistoryRepository = scanHistoryRepository;
+    }
+
+    private void recordScan(String workspaceId, boolean interactive, String summary) {
+        if (scanHistoryRepository == null || workspaceId == null) {
+            return;
+        }
+        scanHistoryRepository.save(ScanHistoryEntry.now(workspaceId, interactive, summary));
     }
 
     static boolean isPendingOrderPlacement(Strategy strategy) {
@@ -219,6 +230,7 @@ final class DipHunterCoordinator {
             try {
                 List<String> symbols = resolveCandidateSymbols(config);
                 if (symbols.isEmpty()) {
+                    recordScan(workspaceId, interactive, "No live candidates found");
                     if (interactive) {
                         SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(ui.dialogParent(),
                                 "No live Dip Hunter candidates were found right now. Try again during the regular session, "
@@ -272,6 +284,7 @@ final class DipHunterCoordinator {
             return;
         }
         if (recommendations.isEmpty()) {
+            recordScan(workspaceId, interactive, "No qualifying candidates");
             if (interactive) {
                 JOptionPane.showMessageDialog(ui.dialogParent(),
                         "No Dip Hunter candidates met the current live-data filters. Try widening the pullback range, or lowering the relative-volume, trend, or price requirements.",
@@ -320,6 +333,7 @@ final class DipHunterCoordinator {
                     + " mode=" + recommendation.mode()
                     + (executeRequested ? " monitoring enabled" : " recommendation only") + ".");
         }
+        recordScan(workspaceId, interactive, ScanHistoryEntry.summarize(added, updated, skipped));
         ui.onRecommendationsApplied(workspaceId, firstAddedStrategyId);
         ui.log("[Dip Hunter] Added " + added + " Dip Hunter candidate" + (added == 1 ? "" : "s")
                 + " to the Dip Hunter grid"
