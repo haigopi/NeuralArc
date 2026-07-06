@@ -33,6 +33,7 @@ class StrategyWorkspaceTabsTest {
                 () -> StrategyMode.PAPER,
                 ignored -> { },
                 () -> "All Stocks",
+                workspace -> workspace.name(),
                 () -> "Trade History"
         ));
 
@@ -60,6 +61,7 @@ class StrategyWorkspaceTabsTest {
                 () -> mode[0],
                 ignored -> { },
                 () -> "All Stocks",
+                workspace -> workspace.name(),
                 () -> "Trade History"
         ));
 
@@ -76,6 +78,35 @@ class StrategyWorkspaceTabsTest {
         SwingUtilities.invokeAndWait(() -> tabs.setSelectedIndex(coordinator[0].historyTabIndex()));
         assertTrue(coordinator[0].isHistorySelected());
         assertNull(coordinator[0].selectedStrategyTabId());
+    }
+
+    @Test
+    void workspaceTabTitlesCanShowDynamicCounts() throws Exception {
+        InMemoryWorkspaceRepository workspaceRepository = new InMemoryWorkspaceRepository();
+        workspaceRepository.save(new StrategyWorkspace("orb", "ORB Engine", "ORB", StrategyMode.PAPER, false, Instant.now(), Instant.now()));
+        WorkspaceService service = new WorkspaceService(workspaceRepository, new EmptyStrategyRepository());
+        JTabbedPane tabs = new JTabbedPane();
+        final int[] count = {2};
+        final StrategyWorkspaceTabs[] coordinator = new StrategyWorkspaceTabs[1];
+
+        SwingUtilities.invokeAndWait(() -> coordinator[0] = new StrategyWorkspaceTabs(
+                tabs,
+                new JPanel(),
+                new JPanel(),
+                service,
+                () -> StrategyMode.PAPER,
+                ignored -> { },
+                () -> "All Stocks - Paper (5)",
+                workspace -> workspace.name() + " - Paper (" + count[0] + ")",
+                () -> "Trade History"
+        ));
+
+        assertEquals("ORB Engine - Paper (2)", tabs.getTitleAt(1));
+
+        count[0] = 3;
+        SwingUtilities.invokeAndWait(() -> coordinator[0].refreshStrategyTitles());
+
+        assertEquals("ORB Engine - Paper (3)", tabs.getTitleAt(1));
     }
 
     private static final class InMemoryWorkspaceRepository implements WorkspaceRepository {

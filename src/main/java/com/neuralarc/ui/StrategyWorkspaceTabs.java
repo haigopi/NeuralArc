@@ -11,6 +11,7 @@ import java.awt.BorderLayout;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -32,6 +33,7 @@ final class StrategyWorkspaceTabs {
     private final Supplier<StrategyMode> modeSupplier;
     private final Consumer<String> onWorkspaceSelected;
     private final Supplier<String> allStocksTitle;
+    private final Function<StrategyWorkspace, String> workspaceTitle;
 
     private final JPanel allStocksHost = new JPanel(new BorderLayout());
     // Parallel to the tab order: workspaceId for a workspace tab, null for All Stocks / Trade History.
@@ -46,6 +48,7 @@ final class StrategyWorkspaceTabs {
             Supplier<StrategyMode> modeSupplier,
             Consumer<String> onWorkspaceSelected,
             Supplier<String> allStocksTitle,
+            Function<StrategyWorkspace, String> workspaceTitle,
             Supplier<String> historyTitle
     ) {
         this.tabs = tabs;
@@ -54,6 +57,7 @@ final class StrategyWorkspaceTabs {
         this.modeSupplier = modeSupplier;
         this.onWorkspaceSelected = onWorkspaceSelected;
         this.allStocksTitle = allStocksTitle;
+        this.workspaceTitle = workspaceTitle;
 
         allStocksHost.setOpaque(false);
         allStocksHost.add(gridComponent, BorderLayout.CENTER);
@@ -98,6 +102,22 @@ final class StrategyWorkspaceTabs {
             rebuilding = false;
         }
         handleSelection();
+    }
+
+    void refreshStrategyTitles() {
+        if (tabs.getTabCount() == 0) {
+            return;
+        }
+        tabs.setTitleAt(0, allStocksTitle.get());
+        for (int index = 1; index < historyTabIndex(); index++) {
+            String workspaceId = workspaceIdAt(index);
+            if (workspaceId == null) {
+                continue;
+            }
+            int tabIndex = index;
+            workspaceService.findById(workspaceId)
+                    .ifPresent(workspace -> tabs.setTitleAt(tabIndex, tabTitle(workspace)));
+        }
     }
 
     /**
@@ -194,7 +214,11 @@ final class StrategyWorkspaceTabs {
     }
 
     private String tabTitle(StrategyWorkspace workspace) {
-        return workspace.name();
+        if (workspaceTitle == null) {
+            return workspace.name();
+        }
+        String title = workspaceTitle.apply(workspace);
+        return title == null || title.isBlank() ? workspace.name() : title;
     }
 
     private String tabTooltip(StrategyWorkspace workspace) {

@@ -1515,6 +1515,7 @@ public class TradingFrame extends JFrame {
                 () -> selectedViewMode,
                 this::onWorkspaceTabSelected,
                 this::currentStrategiesHeadingText,
+                this::workspaceStrategiesHeadingText,
                 this::tradeHistoryHeadingText
         );
         refreshNewStrategyButtonPresentation();
@@ -5994,9 +5995,13 @@ public class TradingFrame extends JFrame {
     }
 
     private long currentStrategiesStockCountInSelectedWorkspace() {
+        return currentStrategiesStockCountInWorkspace(selectedWorkspaceId);
+    }
+
+    private long currentStrategiesStockCountInWorkspace(String workspaceId) {
         return strategies.stream()
                 .filter(this::includeInCurrentStrategiesTab)
-                .filter(entry -> selectedWorkspaceId == null || selectedWorkspaceId.equals(entry.strategy.workspaceId()))
+                .filter(entry -> workspaceId == null || workspaceId.equals(entry.strategy.workspaceId()))
                 .count();
     }
 
@@ -6122,7 +6127,11 @@ public class TradingFrame extends JFrame {
         if (strategyTabs.getTabCount() == 0) {
             return;
         }
-        strategyTabs.setTitleAt(0, currentStrategiesHeadingText());
+        if (strategyWorkspaceTabs == null) {
+            strategyTabs.setTitleAt(0, currentStrategiesHeadingText());
+            return;
+        }
+        strategyWorkspaceTabs.refreshStrategyTitles();
     }
 
     private void refreshTradeHistoryHeading() {
@@ -6760,7 +6769,7 @@ public class TradingFrame extends JFrame {
             BigDecimal unrealized = openRow.map(StrategyOpenPnlCalculator.Row::unrealizedPnl).orElse(BigDecimal.ZERO);
             BigDecimal marketValue = openRow.map(StrategyOpenPnlCalculator.Row::marketValue).orElse(BigDecimal.ZERO);
             accounts.add(new WorkspaceAccounting.StrategyAccount(
-                    entryWorkspaceId, shares, unrealized, realized, marketValue));
+                    entryWorkspaceId, shares, unrealized, realized, marketValue, entry.strategy.estimatedTotalCapital()));
         }
         return new AccountingInputs(accounts, sells);
     }
@@ -6949,6 +6958,14 @@ public class TradingFrame extends JFrame {
         // assignment, preserving the existing stock-centric view for current installations.
         long currentCount = strategies.stream().filter(this::includeInCurrentStrategiesTab).count();
         return "All Stocks - " + selectedModeLabel() + " (" + currentCount + ")";
+    }
+
+    private String workspaceStrategiesHeadingText(StrategyWorkspace workspace) {
+        if (workspace == null) {
+            return "Workspace - " + selectedModeLabel() + " (0)";
+        }
+        long count = currentStrategiesStockCountInWorkspace(workspace.id());
+        return workspace.name() + " - " + selectedModeLabel() + " (" + count + ")";
     }
 
     private String tradeHistoryHeadingText() {

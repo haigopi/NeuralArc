@@ -27,7 +27,8 @@ public final class WorkspaceAccounting {
             int openShares,
             BigDecimal unrealizedPnl,
             BigDecimal realizedPnl,
-            BigDecimal marketValue
+            BigDecimal marketValue,
+            BigDecimal capitalAllocated
     ) {
     }
 
@@ -70,7 +71,7 @@ public final class WorkspaceAccounting {
             }
             realized = realized.add(nonNull(account.realizedPnl()));
             unrealized = unrealized.add(nonNull(account.unrealizedPnl()));
-            capital = capital.add(nonNull(account.marketValue()));
+            capital = capital.add(nonNull(account.capitalAllocated()));
             if (account.openShares() > 0) {
                 openPositions++;
             }
