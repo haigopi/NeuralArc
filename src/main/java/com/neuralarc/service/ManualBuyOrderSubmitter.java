@@ -7,6 +7,7 @@ import com.neuralarc.model.StrategyEventType;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyOrder;
 import com.neuralarc.model.StrategyOrderSide;
+import com.neuralarc.model.StrategyOrderStatus;
 import com.neuralarc.model.StrategyOrderType;
 import com.neuralarc.model.StrategyStage;
 import com.neuralarc.model.StrategyStatus;
@@ -70,10 +71,23 @@ final class ManualBuyOrderSubmitter {
         }
 
         String clientOrderId = StrategyService.buildClientOrderId(strategy, StrategyStage.MANUAL_BUY, workspaceCodeResolver);
-        AlpacaOrderData submitted = orderType == StrategyOrderType.MARKET
-                ? alpacaClient.submitMarketBuyOrder(strategy.symbol(), quantity, clientOrderId)
-                : alpacaClient.submitLimitBuyOrder(strategy.symbol(), quantity, limitPrice, clientOrderId);
+        AlpacaOrderData submitted;
+        try {
+            submitted = orderType == StrategyOrderType.MARKET
+                    ? alpacaClient.submitMarketBuyOrder(strategy.symbol(), quantity, clientOrderId)
+                    : alpacaClient.submitLimitBuyOrder(strategy.symbol(), quantity, limitPrice, clientOrderId);
+        } catch (RuntimeException ex) {
+            String error = manualBuyFailureMessage(orderType, ex.getMessage());
+            saveFailedManualBuy(strategy, quantity, limitPrice, orderType, clientOrderId, error);
+            return StrategyService.StrategyCreationResult.failed(error);
+        }
+        if (submitted == null) {
+            String error = manualBuyFailureMessage(orderType, "Broker returned no order response.");
+            saveFailedManualBuy(strategy, quantity, limitPrice, orderType, clientOrderId, error);
+            return StrategyService.StrategyCreationResult.failed(error);
+        }
         Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
+        StrategyOrderStatus status = StrategyService.mapOrderStatus(submitted.status());
         StrategyOrder order = new StrategyOrder(
                 UUID.randomUUID().toString(),
                 strategy.id(),
@@ -88,7 +102,7 @@ final class ManualBuyOrderSubmitter {
                 BigDecimal.valueOf(quantity),
                 submitted.filledQuantity(),
                 submitted.filledAveragePrice(),
-                StrategyService.mapOrderStatus(submitted.status()),
+                status,
                 submittedAt,
                 Instant.now(),
                 null,
@@ -98,7 +112,15 @@ final class ManualBuyOrderSubmitter {
         strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
         strategy.setLatestAlpacaOrderId(order.alpacaOrderId());
         strategy.setLastTriggeredRuleType("MANUAL_BUY");
+        strategy.clearLastError();
         strategyRepository.save(strategy);
+        if (status == StrategyOrderStatus.REJECTED || status == StrategyOrderStatus.FAILED) {
+            String error = manualBuyFailureMessage(orderType, submitted.rawJson());
+            strategy.setLastError(error);
+            strategy.setLastEvent(error);
+            strategyRepository.save(strategy);
+            return StrategyService.StrategyCreationResult.failed(error);
+        }
         stateMachine.transition(
                 strategy,
                 strategy.currentState() == null ? StrategyLifecycleState.BASE_BUY_FILLED : strategy.currentState(),
@@ -116,5 +138,60 @@ final class ManualBuyOrderSubmitter {
                 submitted.filledQuantity(),
                 submitted.filledAveragePrice()
         );
+    }
+
+    private void saveFailedManualBuy(
+            Strategy strategy,
+            int quantity,
+            BigDecimal limitPrice,
+            StrategyOrderType orderType,
+            String clientOrderId,
+            String error
+    ) {
+        Instant now = Instant.now();
+        StrategyOrder order = new StrategyOrder(
+                UUID.randomUUID().toString(),
+                strategy.id(),
+                StrategyStage.MANUAL_BUY,
+                null,
+                clientOrderId,
+                strategy.symbol(),
+                StrategyOrderSide.BUY,
+                orderType,
+                orderType == StrategyOrderType.LIMIT ? limitPrice : BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.valueOf(quantity),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                StrategyOrderStatus.FAILED,
+                now,
+                now,
+                null,
+                "{\"error\":\"" + jsonEscape(error) + "\"}"
+        );
+        orderRepository.save(order);
+        strategy.setLatestOrderStatus("failed");
+        strategy.setLatestAlpacaOrderId("");
+        strategy.setLastTriggeredRuleType("MANUAL_BUY");
+        strategy.setLastError(error);
+        strategy.setLastEvent(error);
+        strategyRepository.save(strategy);
+    }
+
+    private String manualBuyFailureMessage(StrategyOrderType orderType, String detail) {
+        String type = orderType == StrategyOrderType.MARKET ? "market" : "limit";
+        String normalized = detail == null || detail.isBlank() ? "Broker rejected the order." : detail.trim();
+        return "Manual " + type + " buy failed: " + normalized;
+    }
+
+    private String jsonEscape(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
     }
 }

@@ -286,6 +286,33 @@ class StrategyServiceTest {
     }
 
     @Test
+    void buyMoreAtLimitPersistsRejectedManualBuyAsFailedResult() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.rejectBuyOrdersWithSessionMessage = true;
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategies.save(strategy);
+
+        StrategyService.StrategyCreationResult result = service.buyMoreAtLimit(strategy.id(), 7, new BigDecimal("8.25"));
+
+        assertFalse(result.success());
+        assertTrue(result.error().contains("Manual limit buy failed"));
+        StrategyOrder local = orders.findLatestByStrategyStage(strategy.id(), StrategyStage.MANUAL_BUY).orElseThrow();
+        assertEquals(StrategyOrderStatus.REJECTED, local.status());
+        assertEquals(StrategyOrderSide.BUY, local.side());
+        assertEquals(StrategyOrderType.LIMIT, local.orderType());
+        Strategy stored = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals("MANUAL_BUY", stored.lastTriggeredRuleType());
+        assertEquals("rejected", stored.latestOrderStatus());
+        assertTrue(stored.lastError().contains("Manual limit buy failed"));
+    }
+
+    @Test
     void closePositionPersistsSellExecutionSourceForTradeHistoryClassification() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

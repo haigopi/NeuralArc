@@ -16,15 +16,20 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 final class RuleTriggeredHistoryPresenter {
+    private static final String FAILURE_COLOR = "#B71C1C";
+
     String buildLabel(String currentRuleText, List<StrategyOrder> orders, Function<Instant, String> timestampFormatter) {
         String current = normalizeCurrentRule(currentRuleText);
         List<String> history = historyEntries(orders, timestampFormatter);
         if (history.isEmpty()) {
             return currentRuleText == null || currentRuleText.isBlank() ? "Rules: -" : currentRuleText;
         }
+        String historyHtml = history.stream()
+                .map(this::historyEntryHtml)
+                .collect(Collectors.joining(" | "));
         return "<html><div style='width:1120px;'>"
                 + "<b>Current:</b> " + escape(current)
-                + "<br><b>Past:</b> " + escape(String.join(" | ", history))
+                + "<br><b>Past:</b> " + historyHtml
                 + "</div></html>";
     }
 
@@ -33,9 +38,12 @@ final class RuleTriggeredHistoryPresenter {
         if (history.isEmpty()) {
             return currentRuleHtml;
         }
+        String historyHtml = history.stream()
+                .map(this::historyEntryHtml)
+                .collect(Collectors.joining("<br>"));
         return currentRuleHtml
                 + "<br><br><b>Triggered Rule History:</b><br>"
-                + escape(String.join("<br>", history)).replace("&lt;br&gt;", "<br>");
+                + historyHtml;
     }
 
     private List<String> historyEntries(List<StrategyOrder> orders, Function<Instant, String> timestampFormatter) {
@@ -239,6 +247,21 @@ final class RuleTriggeredHistoryPresenter {
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;");
+    }
+
+    private String historyEntryHtml(String entry) {
+        String escaped = escape(entry);
+        return isFailureEntry(entry)
+                ? "<span style='color:" + FAILURE_COLOR + ";'>" + escaped + "</span>"
+                : escaped;
+    }
+
+    private boolean isFailureEntry(String entry) {
+        if (entry == null) {
+            return false;
+        }
+        String normalized = entry.toLowerCase();
+        return normalized.contains(" failed") || normalized.contains(" rejected");
     }
 
     private record FailureGroupKey(

@@ -135,6 +135,7 @@ class RuleTriggeredHistoryPresenterTest {
         );
 
         assertTrue(label.contains("Base Buy failed x3 @ $100.00/10 from 2026-05-18T14:30:00Z"));
+        assertTrue(label.contains("style='color:#B71C1C;'"));
         assertFalse(label.contains("Base Buy placed @ $100.00/10 on 2026-05-18T14:31:00Z"));
         assertFalse(label.contains("Base Buy placed @ $100.00/10 on 2026-05-18T14:32:00Z"));
     }

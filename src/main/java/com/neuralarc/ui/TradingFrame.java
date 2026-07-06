@@ -220,6 +220,7 @@ public class TradingFrame extends JFrame {
     private static final Color HISTORY_GROUP_BORDER = ThemeColors.color("NeuralArc.History.groupBorder", new Color(173, 181, 189));
     private static final Color LOG_LINE_EVEN = ThemeColors.color("NeuralArc.Log.lineEven", new Color(63, 72, 82));
     private static final Color LOG_LINE_ODD = ThemeColors.color("NeuralArc.Log.lineOdd", new Color(110, 118, 128));
+    private static final Color LOG_LINE_FAILURE = ThemeColors.color("NeuralArc.Log.failure", new Color(183, 28, 28));
     private static final int MAX_EVENT_LOG_LINES = 1500;
     private static final long CLOSED_MARKET_RECONCILE_POLL_INTERVAL_MILLIS = 60L * 1000L;
     private static final long CLOSED_MARKET_POLL_INTERVAL_MILLIS = 10L * 60L * 1000L;
@@ -7175,7 +7176,7 @@ public class TradingFrame extends JFrame {
     private void appendLogEntry(String logEntry) {
         StyledDocument document = eventLog.getStyledDocument();
         SimpleAttributeSet attributes = new SimpleAttributeSet();
-        StyleConstants.setForeground(attributes, (logLineCount % 2 == 0) ? LOG_LINE_EVEN : LOG_LINE_ODD);
+        StyleConstants.setForeground(attributes, logEntryColor(logEntry));
         StyleConstants.setFontFamily(attributes, eventLog.getFont().getFamily());
         StyleConstants.setFontSize(attributes, eventLog.getFont().getSize());
         try {
@@ -7186,6 +7187,23 @@ public class TradingFrame extends JFrame {
         }
         trimEventLog(document);
         eventLog.setCaretPosition(document.getLength());
+    }
+
+    private Color logEntryColor(String logEntry) {
+        return isFailureLogEntry(logEntry)
+                ? LOG_LINE_FAILURE
+                : (logLineCount % 2 == 0) ? LOG_LINE_EVEN : LOG_LINE_ODD;
+    }
+
+    private boolean isFailureLogEntry(String logEntry) {
+        if (logEntry == null) {
+            return false;
+        }
+        String normalized = logEntry.toLowerCase();
+        return normalized.contains(" failed.")
+                || normalized.contains(" failed:")
+                || normalized.contains(" buy failed")
+                || normalized.contains(" rejected");
     }
 
     private void trimEventLog(StyledDocument document) {
