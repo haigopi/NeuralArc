@@ -256,6 +256,7 @@ public class StrategyEngine {
     }
 
     public StrategyOrder resubmitExpiredEntryOrder(Strategy strategy) {
+        Optional<StrategyOrder> expiredOrder = expiredEntryOrderResubmitter.resolveOrder(strategy);
         Optional<StrategyStage> stage = expiredEntryOrderResubmitter.resolveStage(strategy);
         if (stage.isEmpty()) {
             return null;
@@ -270,6 +271,12 @@ public class StrategyEngine {
                     strategy.buyLimit2Quantity(), strategy.buyLimit2Price(),
                     StrategyLifecycleState.BUY_LIMIT_2_PLACED,
                     "Buy Limit 2 order resubmitted after expiry", false);
+            case MANUAL_BUY -> expiredOrder
+                    .map(order -> submitBuyOrder(strategy, StrategyStage.MANUAL_BUY,
+                            order.requestedQuantityInt(), order.limitPrice(),
+                            StrategyLifecycleState.BASE_BUY_FILLED,
+                            "Manual limit buy order resubmitted after expiry", false))
+                    .orElse(null);
             default -> null;
         };
     }

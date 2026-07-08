@@ -46,10 +46,19 @@ final class ManualBuyOrderSubmitter {
     }
 
     StrategyService.StrategyCreationResult submitLimit(String strategyId, int quantity, BigDecimal limitPrice) {
+        return submitLimit(strategyId, quantity, limitPrice, false);
+    }
+
+    StrategyService.StrategyCreationResult submitLimit(
+            String strategyId,
+            int quantity,
+            BigDecimal limitPrice,
+            boolean repositionAfterExpiry
+    ) {
         if (limitPrice == null || limitPrice.compareTo(BigDecimal.ZERO) <= 0) {
             return StrategyService.StrategyCreationResult.failed("Limit price must be greater than zero");
         }
-        return submit(strategyId, quantity, limitPrice, StrategyOrderType.LIMIT);
+        return submit(strategyId, quantity, limitPrice, StrategyOrderType.LIMIT, repositionAfterExpiry);
     }
 
     private StrategyService.StrategyCreationResult submit(
@@ -57,6 +66,16 @@ final class ManualBuyOrderSubmitter {
             int quantity,
             BigDecimal limitPrice,
             StrategyOrderType orderType
+    ) {
+        return submit(strategyId, quantity, limitPrice, orderType, false);
+    }
+
+    private StrategyService.StrategyCreationResult submit(
+            String strategyId,
+            int quantity,
+            BigDecimal limitPrice,
+            StrategyOrderType orderType,
+            boolean repositionAfterExpiry
     ) {
         Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
         if (maybeStrategy.isEmpty()) {
@@ -112,6 +131,9 @@ final class ManualBuyOrderSubmitter {
         strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
         strategy.setLatestAlpacaOrderId(order.alpacaOrderId());
         strategy.setLastTriggeredRuleType("MANUAL_BUY");
+        if (orderType == StrategyOrderType.LIMIT && repositionAfterExpiry) {
+            strategy.setResubmitOnExpiryEnabled(true);
+        }
         strategy.clearLastError();
         strategyRepository.save(strategy);
         if (status == StrategyOrderStatus.REJECTED || status == StrategyOrderStatus.FAILED) {

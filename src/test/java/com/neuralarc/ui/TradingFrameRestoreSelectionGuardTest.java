@@ -77,6 +77,48 @@ class TradingFrameRestoreSelectionGuardTest {
     }
 
     @Test
+    void keepsOrbRecommendationRowsVisibleInCurrentGrid() {
+        Strategy strategy = failedStrategy();
+        strategy.setStatus(StrategyStatus.CREATED);
+        strategy.setCurrentState(StrategyLifecycleState.CREATED);
+        strategy.setLatestOrderStatus("ORB_RECOMMENDED");
+
+        assertTrue(TradingFrame.includeScannerRecommendationInCurrentTab(strategy));
+    }
+
+    @Test
+    void keepsOrbArmedRowsVisibleInCurrentGrid() {
+        Strategy strategy = failedStrategy();
+        strategy.setStatus(StrategyStatus.CREATED);
+        strategy.setCurrentState(StrategyLifecycleState.CREATED);
+        strategy.setLatestOrderStatus("ORB_ARMED");
+
+        assertTrue(TradingFrame.includeScannerRecommendationInCurrentTab(strategy));
+    }
+
+    @Test
+    void portfolioActionScopeMatchesSelectedWorkspaceOnly() {
+        Strategy strategy = failedStrategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setMode(StrategyMode.PAPER);
+        strategy.setWorkspaceId("orb-workspace");
+
+        assertTrue(TradingFrame.matchesPortfolioActionScope(strategy, StrategyMode.PAPER, "orb-workspace"));
+        assertFalse(TradingFrame.matchesPortfolioActionScope(strategy, StrategyMode.PAPER, "vwap-workspace"));
+    }
+
+    @Test
+    void portfolioActionScopeAllStocksIncludesSelectedModeOnly() {
+        Strategy strategy = failedStrategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setMode(StrategyMode.PAPER);
+        strategy.setWorkspaceId("orb-workspace");
+
+        assertTrue(TradingFrame.matchesPortfolioActionScope(strategy, StrategyMode.PAPER, null));
+        assertFalse(TradingFrame.matchesPortfolioActionScope(strategy, StrategyMode.LIVE, null));
+    }
+
+    @Test
     void startupViewModeDefaultsToLiveWhenLiveStrategiesExist() {
         Strategy paper = failedStrategy();
         paper.setMode(StrategyMode.PAPER);

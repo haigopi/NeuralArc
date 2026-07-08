@@ -587,6 +587,90 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void marketOpenTransitionResubmitsExpiredAutoExtensionWithoutWaitingForPollingInterval() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        strategy.setResubmitOnExpiryEnabled(true);
+        strategy.setPollingIntervalSeconds(60);
+        strategy.setLastPolledAt(Instant.now());
+        f.strategies.save(strategy);
+        f.alpaca.position = Optional.empty();
+        f.alpaca.orderById.clear();
+        f.marketHoursService.open = true;
+
+        int due = f.service.pollDueStrategies();
+
+        assertEquals(0, due);
+        assertDoesNotThrow(() -> f.awaitTrue(() -> {
+            Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+            return updated.status() == StrategyStatus.ACTIVE
+                    && "new".equals(updated.latestOrderStatus())
+                    && f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).isPresent();
+        }, "Expired auto-extension strategy should restart immediately when the market opens"));
+    }
+
+    @Test
+    void pollCycleCompletesListenerWhenExpiredAutoResubmitCannotRun() throws Exception {
+        Fixture f = new Fixture();
+        f.service.pollDueStrategies();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        strategy.setLatestAlpacaOrderId("ord-expired");
+        strategy.setLastTriggeredRuleType("LOSS_BUY_RULE");
+        strategy.setResubmitOnExpiryEnabled(true);
+        f.strategies.save(strategy);
+        f.orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(),
+                strategy.id(),
+                StrategyStage.BUY_LIMIT_1,
+                "ord-expired",
+                "client-expired",
+                "AAPL",
+                StrategyOrderSide.BUY,
+                StrategyOrderType.LIMIT,
+                new BigDecimal("6.00"),
+                BigDecimal.ZERO,
+                new BigDecimal("5"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                StrategyOrderStatus.SUBMITTED,
+                Instant.now(),
+                Instant.now(),
+                null,
+                "{}"
+        ));
+        f.alpaca.position = Optional.empty();
+        f.alpaca.orderById.clear();
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch completed = new CountDownLatch(1);
+        f.service.setPollListener(new StrategyPollingService.PollListener() {
+            @Override public void onPollStarted(String strategyId) {
+                if (strategy.id().equals(strategyId)) {
+                    started.countDown();
+                }
+            }
+
+            @Override public void onPollCompleted(String strategyId) {
+                if (strategy.id().equals(strategyId)) {
+                    completed.countDown();
+                }
+            }
+        });
+
+        int due = f.service.pollDueStrategies();
+
+        assertEquals(1, due);
+        assertTrue(started.await(3, TimeUnit.SECONDS));
+        assertTrue(completed.await(3, TimeUnit.SECONDS));
+        assertEquals(StrategyStatus.FAILED, f.strategies.findById(strategy.id()).orElseThrow().status());
+    }
+
+    @Test
     void pollCycleResubmitsExpiredFailedBuyLimit1WhenPositionExists() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
@@ -786,6 +870,32 @@ class StrategyPollingServiceTest {
         assertEquals(1, snapshot.eligible());
         assertEquals(0, snapshot.due());
         assertEquals(1, snapshot.skippedNotDue());
+    }
+
+    @Test
+    void expiredAutoExtensionRetriesBeforeLongPollingIntervalAfterClosedMarketDetection() {
+        Fixture f = new Fixture();
+        f.service.pollDueStrategies();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        strategy.setResubmitOnExpiryEnabled(true);
+        strategy.setPollingIntervalSeconds(3600);
+        strategy.setLastPolledAt(Instant.now().minusSeconds(61));
+        f.strategies.save(strategy);
+        f.alpaca.position = Optional.empty();
+        f.alpaca.orderById.clear();
+
+        int due = f.service.pollDueStrategies();
+
+        assertEquals(1, due);
+        assertDoesNotThrow(() -> f.awaitTrue(() -> {
+            Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+            return updated.status() == StrategyStatus.ACTIVE
+                    && "new".equals(updated.latestOrderStatus())
+                    && f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).isPresent();
+        }, "Expired auto-extension strategy should retry without waiting for the long polling interval"));
     }
 
     @Test

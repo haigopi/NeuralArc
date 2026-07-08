@@ -4,10 +4,12 @@ import com.neuralarc.api.AlpacaClient;
 import com.neuralarc.api.AlpacaOrderData;
 import com.neuralarc.api.AlpacaPositionData;
 import com.neuralarc.model.Strategy;
+import com.neuralarc.model.StrategyOrder;
 import com.neuralarc.model.StrategyStage;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Comparator;
 
 final class ExpiredEntryOrderResubmitter {
     private final StrategyOrderRepository orderRepository;
@@ -37,25 +39,56 @@ final class ExpiredEntryOrderResubmitter {
         return switch (stage.get()) {
             case BASE_BUY -> position.isEmpty() || !position.get().exists();
             case BUY_LIMIT_1, BUY_LIMIT_2 -> position.isPresent() && position.get().exists();
+            case MANUAL_BUY -> resolveOrder(strategy).isPresent()
+                    && position.isPresent()
+                    && position.get().exists();
             default -> false;
         };
     }
 
     Optional<StrategyStage> resolveStage(Strategy strategy) {
+        return resolveOrder(strategy).map(StrategyOrder::stage)
+                .or(() -> StrategyStageSupport.stageForRuleType(strategy == null ? null : strategy.lastTriggeredRuleType()))
+                .or(() -> Optional.of(StrategyStage.BASE_BUY));
+    }
+
+    Optional<StrategyOrder> resolveOrder(Strategy strategy) {
         if (strategy == null) {
             return Optional.empty();
         }
         if (strategy.latestAlpacaOrderId() != null && !strategy.latestAlpacaOrderId().isBlank()) {
-            Optional<StrategyStage> stageFromOrder = orderRepository.findByAlpacaOrderId(strategy.latestAlpacaOrderId())
-                    .map(order -> order.stage())
-                    .filter(stage -> stage == StrategyStage.BASE_BUY
-                            || stage == StrategyStage.BUY_LIMIT_1
-                            || stage == StrategyStage.BUY_LIMIT_2);
-            if (stageFromOrder.isPresent()) {
-                return stageFromOrder;
+            Optional<StrategyOrder> order = orderRepository.findByAlpacaOrderId(strategy.latestAlpacaOrderId())
+                    .filter(ExpiredEntryOrderResubmitter::isAutoResubmittableBuyStage);
+            if (order.isPresent()) {
+                return order;
             }
         }
-        return StrategyStageSupport.stageForRuleType(strategy.lastTriggeredRuleType())
-                .or(() -> Optional.of(StrategyStage.BASE_BUY));
+        Optional<StrategyStage> stage = StrategyStageSupport.stageForRuleType(strategy.lastTriggeredRuleType())
+                .filter(ExpiredEntryOrderResubmitter::isAutoResubmittableBuyStage);
+        if (stage.isPresent()) {
+            return orderRepository.findLatestByStrategyStage(strategy.id(), stage.get())
+                    .filter(ExpiredEntryOrderResubmitter::isAutoResubmittableBuyStage);
+        }
+        return orderRepository.findByStrategyId(strategy.id()).stream()
+                .filter(ExpiredEntryOrderResubmitter::isAutoResubmittableBuyStage)
+                .max(Comparator.comparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())));
+    }
+
+    private static boolean isAutoResubmittableBuyStage(StrategyStage stage) {
+        return stage == StrategyStage.BASE_BUY
+                || stage == StrategyStage.BUY_LIMIT_1
+                || stage == StrategyStage.BUY_LIMIT_2
+                || stage == StrategyStage.MANUAL_BUY;
+    }
+
+    private static boolean isAutoResubmittableBuyStage(StrategyOrder order) {
+        if (order == null) {
+            return false;
+        }
+        StrategyStage stage = order.stage();
+        return stage == StrategyStage.BASE_BUY
+                || stage == StrategyStage.BUY_LIMIT_1
+                || stage == StrategyStage.BUY_LIMIT_2
+                || stage == StrategyStage.MANUAL_BUY;
     }
 }

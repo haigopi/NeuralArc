@@ -40,6 +40,15 @@ class StockPriceTooltipSnapshotTest {
         assertTrue(snapshot.tooltipText().contains("Current: $101.25"));
     }
 
+    @Test
+    void loadingSnapshotShowsExplicitLoadingValues() {
+        StockPriceTooltipSnapshot snapshot = StockPriceTooltipSnapshot.loading("AAPL");
+
+        assertTrue(snapshot.tooltipText().contains("⏳ Loading stock price"));
+        assertTrue(snapshot.tooltipText().contains("Open: loading"));
+        assertTrue(snapshot.tooltipText().contains("Current: loading"));
+    }
+
     private static MarketBar bar(String open, String high, String low, String close) {
         return new MarketBar("AAPL", "", new BigDecimal(open), new BigDecimal(high), new BigDecimal(low), new BigDecimal(close), BigDecimal.ZERO);
     }

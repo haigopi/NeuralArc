@@ -54,7 +54,7 @@ class StrategyServiceTest {
         Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
         StrategyService.StrategyCreationResult result = service.createAndActivate(strategy);
 
-        assertTrue(result.success());
+        assertTrue(result.success(), result.error());
         Strategy stored = strategies.findById(strategy.id()).orElseThrow();
         assertEquals(StrategyStatus.ACTIVE, stored.status());
         assertEquals(StrategyLifecycleState.BASE_BUY_PLACED, stored.currentState());
@@ -283,6 +283,64 @@ class StrategyServiceTest {
         Strategy stored = strategies.findById(strategy.id()).orElseThrow();
         assertEquals("MANUAL_BUY", stored.lastTriggeredRuleType());
         assertEquals(submitted.orderId(), stored.latestAlpacaOrderId());
+    }
+
+    @Test
+    void buyMoreAtLimitCanEnableAutoRepositionAfterExpiry() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setResubmitOnExpiryEnabled(false);
+        strategies.save(strategy);
+
+        StrategyService.StrategyCreationResult result = service.buyMoreAtLimit(
+                strategy.id(), 7, new BigDecimal("8.25"), true);
+
+        assertTrue(result.success());
+        assertTrue(strategies.findById(strategy.id()).orElseThrow().resubmitOnExpiryEnabled());
+    }
+
+    @Test
+    void repositionExpiredStrategyResubmitsManualLimitBuyWhenSelectedForAutoReposition() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.position = Optional.of(new AlpacaPositionData(
+                "AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("8.50"), "{}"));
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        strategy.setLatestAlpacaOrderId("expired-manual");
+        strategy.setLastTriggeredRuleType("MANUAL_BUY");
+        strategy.setResubmitOnExpiryEnabled(true);
+        strategies.save(strategy);
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.MANUAL_BUY,
+                "expired-manual", "client-manual", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("8.25"), BigDecimal.ZERO,
+                new BigDecimal("7"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.CANCELED,
+                Instant.now().minusSeconds(120), Instant.now().minusSeconds(60), null, "{}"
+        ));
+
+        StrategyService.StrategyCreationResult result = service.repositionExpiredStrategy(strategy.id());
+
+        assertTrue(result.success(), result.error());
+        StrategyOrder resubmitted = orders.findLatestByStrategyStage(strategy.id(), StrategyStage.MANUAL_BUY).orElseThrow();
+        assertEquals(0, new BigDecimal("8.25").compareTo(resubmitted.limitPrice()));
+        assertEquals(0, new BigDecimal("7").compareTo(resubmitted.requestedQuantity()));
+        assertEquals("ord-1", resubmitted.alpacaOrderId());
+        Strategy updated = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, updated.status());
+        assertEquals(StrategyLifecycleState.BASE_BUY_FILLED, updated.currentState());
     }
 
     @Test
@@ -835,6 +893,44 @@ class StrategyServiceTest {
     }
 
     @Test
+    void repositionExpiredStrategyResolvesLatestBuyLimitWhenTrackedOrderIdWasCleared() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("7.00"), "{}"));
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        strategy.setLatestAlpacaOrderId("");
+        strategies.save(strategy);
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY, "filled-base", "filled-base-client", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("8.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), new BigDecimal("10"), new BigDecimal("8.00"), StrategyOrderStatus.FILLED,
+                Instant.now().minusSeconds(120), Instant.now().minusSeconds(120), Instant.now().minusSeconds(60), "{}"
+        ));
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BUY_LIMIT_1, "expired-limit-1", "expired-limit-1-client", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("6.00"), BigDecimal.ZERO,
+                new BigDecimal("5"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        ));
+
+        StrategyService.StrategyCreationResult result = service.repositionExpiredStrategy(strategy.id());
+
+        assertTrue(result.success());
+        Strategy persisted = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyLifecycleState.BUY_LIMIT_1_PLACED, persisted.currentState());
+        AlpacaOrderData submitted = alpaca.submittedOrders.getFirst();
+        assertEquals(new BigDecimal("6.00"), submitted.limitPrice());
+        assertEquals(StrategyOrderStatus.CANCELED, orders.findByClientOrderId("expired-limit-1-client").orElseThrow().status());
+    }
+
+    @Test
     void repositionExpiredStrategyFailsWhenStrategyIsNotExpired() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
@@ -1036,6 +1132,48 @@ class StrategyServiceTest {
         assertEquals(StrategyStatus.PAUSED, paused.status());
         assertEquals(StrategyLifecycleState.PAUSED, paused.currentState());
         assertEquals(PauseReason.MANUAL_LIMIT_BUY_CANCELED, paused.pauseReason());
+    }
+
+    @Test
+    void cancelPendingLimitBuyKeepsExistingPositionActive() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("180.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.STOP_LOSS_ACTIVE);
+        strategies.save(strategy);
+        StrategyOrder filledBaseBuy = new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY, "ord-filled", "client-filled", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("180.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), new BigDecimal("10"), new BigDecimal("180.00"), StrategyOrderStatus.FILLED,
+                Instant.now().minusSeconds(300), Instant.now().minusSeconds(240), Instant.now().minusSeconds(240), "{}"
+        );
+        StrategyOrder pendingManualBuy = new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.MANUAL_BUY, "ord-manual", "client-manual", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("175.00"), BigDecimal.ZERO,
+                new BigDecimal("2"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        );
+        orders.save(filledBaseBuy);
+        orders.save(pendingManualBuy);
+        alpaca.openOrders.add(new AlpacaOrderData("ord-manual", "client-manual", "AAPL", "buy", "limit",
+                new BigDecimal("175.00"), BigDecimal.ZERO, BigDecimal.ZERO, "new", "{}"));
+
+        StrategyService.LimitBuyCancelResult result = service.cancelPendingLimitBuys(strategy.id());
+
+        assertTrue(result.success());
+        assertEquals(1, result.canceledCount());
+        assertEquals(List.of("ord-manual"), alpaca.canceledOrderIds);
+        assertEquals(StrategyOrderStatus.CANCELED, orders.findByAlpacaOrderId("ord-manual").orElseThrow().status());
+        Strategy updated = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, updated.status());
+        assertEquals(StrategyLifecycleState.STOP_LOSS_ACTIVE, updated.currentState());
+        assertEquals(PauseReason.NONE, updated.pauseReason());
+        assertEquals("canceled", updated.latestOrderStatus());
     }
 
     @Test

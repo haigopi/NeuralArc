@@ -116,7 +116,7 @@ public final class StrategyTablePresenter {
         if (strategy == null) {
             return "";
         }
-        if (isGapRocketRecommended(strategy)) {
+        if (StrategyRecommendationMarkers.isScannerRecommendationRow(strategy)) {
             return "Base buy pending to place order @ $" + strategy.baseBuyLimitPrice().toPlainString();
         }
         if ("QUEUED_FOR_OPEN".equalsIgnoreCase(strategy.latestOrderStatus())) {
@@ -587,7 +587,13 @@ public final class StrategyTablePresenter {
         String name = normalizedText(strategy.name());
         String event = normalizedText(strategy.lastEvent());
         String combined = name + " " + event;
-        if (isGapRocketRecommended(strategy) || name.contains("gap_rocket")) {
+        if (StrategyRecommendationMarkers.isScannerRecommendationRow(strategy)) {
+            String source = StrategyRecommendationMarkers.sourceLabel(strategy);
+            if (!source.isBlank()) {
+                return source;
+            }
+        }
+        if (name.contains("gap_rocket")) {
             return "Gap and go strategy";
         }
         if (isSmartPicksSource(combined)) {
@@ -600,12 +606,6 @@ public final class StrategyTablePresenter {
             return "Promoted Live";
         }
         return "Manually Added";
-    }
-
-    private boolean isGapRocketRecommended(Strategy strategy) {
-        return strategy != null
-                && strategy.latestOrderStatus() != null
-                && strategy.latestOrderStatus().startsWith("GAP_ROCKET_");
     }
 
     private String normalizedText(String value) {

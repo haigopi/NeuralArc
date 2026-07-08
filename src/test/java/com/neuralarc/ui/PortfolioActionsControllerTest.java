@@ -164,6 +164,7 @@ class PortfolioActionsControllerTest {
 
         @Override public List<ManagedStrategy> strategies() { return List.of(); }
         @Override public List<ManagedStrategy> currentStrategies() { return List.of(); }
+        @Override public List<ManagedStrategy> scopedStrategies() { return List.of(); }
         @Override public StrategyService strategyService() { return service; }
         @Override public StrategyService strategyServiceForMode(StrategyMode mode) { return service; }
         @Override public StrategyMode selectedViewMode() { return selectedViewMode; }

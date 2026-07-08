@@ -316,6 +316,17 @@ final class GapAndGoCoordinator {
             if (existing.isPresent()) {
                 Strategy existingStrategy = existing.get();
                 if (isPendingOrderPlacement(existingStrategy)) {
+                    if (!interactive && ScheduledScanDuplicatePolicy.samePlannedPrices(
+                            existingStrategy,
+                            recommendation.plannedEntryPrice(),
+                            recommendation.stopLossPrice(),
+                            recommendation.takeProfitPrice()
+                    )) {
+                        skipped++;
+                        ui.log("[Gap Rocket] Skipped " + recommendation.symbol()
+                                + ": scheduled scan already has the same planned prices in this workspace.");
+                        continue;
+                    }
                     existingStrategy.setBaseBuyLimitPrice(recommendation.plannedEntryPrice());
                     existingStrategy.setStopLossPrice(recommendation.stopLossPrice());
                     existingStrategy.setTargetSellPrice(recommendation.takeProfitPrice());

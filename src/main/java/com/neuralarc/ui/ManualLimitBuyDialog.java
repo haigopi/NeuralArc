@@ -4,6 +4,7 @@ import com.neuralarc.model.Strategy;
 import com.neuralarc.util.Monetary;
 
 import javax.swing.JOptionPane;
+import javax.swing.JCheckBox;
 import javax.swing.JSpinner;
 import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
@@ -21,6 +22,9 @@ final class ManualLimitBuyDialog {
         }
         JSpinner quantitySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 1_000_000, 1));
         JTextField limitPriceField = new JTextField(defaultLimitPrice(currentPrice), 12);
+        JCheckBox repositionAfterExpiry = new JCheckBox("Automatically reposition this limit buy if it expires",
+                strategy.resubmitOnExpiryEnabled());
+        repositionAfterExpiry.setOpaque(false);
         String currentPriceText = currentPrice != null && currentPrice.compareTo(BigDecimal.ZERO) > 0
                 ? "$" + Monetary.round(currentPrice).toPlainString()
                 : "not available";
@@ -29,8 +33,10 @@ final class ManualLimitBuyDialog {
                 + "Current price: " + currentPriceText + "<br>"
                 + "Enter the quantity and maximum limit price for the buy order."
                 + "<br><br>The strategy remains active and the order is recorded in trade history as a manual buy."
+                + "<br><br><span style='color:#667085'>If auto reposition is selected, an expired manual limit buy "
+                + "will be resubmitted automatically when polling detects broker expiry.</span>"
                 + "</body></html>";
-        Object[] content = {message, "Quantity:", quantitySpinner, "Limit price:", limitPriceField};
+        Object[] content = {message, "Quantity:", quantitySpinner, "Limit price:", limitPriceField, repositionAfterExpiry};
 
         while (true) {
             int choice = JOptionPane.showConfirmDialog(
@@ -58,7 +64,7 @@ final class ManualLimitBuyDialog {
             if (!confirmAboveCurrentPrice(parent, strategy, limitPrice, currentPrice)) {
                 continue;
             }
-            return Optional.of(new ManualLimitBuySelection(quantity, limitPrice));
+            return Optional.of(new ManualLimitBuySelection(quantity, limitPrice, repositionAfterExpiry.isSelected()));
         }
     }
 

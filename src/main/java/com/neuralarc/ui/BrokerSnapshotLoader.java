@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -26,12 +27,21 @@ final class BrokerSnapshotLoader {
             Function<ApplicationMode, HttpAlpacaClient> clientResolver,
             Predicate<Strategy> includeStrategy
     ) {
+        return loadPositionSnapshots(stored, clientResolver, includeStrategy, null);
+    }
+
+    static Map<String, Position> loadPositionSnapshots(
+            List<Strategy> stored,
+            Function<ApplicationMode, HttpAlpacaClient> clientResolver,
+            Predicate<Strategy> includeStrategy,
+            BiFunction<ApplicationMode, HttpAlpacaClient, List<AlpacaPositionData>> positionResolver
+    ) {
         if (stored == null || stored.isEmpty() || clientResolver == null) {
             return Map.of();
         }
         Map<String, Position> snapshots = new LinkedHashMap<>();
-        loadPositionSnapshotsForMode(stored, StrategyMode.PAPER, ApplicationMode.PAPER, clientResolver, includeStrategy, snapshots);
-        loadPositionSnapshotsForMode(stored, StrategyMode.LIVE, ApplicationMode.LIVE, clientResolver, includeStrategy, snapshots);
+        loadPositionSnapshotsForMode(stored, StrategyMode.PAPER, ApplicationMode.PAPER, clientResolver, includeStrategy, positionResolver, snapshots);
+        loadPositionSnapshotsForMode(stored, StrategyMode.LIVE, ApplicationMode.LIVE, clientResolver, includeStrategy, positionResolver, snapshots);
         return snapshots;
     }
 
@@ -41,6 +51,7 @@ final class BrokerSnapshotLoader {
             ApplicationMode applicationMode,
             Function<ApplicationMode, HttpAlpacaClient> clientResolver,
             Predicate<Strategy> includeStrategy,
+            BiFunction<ApplicationMode, HttpAlpacaClient, List<AlpacaPositionData>> positionResolver,
             Map<String, Position> target
     ) {
         List<Strategy> strategiesForMode = stored.stream()
@@ -60,7 +71,14 @@ final class BrokerSnapshotLoader {
             return;
         }
         Map<String, BigDecimal> latestPrices = client.getLatestPrices(symbols);
-        Map<String, AlpacaPositionData> positionsBySymbol = client.getPositions().stream()
+        List<AlpacaPositionData> positions = positionResolver == null
+                ? client.getPositions()
+                : positionResolver.apply(applicationMode, client);
+        if (positions == null) {
+            positions = List.of();
+        }
+        Map<String, AlpacaPositionData> positionsBySymbol = positions.stream()
+                .filter(position -> position != null && position.symbol() != null && !position.symbol().isBlank())
                 .collect(java.util.stream.Collectors.toMap(
                         position -> position.symbol().toUpperCase(Locale.ROOT),
                         position -> position,
@@ -102,4 +120,3 @@ final class BrokerSnapshotLoader {
         return snapshot;
     }
 }
-

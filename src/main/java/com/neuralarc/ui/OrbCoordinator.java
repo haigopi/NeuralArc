@@ -320,6 +320,17 @@ final class OrbCoordinator {
             if (existing.isPresent()) {
                 Strategy strategy = existing.get();
                 if (isPendingOrderPlacement(strategy)) {
+                    if (!interactive && ScheduledScanDuplicatePolicy.samePlannedPrices(
+                            strategy,
+                            recommendation.plannedEntry(),
+                            recommendation.stop(),
+                            recommendation.target()
+                    )) {
+                        skipped++;
+                        ui.log("[ORB] Skipped " + recommendation.symbol()
+                                + ": scheduled scan already has the same planned prices in this workspace.");
+                        continue;
+                    }
                     strategy.setBaseBuyLimitPrice(recommendation.plannedEntry());
                     strategy.setStopLossPrice(recommendation.stop());
                     strategy.setTargetSellPrice(recommendation.target());

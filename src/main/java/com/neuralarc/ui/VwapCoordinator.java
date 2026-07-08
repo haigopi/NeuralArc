@@ -309,6 +309,17 @@ final class VwapCoordinator {
             if (existing.isPresent()) {
                 Strategy existingStrategy = existing.get();
                 if (isPendingOrderPlacement(existingStrategy)) {
+                    if (!interactive && ScheduledScanDuplicatePolicy.samePlannedPrices(
+                            existingStrategy,
+                            recommendation.plannedEntryPrice(),
+                            recommendation.stopLossPrice(),
+                            recommendation.targetPrice()
+                    )) {
+                        skipped++;
+                        ui.log("[VWAP Desk] Skipped " + recommendation.symbol()
+                                + ": scheduled scan already has the same planned prices in this workspace.");
+                        continue;
+                    }
                     existingStrategy.setBaseBuyLimitPrice(recommendation.plannedEntryPrice());
                     existingStrategy.setStopLossPrice(recommendation.stopLossPrice());
                     existingStrategy.setTargetSellPrice(recommendation.targetPrice());

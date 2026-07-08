@@ -238,7 +238,8 @@ public final class StrategyActionsController {
                 () -> {
                     StrategyService.StrategyCreationResult result = type == BuyMoreType.MARKET
                             ? gateway.buyMoreAtMarket(strategy, quantity)
-                            : gateway.buyMoreAtLimit(strategy, quantity, selection.get().limitPrice());
+                            : gateway.buyMoreAtLimit(strategy, quantity, selection.get().limitPrice(),
+                            selection.get().repositionAfterExpiry());
                     if (!result.success()) {
                         throw new IllegalStateException(result.error());
                     }
@@ -463,8 +464,14 @@ public final class StrategyActionsController {
                     }
                 },
                 () -> {
-                    gateway.findStrategyById(strategy.id()).ifPresent(entry::syncFrom);
-                    gateway.stopPollingCountdown(strategy.id());
+                    Strategy updated = gateway.findStrategyById(strategy.id()).orElse(strategy);
+                    entry.syncFrom(updated);
+                    if (updated.status() == StrategyStatus.PAUSED
+                            && updated.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED) {
+                        gateway.stopPollingCountdown(strategy.id());
+                    } else if (updated.status() == StrategyStatus.ACTIVE) {
+                        gateway.startPollingCountdown(strategy.id());
+                    }
                     gateway.log("Pending limit buy canceled at broker for symbol " + strategy.symbol() + ".");
                     actionLog.completed("Cancel Pending Limit Buy " + strategy.symbol());
                     gateway.publishAnalytics(new AnalyticsEvent("PENDING_LIMIT_BUY_CANCELED").put("symbol", strategy.symbol()));
@@ -618,7 +625,12 @@ public final class StrategyActionsController {
         Optional<ManualLimitBuySelection> chooseLimitBuy(Strategy strategy, BigDecimal currentPrice);
         BigDecimal currentPriceForStrategy(Strategy strategy);
         StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity);
-        StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice);
+        StrategyService.StrategyCreationResult buyMoreAtLimit(
+                Strategy strategy,
+                int quantity,
+                BigDecimal limitPrice,
+                boolean repositionAfterExpiry
+        );
         StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType);
         StrategyService.StrategyCreationResult repositionExpiredStrategy(String strategyId);
         StrategyService.LimitBuyCancelResult cancelPendingLimitBuys(Strategy strategy);

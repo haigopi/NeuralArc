@@ -264,6 +264,25 @@ public class StrategyService {
             return LimitBuyCancelResult.failed("No pending limit buy orders found");
         }
 
+        List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
+        if (hasOpenLocalExposure(orders)) {
+            StrategyLifecycleState restoredState = stateAfterCanceledBuyWithExposure(strategy.currentState(), orders);
+            strategy.setStatus(StrategyStatus.ACTIVE);
+            strategy.setCurrentState(restoredState);
+            strategy.setPauseReason(PauseReason.NONE);
+            strategy.setLatestOrderStatus("canceled");
+            strategy.clearLastError();
+            strategyRepository.save(strategy);
+            stateMachine.transition(
+                    strategy,
+                    restoredState,
+                    StrategyEventType.ORDER_STATUS_UPDATED,
+                    "Pending limit buy order(s) canceled; existing position remains active",
+                    "{}"
+            );
+            return LimitBuyCancelResult.success(canceledCount);
+        }
+
         rememberResumeStateBeforePause(strategy);
         strategy.setStatus(StrategyStatus.PAUSED);
         strategy.setCurrentState(StrategyLifecycleState.PAUSED);
@@ -668,7 +687,16 @@ public class StrategyService {
     }
 
     public StrategyCreationResult buyMoreAtLimit(String strategyId, int quantity, BigDecimal limitPrice) {
-        return manualBuyOrderSubmitter.submitLimit(strategyId, quantity, limitPrice);
+        return buyMoreAtLimit(strategyId, quantity, limitPrice, false);
+    }
+
+    public StrategyCreationResult buyMoreAtLimit(
+            String strategyId,
+            int quantity,
+            BigDecimal limitPrice,
+            boolean repositionAfterExpiry
+    ) {
+        return manualBuyOrderSubmitter.submitLimit(strategyId, quantity, limitPrice, repositionAfterExpiry);
     }
 
     public StrategyCreationResult closePosition(String strategyId) {
@@ -899,6 +927,65 @@ public class StrategyService {
         if (strategy.currentState() != null && strategy.currentState() != StrategyLifecycleState.PAUSED) {
             strategy.setResumeStateBeforePause(strategy.currentState());
         }
+    }
+
+    private boolean hasOpenLocalExposure(List<StrategyOrder> orders) {
+        BigDecimal quantity = BigDecimal.ZERO;
+        for (StrategyOrder order : orders) {
+            if (order == null || order.filledQuantity() == null
+                    || order.filledQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            if (order.side() == StrategyOrderSide.BUY) {
+                quantity = quantity.add(order.filledQuantity());
+            } else if (order.side() == StrategyOrderSide.SELL) {
+                quantity = quantity.subtract(order.filledQuantity());
+            }
+        }
+        return quantity.compareTo(BigDecimal.ZERO) > 0;
+    }
+
+    private StrategyLifecycleState stateAfterCanceledBuyWithExposure(
+            StrategyLifecycleState currentState,
+            List<StrategyOrder> orders
+    ) {
+        if (currentState == StrategyLifecycleState.BUY_LIMIT_2_PLACED
+                || currentState == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED) {
+            return hasFilledBuyStage(orders, StrategyStage.BUY_LIMIT_2)
+                    ? StrategyLifecycleState.BUY_LIMIT_2_FILLED
+                    : latestFilledBuyState(orders);
+        }
+        if (currentState == StrategyLifecycleState.BUY_LIMIT_1_PLACED
+                || currentState == StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED) {
+            return hasFilledBuyStage(orders, StrategyStage.BUY_LIMIT_1)
+                    ? StrategyLifecycleState.BUY_LIMIT_1_FILLED
+                    : latestFilledBuyState(orders);
+        }
+        if (currentState == StrategyLifecycleState.BASE_BUY_PLACED
+                || currentState == StrategyLifecycleState.BASE_BUY_PARTIALLY_FILLED
+                || currentState == StrategyLifecycleState.PAUSED
+                || currentState == StrategyLifecycleState.FAILED
+                || currentState == null) {
+            return latestFilledBuyState(orders);
+        }
+        return currentState;
+    }
+
+    private StrategyLifecycleState latestFilledBuyState(List<StrategyOrder> orders) {
+        if (hasFilledBuyStage(orders, StrategyStage.BUY_LIMIT_2)) {
+            return StrategyLifecycleState.BUY_LIMIT_2_FILLED;
+        }
+        if (hasFilledBuyStage(orders, StrategyStage.BUY_LIMIT_1)) {
+            return StrategyLifecycleState.BUY_LIMIT_1_FILLED;
+        }
+        return StrategyLifecycleState.BASE_BUY_FILLED;
+    }
+
+    private boolean hasFilledBuyStage(List<StrategyOrder> orders, StrategyStage stage) {
+        return orders.stream()
+                .filter(order -> order != null && order.stage() == stage && order.side() == StrategyOrderSide.BUY)
+                .anyMatch(order -> order.filledQuantity() != null
+                        && order.filledQuantity().compareTo(BigDecimal.ZERO) > 0);
     }
 
     private boolean isProfitableExitStage(StrategyStage stage) {

@@ -23,6 +23,10 @@ record StockPriceTooltipSnapshot(
         return EMPTY;
     }
 
+    static StockPriceTooltipSnapshot loading(String symbol) {
+        return new StockPriceTooltipSnapshot(symbol, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, Instant.EPOCH);
+    }
+
     static StockPriceTooltipSnapshot fromBars(String symbol, List<MarketBar> bars, BigDecimal fallbackCurrent) {
         if (bars == null || bars.isEmpty()) {
             BigDecimal current = positive(fallbackCurrent) ? Monetary.round(fallbackCurrent) : BigDecimal.ZERO;
@@ -65,6 +69,13 @@ record StockPriceTooltipSnapshot(
     }
 
     String tooltipText() {
+        if (loadedAt == Instant.EPOCH && !positive(open) && !positive(highSoFar) && !positive(lowSoFar) && !positive(current)) {
+            return TooltipStyler.text("⏳ Loading stock price…"
+                    + "\nOpen: loading…"
+                    + "\nHigh so far: loading…"
+                    + "\nLow so far: loading…"
+                    + "\nCurrent: loading…");
+        }
         return TooltipStyler.text("Open: " + money(open)
                 + "\nHigh so far: " + money(highSoFar)
                 + "\nLow so far: " + money(lowSoFar)

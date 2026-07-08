@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.analytics.*;
+import com.neuralarc.api.AlpacaPositionData;
 import com.neuralarc.api.HttpAlpacaClient;
 import com.neuralarc.api.AlpacaTradeUpdateEvent;
 import com.neuralarc.api.TradingApi;
@@ -231,6 +232,7 @@ public class TradingFrame extends JFrame {
     private static final int STREAM_RECONNECT_RESET_HOUR = 6;
     private static final int STRATEGY_STOCK_PRICE_COLUMN = 3;
     private static final long STOCK_PRICE_TOOLTIP_TTL_MILLIS = 30_000L;
+    private static final long BROKER_POSITION_SNAPSHOT_TTL_MILLIS = 15_000L;
     /** Gap between polling ticks that indicates the system was suspended (slept). */
     private static final long WAKE_GAP_DETECTION_MS = 30_000L;
     private static final Color HEADER_STATUS_DEFAULT = new Color(220, 220, 255);
@@ -276,6 +278,7 @@ public class TradingFrame extends JFrame {
     private final HistoryRowStyler historyRowStyler = new HistoryRowStyler();
     private final Map<String, StockPriceTooltipSnapshot> stockPriceTooltipSnapshots = new ConcurrentHashMap<>();
     private final Set<String> stockPriceTooltipRefreshesInFlight = ConcurrentHashMap.newKeySet();
+    private final Map<ApplicationMode, BrokerPositionsCacheEntry> brokerPositionSnapshotCache = new ConcurrentHashMap<>();
     private final MarketStatusPresenter marketStatusPresenter = new MarketStatusPresenter();
     private final PollingCellPresenter pollingCellPresenter = new PollingCellPresenter();
     private final StatusBarPresenter statusBarPresenter = new StatusBarPresenter();
@@ -599,6 +602,12 @@ public class TradingFrame extends JFrame {
             @Override public List<ManagedStrategy> currentStrategies() {
                 return strategies.stream()
                         .filter(TradingFrame.this::includeInCurrentStrategiesTab)
+                        .filter(entry -> matchesPortfolioActionScope(entry.strategy, selectedViewMode, selectedWorkspaceId))
+                        .toList();
+            }
+            @Override public List<ManagedStrategy> scopedStrategies() {
+                return strategies.stream()
+                        .filter(entry -> matchesPortfolioActionScope(entry.strategy, selectedViewMode, selectedWorkspaceId))
                         .toList();
             }
             @Override public StrategyService strategyService() { return strategyService; }
@@ -817,8 +826,13 @@ public class TradingFrame extends JFrame {
                 return TradingFrame.this.buyMoreAtMarket(strategy, quantity);
             }
             @Override
-            public StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice) {
-                return TradingFrame.this.buyMoreAtLimit(strategy, quantity, limitPrice);
+            public StrategyService.StrategyCreationResult buyMoreAtLimit(
+                    Strategy strategy,
+                    int quantity,
+                    BigDecimal limitPrice,
+                    boolean repositionAfterExpiry
+            ) {
+                return TradingFrame.this.buyMoreAtLimit(strategy, quantity, limitPrice, repositionAfterExpiry);
             }
             @Override public StrategyService.StrategyCreationResult repositionExpiredStrategy(String strategyId) {
                 StrategyService service = strategyRepository.findById(strategyId)
@@ -3186,14 +3200,19 @@ public class TradingFrame extends JFrame {
         return modeAwareService.buyMoreAtMarket(strategy.id(), quantity);
     }
 
-    private StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice) {
+    private StrategyService.StrategyCreationResult buyMoreAtLimit(
+            Strategy strategy,
+            int quantity,
+            BigDecimal limitPrice,
+            boolean repositionAfterExpiry
+    ) {
         StrategyService modeAwareService = strategyServiceForMode(strategy.mode());
         if (modeAwareService == null) {
             return StrategyService.StrategyCreationResult.failed(
                     "Broker client is not configured for " + strategy.mode().name() + " mode."
             );
         }
-        return modeAwareService.buyMoreAtLimit(strategy.id(), quantity, limitPrice);
+        return modeAwareService.buyMoreAtLimit(strategy.id(), quantity, limitPrice, repositionAfterExpiry);
     }
 
     private StrategyService strategyServiceForMode(StrategyMode mode) {
@@ -3611,11 +3630,7 @@ public class TradingFrame extends JFrame {
             scheduleStockPriceTooltipRefresh(entry);
         }
         if (snapshot == null) {
-            snapshot = StockPriceTooltipSnapshot.fromBars(
-                    entry.strategy.symbol(),
-                    List.of(),
-                    entry.cachedPosition().getLastPrice()
-            );
+            snapshot = StockPriceTooltipSnapshot.loading(entry.strategy.symbol());
         }
         return snapshot.tooltipText();
     }
@@ -3667,7 +3682,34 @@ public class TradingFrame extends JFrame {
         if (stored == null || stored.isEmpty() || currentBrokerType != BrokerType.ALPACA) {
             return Map.of();
         }
-        return BrokerSnapshotLoader.loadPositionSnapshots(stored, this::alpacaClientForMode, this::includeInBrokerSnapshotRefresh);
+        return BrokerSnapshotLoader.loadPositionSnapshots(
+                stored,
+                this::alpacaClientForMode,
+                this::includeInBrokerSnapshotRefresh,
+                this::cachedBrokerPositions
+        );
+    }
+
+    private List<AlpacaPositionData> cachedBrokerPositions(ApplicationMode mode, HttpAlpacaClient client) {
+        if (mode == null || client == null) {
+            return List.of();
+        }
+        long now = System.currentTimeMillis();
+        BrokerPositionsCacheEntry cached = brokerPositionSnapshotCache.get(mode);
+        if (cached != null && now - cached.loadedAtMillis() < BROKER_POSITION_SNAPSHOT_TTL_MILLIS) {
+            return cached.positions();
+        }
+        List<AlpacaPositionData> positions = List.copyOf(client.getPositions());
+        brokerPositionSnapshotCache.put(mode, new BrokerPositionsCacheEntry(positions, now));
+        return positions;
+    }
+
+    private void invalidateBrokerPositionSnapshotCache(StrategyMode mode) {
+        if (mode == null) {
+            brokerPositionSnapshotCache.clear();
+            return;
+        }
+        brokerPositionSnapshotCache.remove(mode == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER);
     }
 
     private void applyPositionSnapshots(Map<String, Position> snapshots) {
@@ -5124,7 +5166,7 @@ public class TradingFrame extends JFrame {
                 || entry.strategy.pauseReason() == PauseReason.USER_PAUSED)) {
             return true;
         }
-        if (isGapRocketRecommendationRow(entry.strategy)) {
+        if (includeScannerRecommendationInCurrentTab(entry.strategy)) {
             return true;
         }
         // Keep showing rows that still have live exposure on the broker side.
@@ -5132,11 +5174,15 @@ public class TradingFrame extends JFrame {
                 || isWaitingForFill(entry.strategy);
     }
 
-    private boolean isGapRocketRecommendationRow(Strategy strategy) {
-        if (strategy == null || strategy.latestOrderStatus() == null) {
+    static boolean includeScannerRecommendationInCurrentTab(Strategy strategy) {
+        return StrategyRecommendationMarkers.isScannerRecommendationRow(strategy);
+    }
+
+    static boolean matchesPortfolioActionScope(Strategy strategy, StrategyMode selectedMode, String selectedWorkspaceId) {
+        if (strategy == null || selectedMode == null || strategy.mode() != selectedMode) {
             return false;
         }
-        return strategy.latestOrderStatus().startsWith("GAP_ROCKET_");
+        return selectedWorkspaceId == null || selectedWorkspaceId.equals(strategy.workspaceId());
     }
 
     static boolean includeFailedStrategyInCurrentTab(Strategy strategy) {
@@ -6793,6 +6839,9 @@ public class TradingFrame extends JFrame {
     ) {
     }
 
+    private record BrokerPositionsCacheEntry(List<AlpacaPositionData> positions, long loadedAtMillis) {
+    }
+
     /**
      * Builds the canonical per-strategy accounting inputs for a mode — the single source of truth
      * shared by the top status bar (All Stocks aggregate), every tab summary, and Capture Portfolio.
@@ -7187,15 +7236,8 @@ public class TradingFrame extends JFrame {
         if (isGapRocketWorkspaceStrategy(strategy) && !hasFilledBuyOrder(strategy.id())) {
             return new Position(strategy.symbol());
         }
-        HttpAlpacaClient client = alpacaClientForStrategyMode(strategy.mode());
-        if (client == null) {
-            return new Position(strategy.symbol());
-        }
-        Optional<com.neuralarc.api.AlpacaPositionData> remote = client.getPosition(strategy.symbol());
-        BigDecimal latestPrice = remote.isPresent() && remote.get().exists()
-                ? BigDecimal.ZERO
-                : client.getLatestPrice(strategy.symbol());
-        return BrokerSnapshotLoader.buildPositionSnapshot(strategy.symbol(), remote.orElse(null), latestPrice);
+        return loadPositionSnapshotsForStrategies(List.of(strategy))
+                .getOrDefault(strategy.id(), new Position(strategy.symbol()));
     }
 
     private HttpAlpacaClient alpacaClientForStrategyMode(StrategyMode mode) {
@@ -7977,6 +8019,7 @@ public class TradingFrame extends JFrame {
             return;
         }
         // Keep stream updates scoped to the matched strategy when duplicate symbols exist.
+        invalidateBrokerPositionSnapshotCache(entry.strategy.mode());
         entry.setCachedPosition(loadPositionForStrategy(entry.strategy));
         // Stream events come from the live account. If the user is currently viewing the
         // other mode (e.g. Paper while a live order filled), there is nothing relevant to

@@ -293,6 +293,18 @@ class StrategyActionsControllerTest {
     }
 
     @Test
+    void buyMoreAtLimitPassesAutoRepositionSelection() {
+        Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        FakeGateway gateway = new FakeGateway(strategy);
+        gateway.limitBuySelection = Optional.of(new ManualLimitBuySelection(5, new BigDecimal("9.25"), true));
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.buyMoreAtLimitPrice(0);
+
+        assertTrue(gateway.limitBuyRepositionAfterExpirySubmitted);
+    }
+
+    @Test
     void buyMoreAtLimitSubmitsManualLimitBuyWhenMarketClosed() {
         Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE);
         FakeGateway gateway = new FakeGateway(strategy);
@@ -371,6 +383,23 @@ class StrategyActionsControllerTest {
         assertEquals(1, gateway.confirmCalls);
         assertEquals(1, gateway.backgroundTasksRun);
         assertEquals(gateway.entryAt(0).strategy().id(), gateway.canceledLimitBuyStrategyId);
+    }
+
+    @Test
+    void cancelPendingLimitBuyKeepsPollingWhenServiceLeavesStrategyActive() {
+        Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        FakeGateway gateway = new FakeGateway(strategy);
+        gateway.cancelablePendingLimitBuy = true;
+        gateway.confirmResult = JOptionPane.YES_OPTION;
+        Strategy updated = baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        updated.setCurrentState(StrategyLifecycleState.STOP_LOSS_ACTIVE);
+        gateway.refreshedStrategy = updated;
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.cancelPendingLimitBuy(0);
+
+        assertEquals(1, gateway.startPollingCalls);
+        assertEquals(0, gateway.stopPollingCalls);
     }
 
     @Test
@@ -457,8 +486,12 @@ class StrategyActionsControllerTest {
         Optional<ManualLimitBuySelection> limitBuySelection = Optional.of(new ManualLimitBuySelection(1, new BigDecimal("8.00")));
         int limitBuyQuantitySubmitted;
         BigDecimal limitBuyPriceSubmitted;
+        boolean limitBuyRepositionAfterExpirySubmitted;
         String repositionedStrategyId;
         StrategyService strategyService;
+        Strategy refreshedStrategy;
+        int startPollingCalls;
+        int stopPollingCalls;
         int archiveCalls;
         int removeCalls;
         StrategyActionsController.PromotionDialogResult promotionDialogResult =
@@ -485,7 +518,7 @@ class StrategyActionsControllerTest {
         @Override public StrategyActionsController.ActionEntry entryAt(int modelRow) { return entry; }
         @Override public StrategyService strategyService() { return strategyService; }
         @Override public StrategyService liveStrategyService() { return strategyService; }
-        @Override public Optional<Strategy> findStrategyById(String strategyId) { return Optional.empty(); }
+        @Override public Optional<Strategy> findStrategyById(String strategyId) { return Optional.ofNullable(refreshedStrategy); }
         @Override public void refreshStrategyTableRow(int modelRow) { refreshRowCalls++; }
         @Override public void refreshStrategyTableData() { }
         @Override public void refreshPanels() { }
@@ -494,8 +527,8 @@ class StrategyActionsControllerTest {
         @Override public void updateSelectedStrategy() { }
         @Override public void syncStrategiesFromRepository() { }
         @Override public void clearStrategySelection() { }
-        @Override public void startPollingCountdown(String strategyId) { }
-        @Override public void stopPollingCountdown(String strategyId) { }
+        @Override public void startPollingCountdown(String strategyId) { startPollingCalls++; }
+        @Override public void stopPollingCountdown(String strategyId) { stopPollingCalls++; }
         @Override public void resetPollingCountdown(String strategyId) { }
         @Override public Position loadPositionForStrategy(Strategy strategy) { return new Position(strategy.symbol()); }
         @Override public boolean hasOpenPosition(Strategy strategy) { return openPosition; }
@@ -529,10 +562,16 @@ class StrategyActionsControllerTest {
             return StrategyService.StrategyCreationResult.success(strategy.id(), "ord", "alpaca", "client");
         }
         @Override
-        public StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice) {
+        public StrategyService.StrategyCreationResult buyMoreAtLimit(
+                Strategy strategy,
+                int quantity,
+                BigDecimal limitPrice,
+                boolean repositionAfterExpiry
+        ) {
             limitBuyStrategyId = strategy.id();
             limitBuyQuantitySubmitted = quantity;
             limitBuyPriceSubmitted = limitPrice;
+            limitBuyRepositionAfterExpirySubmitted = repositionAfterExpiry;
             return StrategyService.StrategyCreationResult.success(strategy.id(), "ord", "alpaca", "client");
         }
         @Override

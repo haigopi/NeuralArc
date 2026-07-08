@@ -49,6 +49,7 @@ final class StrategyStageSupport {
             case "BUY_RULE", "BASE_BUY" -> Optional.of(StrategyStage.BASE_BUY);
             case "LOSS_BUY_RULE", "BUY_LIMIT_1" -> Optional.of(StrategyStage.BUY_LIMIT_1);
             case "LOSS_INVESTMENT_BUY_RULE", "BUY_LIMIT_2" -> Optional.of(StrategyStage.BUY_LIMIT_2);
+            case "MANUAL_BUY" -> Optional.of(StrategyStage.MANUAL_BUY);
             default -> Optional.empty();
         };
     }

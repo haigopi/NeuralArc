@@ -190,7 +190,9 @@ public class StrategyPollingService {
             }
             eligibleStrategies++;
             eligible.add(strategy);
-            if (shouldPoll(strategy, now)) {
+            if (shouldRetryExpiredResubmit(strategy, now)) {
+                due.add(strategy);
+            } else if (shouldPoll(strategy, now)) {
                 due.add(strategy);
             } else {
                 skippedNotDue++;
@@ -405,47 +407,58 @@ public class StrategyPollingService {
 
     private void executePoll(String strategyId, Map<String, BigDecimal> priceCache) {
         try {
-            doPollStrategy(strategyId, priceCache);
+            pollListener.onPollStarted(strategyId);
+            PollExecutionResult result = doPollStrategy(strategyId, priceCache);
+            if (result == PollExecutionResult.FAILED) {
+                pollListener.onPollFailed(strategyId);
+            } else {
+                pollListener.onPollCompleted(strategyId);
+            }
+        } catch (Exception ex) {
+            eventRepository.save(event(strategyId, StrategyEventType.POLL_ERROR, ex.getMessage(), "{}"));
+            pollListener.onPollFailed(strategyId);
+            LOGGER.log(Level.WARNING, "Polling failed for strategy " + strategyId, ex);
         } finally {
             inFlightStrategyIds.remove(strategyId);
         }
     }
 
-    private void doPollStrategy(String strategyId, Map<String, BigDecimal> priceCache) {
+    private PollExecutionResult doPollStrategy(String strategyId, Map<String, BigDecimal> priceCache) {
         Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
         if (maybeStrategy.isEmpty()) {
-            return;
+            return PollExecutionResult.COMPLETED;
         }
         Strategy strategy = maybeStrategy.get();
         if (!matchesRuntimeMode(strategy)) {
-            return;
+            return PollExecutionResult.COMPLETED;
         }
         if (strategy.status() == StrategyStatus.FAILED) {
             if (!isExpiryResubmitEligible(strategy) || !strategyEngine.canAutoResubmitExpiredEntryOrder(strategy)) {
-                return;
+                strategy.setLastPolledAt(Instant.now());
+                strategyRepository.save(strategy);
+                return PollExecutionResult.COMPLETED;
             }
             String symbol = strategy.symbol();
             LOGGER.info(() -> "[POLL][EXPIRY_RESUBMIT][" + symbol + "] Reactivating expired entry order for automatic resubmission");
             strategyService.repositionExpiredStrategy(strategy.id());
             maybeStrategy = strategyRepository.findById(strategyId);
             if (maybeStrategy.isEmpty()) {
-                return;
+                return PollExecutionResult.COMPLETED;
             }
             strategy = maybeStrategy.get();
         }
         if (strategy.status() != StrategyStatus.ACTIVE) {
-            return;
+            return PollExecutionResult.COMPLETED;
         }
 
         try {
-            pollListener.onPollStarted(strategy.id());
             List<StrategyEngine.RuleOutcome> outcomes = strategyEngine.reconcileTracked(strategy, priceCache);
             eventRepository.save(event(strategy.id(), StrategyEventType.POLL_SUCCESS,
                     "Poll completed", "{\"strategyId\":\"" + strategy.id() + "\"}"));
-            pollListener.onPollCompleted(strategy.id());
             if (!outcomes.isEmpty()) {
                 pollListener.onRulesAnalyzed(strategy.id(), strategy.symbol(), outcomes);
             }
+            return PollExecutionResult.COMPLETED;
         } catch (Exception ex) {
             strategy.setStatus(StrategyStatus.PAUSED);
             strategy.setCurrentState(StrategyLifecycleState.PAUSED);
@@ -454,8 +467,8 @@ public class StrategyPollingService {
             strategy.setLastError(ex.getMessage());
             strategyRepository.save(strategy);
             eventRepository.save(event(strategy.id(), StrategyEventType.POLL_ERROR, ex.getMessage(), "{}"));
-            pollListener.onPollFailed(strategy.id());
             LOGGER.log(Level.WARNING, "Polling failed for strategy " + strategy.id(), ex);
+            return PollExecutionResult.FAILED;
         }
     }
 
@@ -516,6 +529,18 @@ public class StrategyPollingService {
         return elapsedSeconds >= pollInterval;
     }
 
+    private boolean shouldRetryExpiredResubmit(Strategy strategy, Instant now) {
+        if (!isExpiryResubmitEligible(strategy)) {
+            return false;
+        }
+        if (strategy.lastPolledAt() == null) {
+            return true;
+        }
+        long elapsedSeconds = Duration.between(strategy.lastPolledAt(), now).getSeconds();
+        long retryInterval = Math.min(60L, Math.max(1L, strategy.pollingIntervalSeconds()));
+        return elapsedSeconds >= retryInterval;
+    }
+
     private boolean isPollEligible(Strategy strategy) {
         if (strategy == null) {
             return false;
@@ -543,7 +568,8 @@ public class StrategyPollingService {
     }
 
     private void handleMarketSessionTransition(boolean marketOpen, boolean extendedHoursEnabled, Instant now) {
-        if (lastTradingSessionOpen == null || lastTradingSessionOpen != marketOpen) {
+        boolean sessionChanged = lastTradingSessionOpen == null || lastTradingSessionOpen != marketOpen;
+        if (sessionChanged) {
             lastTradingSessionOpen = marketOpen;
             if (marketOpen) {
                 LOGGER.info(() -> "Market session open. Auto-resuming eligible strategies."
@@ -557,6 +583,9 @@ public class StrategyPollingService {
         if (marketOpen) {
             LOGGER.fine("[POLL][SCHEDULER] Market-open transition: evaluating auto-resume candidates");
             resumeAutoPausedStrategies();
+            if (sessionChanged) {
+                resubmitExpiredStrategiesAfterMarketOpen();
+            }
         }
     }
 
@@ -574,6 +603,31 @@ public class StrategyPollingService {
             strategyService.autoResumeFromMarketClose(strategy.id(), "Strategy auto-resumed because market is open");
             recordMarketClosedAutoRepair(strategy.id(), RepairCategory.AUTO_MARKET_CLOSED);
         }
+    }
+
+    private void resubmitExpiredStrategiesAfterMarketOpen() {
+        int submitted = 0;
+        for (Strategy strategy : strategyRepository.findAll()) {
+            if (!matchesRuntimeMode(strategy) || !isExpiryResubmitEligible(strategy)) {
+                continue;
+            }
+            if (!strategyEngine.canAutoResubmitExpiredEntryOrder(strategy)) {
+                continue;
+            }
+            if (submitPollTask(strategy.id(), Map.of())) {
+                submitted++;
+            }
+        }
+        if (submitted > 0) {
+            int submittedCount = submitted;
+            LOGGER.info(() -> "[POLL][MARKET_OPEN_EXPIRY_RESUBMIT] Submitted "
+                    + submittedCount + " expired auto-extension strategy poll(s)");
+        }
+    }
+
+    private enum PollExecutionResult {
+        COMPLETED,
+        FAILED
     }
 
     private void recordMarketClosedAutoRepair(String strategyId, RepairCategory category) {

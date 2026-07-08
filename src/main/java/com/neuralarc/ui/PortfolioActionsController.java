@@ -24,6 +24,7 @@ final class PortfolioActionsController {
     interface Gateway {
         List<ManagedStrategy> strategies();
         List<ManagedStrategy> currentStrategies();
+        List<ManagedStrategy> scopedStrategies();
         StrategyService strategyService();
         StrategyService strategyServiceForMode(StrategyMode mode);
         StrategyMode selectedViewMode();
@@ -280,7 +281,7 @@ final class PortfolioActionsController {
             gateway.showMessage(reason, action.dialogTitle(), JOptionPane.WARNING_MESSAGE);
             return;
         }
-        List<ManagedStrategy> targets = support.filterTargets(gateway.strategies(), action);
+        List<ManagedStrategy> targets = support.filterTargets(gateway.scopedStrategies(), action);
         if (!confirmBulkAction(action, targets)) {
             return;
         }
@@ -641,7 +642,7 @@ final class PortfolioActionsController {
 
     private List<ManagedStrategy> strategiesFor(PortfolioActionsSupport.BulkAction action) {
         if (action == PortfolioActionsSupport.BulkAction.CLEAN_TRADE_HISTORY) {
-            return gateway.strategies();
+            return gateway.scopedStrategies();
         }
         return gateway.currentStrategies();
     }
