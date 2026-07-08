@@ -268,6 +268,30 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
+    void placePendingBaseBuysTargetsScannerRecommendationsOnly() {
+        ManagedStrategy gapRocket = managed("AAPL", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        gapRocket.strategy.setLatestOrderStatus("GAP_ROCKET_RECOMMENDED");
+        ManagedStrategy orbArmed = managed("MSFT", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        orbArmed.strategy.setLatestOrderStatus("ORB_ARMED");
+        ManagedStrategy activeOrder = managed(
+                "TSLA",
+                StrategyStatus.ACTIVE,
+                StrategyLifecycleState.BASE_BUY_PLACED,
+                0,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO
+        );
+        activeOrder.strategy.setLatestOrderStatus("new");
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(gapRocket, orbArmed, activeOrder),
+                PortfolioActionsSupport.BulkAction.PLACE_PENDING_BASE_BUYS
+        );
+
+        assertEquals(List.of("AAPL", "MSFT"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
     void cleanTradeHistoryTargetsOnlyInactiveHistoryRecords() {
         ManagedStrategy archived = managed("AAPL", StrategyStatus.ARCHIVED, StrategyLifecycleState.STOPPED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
         ManagedStrategy completed = managed("MSFT", StrategyStatus.COMPLETED, StrategyLifecycleState.COMPLETED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
@@ -543,6 +567,16 @@ class PortfolioActionsSupportTest {
         );
 
         assertTrue(message.contains("Repositioned: 1"));
+    }
+
+    @Test
+    void placePendingBaseBuysResultLabelIsPlaced() {
+        String message = support.buildResultMessage(
+                PortfolioActionsSupport.BulkAction.PLACE_PENDING_BASE_BUYS,
+                new PortfolioActionsSupport.BatchResult(List.of("AAPL"), List.of())
+        );
+
+        assertTrue(message.contains("Placed: 1"));
     }
 
     @Test

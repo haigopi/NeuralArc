@@ -83,6 +83,18 @@ class PortfolioActionsControllerTest {
         assertTrue(gateway.deletedPaperStrategyIds.isEmpty());
     }
 
+    @Test
+    void placePendingBaseBuyTargetsSubmitThroughGateway() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        PortfolioActionsSupport.BatchResult result = controller.placePendingBaseBuyTargets(List.of(managed("AAPL")));
+
+        assertEquals(List.of("AAPL"), result.successes());
+        assertTrue(result.failures().isEmpty());
+        assertEquals(List.of("AAPL-id"), gateway.placedPendingStrategyIds);
+    }
+
     private static ManagedStrategy managed(String symbol) {
         Strategy strategy = new Strategy(
                 symbol + "-id",
@@ -155,6 +167,7 @@ class PortfolioActionsControllerTest {
         private final AtomicInteger maxConcurrentSells = new AtomicInteger();
         private final CountDownLatch sellsEntered = new CountDownLatch(2);
         private final java.util.List<String> deletedPaperStrategyIds = new java.util.ArrayList<>();
+        private final java.util.List<String> placedPendingStrategyIds = new java.util.ArrayList<>();
         private StrategyMode selectedViewMode = StrategyMode.PAPER;
         private boolean blockSell;
 
@@ -193,6 +206,11 @@ class PortfolioActionsControllerTest {
                     activeSells.decrementAndGet();
                 }
             }
+            return StrategyService.StrategyCreationResult.success(strategy.id(), "order", "alpaca", "client");
+        }
+        @Override
+        public StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy) {
+            placedPendingStrategyIds.add(strategy.id());
             return StrategyService.StrategyCreationResult.success(strategy.id(), "order", "alpaca", "client");
         }
         @Override public JMenuItem createMenuItem(String text, String iconPath, Runnable action) { return new JMenuItem(text); }

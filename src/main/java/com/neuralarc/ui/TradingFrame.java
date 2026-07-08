@@ -633,6 +633,9 @@ public class TradingFrame extends JFrame {
             ) {
                 return TradingFrame.this.sellPosition(strategy, submissionType, executionSource);
             }
+            @Override public StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy) {
+                return TradingFrame.this.placePendingBaseBuy(strategy);
+            }
             @Override public JMenuItem createMenuItem(String text, String iconPath, Runnable action) { return TradingFrame.this.createStatusMenuItem(text, iconPath, action); }
             @Override public int confirm(Object message, String title, int optionType, int messageType) {
                 return JOptionPane.showConfirmDialog(TradingFrame.this, message, title, optionType, messageType);
@@ -1221,7 +1224,6 @@ public class TradingFrame extends JFrame {
         headerControlsPanel.add(smartPicksButton);
         headerControlsPanel.add(refreshPortfolioButton);
         headerControlsPanel.add(riskDashboardButton);
-        headerControlsPanel.add(portfolioActionsButton);
         headerControlsPanel.add(settingsButton);
 
         JButton killSwitchButton = new JButton("KILL SWITCH");
@@ -2061,8 +2063,6 @@ public class TradingFrame extends JFrame {
         ));
         riskDashboardButton.addActionListener(e -> openRiskDashboard());
         refreshNewStrategyButtonPresentation();
-        portfolioActionsButton.setToolTipText(TooltipStyler.text(
-                "Portfolio actions: bulk operations across your strategies and positions.", 320));
         refreshPortfolioButton.setToolTipText(TooltipStyler.text(
                 "Refetches Alpaca positions and quote data, updates matching Current Strategies, and recalculates grid P&L.",
                 320
@@ -3120,6 +3120,55 @@ public class TradingFrame extends JFrame {
         strategyActionsController.cancelPendingLimitBuy(viewRow);
     }
 
+    private void placePendingBaseBuyFromGrid(int viewRow) {
+        int row = strategyTable.convertRowIndexToModel(viewRow);
+        if (row < 0 || row >= strategies.size()) {
+            return;
+        }
+        Strategy strategy = strategies.get(row).strategy;
+        if (!PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(strategy)) {
+            return;
+        }
+        new SwingWorker<StrategyService.StrategyCreationResult, Void>() {
+            @Override
+            protected StrategyService.StrategyCreationResult doInBackground() {
+                return placePendingBaseBuy(strategy);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    StrategyService.StrategyCreationResult result = get();
+                    syncStrategiesFromRepository();
+                    refreshStrategyTableData();
+                    applyCurrentStrategiesRowFilter();
+                    refreshWorkspaceSummary();
+                    updateStatusBar();
+                    if (result.success()) {
+                        log("[" + strategy.symbol() + "] Pending base limit buy placed. clientOrderId="
+                                + result.clientOrderId());
+                    } else {
+                        log("[" + strategy.symbol() + "] Failed to place pending base buy: " + result.error());
+                        JOptionPane.showMessageDialog(
+                                TradingFrame.this,
+                                "Failed to place pending base buy for " + strategy.symbol() + ": " + result.error(),
+                                "Place Pending Base Buy",
+                                JOptionPane.ERROR_MESSAGE
+                        );
+                    }
+                } catch (Exception ex) {
+                    log("[" + strategy.symbol() + "] Failed to place pending base buy: " + ex.getMessage());
+                    JOptionPane.showMessageDialog(
+                            TradingFrame.this,
+                            "Failed to place pending base buy for " + strategy.symbol() + ": " + ex.getMessage(),
+                            "Place Pending Base Buy",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                }
+            }
+        }.execute();
+    }
+
     private boolean rowHasCancelablePendingLimitBuy(int viewRow) {
         int row = strategyTable.convertRowIndexToModel(viewRow);
         if (row < 0 || row >= strategies.size()) {
@@ -3129,6 +3178,14 @@ public class TradingFrame extends JFrame {
         return strategy != null
                 && PendingBuyOrderGuard.hasCancelablePendingLimitBuy(
                         strategyOrderRepository.findByStrategyId(strategy.id()));
+    }
+
+    private boolean rowHasPendingBaseBuyPlacement(int viewRow) {
+        int row = strategyTable.convertRowIndexToModel(viewRow);
+        if (row < 0 || row >= strategies.size()) {
+            return false;
+        }
+        return PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(strategies.get(row).strategy);
     }
 
     private void previewLivePromotion(int viewRow) {
@@ -5635,6 +5692,9 @@ public class TradingFrame extends JFrame {
             captureGbc.gridx = 2;
             captureGbc.insets = new Insets(0, 8, 0, 0);
             captureControls.add(addStrategyButton, captureGbc);
+            captureGbc.gridx = 3;
+            captureGbc.insets = new Insets(0, 8, 0, 0);
+            captureControls.add(portfolioActionsButton, captureGbc);
             panel.add(captureControls, BorderLayout.EAST);
         } else if (searchField == tradeHistorySearchField) {
             panel.add(createTradeHistoryGroupByPanel(), BorderLayout.CENTER);
@@ -5873,6 +5933,7 @@ public class TradingFrame extends JFrame {
     private void refreshNewStrategyButtonPresentation() {
         boolean historySelected = strategyWorkspaceTabs != null && strategyWorkspaceTabs.isHistorySelected();
         addStrategyButton.setVisible(!historySelected);
+        portfolioActionsButton.setVisible(!historySelected);
         String targetLabel = selectedWorkspaceId == null
                 ? "All Stocks"
                 : workspaceService.findById(selectedWorkspaceId).map(StrategyWorkspace::name).orElse("This Tab");
@@ -5881,6 +5942,13 @@ public class TradingFrame extends JFrame {
                 "Add a new stock strategy (symbol, entry, stop, target, and automation) directly into "
                         + targetLabel + " for " + selectedModeLabel() + " mode.",
                 360
+        ));
+        String portfolioScope = selectedWorkspaceId == null
+                ? "all strategy workspaces in " + selectedModeLabel() + " mode"
+                : "only " + targetLabel + " in " + selectedModeLabel() + " mode";
+        portfolioActionsButton.setToolTipText(TooltipStyler.text(
+                "Portfolio actions apply to " + portfolioScope + ".",
+                340
         ));
     }
 
@@ -6411,6 +6479,56 @@ public class TradingFrame extends JFrame {
                         + (skipped > 0 ? "\nSkipped " + skipped + " row" + (skipped == 1 ? "" : "s") + " due to validation or broker errors." : ""),
                 "Gap Rocket Orders",
                 skipped > 0 ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy) {
+        if (strategy == null) {
+            return StrategyService.StrategyCreationResult.failed("strategy is not available");
+        }
+        StrategyService service = strategyServiceForMode(strategy.mode());
+        if (service == null) {
+            return StrategyService.StrategyCreationResult.failed("broker client is not configured for "
+                    + strategy.mode().name() + " mode");
+        }
+        Strategy pending = strategyRepository.findById(strategy.id()).orElse(strategy);
+        if (!PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(pending)) {
+            return StrategyService.StrategyCreationResult.failed("strategy is not pending base-buy placement");
+        }
+        BigDecimal originalLimit = pending.baseBuyLimitPrice();
+        BigDecimal todayLow = loadTodayLow(pending);
+        BigDecimal adjustedLimit = PendingBaseBuyPlacementSupport.adjustedBaseBuyLimit(originalLimit, todayLow);
+        if (adjustedLimit.compareTo(Monetary.round(originalLimit)) != 0) {
+            pending.setBaseBuyLimitPrice(adjustedLimit);
+            pending.setLastEvent("Base buy adjusted before pending placement from $"
+                    + Monetary.round(originalLimit).toPlainString()
+                    + " to $" + adjustedLimit.toPlainString()
+                    + " because today's low is $" + Monetary.round(todayLow).toPlainString() + ".");
+            strategyRepository.save(pending);
+            log("[" + pending.symbol() + "] Pending base buy lowered from $"
+                    + Monetary.round(originalLimit).toPlainString()
+                    + " to $" + adjustedLimit.toPlainString()
+                    + " using today's low $" + Monetary.round(todayLow).toPlainString() + ".");
+        }
+        return service.createAndActivate(pending);
+    }
+
+    private BigDecimal loadTodayLow(Strategy strategy) {
+        HttpAlpacaClient client = alpacaClientForStrategyMode(strategy.mode());
+        if (client == null || strategy.symbol() == null || strategy.symbol().isBlank()) {
+            return BigDecimal.ZERO;
+        }
+        LocalDate today = LocalDate.now();
+        try {
+            return client.getDailyBars(strategy.symbol(), today, today).stream()
+                    .map(MarketBar::low)
+                    .filter(low -> low != null && low.signum() > 0)
+                    .min(BigDecimal::compareTo)
+                    .orElse(BigDecimal.ZERO);
+        } catch (Exception ex) {
+            log("[" + strategy.symbol() + "] Unable to load today's low before pending base buy placement: "
+                    + ex.getMessage());
+            return BigDecimal.ZERO;
+        }
     }
 
     private boolean isGapRocketPendingOrderPlacement(Strategy strategy) {
@@ -7796,6 +7914,8 @@ public class TradingFrame extends JFrame {
                 this::repositionExpiredStrategy,
                 this::cancelPendingLimitBuyFromGrid,
                 this::rowHasCancelablePendingLimitBuy,
+                this::placePendingBaseBuyFromGrid,
+                this::rowHasPendingBaseBuyPlacement,
                 () -> workspaceService.activeWorkspaces(selectedViewMode),
                 this::assignStrategyRowToWorkspace
         ).show(event);

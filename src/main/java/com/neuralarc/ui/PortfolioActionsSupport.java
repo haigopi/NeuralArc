@@ -414,6 +414,35 @@ final class PortfolioActionsSupport {
                 return "There are no strategies with cancelable pending limit buy orders.";
             }
         },
+        PLACE_PENDING_BASE_BUYS("Place Pending Base Buys") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return entry != null
+                        && entry.strategy != null
+                        && PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(entry.strategy);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Place base limit buy orders for " + count + " pending strategy recommendation(s)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Matching scanner recommendations will submit their pending base buy limit order."
+                        + "<br>If the base buy limit is above today's low, it is lowered to 10% below today's low before submission.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no pending scanner recommendations waiting to place base buy orders.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Placed";
+            }
+        },
         CANCEL_PENDING_LIMIT_SELLS("Cancel All Pending Limit Sells") {
             @Override
             boolean matches(ManagedStrategy entry) {

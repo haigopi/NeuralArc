@@ -36,6 +36,7 @@ final class PortfolioActionsController {
                 SellSubmissionType submissionType,
                 StrategyService.SellExecutionSource executionSource
         );
+        StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy);
         JMenuItem createMenuItem(String text, String iconPath, Runnable action);
         int confirm(Object message, String title, int optionType, int messageType);
         void showMessage(Object message, String title, int messageType);
@@ -79,6 +80,10 @@ final class PortfolioActionsController {
                 () -> handleSellAction(PortfolioActionsSupport.Scope.PROFITABLE_MARKET, SellSubmissionType.MARKET)));
         menu.add(gateway.createMenuItem("Sell All Losing Positions at Market Value", "icons/delete.svg",
                 () -> handleSellAction(PortfolioActionsSupport.Scope.LOSS_ONLY_MARKET, SellSubmissionType.MARKET)));
+        menu.add(sectionSeparator());
+        menu.add(sectionHeader("Order Placement"));
+        menu.add(gateway.createMenuItem("Place Pending Base Buys", "icons/submit.svg",
+                this::handlePlacePendingBaseBuys));
         menu.add(sectionSeparator());
         menu.add(sectionHeader("Order Cleanup"));
         menu.add(gateway.createMenuItem("Cancel All Pending Limit Buys", "icons/close.svg",
@@ -144,6 +149,26 @@ final class PortfolioActionsController {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
                 return cancelPendingLimitBuyTargets(targets);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    private void handlePlacePendingBaseBuys() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.PLACE_PENDING_BASE_BUYS;
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return placePendingBaseBuyTargets(targets);
             }
 
             @Override
@@ -349,6 +374,18 @@ final class PortfolioActionsController {
             return result.canceledCount() > 0
                     ? TargetResult.success(entry.strategy.symbol() + " (" + result.canceledCount() + ")")
                     : TargetResult.skipped(entry.strategy.symbol() + ": no pending limit buy orders were cancelable");
+        });
+    }
+
+    PortfolioActionsSupport.BatchResult placePendingBaseBuyTargets(List<ManagedStrategy> targets) {
+        return runTargetsInParallel(targets, entry -> {
+            if (gateway.strategyServiceForMode(entry.strategy.mode()) == null) {
+                return missingBrokerService(entry);
+            }
+            StrategyService.StrategyCreationResult result = gateway.placePendingBaseBuy(entry.strategy);
+            return result.success()
+                    ? TargetResult.success(entry.strategy.symbol())
+                    : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
         });
     }
 
