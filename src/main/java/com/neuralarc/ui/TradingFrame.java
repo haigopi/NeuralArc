@@ -625,6 +625,9 @@ public class TradingFrame extends JFrame {
             @Override public StrategyService.ArchiveResult deleteLocalPaperStrategy(String strategyId) {
                 return TradingFrame.this.deleteLocalPaperStrategy(strategyId);
             }
+            @Override public StrategyService.ArchiveResult deletePendingBaseBuyStrategy(String strategyId) {
+                return TradingFrame.this.deletePendingBaseBuyStrategy(strategyId);
+            }
             @Override
             public StrategyService.StrategyCreationResult sellPosition(
                     Strategy strategy,
@@ -3390,6 +3393,25 @@ public class TradingFrame extends JFrame {
         } catch (Exception ex) {
             return StrategyService.ArchiveResult.failed(ex.getMessage());
         }
+    }
+
+    private StrategyService.ArchiveResult deletePendingBaseBuyStrategy(String strategyId) {
+        if (strategyId == null || strategyId.isBlank()) {
+            return StrategyService.ArchiveResult.failed("Strategy id is missing");
+        }
+        Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
+        if (maybeStrategy.isEmpty()) {
+            return StrategyService.ArchiveResult.failed("Strategy not found");
+        }
+        Strategy strategy = maybeStrategy.get();
+        if (!PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(strategy)) {
+            return StrategyService.ArchiveResult.failed("Only pending base-buy recommendations can be deleted");
+        }
+        strategyOrderRepository.deleteByStrategyId(strategy.id());
+        strategyEventRepository.deleteByStrategyId(strategy.id());
+        strategyRepository.deleteById(strategy.id());
+        log("[PORTFOLIO] Deleted pending base-buy recommendation for " + strategy.symbol() + ".");
+        return StrategyService.ArchiveResult.success(strategy.id());
     }
 
     private boolean autoInitializeConnection() {
@@ -6497,6 +6519,10 @@ public class TradingFrame extends JFrame {
         BigDecimal originalLimit = pending.baseBuyLimitPrice();
         BigDecimal todayLow = loadTodayLow(pending);
         BigDecimal adjustedLimit = PendingBaseBuyPlacementSupport.adjustedBaseBuyLimit(originalLimit, todayLow);
+        log("[" + pending.symbol() + "] Pending base-buy placement check: base=$"
+                + Monetary.round(originalLimit).toPlainString()
+                + ", todayLow=" + (todayLow.signum() > 0 ? "$" + Monetary.round(todayLow).toPlainString() : "unavailable")
+                + ", submitLimit=$" + adjustedLimit.toPlainString() + ".");
         if (adjustedLimit.compareTo(Monetary.round(originalLimit)) != 0) {
             pending.setBaseBuyLimitPrice(adjustedLimit);
             pending.setLastEvent("Base buy adjusted before pending placement from $"
@@ -7430,14 +7456,7 @@ public class TradingFrame extends JFrame {
     }
 
     private boolean isFailureLogEntry(String logEntry) {
-        if (logEntry == null) {
-            return false;
-        }
-        String normalized = logEntry.toLowerCase();
-        return normalized.contains(" failed.")
-                || normalized.contains(" failed:")
-                || normalized.contains(" buy failed")
-                || normalized.contains(" rejected");
+        return EventLogSeverity.isFailure(logEntry);
     }
 
     private void trimEventLog(StyledDocument document) {

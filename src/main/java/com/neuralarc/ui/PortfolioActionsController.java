@@ -31,6 +31,7 @@ final class PortfolioActionsController {
         StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason);
         StrategyService.ArchiveResult deleteLocalTradeHistoryStrategy(String strategyId);
         StrategyService.ArchiveResult deleteLocalPaperStrategy(String strategyId);
+        StrategyService.ArchiveResult deletePendingBaseBuyStrategy(String strategyId);
         StrategyService.StrategyCreationResult sellPosition(
                 Strategy strategy,
                 SellSubmissionType submissionType,
@@ -86,6 +87,8 @@ final class PortfolioActionsController {
                 this::handlePlacePendingBaseBuys));
         menu.add(sectionSeparator());
         menu.add(sectionHeader("Order Cleanup"));
+        menu.add(gateway.createMenuItem("Clean All Pending Base Buys", "icons/delete.svg",
+                this::handleCleanPendingBaseBuys));
         menu.add(gateway.createMenuItem("Cancel All Pending Limit Buys", "icons/close.svg",
                 this::handleCancelAllPendingLimitBuys));
         menu.add(gateway.createMenuItem("Cancel All Pending Limit Sells", "icons/close.svg",
@@ -158,6 +161,28 @@ final class PortfolioActionsController {
         }.execute();
     }
 
+    private void handleCleanPendingBaseBuys() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CLEAN_PENDING_BASE_BUYS;
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+
+        gateway.log(action.logPrefix() + " preparing to delete " + targets.size()
+                + " pending base-buy recommendation(s).");
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return deletePendingBaseBuyTargets(targets);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
     private void handlePlacePendingBaseBuys() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.PLACE_PENDING_BASE_BUYS;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
@@ -165,6 +190,8 @@ final class PortfolioActionsController {
             return;
         }
 
+        gateway.log(action.logPrefix() + " preparing " + targets.size()
+                + " pending base-buy recommendation(s) for placement.");
         new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
@@ -379,13 +406,19 @@ final class PortfolioActionsController {
 
     PortfolioActionsSupport.BatchResult placePendingBaseBuyTargets(List<ManagedStrategy> targets) {
         return runTargetsInParallel(targets, entry -> {
+            gateway.log("[Place Pending Base Buys] evaluating " + entry.strategy.symbol()
+                    + " for pending base-buy placement.");
             if (gateway.strategyServiceForMode(entry.strategy.mode()) == null) {
                 return missingBrokerService(entry);
             }
             StrategyService.StrategyCreationResult result = gateway.placePendingBaseBuy(entry.strategy);
-            return result.success()
-                    ? TargetResult.success(entry.strategy.symbol())
-                    : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+            if (result.success()) {
+                gateway.log("[Place Pending Base Buys] placed " + entry.strategy.symbol()
+                        + " clientOrderId=" + result.clientOrderId() + ".");
+                return TargetResult.success(entry.strategy.symbol());
+            }
+            gateway.log("[Place Pending Base Buys] failed " + entry.strategy.symbol() + ": " + result.error());
+            return TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
         });
     }
 
@@ -466,6 +499,19 @@ final class PortfolioActionsController {
             return result.success()
                     ? TargetResult.success(entry.strategy.symbol())
                     : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+        });
+    }
+
+    PortfolioActionsSupport.BatchResult deletePendingBaseBuyTargets(List<ManagedStrategy> targets) {
+        return runTargetsInParallel(targets, entry -> {
+            gateway.log("[Clean Pending Base Buys] deleting pending recommendation for " + entry.strategy.symbol() + ".");
+            StrategyService.ArchiveResult result = gateway.deletePendingBaseBuyStrategy(entry.strategy.id());
+            if (result.success()) {
+                gateway.log("[Clean Pending Base Buys] deleted " + entry.strategy.symbol() + ".");
+                return TargetResult.success(entry.strategy.symbol());
+            }
+            gateway.log("[Clean Pending Base Buys] failed " + entry.strategy.symbol() + ": " + result.error());
+            return TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
         });
     }
 

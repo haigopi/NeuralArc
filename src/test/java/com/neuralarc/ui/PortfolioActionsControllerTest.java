@@ -95,6 +95,18 @@ class PortfolioActionsControllerTest {
         assertEquals(List.of("AAPL-id"), gateway.placedPendingStrategyIds);
     }
 
+    @Test
+    void deletePendingBaseBuyTargetsDeleteThroughGateway() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        PortfolioActionsSupport.BatchResult result = controller.deletePendingBaseBuyTargets(List.of(managed("AAPL")));
+
+        assertEquals(List.of("AAPL"), result.successes());
+        assertTrue(result.failures().isEmpty());
+        assertEquals(List.of("AAPL-id"), gateway.deletedPendingBaseBuyIds);
+    }
+
     private static ManagedStrategy managed(String symbol) {
         Strategy strategy = new Strategy(
                 symbol + "-id",
@@ -168,6 +180,7 @@ class PortfolioActionsControllerTest {
         private final CountDownLatch sellsEntered = new CountDownLatch(2);
         private final java.util.List<String> deletedPaperStrategyIds = new java.util.ArrayList<>();
         private final java.util.List<String> placedPendingStrategyIds = new java.util.ArrayList<>();
+        private final java.util.List<String> deletedPendingBaseBuyIds = new java.util.ArrayList<>();
         private StrategyMode selectedViewMode = StrategyMode.PAPER;
         private boolean blockSell;
 
@@ -212,6 +225,11 @@ class PortfolioActionsControllerTest {
         public StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy) {
             placedPendingStrategyIds.add(strategy.id());
             return StrategyService.StrategyCreationResult.success(strategy.id(), "order", "alpaca", "client");
+        }
+        @Override
+        public StrategyService.ArchiveResult deletePendingBaseBuyStrategy(String strategyId) {
+            deletedPendingBaseBuyIds.add(strategyId);
+            return StrategyService.ArchiveResult.success(strategyId);
         }
         @Override public JMenuItem createMenuItem(String text, String iconPath, Runnable action) { return new JMenuItem(text); }
         @Override public int confirm(Object message, String title, int optionType, int messageType) { return 0; }

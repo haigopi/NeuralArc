@@ -443,6 +443,35 @@ final class PortfolioActionsSupport {
                 return "Placed";
             }
         },
+        CLEAN_PENDING_BASE_BUYS("Clean All Pending Base Buys") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return entry != null
+                        && entry.strategy != null
+                        && PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(entry.strategy);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Delete " + count + " pending base-buy recommendation(s)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "This permanently deletes pending scanner recommendations that have not placed a broker order yet."
+                        + "<br>Submitted orders, open positions, and active strategies are not included.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no pending base-buy recommendations to delete.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Deleted";
+            }
+        },
         CANCEL_PENDING_LIMIT_SELLS("Cancel All Pending Limit Sells") {
             @Override
             boolean matches(ManagedStrategy entry) {
