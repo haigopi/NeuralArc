@@ -138,6 +138,10 @@ final class ManagedStrategy {
         this.lastDisplayedPositionFetchAtMillis = System.currentTimeMillis();
     }
 
+    void markDisplayedPositionRefreshAttempt(long nowMillis) {
+        this.lastDisplayedPositionFetchAtMillis = Math.max(0L, nowMillis);
+    }
+
     BigDecimal cachedLastSellPrice() {
         return Monetary.round(cachedLastSellPrice);
     }

@@ -98,6 +98,28 @@ public class StrategyPollingService {
             MarketHoursService marketHoursService,
             StrategyMode strategyMode
     ) {
+        this(
+                strategyRepository,
+                orderRepository,
+                eventRepository,
+                alpacaClient,
+                appSettingsService,
+                marketHoursService,
+                strategyMode,
+                null
+        );
+    }
+
+    public StrategyPollingService(
+            StrategyRepository strategyRepository,
+            StrategyOrderRepository orderRepository,
+            StrategyExecutionEventRepository eventRepository,
+            AlpacaClient alpacaClient,
+            AppSettingsService appSettingsService,
+            MarketHoursService marketHoursService,
+            StrategyMode strategyMode,
+            WorkspaceRepository workspaceRepository
+    ) {
         this.strategyRepository = strategyRepository;
         this.eventRepository = eventRepository;
         this.appSettingsService = appSettingsService;
@@ -113,7 +135,8 @@ public class StrategyPollingService {
                 stateMachine,
                 alpacaClient,
                 appSettingsService,
-                marketHoursService
+                marketHoursService,
+                workspaceRepository
         );
         this.strategyService = new StrategyService(
                 strategyRepository,

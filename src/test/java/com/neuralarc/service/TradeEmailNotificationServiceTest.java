@@ -13,6 +13,7 @@ import com.neuralarc.model.StrategyOrderStatus;
 import com.neuralarc.model.StrategyOrderType;
 import com.neuralarc.model.StrategyStage;
 import com.neuralarc.model.StrategyStatus;
+import com.neuralarc.model.StrategyWorkspace;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -20,7 +21,10 @@ import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -49,6 +53,23 @@ class TradeEmailNotificationServiceTest {
         assertTrue(sender.messages.getFirst().subject().contains("buy order placed"));
         assertEquals(1, listener.sent.size());
         assertTrue(listener.sent.getFirst().contains("BUY_EXPECTED:AAPL:ops@example.com"));
+    }
+
+    @Test
+    void skipsPaperOrderNotifications() throws Exception {
+        AppSettingsService settings = settings(true, true);
+        RecordingSender sender = new RecordingSender();
+        TradeEmailNotificationService service = new TradeEmailNotificationService(
+                settings,
+                sender,
+                Runnable::run,
+                "ops@example.com"
+        );
+
+        service.notifyBuyExpected(paperStrategy(), order(StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.SUBMITTED));
+        service.notifySellExecuted(paperStrategy(), order(StrategyOrderSide.SELL, StrategyStage.TARGET_SELL, StrategyOrderStatus.FILLED));
+
+        assertEquals(0, sender.messages.size());
     }
 
     @Test
@@ -83,6 +104,48 @@ class TradeEmailNotificationServiceTest {
         assertEquals(1, sender.messages.size());
         assertEquals("ops@example.com", sender.messages.getFirst().recipient());
         assertTrue(sender.messages.getFirst().subject().contains("sell order executed"));
+    }
+
+    @Test
+    void liveEmailIncludesWorkspacePnlAndOrderHistoryTable() throws Exception {
+        AppSettingsService settings = settings(false, true);
+        RecordingSender sender = new RecordingSender();
+        FileStrategyRepository strategies = new FileStrategyRepository(tempDir.resolve("strategies-email.json"));
+        FileStrategyOrderRepository orders = new FileStrategyOrderRepository(tempDir.resolve("orders-email.json"));
+        InMemoryWorkspaceRepository workspaces = new InMemoryWorkspaceRepository();
+        StrategyWorkspace workspace = new StrategyWorkspace(
+                "workspace-1",
+                "ORB Engine",
+                "ORB",
+                StrategyMode.LIVE,
+                false,
+                Instant.now(),
+                Instant.now()
+        );
+        workspaces.save(workspace);
+        Strategy strategy = strategy();
+        strategy.setWorkspaceId(workspace.id());
+        strategies.save(strategy);
+        orders.save(order("buy-1", StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.FILLED, "100.00", "100.00"));
+        StrategyOrder sellOrder = order("sell-1", StrategyOrderSide.SELL, StrategyStage.TARGET_SELL, StrategyOrderStatus.FILLED, "120.00", "120.00");
+        orders.save(sellOrder);
+        TradeEmailNotificationService service = new TradeEmailNotificationService(
+                settings,
+                sender,
+                Runnable::run,
+                "ops@example.com",
+                new RepositoryTradeEmailNotificationContextProvider(strategies, orders, workspaces)
+        );
+
+        service.notifySellExecuted(strategy, sellOrder);
+
+        Message message = sender.messages.getFirst();
+        assertTrue(message.textBody().contains("Workspace net P&L: 200.00"));
+        assertTrue(message.htmlBody().contains("Workspace Details"));
+        assertTrue(message.htmlBody().contains("Order History"));
+        assertTrue(message.htmlBody().contains("<table"));
+        assertTrue(message.htmlBody().contains("ORB Engine"));
+        assertTrue(message.htmlBody().contains("Strategy realized net P&amp;L"));
     }
 
     @Test
@@ -145,7 +208,7 @@ class TradeEmailNotificationServiceTest {
                 "strategy-1",
                 "Test Strategy",
                 "AAPL",
-                StrategyMode.PAPER,
+                StrategyMode.LIVE,
                 StrategyStatus.ACTIVE,
                 StrategyLifecycleState.BASE_BUY_PLACED,
                 new BigDecimal("100.00"),
@@ -178,21 +241,38 @@ class TradeEmailNotificationServiceTest {
         );
     }
 
+    private Strategy paperStrategy() {
+        Strategy strategy = strategy();
+        strategy.setMode(StrategyMode.PAPER);
+        return strategy;
+    }
+
     private StrategyOrder order(StrategyOrderSide side, StrategyStage stage, StrategyOrderStatus status) {
+        return order("order-1", side, stage, status, "100.00", status == StrategyOrderStatus.FILLED ? "120.00" : "0.00");
+    }
+
+    private StrategyOrder order(
+            String id,
+            StrategyOrderSide side,
+            StrategyStage stage,
+            StrategyOrderStatus status,
+            String limitPrice,
+            String fillPrice
+    ) {
         return new StrategyOrder(
-                "order-1",
+                id,
                 "strategy-1",
                 stage,
-                "alpaca-order-1",
-                "client-order-1",
+                "alpaca-" + id,
+                "client-" + id,
                 "AAPL",
                 side,
                 StrategyOrderType.LIMIT,
-                new BigDecimal("100.00"),
+                new BigDecimal(limitPrice),
                 BigDecimal.ZERO,
                 BigDecimal.TEN,
                 status == StrategyOrderStatus.FILLED ? BigDecimal.TEN : BigDecimal.ZERO,
-                status == StrategyOrderStatus.FILLED ? new BigDecimal("120.00") : BigDecimal.ZERO,
+                status == StrategyOrderStatus.FILLED ? new BigDecimal(fillPrice) : BigDecimal.ZERO,
                 status,
                 Instant.now(),
                 Instant.now(),
@@ -233,5 +313,41 @@ class TradeEmailNotificationServiceTest {
     }
 
     private record Message(String recipient, String subject, String textBody, String htmlBody) {
+    }
+
+    private static final class InMemoryWorkspaceRepository implements WorkspaceRepository {
+        private final Map<String, StrategyWorkspace> workspaces = new HashMap<>();
+
+        @Override
+        public void save(StrategyWorkspace workspace) {
+            workspaces.put(workspace.id(), workspace);
+        }
+
+        @Override
+        public Optional<StrategyWorkspace> findById(String id) {
+            return Optional.ofNullable(workspaces.get(id));
+        }
+
+        @Override
+        public List<StrategyWorkspace> findAll() {
+            return new ArrayList<>(workspaces.values());
+        }
+
+        @Override
+        public List<StrategyWorkspace> findByMode(StrategyMode mode) {
+            return workspaces.values().stream().filter(workspace -> workspace.mode() == mode).toList();
+        }
+
+        @Override
+        public List<StrategyWorkspace> findActive(StrategyMode mode) {
+            return workspaces.values().stream()
+                    .filter(workspace -> workspace.mode() == mode && !workspace.archived())
+                    .toList();
+        }
+
+        @Override
+        public void deleteById(String id) {
+            workspaces.remove(id);
+        }
     }
 }

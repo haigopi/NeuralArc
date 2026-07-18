@@ -27,6 +27,7 @@ public final class TradingRuntimeSupport {
     private final StrategyExecutionEventRepository strategyEventRepository;
     private final AppSettingsService appSettingsService;
     private final MarketHoursService marketHoursService;
+    private final WorkspaceRepository workspaceRepository;
     private final WorkspaceCodeResolver workspaceCodeResolver;
     private final TradingApiCreator tradingApiCreator;
     private final AlpacaClientCreator alpacaClientCreator;
@@ -45,6 +46,7 @@ public final class TradingRuntimeSupport {
                 strategyEventRepository,
                 appSettingsService,
                 marketHoursService,
+                workspaceRepository,
                 resolverFor(workspaceRepository),
                 TradingApiFactory::create,
                 HttpAlpacaClient::new
@@ -61,7 +63,7 @@ public final class TradingRuntimeSupport {
             AlpacaClientCreator alpacaClientCreator
     ) {
         this(strategyRepository, strategyOrderRepository, strategyEventRepository, appSettingsService,
-                marketHoursService, WorkspaceCodeResolver.unassigned(), tradingApiCreator, alpacaClientCreator);
+                marketHoursService, null, WorkspaceCodeResolver.unassigned(), tradingApiCreator, alpacaClientCreator);
     }
 
     TradingRuntimeSupport(
@@ -70,6 +72,7 @@ public final class TradingRuntimeSupport {
             StrategyExecutionEventRepository strategyEventRepository,
             AppSettingsService appSettingsService,
             MarketHoursService marketHoursService,
+            WorkspaceRepository workspaceRepository,
             WorkspaceCodeResolver workspaceCodeResolver,
             TradingApiCreator tradingApiCreator,
             AlpacaClientCreator alpacaClientCreator
@@ -79,6 +82,7 @@ public final class TradingRuntimeSupport {
         this.strategyEventRepository = strategyEventRepository;
         this.appSettingsService = appSettingsService;
         this.marketHoursService = marketHoursService;
+        this.workspaceRepository = workspaceRepository;
         this.workspaceCodeResolver = workspaceCodeResolver == null
                 ? WorkspaceCodeResolver.unassigned()
                 : workspaceCodeResolver;
@@ -130,7 +134,8 @@ public final class TradingRuntimeSupport {
                 runtimeClient,
                 appSettingsService,
                 marketHoursService,
-                mode == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER
+                mode == ApplicationMode.LIVE ? StrategyMode.LIVE : StrategyMode.PAPER,
+                workspaceRepository
         );
         pollingService.setPollListener(pollListener);
         pollingService.setEmailNotificationListener(emailNotificationListener);

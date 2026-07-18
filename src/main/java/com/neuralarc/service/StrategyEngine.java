@@ -65,7 +65,22 @@ public class StrategyEngine {
                 alpacaClient,
                 appSettingsService,
                 marketHoursService,
-                new TradeEmailNotificationService(appSettingsService)
+                (WorkspaceRepository) null
+        );
+    }
+
+    StrategyEngine(StrategyRepository strategyRepository, StrategyOrderRepository orderRepository,
+                   StrategyStateMachine stateMachine, AlpacaClient alpacaClient,
+                   AppSettingsService appSettingsService, MarketHoursService marketHoursService,
+                   WorkspaceRepository workspaceRepository) {
+        this(
+                strategyRepository,
+                orderRepository,
+                stateMachine,
+                alpacaClient,
+                appSettingsService,
+                marketHoursService,
+                new TradeEmailNotificationService(appSettingsService, strategyRepository, orderRepository, workspaceRepository)
         );
     }
 
@@ -922,14 +937,6 @@ public class StrategyEngine {
         return fallback;
     }
 
-    private BigDecimal trailingThreshold(Strategy strategy) {
-        BigDecimal high = strategy.highestObservedPriceAfterTarget();
-        if (strategy.profitHoldType() == ProfitHoldType.FIXED_AMOUNT_TRAILING) {
-            return Monetary.round(high.subtract(strategy.profitHoldAmount()));
-        }
-        return Monetary.round(high.multiply(BigDecimal.ONE.subtract(strategy.profitHoldPercent().divide(new BigDecimal("100")))));
-    }
-
     private boolean hasPendingOrFilledStage(List<StrategyOrder> orders, StrategyStage stage) {
         return orders.stream().anyMatch(order -> order.stage() == stage && (order.isPending() || order.status() == StrategyOrderStatus.FILLED));
     }
@@ -941,11 +948,6 @@ public class StrategyEngine {
     private boolean hasPendingStage(List<StrategyOrder> orders, StrategyStage stage) {
         return orders.stream().anyMatch(order -> order.stage() == stage && order.isPending());
     }
-
-    private boolean hasPendingOrFilledExitOrder(List<StrategyOrder> orders, StrategyStage stage) {
-        return orders.stream().anyMatch(order -> order.stage() == stage && (order.isPending() || order.status() == StrategyOrderStatus.FILLED));
-    }
-
     private boolean shouldActivateStopLossMonitoring(Strategy strategy, List<StrategyOrder> orders) {
         if (!strategy.automatedStopLossEnabled()) {
             return false;
@@ -963,8 +965,7 @@ public class StrategyEngine {
     private Optional<StrategyOrder> latestFilledExitOrder(List<StrategyOrder> orders) {
         return orders.stream()
                 .filter(order -> StrategyStageSupport.isExitStage(order.stage()) && order.status() == StrategyOrderStatus.FILLED)
-                .max(Comparator.comparing(StrategyOrder::filledAt,
-                        Comparator.nullsLast(Comparator.naturalOrder()))
+                .max(Comparator.comparing(StrategyOrder::filledAt, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())));
     }
 
@@ -988,14 +989,12 @@ public class StrategyEngine {
     }
 
     private boolean isAutoExecutionAllowed(String strategyId) {
-        Optional<Strategy> latest = strategyRepository.findById(strategyId);
-        return latest.isPresent() && latest.get().status() == StrategyStatus.ACTIVE;
+        return strategyRepository.findById(strategyId).map(strategy -> strategy.status() == StrategyStatus.ACTIVE).orElse(false);
     }
 
     private boolean isManuallyCanceled(String strategyId) {
         Optional<Strategy> latest = strategyRepository.findById(strategyId);
-        return latest.isPresent()
-                && latest.get().status() == StrategyStatus.PAUSED
+        return latest.isPresent() && latest.get().status() == StrategyStatus.PAUSED
                 && latest.get().pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED;
     }
 }

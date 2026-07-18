@@ -352,7 +352,9 @@ public final class StrategyActionsController {
         ActionEntry entry = gateway.entryAt(row);
         Strategy strategy = entry.strategy();
         if (!isSellAllowed(strategy.status()) || !gateway.hasOpenPosition(strategy) || !gateway.marketOpenForUi()) {
-            actionLog.skipped("Sell Position", "Strategy is not sellable, has no open position, or market is closed.");
+            String reason = "Skipped. Strategy is not sellable, has no open position, or market is closed.";
+            actionLog.skipped("Sell Position", reason);
+            gateway.showMessage(reason, "Unable to Sell", JOptionPane.WARNING_MESSAGE);
             return;
         }
 

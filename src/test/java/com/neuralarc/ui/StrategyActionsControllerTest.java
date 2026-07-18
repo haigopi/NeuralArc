@@ -204,6 +204,9 @@ class StrategyActionsControllerTest {
         controller.sellPosition(0);
 
         assertEquals(0, gateway.confirmCalls);
+        assertEquals("Skipped. Strategy is not sellable, has no open position, or market is closed.", gateway.lastMessage);
+        assertEquals("Unable to Sell", gateway.lastMessageTitle);
+        assertEquals(JOptionPane.WARNING_MESSAGE, gateway.lastMessageType);
     }
 
     @Test
@@ -216,6 +219,9 @@ class StrategyActionsControllerTest {
         controller.sellPosition(0);
 
         assertEquals(0, gateway.confirmCalls);
+        assertEquals("Skipped. Strategy is not sellable, has no open position, or market is closed.", gateway.lastMessage);
+        assertEquals("Unable to Sell", gateway.lastMessageTitle);
+        assertEquals(JOptionPane.WARNING_MESSAGE, gateway.lastMessageType);
     }
 
     @Test
@@ -501,6 +507,9 @@ class StrategyActionsControllerTest {
                         new BigDecimal("7.00"), 5,
                         new BigDecimal("6.50"), 5,
                         new BigDecimal("10.00"));
+        String lastMessage;
+        String lastMessageTitle;
+        int lastMessageType;
 
         private FakeGateway(Strategy strategy) {
             this.entry = new StrategyActionsController.ActionEntry() {
@@ -599,7 +608,11 @@ class StrategyActionsControllerTest {
         @Override public void log(String message) { }
         @Override public void publishAnalytics(AnalyticsEvent event) { }
         @Override public int confirm(String message, String title, int optionType, int messageType) { confirmCalls++; return confirmResult; }
-        @Override public void showMessage(String message, String title, int messageType) { }
+        @Override public void showMessage(String message, String title, int messageType) {
+            lastMessage = message;
+            lastMessageTitle = title;
+            lastMessageType = messageType;
+        }
         @Override public StrategyActionsController.PromotionDialogResult showLivePromotionDialog(StrategyService.LivePromotionPreview preview, String realizedPnl, String unrealizedPnl) {
             previewDialogCalls++;
             return promotionDialogResult;

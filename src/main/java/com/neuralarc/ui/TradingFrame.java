@@ -220,8 +220,11 @@ public class TradingFrame extends JFrame {
     private static final Color HISTORY_SUBTOTAL_BG  = ThemeColors.color("NeuralArc.History.subtotalBackground", new Color(215, 225, 240));
     private static final Color HISTORY_SUBTOTAL_FG  = ThemeColors.color("NeuralArc.History.subtotalForeground", new Color(28, 48, 80));
     private static final Color HISTORY_GROUP_BORDER = ThemeColors.color("NeuralArc.History.groupBorder", new Color(173, 181, 189));
-    private static final Color LOG_LINE_EVEN = ThemeColors.color("NeuralArc.Log.lineEven", new Color(63, 72, 82));
-    private static final Color LOG_LINE_ODD = ThemeColors.color("NeuralArc.Log.lineOdd", new Color(110, 118, 128));
+    private static final Color LOG_LINE_EVEN = ThemeColors.color("NeuralArc.Log.lineEven", new Color(238, 242, 247));
+    private static final Color LOG_LINE_ODD = ThemeColors.color("NeuralArc.Log.lineOdd", new Color(224, 231, 240));
+    private static final Color LOG_LINE_PROCESSING = ThemeColors.color("NeuralArc.Log.processing", new Color(147, 197, 253));
+    private static final Color LOG_LINE_SUCCESS = ThemeColors.color("NeuralArc.Log.success", new Color(125, 211, 168));
+    private static final Color LOG_LINE_WARNING = ThemeColors.color("NeuralArc.Log.warning", new Color(251, 191, 36));
     private static final Color LOG_LINE_FAILURE = ThemeColors.color("NeuralArc.Log.failure", new Color(183, 28, 28));
     private static final Color LOG_LINE_FAILURE_BG = ThemeColors.color("NeuralArc.Log.failureBackground", new Color(255, 245, 157));
     private static final int MAX_EVENT_LOG_LINES = 1500;
@@ -366,6 +369,10 @@ public class TradingFrame extends JFrame {
                 c.setBackground(TABLE_SELECTION_BG);
                 c.setForeground(TABLE_SELECTION_FG);
             }
+            Color orbPendingBaseBuyForeground = orbPendingBaseBuyForeground(row);
+            if (orbPendingBaseBuyForeground != null) {
+                c.setForeground(orbPendingBaseBuyForeground);
+            }
             // Left accent stripe: a 3-px blue bar on column 0 of selected rows.
             if (c instanceof JComponent jc) {
                 StrategyGridSelectionStyler.applySelectionBorder(jc, rowSelected, column, TABLE_SELECTION_BORDER);
@@ -474,8 +481,6 @@ public class TradingFrame extends JFrame {
     private volatile String availableFundsText = "Funds Available: -";
     private final AtomicBoolean availableFundsFetchInFlight = new AtomicBoolean(false);
     private static final long AVAILABLE_FUNDS_REFRESH_INTERVAL_MILLIS = 30000L;
-    private volatile long lastBatchGridPriceRefreshAtMillis;
-    private volatile boolean batchGridPriceRefreshRequestedFromStream;
     private volatile long lastLoggedSnapshotIntervalMillis = -1L;
     private volatile long lastClosedMarketPollingCycleAtMillis;
     private volatile boolean startupMarketClosedRepairAuditLogged;
@@ -3542,29 +3547,38 @@ public class TradingFrame extends JFrame {
 
     private void triggerPollingCycle() {
         detectAndHandleWakeFromSleep();
-        if (strategyPollingService == null || !shouldRunPollingCycleNow() || !pollingCycleInFlight.compareAndSet(false, true)) {
+        if (strategyPollingService == null) {
             return;
         }
-         uiPollingExecutor.submit(() -> {
+        boolean runStrategyPolling = shouldRunStrategyPollingCycleNow();
+        Set<String> brokerSnapshotStrategyIds = brokerSnapshotStrategyIdsDueForRefresh();
+        if ((!runStrategyPolling && brokerSnapshotStrategyIds.isEmpty())
+                || !pollingCycleInFlight.compareAndSet(false, true)) {
+            return;
+        }
+        markBrokerSnapshotRefreshAttempt(brokerSnapshotStrategyIds);
+        uiPollingExecutor.submit(() -> {
             try {
-                int dueStrategies = strategyPollingService.pollDueStrategies();
+                int dueStrategies = runStrategyPolling ? strategyPollingService.pollDueStrategies() : 0;
                 StrategyPollingService.MarketClosedAutoRepairSummary startupAutoRepairSummary = startupMarketClosedRepairAuditLogged
+                        || !runStrategyPolling
                         ? new StrategyPollingService.MarketClosedAutoRepairSummary(List.of(), Map.of())
                         : strategyPollingService.drainMarketClosedAutoRepairedStrategyIds();
                 List<Strategy> stored = strategyRepository.findAll();
+                List<Strategy> snapshotRefreshStrategies = strategiesForBrokerSnapshotRefresh(stored, brokerSnapshotStrategyIds);
                 Map<String, Boolean> overnightEligibility = loadOvernightEligibilityForStrategies(stored);
-                boolean intervalRefreshDue = shouldRunBatchGridPriceRefresh(stored);
-                boolean refreshBrokerSnapshots = hasStrategiesNeedingBrokerSnapshots(stored)
-                        && (dueStrategies > 0 || intervalRefreshDue);
-                Map<String, Position> positionSnapshots = refreshBrokerSnapshots
-                        ? loadPositionSnapshotsForStrategies(stored)
+                Map<String, Position> positionSnapshots = !snapshotRefreshStrategies.isEmpty()
+                        ? loadPositionSnapshotsForStrategies(snapshotRefreshStrategies)
                         : Map.of();
                 SwingUtilities.invokeLater(() -> {
                     try {
                         syncStrategies(stored);
                         applyOvernightEligibilitySnapshots(overnightEligibility);
                         applyPositionSnapshots(positionSnapshots);
-                        if ((dueStrategies > 0 || !positionSnapshots.isEmpty()) && shouldRunBrokerBackedUiRefresh()) {
+                        if (dueStrategies > 0 && shouldRunBrokerBackedUiRefresh()) {
+                            refreshStrategyTableContent();
+                            refreshPanels();
+                        } else if (!positionSnapshots.isEmpty()) {
                             refreshStrategyTableContent();
                             refreshPanels();
                         }
@@ -3637,7 +3651,7 @@ public class TradingFrame extends JFrame {
         log("[STARTUP][MARKET_CLOSE_REPAIR] " + categorySummary + " | IDs: " + idList);
     }
 
-    private boolean shouldRunPollingCycleNow() {
+    private boolean shouldRunStrategyPollingCycleNow() {
         if (!shouldSuppressBrokerBackedRefreshForClosedMarket()) {
             return true;
         }
@@ -3669,20 +3683,44 @@ public class TradingFrame extends JFrame {
         return false;
     }
 
-    private boolean shouldRunBatchGridPriceRefresh(List<Strategy> stored) {
+    private Set<String> brokerSnapshotStrategyIdsDueForRefresh() {
+        List<Strategy> displayedStrategies = strategies.stream()
+                .map(entry -> entry.strategy)
+                .toList();
+        logSnapshotIntervalIfChanged(BrokerSnapshotRefreshPolicy.resolveIntervalMillis(displayedStrategies));
+        Set<String> dueStrategyIds = new HashSet<>();
+        for (ManagedStrategy entry : strategies) {
+            if (entry == null
+                    || entry.strategy == null
+                    || !includeInBrokerSnapshotRefresh(entry.strategy)
+                    || !entry.shouldRefreshDisplayedPosition()) {
+                continue;
+            }
+            dueStrategyIds.add(entry.strategy.id());
+        }
+        return dueStrategyIds;
+    }
+
+    private void markBrokerSnapshotRefreshAttempt(Set<String> dueStrategyIds) {
+        if (dueStrategyIds == null || dueStrategyIds.isEmpty()) {
+            return;
+        }
         long now = System.currentTimeMillis();
-        long refreshIntervalMillis = BrokerSnapshotRefreshPolicy.resolveIntervalMillis(stored);
-        logSnapshotIntervalIfChanged(refreshIntervalMillis);
-        if (batchGridPriceRefreshRequestedFromStream) {
-            batchGridPriceRefreshRequestedFromStream = false;
-            lastBatchGridPriceRefreshAtMillis = now;
-            return true;
+        for (ManagedStrategy entry : strategies) {
+            if (entry != null && entry.strategy != null && dueStrategyIds.contains(entry.strategy.id())) {
+                entry.markDisplayedPositionRefreshAttempt(now);
+            }
         }
-        if (now - lastBatchGridPriceRefreshAtMillis >= refreshIntervalMillis) {
-            lastBatchGridPriceRefreshAtMillis = now;
-            return true;
+    }
+
+    private List<Strategy> strategiesForBrokerSnapshotRefresh(List<Strategy> stored, Set<String> dueStrategyIds) {
+        if (stored == null || stored.isEmpty() || dueStrategyIds == null || dueStrategyIds.isEmpty()) {
+            return List.of();
         }
-        return false;
+        return stored.stream()
+                .filter(strategy -> strategy != null && dueStrategyIds.contains(strategy.id()))
+                .filter(this::includeInBrokerSnapshotRefresh)
+                .toList();
     }
 
     private void logSnapshotIntervalIfChanged(long refreshIntervalMillis) {
@@ -3712,6 +3750,18 @@ public class TradingFrame extends JFrame {
             snapshot = StockPriceTooltipSnapshot.loading(entry.strategy.symbol());
         }
         return snapshot.tooltipText();
+    }
+
+    private Color orbPendingBaseBuyForeground(int viewRow) {
+        if (viewRow < 0) {
+            return null;
+        }
+        int modelRow = strategyTable.convertRowIndexToModel(viewRow);
+        if (modelRow < 0 || modelRow >= strategies.size()) {
+            return null;
+        }
+        ManagedStrategy entry = strategies.get(modelRow);
+        return OrbPendingBaseBuyRowStyler.foreground(entry.strategy, entry.cachedPosition());
     }
 
     private void scheduleStockPriceTooltipRefresh(ManagedStrategy entry) {
@@ -7450,9 +7500,13 @@ public class TradingFrame extends JFrame {
     }
 
     private Color logEntryColor(String logEntry) {
-        return isFailureLogEntry(logEntry)
-                ? LOG_LINE_FAILURE
-                : (logLineCount % 2 == 0) ? LOG_LINE_EVEN : LOG_LINE_ODD;
+        return switch (EventLogSeverity.tone(logEntry)) {
+            case FAILURE -> LOG_LINE_FAILURE;
+            case WARNING -> LOG_LINE_WARNING;
+            case SUCCESS -> LOG_LINE_SUCCESS;
+            case PROCESSING -> LOG_LINE_PROCESSING;
+            case INFO -> (logLineCount % 2 == 0) ? LOG_LINE_EVEN : LOG_LINE_ODD;
+        };
     }
 
     private boolean isFailureLogEntry(String logEntry) {
