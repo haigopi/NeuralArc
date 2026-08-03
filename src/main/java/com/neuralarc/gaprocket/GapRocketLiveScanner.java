@@ -19,14 +19,31 @@ import java.util.function.Consumer;
  * Builds Gap Rocket candidates exclusively from operator-supplied symbols and live Alpaca market data.
  */
 public final class GapRocketLiveScanner {
+    static final long DEFAULT_REQUEST_INTERVAL_MILLIS = 750L;
+
     private final AlpacaMarketDataApi marketDataApi;
     private final Clock clock;
     private final Consumer<String> log;
+    private final long requestIntervalMillis;
+    private final Sleeper sleeper;
+    private boolean requestStarted;
 
     public GapRocketLiveScanner(AlpacaMarketDataApi marketDataApi, Clock clock, Consumer<String> log) {
+        this(marketDataApi, clock, log, DEFAULT_REQUEST_INTERVAL_MILLIS, Thread::sleep);
+    }
+
+    GapRocketLiveScanner(
+            AlpacaMarketDataApi marketDataApi,
+            Clock clock,
+            Consumer<String> log,
+            long requestIntervalMillis,
+            Sleeper sleeper
+    ) {
         this.marketDataApi = Objects.requireNonNull(marketDataApi, "marketDataApi");
         this.clock = clock == null ? Clock.systemDefaultZone() : clock;
         this.log = log == null ? ignored -> { } : log;
+        this.requestIntervalMillis = Math.max(0L, requestIntervalMillis);
+        this.sleeper = sleeper == null ? Thread::sleep : sleeper;
     }
 
     public List<GapRocketCandidate> candidates(List<String> symbols) {
@@ -46,6 +63,9 @@ public final class GapRocketLiveScanner {
                 buildCandidate(symbol, today, spyGreen, qqqGreen).ifPresent(candidates::add);
             } catch (AlpacaMarketDataException ex) {
                 log.accept("[Gap Rocket] Skipped " + symbol + ": " + ex.getMessage());
+                if (Thread.currentThread().isInterrupted()) {
+                    break;
+                }
             }
         }
         return candidates;
@@ -53,8 +73,8 @@ public final class GapRocketLiveScanner {
 
     private boolean isIndexGreen(String symbol, LocalDate today) {
         try {
-            List<MarketBar> dailyBars = marketDataApi.getDailyBars(symbol, today.minusDays(5), today);
-            List<MarketBar> intradayBars = marketDataApi.getIntradayBars(symbol, today, today, 1);
+            List<MarketBar> dailyBars = getDailyBars(symbol, today.minusDays(5), today);
+            List<MarketBar> intradayBars = getIntradayBars(symbol, today, today, 1);
             MarketBar prevDay = previousDailyBar(dailyBars, today);
             MarketBar latest = latestBar(intradayBars, dailyBars);
             if (prevDay == null || latest == null || prevDay.close().compareTo(BigDecimal.ZERO) <= 0) return true;
@@ -67,8 +87,8 @@ public final class GapRocketLiveScanner {
     }
 
     private java.util.Optional<GapRocketCandidate> buildCandidate(String symbol, LocalDate today, boolean spyGreen, boolean qqqGreen) throws AlpacaMarketDataException {
-        List<MarketBar> dailyBars = marketDataApi.getDailyBars(symbol, today.minusDays(20), today);
-        List<MarketBar> intradayBars = marketDataApi.getIntradayBars(symbol, today, today, 1);
+        List<MarketBar> dailyBars = getDailyBars(symbol, today.minusDays(20), today);
+        List<MarketBar> intradayBars = getIntradayBars(symbol, today, today, 1);
         MarketBar previousDaily = previousDailyBar(dailyBars, today);
         MarketBar latestBar = latestBar(intradayBars, dailyBars);
         if (previousDaily == null || latestBar == null || previousDaily.close().compareTo(BigDecimal.ZERO) <= 0) {
@@ -156,6 +176,40 @@ public final class GapRocketLiveScanner {
 
     private boolean valid(BigDecimal value) {
         return value != null && value.compareTo(BigDecimal.ZERO) > 0;
+    }
+
+    private List<MarketBar> getDailyBars(String symbol, LocalDate startDate, LocalDate endDate)
+            throws AlpacaMarketDataException {
+        paceRequest();
+        return marketDataApi.getDailyBars(symbol, startDate, endDate);
+    }
+
+    private List<MarketBar> getIntradayBars(
+            String symbol,
+            LocalDate startDate,
+            LocalDate endDate,
+            int intervalMinutes
+    ) throws AlpacaMarketDataException {
+        paceRequest();
+        return marketDataApi.getIntradayBars(symbol, startDate, endDate, intervalMinutes);
+    }
+
+    private void paceRequest() throws AlpacaMarketDataException {
+        if (!requestStarted) {
+            requestStarted = true;
+            return;
+        }
+        try {
+            sleeper.sleep(requestIntervalMillis);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new AlpacaMarketDataException("scan interrupted while pacing market-data requests", ex);
+        }
+    }
+
+    @FunctionalInterface
+    interface Sleeper {
+        void sleep(long millis) throws InterruptedException;
     }
 
     public static List<String> parseSymbols(String raw) {

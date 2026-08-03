@@ -21,6 +21,8 @@ class GapRocketLiveScannerTest {
         GapRocketLiveScanner scanner = new GapRocketLiveScanner(
                 api,
                 Clock.fixed(Instant.parse("2026-06-13T14:00:00Z"), ZoneOffset.UTC),
+                ignored -> { },
+                0L,
                 ignored -> { }
         );
 
@@ -39,6 +41,8 @@ class GapRocketLiveScannerTest {
         GapRocketLiveScanner scanner = new GapRocketLiveScanner(
                 new RedSpyFakeApi(),
                 Clock.fixed(Instant.parse("2026-06-13T14:00:00Z"), ZoneOffset.UTC),
+                ignored -> { },
+                0L,
                 ignored -> { }
         );
 
@@ -53,6 +57,25 @@ class GapRocketLiveScannerTest {
     void parsesSymbolsWithoutInjectingDefaults() {
         assertEquals(List.of("AMD", "MSFT", "TSLA"), GapRocketLiveScanner.parseSymbols(" amd, msft\nTSLA AMD "));
         assertTrue(GapRocketLiveScanner.parseSymbols(" ").isEmpty());
+    }
+
+    @Test
+    void pacesEveryMarketDataRequestAfterTheFirst() {
+        FakeMarketDataApi api = new FakeMarketDataApi();
+        List<Long> delays = new ArrayList<>();
+        GapRocketLiveScanner scanner = new GapRocketLiveScanner(
+                api,
+                Clock.fixed(Instant.parse("2026-06-13T14:00:00Z"), ZoneOffset.UTC),
+                ignored -> { },
+                750L,
+                delays::add
+        );
+
+        scanner.candidates(List.of("AMD", "MSFT"));
+
+        // SPY, QQQ, AMD, and MSFT each require daily + intraday bars: 8 requests, 7 waits.
+        assertEquals(7, delays.size());
+        assertTrue(delays.stream().allMatch(delay -> delay == 750L));
     }
 
     /** SPY is red (current < prev close); all other symbols are green. */
