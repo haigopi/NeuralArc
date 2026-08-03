@@ -97,7 +97,7 @@ final class PortfolioCaptureCalculator {
     }
 
     private BigDecimal targetProgress(BigDecimal pnl, BigDecimal pnlPercent, PortfolioCaptureConfig config) {
-        if (config == null || config.mode() != PortfolioCaptureMode.TARGET_MONITORING
+        if (config == null || config.mode() == PortfolioCaptureMode.CAPTURE_NOW
                 || config.targetValue() == null || config.targetValue().compareTo(BigDecimal.ZERO) <= 0) {
             return Monetary.zero();
         }

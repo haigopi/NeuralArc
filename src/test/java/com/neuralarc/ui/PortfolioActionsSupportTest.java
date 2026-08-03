@@ -614,6 +614,37 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
+    void coloredPendingBuyActionsMatchOnlyTheirDisplayedOrbColor() {
+        ManagedStrategy amber = managed("AAPL", StrategyStatus.CREATED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        amber.strategy.setLatestOrderStatus("ORB_RECOMMENDED");
+        amber.strategy.setBaseBuyLimitPrice(new BigDecimal("101.00"));
+        setCachedLastPrice(amber, "100.00");
+        ManagedStrategy green = managed("MSFT", StrategyStatus.CREATED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        green.strategy.setLatestOrderStatus("ORB_ARMED");
+        green.strategy.setBaseBuyLimitPrice(new BigDecimal("99.00"));
+        setCachedLastPrice(green, "100.00");
+        ManagedStrategy equal = managed("NVDA", StrategyStatus.CREATED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        equal.strategy.setLatestOrderStatus("ORB_RECOMMENDED");
+        equal.strategy.setBaseBuyLimitPrice(new BigDecimal("100.00"));
+        setCachedLastPrice(equal, "100.00");
+
+        List<ManagedStrategy> rows = List.of(amber, green, equal);
+
+        assertEquals(List.of("AAPL"), support.filterTargets(rows,
+                        PortfolioActionsSupport.BulkAction.CANCEL_AMBER_PENDING_BUYS).stream()
+                .map(entry -> entry.strategy.symbol()).toList());
+        assertEquals(List.of("MSFT"), support.filterTargets(rows,
+                        PortfolioActionsSupport.BulkAction.CANCEL_GREEN_PENDING_BUYS).stream()
+                .map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    private static void setCachedLastPrice(ManagedStrategy entry, String price) {
+        Position position = new Position(entry.strategy.symbol());
+        position.setLastPrice(new BigDecimal(price));
+        entry.setCachedPosition(position);
+    }
+
+    @Test
     void resultMessageIncludesSkippedSectionWhenPresent() {
         String message = support.buildResultMessage(
                 PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_BUYS,

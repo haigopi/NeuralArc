@@ -63,10 +63,15 @@ final class PortfolioCaptureDialog extends JDialog {
 
     private final JRadioButton captureNow = new JRadioButton("Liquidate Now", true);
     private final JRadioButton captureTarget = new JRadioButton("Liquidate At Target");
+    private final JRadioButton capturePullback = new JRadioButton("Wait for Minimum, Then Liquidate on Pullback");
     private final JRadioButton percentTarget = new JRadioButton("Profit Percent", true);
     private final JRadioButton amountTarget = new JRadioButton("Profit Amount");
     private final JTextField percentField = new JTextField("5", 8);
     private final JTextField amountField = new JTextField("500", 8);
+    private final JRadioButton percentPullback = new JRadioButton("Pullback Percent", true);
+    private final JRadioButton amountPullback = new JRadioButton("Pullback Amount");
+    private final JTextField pullbackPercentField = new JTextField("10", 8);
+    private final JTextField pullbackAmountField = new JTextField("100", 8);
     private final JCheckBox includeLosses = new JCheckBox("Include losses in net P/L", true);
     private final JTextField intervalField = new JTextField("45", 5);
     private final JCheckBox activeOnly = new JCheckBox("Active strategies only", true);
@@ -157,9 +162,13 @@ final class PortfolioCaptureDialog extends JDialog {
         ButtonGroup modeGroup = new ButtonGroup();
         modeGroup.add(captureNow);
         modeGroup.add(captureTarget);
+        modeGroup.add(capturePullback);
         ButtonGroup targetGroup = new ButtonGroup();
         targetGroup.add(percentTarget);
         targetGroup.add(amountTarget);
+        ButtonGroup pullbackGroup = new ButtonGroup();
+        pullbackGroup.add(percentPullback);
+        pullbackGroup.add(amountPullback);
         ButtonGroup flowGroup = new ButtonGroup();
         flowGroup.add(executeOnce);
         flowGroup.add(reenterOnce);
@@ -169,8 +178,11 @@ final class PortfolioCaptureDialog extends JDialog {
         modeGroup2.add(liveMode);
         captureNow.addActionListener(e -> updateEnabledState());
         captureTarget.addActionListener(e -> updateEnabledState());
+        capturePullback.addActionListener(e -> updateEnabledState());
         percentTarget.addActionListener(e -> updateEnabledState());
         amountTarget.addActionListener(e -> updateEnabledState());
+        percentPullback.addActionListener(e -> updateEnabledState());
+        amountPullback.addActionListener(e -> updateEnabledState());
         executeOnce.addActionListener(e -> updateEnabledState());
         reenterOnce.addActionListener(e -> updateEnabledState());
         continuousLoop.addActionListener(e -> updateEnabledState());
@@ -184,6 +196,8 @@ final class PortfolioCaptureDialog extends JDialog {
                 "Liquidate the portfolio as it is at the current market price.", 0);
         addRadioWithDescription(panel, captureTarget,
                 "Automatically monitor and liquidate the portfolio once the configured target is reached.", 2);
+        addRadioWithDescription(panel, capturePullback,
+                "Wait for the minimum profit target, track the highest profit, then liquidate after the configured pullback.", 4);
         return panel;
     }
 
@@ -213,9 +227,31 @@ final class PortfolioCaptureDialog extends JDialog {
         gbc.gridwidth = 2;
         panel.add(includeLosses, gbc);
         gbc.gridy++;
-        panel.add(description("Monitoring executes market orders automatically once the configured portfolio target is reached."), gbc);
+        panel.add(pullbackPanel(), gbc);
+        gbc.gridy++;
+        panel.add(description("Target mode liquidates at the minimum. Pullback mode arms at the minimum and liquidates only after profit falls from its subsequent peak."), gbc);
         gbc.gridy++;
         panel.add(advancedPanel(), gbc);
+        return panel;
+    }
+
+    private JPanel pullbackPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setOpaque(false);
+        panel.setBorder(BorderFactory.createTitledBorder("Pullback After Minimum"));
+        GridBagConstraints gbc = baseGbc(0);
+        panel.add(percentPullback, gbc);
+        gbc.gridx = 1;
+        panel.add(pullbackPercentField, gbc);
+        gbc.gridx = 2;
+        panel.add(new JLabel("% from peak profit"), gbc);
+        gbc.gridx = 0;
+        gbc.gridy++;
+        panel.add(amountPullback, gbc);
+        gbc.gridx = 1;
+        panel.add(pullbackAmountField, gbc);
+        gbc.gridx = 2;
+        panel.add(new JLabel("from peak profit"), gbc);
         return panel;
     }
 
@@ -360,6 +396,24 @@ final class PortfolioCaptureDialog extends JDialog {
                     "Liquidate Portfolio", JOptionPane.WARNING_MESSAGE);
             return Optional.empty();
         }
+        BigDecimal pullback = BigDecimal.ZERO;
+        if (capturePullback.isSelected()) {
+            try {
+                pullback = new BigDecimal(percentPullback.isSelected()
+                        ? pullbackPercentField.getText().trim()
+                        : pullbackAmountField.getText().trim());
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "Enter a valid positive pullback value.",
+                        "Liquidate Portfolio", JOptionPane.WARNING_MESSAGE);
+                return Optional.empty();
+            }
+            if (pullback.compareTo(BigDecimal.ZERO) <= 0
+                    || (percentPullback.isSelected() && pullback.compareTo(BigDecimal.valueOf(100)) >= 0)) {
+                JOptionPane.showMessageDialog(this, "Pullback must be greater than zero and percentages must be below 100.",
+                        "Liquidate Portfolio", JOptionPane.WARNING_MESSAGE);
+                return Optional.empty();
+            }
+        }
         int interval;
         try {
             interval = Integer.parseInt(intervalField.getText().trim());
@@ -372,7 +426,9 @@ final class PortfolioCaptureDialog extends JDialog {
             return Optional.empty();
         }
         return Optional.of(new PortfolioCaptureConfig(
-                PortfolioCaptureMode.TARGET_MONITORING,
+                capturePullback.isSelected()
+                        ? PortfolioCaptureMode.PULLBACK_MONITORING
+                        : PortfolioCaptureMode.TARGET_MONITORING,
                 percentTarget.isSelected() ? PortfolioCaptureTargetType.PROFIT_PERCENT : PortfolioCaptureTargetType.PROFIT_AMOUNT,
                 target,
                 includeLosses.isSelected(),
@@ -384,17 +440,26 @@ final class PortfolioCaptureDialog extends JDialog {
                 (Integer) reentryQuantity.getValue(),
                 (RecommendationType) reentryTerm.getSelectedItem(),
                 selectedSmartPicksStrategy(),
-                autoCleanPending.isSelected()
+                autoCleanPending.isSelected(),
+                percentPullback.isSelected()
+                        ? PortfolioCapturePullbackType.PERCENT_FROM_PEAK
+                        : PortfolioCapturePullbackType.AMOUNT_FROM_PEAK,
+                pullback
         ));
     }
 
     private void updateEnabledState() {
-        boolean targetMode = captureTarget.isSelected();
+        boolean targetMode = captureTarget.isSelected() || capturePullback.isSelected();
+        boolean pullbackMode = capturePullback.isSelected();
         boolean reentryEnabled = targetMode && (reenterOnce.isSelected() || continuousLoop.isSelected());
         percentTarget.setEnabled(targetMode);
         amountTarget.setEnabled(targetMode);
         percentField.setEnabled(targetMode && percentTarget.isSelected());
         amountField.setEnabled(targetMode && amountTarget.isSelected());
+        percentPullback.setEnabled(pullbackMode);
+        amountPullback.setEnabled(pullbackMode);
+        pullbackPercentField.setEnabled(pullbackMode && percentPullback.isSelected());
+        pullbackAmountField.setEnabled(pullbackMode && amountPullback.isSelected());
         includeLosses.setEnabled(targetMode);
         intervalField.setEnabled(targetMode);
         activeOnly.setEnabled(targetMode);
@@ -423,7 +488,7 @@ final class PortfolioCaptureDialog extends JDialog {
     }
 
     private PortfolioCaptureConfig previewConfig() {
-        if (!captureTarget.isSelected()) {
+        if (captureNow.isSelected()) {
             return PortfolioCaptureConfig.captureNow();
         }
         BigDecimal target;
@@ -433,7 +498,9 @@ final class PortfolioCaptureDialog extends JDialog {
             target = BigDecimal.ZERO;
         }
         return new PortfolioCaptureConfig(
-                PortfolioCaptureMode.TARGET_MONITORING,
+                capturePullback.isSelected()
+                        ? PortfolioCaptureMode.PULLBACK_MONITORING
+                        : PortfolioCaptureMode.TARGET_MONITORING,
                 percentTarget.isSelected() ? PortfolioCaptureTargetType.PROFIT_PERCENT : PortfolioCaptureTargetType.PROFIT_AMOUNT,
                 target,
                 includeLosses.isSelected(),
@@ -445,7 +512,11 @@ final class PortfolioCaptureDialog extends JDialog {
                 (Integer) reentryQuantity.getValue(),
                 (RecommendationType) reentryTerm.getSelectedItem(),
                 selectedSmartPicksStrategy(),
-                autoCleanPending.isSelected()
+                autoCleanPending.isSelected(),
+                percentPullback.isSelected()
+                        ? PortfolioCapturePullbackType.PERCENT_FROM_PEAK
+                        : PortfolioCapturePullbackType.AMOUNT_FROM_PEAK,
+                previewPullbackValue()
         );
     }
 
@@ -463,8 +534,20 @@ final class PortfolioCaptureDialog extends JDialog {
                 (Integer) reentryQuantity.getValue(),
                 (RecommendationType) reentryTerm.getSelectedItem(),
                 selectedSmartPicksStrategy(),
-                autoCleanPending.isSelected()
+                autoCleanPending.isSelected(),
+                base.pullbackType(),
+                base.pullbackValue()
         );
+    }
+
+    private BigDecimal previewPullbackValue() {
+        try {
+            return new BigDecimal(percentPullback.isSelected()
+                    ? pullbackPercentField.getText().trim()
+                    : pullbackAmountField.getText().trim());
+        } catch (NumberFormatException ex) {
+            return BigDecimal.ZERO;
+        }
     }
 
     private PortfolioCaptureSmartPicksStrategy selectedSmartPicksStrategy() {

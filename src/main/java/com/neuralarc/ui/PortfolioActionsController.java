@@ -89,6 +89,10 @@ final class PortfolioActionsController {
         menu.add(sectionHeader("Order Cleanup"));
         menu.add(gateway.createMenuItem("Clean All Pending Base Buys", "icons/delete.svg",
                 this::handleCleanPendingBaseBuys));
+        menu.add(gateway.createMenuItem("Cancel all Amber Pending Buys (Losers)", "icons/delete.svg",
+                () -> handleCancelColoredPendingBuys(PortfolioActionsSupport.BulkAction.CANCEL_AMBER_PENDING_BUYS)));
+        menu.add(gateway.createMenuItem("Cancel all Green Pending Buys (Gainer)", "icons/delete.svg",
+                () -> handleCancelColoredPendingBuys(PortfolioActionsSupport.BulkAction.CANCEL_GREEN_PENDING_BUYS)));
         menu.add(gateway.createMenuItem("Cancel All Pending Limit Buys", "icons/close.svg",
                 this::handleCancelAllPendingLimitBuys));
         menu.add(gateway.createMenuItem("Cancel All Pending Limit Sells", "icons/close.svg",
@@ -174,6 +178,27 @@ final class PortfolioActionsController {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
                 return deletePendingBaseBuyTargets(targets);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    private void handleCancelColoredPendingBuys(PortfolioActionsSupport.BulkAction action) {
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+
+        gateway.log(action.logPrefix() + " preparing to remove " + targets.size()
+                + " pending buy recommendation(s).");
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return deletePendingBaseBuyTargets(targets, action.logPrefix());
             }
 
             @Override
@@ -503,14 +528,21 @@ final class PortfolioActionsController {
     }
 
     PortfolioActionsSupport.BatchResult deletePendingBaseBuyTargets(List<ManagedStrategy> targets) {
+        return deletePendingBaseBuyTargets(targets, "[Clean Pending Base Buys]");
+    }
+
+    private PortfolioActionsSupport.BatchResult deletePendingBaseBuyTargets(
+            List<ManagedStrategy> targets,
+            String logPrefix
+    ) {
         return runTargetsInParallel(targets, entry -> {
-            gateway.log("[Clean Pending Base Buys] deleting pending recommendation for " + entry.strategy.symbol() + ".");
+            gateway.log(logPrefix + " deleting pending recommendation for " + entry.strategy.symbol() + ".");
             StrategyService.ArchiveResult result = gateway.deletePendingBaseBuyStrategy(entry.strategy.id());
             if (result.success()) {
-                gateway.log("[Clean Pending Base Buys] deleted " + entry.strategy.symbol() + ".");
+                gateway.log(logPrefix + " deleted " + entry.strategy.symbol() + ".");
                 return TargetResult.success(entry.strategy.symbol());
             }
-            gateway.log("[Clean Pending Base Buys] failed " + entry.strategy.symbol() + ": " + result.error());
+            gateway.log(logPrefix + " failed " + entry.strategy.symbol() + ": " + result.error());
             return TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
         });
     }

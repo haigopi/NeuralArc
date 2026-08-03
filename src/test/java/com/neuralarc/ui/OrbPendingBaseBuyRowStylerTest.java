@@ -25,6 +25,8 @@ class OrbPendingBaseBuyRowStylerTest {
         Color foreground = OrbPendingBaseBuyRowStyler.foreground(strategy, position);
 
         assertEquals(OrbPendingBaseBuyRowStyler.BASE_BUY_ABOVE_CURRENT, foreground);
+        assertEquals(OrbPendingBaseBuyRowStyler.PriceDirection.AMBER_LOSER,
+                OrbPendingBaseBuyRowStyler.priceDirection(strategy, position));
     }
 
     @Test
@@ -35,6 +37,8 @@ class OrbPendingBaseBuyRowStylerTest {
         Color foreground = OrbPendingBaseBuyRowStyler.foreground(strategy, position);
 
         assertEquals(OrbPendingBaseBuyRowStyler.BASE_BUY_BELOW_CURRENT, foreground);
+        assertEquals(OrbPendingBaseBuyRowStyler.PriceDirection.GREEN_GAINER,
+                OrbPendingBaseBuyRowStyler.priceDirection(strategy, position));
     }
 
     @Test

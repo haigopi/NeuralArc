@@ -61,6 +61,38 @@ class PortfolioCaptureStateStoreTest {
     }
 
     @Test
+    void persistsPullbackMonitoringPeakAndArmedState() {
+        PortfolioCaptureStateStore store = new PortfolioCaptureStateStore(tempDir.resolve("pullback-state.json"));
+        PortfolioCaptureConfig config = new PortfolioCaptureConfig(
+                PortfolioCaptureMode.PULLBACK_MONITORING,
+                PortfolioCaptureTargetType.PROFIT_AMOUNT,
+                new BigDecimal("500"),
+                true,
+                10,
+                true,
+                true,
+                PortfolioCaptureExecutionFlow.EXECUTE_ONCE_AND_STOP,
+                StrategyMode.PAPER,
+                1,
+                RecommendationType.SHORT_TERM,
+                PortfolioCaptureSmartPicksStrategy.VOLATILE,
+                false,
+                PortfolioCapturePullbackType.PERCENT_FROM_PEAK,
+                new BigDecimal("10")
+        );
+        store.save(new PortfolioCaptureStateStore.State(true, config, Instant.now(),
+                new BigDecimal("10500"), StrategyMode.PAPER, "workspace-1", true, new BigDecimal("750")));
+
+        PortfolioCaptureStateStore.State restored = store.load().orElseThrow();
+
+        assertEquals(PortfolioCaptureMode.PULLBACK_MONITORING, restored.config().mode());
+        assertEquals(PortfolioCapturePullbackType.PERCENT_FROM_PEAK, restored.config().pullbackType());
+        assertEquals(0, new BigDecimal("10").compareTo(restored.config().pullbackValue()));
+        assertTrue(restored.pullbackArmed());
+        assertEquals(0, new BigDecimal("750").compareTo(restored.peakProfit()));
+    }
+
+    @Test
     void loadsSmartPicksStrategyFromLegacyLuckyKey() throws Exception {
         Path stateFile = tempDir.resolve("capture-state.json");
         java.nio.file.Files.writeString(stateFile, """

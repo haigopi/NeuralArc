@@ -46,6 +46,7 @@ final class PortfolioCaptureController {
     private final PortfolioCaptureCalculator calculator;
     private final PortfolioCaptureStateStore stateStore;
     private final PortfolioCaptureHistoryStore historyStore;
+    private final PortfolioCapturePullbackEvaluator pullbackEvaluator = new PortfolioCapturePullbackEvaluator();
     private final AtomicBoolean executing = new AtomicBoolean(false);
     private final Set<String> manuallyExcludedStrategyIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private Timer monitoringTimer;
@@ -58,6 +59,8 @@ final class PortfolioCaptureController {
     private int pendingCanceledCount;
     private volatile boolean emergencyStopRequested;
     private boolean marketClosedPauseLogged;
+    private boolean pullbackArmed;
+    private BigDecimal peakProfit = Monetary.zero();
     private PortfolioCaptureHistoryStore.Summary captureHistorySummary;
 
     PortfolioCaptureController(
@@ -85,7 +88,8 @@ final class PortfolioCaptureController {
     void restoreIfNeeded() {
         stateStore.load().ifPresent(state -> {
             if (state.enabled() && state.config().targetValue().compareTo(BigDecimal.ZERO) > 0) {
-                activateMonitoring(state.config(), state.mode(), state.workspaceId());
+                activateMonitoring(state.config(), state.mode(), state.workspaceId(),
+                        state.pullbackArmed(), state.peakProfit());
                 gateway.log("[Portfolio Liquidation] Monitoring restored after startup.");
             }
         });
@@ -96,9 +100,21 @@ final class PortfolioCaptureController {
     }
 
     private void activateMonitoring(PortfolioCaptureConfig config, StrategyMode mode, String workspaceId) {
+        activateMonitoring(config, mode, workspaceId, false, Monetary.zero());
+    }
+
+    private void activateMonitoring(
+            PortfolioCaptureConfig config,
+            StrategyMode mode,
+            String workspaceId,
+            boolean restoredPullbackArmed,
+            BigDecimal restoredPeakProfit
+    ) {
         activeConfig = config;
         activeMode = mode == null ? StrategyMode.PAPER : mode;
         activeWorkspaceId = workspaceId;
+        pullbackArmed = restoredPullbackArmed;
+        peakProfit = Monetary.round(restoredPeakProfit == null ? BigDecimal.ZERO : restoredPeakProfit);
         stopTimerOnly();
         lastSnapshot = calculator.calculate(strategiesForContext(activeMode, activeWorkspaceId), config, gateway::realizedPnlForStrategy);
         stateStore.save(new PortfolioCaptureStateStore.State(
@@ -107,7 +123,9 @@ final class PortfolioCaptureController {
                 Instant.now(),
                 lastSnapshot.marketValue(),
                 activeMode,
-                activeWorkspaceId
+                activeWorkspaceId,
+                pullbackArmed,
+                peakProfit
         ));
         int delayMillis = Math.max(1, config.monitoringIntervalSeconds()) * 1000;
         monitoringTimer = new Timer(delayMillis, ignored -> evaluateMonitoringTick());
@@ -131,6 +149,7 @@ final class PortfolioCaptureController {
         activeConfig = null;
         activeMode = null;
         activeWorkspaceId = null;
+        resetPullbackState();
         stateStore.clear();
         gateway.onMonitoringChanged(false, lastSnapshot, null, mode, workspaceId);
         setAutomationState(PortfolioCaptureAutomationState.STOPPED);
@@ -145,6 +164,7 @@ final class PortfolioCaptureController {
         activeConfig = null;
         activeMode = null;
         activeWorkspaceId = null;
+        resetPullbackState();
         stateStore.clear();
         setAutomationState(PortfolioCaptureAutomationState.STOPPED);
         gateway.onMonitoringChanged(false, lastSnapshot, null, mode, workspaceId);
@@ -201,17 +221,36 @@ final class PortfolioCaptureController {
         StrategyMode mode = activeMode == null ? gateway.selectedViewMode() : activeMode;
         String workspaceId = activeMode == null ? gateway.selectedWorkspaceId() : activeWorkspaceId;
         lastSnapshot = calculator.calculate(strategiesForContext(mode, workspaceId), activeConfig, gateway::realizedPnlForStrategy);
+        boolean shouldLiquidate;
+        String triggerReason;
+        if (activeConfig.mode() == PortfolioCaptureMode.PULLBACK_MONITORING) {
+            PortfolioCapturePullbackEvaluator.Evaluation evaluation = pullbackEvaluator.evaluate(
+                    lastSnapshot, activeConfig, pullbackArmed, peakProfit);
+            if (!pullbackArmed && evaluation.armed()) {
+                gateway.log("[Portfolio Liquidation] Pullback monitoring armed at profit=$"
+                        + Monetary.round(lastSnapshot.unrealizedPnl()) + ".");
+            }
+            pullbackArmed = evaluation.armed();
+            peakProfit = evaluation.peakProfit();
+            shouldLiquidate = evaluation.liquidate();
+            triggerReason = "AUTO_CAPTURE_PULLBACK_REACHED";
+        } else {
+            shouldLiquidate = calculator.targetReached(lastSnapshot, activeConfig);
+            triggerReason = "AUTO_CAPTURE_TARGET_REACHED";
+        }
         stateStore.save(new PortfolioCaptureStateStore.State(
                 true,
                 activeConfig,
                 Instant.now(),
                 lastSnapshot.marketValue(),
                 mode,
-                workspaceId
+                workspaceId,
+                pullbackArmed,
+                peakProfit
         ));
         gateway.onSnapshotUpdated(lastSnapshot, activeConfig);
-        if (calculator.targetReached(lastSnapshot, activeConfig)) {
-            executeCapture(lastSnapshot, "AUTO_CAPTURE_TARGET_REACHED", true);
+        if (shouldLiquidate) {
+            executeCapture(lastSnapshot, triggerReason, true);
         }
     }
 
@@ -261,6 +300,11 @@ final class PortfolioCaptureController {
             monitoringTimer.stop();
             monitoringTimer = null;
         }
+    }
+
+    private void resetPullbackState() {
+        pullbackArmed = false;
+        peakProfit = Monetary.zero();
     }
 
     private final class CaptureWorker extends SwingWorker<PortfolioCaptureExecutionResult, Void> {
@@ -352,6 +396,7 @@ final class PortfolioCaptureController {
                 if (targetTriggered) {
                     activeConfig = null;
                     activeMode = null;
+                    resetPullbackState();
                     stateStore.clear();
                 }
                 gateway.onExecutionFinished(result, targetTriggered);

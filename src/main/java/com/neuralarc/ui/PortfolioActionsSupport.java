@@ -472,6 +472,60 @@ final class PortfolioActionsSupport {
                 return "Deleted";
             }
         },
+        CANCEL_AMBER_PENDING_BUYS("Cancel all Amber Pending Buys (Losers)") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return pendingBuyDirection(entry) == OrbPendingBaseBuyRowStyler.PriceDirection.AMBER_LOSER;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Cancel " + count + " amber pending buy recommendation(s)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Amber rows have a base-buy limit above the cached current stock price."
+                        + "<br>Only unsubmitted pending recommendations are removed; broker orders and positions are not affected.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no amber pending buy recommendations to cancel.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Canceled";
+            }
+        },
+        CANCEL_GREEN_PENDING_BUYS("Cancel all Green Pending Buys (Gainer)") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return pendingBuyDirection(entry) == OrbPendingBaseBuyRowStyler.PriceDirection.GREEN_GAINER;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Cancel " + count + " green pending buy recommendation(s)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Green rows have a base-buy limit below the cached current stock price."
+                        + "<br>Only unsubmitted pending recommendations are removed; broker orders and positions are not affected.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no green pending buy recommendations to cancel.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Canceled";
+            }
+        },
         CANCEL_PENDING_LIMIT_SELLS("Cancel All Pending Limit Sells") {
             @Override
             boolean matches(ManagedStrategy entry) {
@@ -712,6 +766,14 @@ final class PortfolioActionsSupport {
 
         String logPrefix() {
             return "[" + menuLabel + "]";
+        }
+
+        private static OrbPendingBaseBuyRowStyler.PriceDirection pendingBuyDirection(ManagedStrategy entry) {
+            if (entry == null || entry.strategy == null
+                    || !PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(entry.strategy)) {
+                return null;
+            }
+            return OrbPendingBaseBuyRowStyler.priceDirection(entry.strategy, entry.cachedPosition());
         }
     }
 }

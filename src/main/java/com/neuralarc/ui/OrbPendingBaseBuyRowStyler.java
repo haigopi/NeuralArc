@@ -8,6 +8,11 @@ import java.awt.Color;
 import java.math.BigDecimal;
 
 final class OrbPendingBaseBuyRowStyler {
+    enum PriceDirection {
+        AMBER_LOSER,
+        GREEN_GAINER
+    }
+
     static final Color BASE_BUY_ABOVE_CURRENT = ThemeColors.color(
             "NeuralArc.Orb.pendingBaseBuyAboveCurrentForeground",
             new Color(180, 140, 0)
@@ -21,6 +26,15 @@ final class OrbPendingBaseBuyRowStyler {
     }
 
     static Color foreground(Strategy strategy, Position position) {
+        PriceDirection direction = priceDirection(strategy, position);
+        return switch (direction) {
+            case AMBER_LOSER -> BASE_BUY_ABOVE_CURRENT;
+            case GREEN_GAINER -> BASE_BUY_BELOW_CURRENT;
+            case null -> null;
+        };
+    }
+
+    static PriceDirection priceDirection(Strategy strategy, Position position) {
         if (!OrbCoordinator.isPendingOrderPlacement(strategy)) {
             return null;
         }
@@ -34,10 +48,10 @@ final class OrbPendingBaseBuyRowStyler {
         }
         int comparison = baseBuyPrice.compareTo(currentPrice);
         if (comparison > 0) {
-            return BASE_BUY_ABOVE_CURRENT;
+            return PriceDirection.AMBER_LOSER;
         }
         if (comparison < 0) {
-            return BASE_BUY_BELOW_CURRENT;
+            return PriceDirection.GREEN_GAINER;
         }
         return null;
     }

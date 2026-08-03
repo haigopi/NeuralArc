@@ -18,8 +18,31 @@ record PortfolioCaptureConfig(
         int reentryQuantity,
         RecommendationType reentryRecommendationType,
         PortfolioCaptureSmartPicksStrategy reentrySmartPicksStrategy,
-        boolean autoCleanPendingBeforeCycle
+        boolean autoCleanPendingBeforeCycle,
+        PortfolioCapturePullbackType pullbackType,
+        BigDecimal pullbackValue
 ) {
+    PortfolioCaptureConfig(
+            PortfolioCaptureMode mode,
+            PortfolioCaptureTargetType targetType,
+            BigDecimal targetValue,
+            boolean includeLosses,
+            int monitoringIntervalSeconds,
+            boolean autoStopAfterExecution,
+            boolean includeOnlyActiveStrategies,
+            PortfolioCaptureExecutionFlow executionFlow,
+            StrategyMode reentryMode,
+            int reentryQuantity,
+            RecommendationType reentryRecommendationType,
+            PortfolioCaptureSmartPicksStrategy reentrySmartPicksStrategy,
+            boolean autoCleanPendingBeforeCycle
+    ) {
+        this(mode, targetType, targetValue, includeLosses, monitoringIntervalSeconds, autoStopAfterExecution,
+                includeOnlyActiveStrategies, executionFlow, reentryMode, reentryQuantity, reentryRecommendationType,
+                reentrySmartPicksStrategy, autoCleanPendingBeforeCycle,
+                PortfolioCapturePullbackType.PERCENT_FROM_PEAK, BigDecimal.ZERO);
+    }
+
     static PortfolioCaptureConfig captureNow() {
         return new PortfolioCaptureConfig(
                 PortfolioCaptureMode.CAPTURE_NOW,
@@ -34,7 +57,9 @@ record PortfolioCaptureConfig(
                 1,
                 RecommendationType.SHORT_TERM,
                 PortfolioCaptureSmartPicksStrategy.VOLATILE,
-                false
+                false,
+                PortfolioCapturePullbackType.PERCENT_FROM_PEAK,
+                BigDecimal.ZERO
         );
     }
 
