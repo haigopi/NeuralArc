@@ -18,14 +18,14 @@ class DipHunterAnalyzerTest {
     @Test
     void defaultsMatchDialogRequirements() {
         DipHunterConfig cfg = DipHunterConfig.defaults(StrategyMode.LIVE);
-        assertEquals(new BigDecimal("3"), cfg.minimumPullbackPercent());
-        assertEquals(new BigDecimal("15"), cfg.maximumPullbackPercent());
-        assertEquals(500_000L, cfg.minimumAverageVolume());
-        assertEquals(new BigDecimal("5"), cfg.minimumStockPrice());
-        assertEquals(new BigDecimal("1.2"), cfg.minimumRelativeVolume());
+        assertEquals(new BigDecimal("0.1"), cfg.minimumPullbackPercent());
+        assertEquals(new BigDecimal("50"), cfg.maximumPullbackPercent());
+        assertEquals(100_000L, cfg.minimumAverageVolume());
+        assertEquals(new BigDecimal("0.5"), cfg.minimumStockPrice());
+        assertEquals(new BigDecimal("0.5"), cfg.minimumRelativeVolume());
         assertNull(cfg.maximumStockPrice());
-        assertEquals(DipHunterConfig.TrendFilter.ABOVE_MA_20_OR_50, cfg.trendFilter());
-        assertEquals(DipHunterConfig.BounceConfirmation.INTRADAY_REVERSAL, cfg.bounceConfirmation());
+        assertEquals(DipHunterConfig.TrendFilter.DISABLED, cfg.trendFilter());
+        assertEquals(DipHunterConfig.BounceConfirmation.MANUAL_REVIEW, cfg.bounceConfirmation());
         assertEquals(StrategyMode.LIVE, cfg.mode());
     }
 
@@ -34,11 +34,11 @@ class DipHunterAnalyzerTest {
         DipHunterConfig cfg = new DipHunterConfig(new BigDecimal("-1"), new BigDecimal("0"), -5L,
                 new BigDecimal("0"), new BigDecimal("-2"), null, null, null,
                 new BigDecimal("-3"), new BigDecimal("0"), -4, null, StrategyMode.PAPER);
-        assertEquals(new BigDecimal("3"), cfg.minimumPullbackPercent());
-        assertEquals(new BigDecimal("15"), cfg.maximumPullbackPercent());
-        assertEquals(500_000L, cfg.minimumAverageVolume());
-        assertEquals(new BigDecimal("5"), cfg.minimumStockPrice());
-        assertEquals(new BigDecimal("1.2"), cfg.minimumRelativeVolume());
+        assertEquals(new BigDecimal("0.1"), cfg.minimumPullbackPercent());
+        assertEquals(new BigDecimal("50"), cfg.maximumPullbackPercent());
+        assertEquals(100_000L, cfg.minimumAverageVolume());
+        assertEquals(new BigDecimal("0.5"), cfg.minimumStockPrice());
+        assertEquals(new BigDecimal("0.5"), cfg.minimumRelativeVolume());
         assertEquals(new BigDecimal("5"), cfg.stopLossPercent());
         assertEquals(new BigDecimal("10"), cfg.takeProfitPercent());
         assertEquals(10, cfg.maxStocksToAdd());
@@ -61,7 +61,7 @@ class DipHunterAnalyzerTest {
     void rejectsTooShallowAndTooDeepPullbacks() {
         List<String> log = new ArrayList<>();
         DipHunterAnalyzer analyzer = new DipHunterAnalyzer(FIXED, log::add);
-        DipHunterConfig cfg = DipHunterConfig.defaults(StrategyMode.PAPER);
+        DipHunterConfig cfg = strictConfig();
 
         // 1% pullback — below the 3% minimum.
         DipHunterCandidate shallow = candidate("SHAL", new BigDecimal("1"), new BigDecimal("2.0"), true, true, true);
@@ -74,10 +74,20 @@ class DipHunterAnalyzerTest {
     }
 
     @Test
+    void defaultsAllowWidePullbackRangeWithoutTrendOrReversalConfirmation() {
+        DipHunterAnalyzer analyzer = new DipHunterAnalyzer(FIXED, null);
+        DipHunterConfig cfg = DipHunterConfig.defaults(StrategyMode.PAPER);
+
+        assertTrue(analyzer.passesFilters(candidate("SHALLOW", new BigDecimal("0.2"), new BigDecimal("0.6"), false, false, false), cfg));
+        assertTrue(analyzer.passesFilters(candidate("DEEP", new BigDecimal("45"), new BigDecimal("0.6"), false, false, false), cfg));
+        assertTrue(analyzer.passesFilters(candidate("CHEAP", new BigDecimal("5"), new BigDecimal("0.6"), false, false, false), cfg));
+    }
+
+    @Test
     void rejectsWhenNotInUptrend() {
         List<String> log = new ArrayList<>();
         DipHunterAnalyzer analyzer = new DipHunterAnalyzer(FIXED, log::add);
-        DipHunterConfig cfg = DipHunterConfig.defaults(StrategyMode.PAPER); // ABOVE_MA_20_OR_50
+        DipHunterConfig cfg = strictConfig();
         DipHunterCandidate belowBothMas = candidate("DOWN", new BigDecimal("7"), new BigDecimal("2.0"), false, false, true);
 
         assertTrue(analyzer.analyze(List.of(belowBothMas), cfg).isEmpty());
@@ -88,7 +98,7 @@ class DipHunterAnalyzerTest {
     void rejectsWhenNoIntradayReversalAndConfirmationRequired() {
         List<String> log = new ArrayList<>();
         DipHunterAnalyzer analyzer = new DipHunterAnalyzer(FIXED, log::add);
-        DipHunterConfig cfg = DipHunterConfig.defaults(StrategyMode.PAPER); // INTRADAY_REVERSAL
+        DipHunterConfig cfg = strictConfig();
         DipHunterCandidate noReversal = candidate("FLAT", new BigDecimal("7"), new BigDecimal("2.0"), true, true, false);
 
         assertTrue(analyzer.analyze(List.of(noReversal), cfg).isEmpty());
@@ -128,5 +138,12 @@ class DipHunterAnalyzerTest {
                 2_000_000L, relVol, new BigDecimal("50"), new BigDecimal("50.5"),
                 new BigDecimal("55"), new BigDecimal("48"), new BigDecimal("45"),
                 aboveMa20, aboveMa50, reversal, new BigDecimal("0.6"), new BigDecimal("50"));
+    }
+
+    private DipHunterConfig strictConfig() {
+        return new DipHunterConfig(new BigDecimal("3"), new BigDecimal("15"), 500_000L, new BigDecimal("5"),
+                new BigDecimal("1.2"), null, DipHunterConfig.TrendFilter.ABOVE_MA_20_OR_50,
+                DipHunterConfig.BounceConfirmation.INTRADAY_REVERSAL, new BigDecimal("5"), new BigDecimal("10"),
+                10, DipHunterConfig.ExecutionFrequency.MANUAL, StrategyMode.PAPER);
     }
 }

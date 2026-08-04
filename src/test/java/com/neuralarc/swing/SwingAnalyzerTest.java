@@ -18,13 +18,13 @@ class SwingAnalyzerTest {
     @Test
     void defaultsMatchDialogRequirements() {
         SwingConfig cfg = SwingConfig.defaults(StrategyMode.LIVE);
-        assertEquals(new BigDecimal("3"), cfg.minimumPullbackPercent());
-        assertEquals(new BigDecimal("15"), cfg.maximumPullbackPercent());
-        assertEquals(500_000L, cfg.minimumAverageVolume());
-        assertEquals(new BigDecimal("5"), cfg.minimumStockPrice());
-        assertEquals(new BigDecimal("0.8"), cfg.minimumRelativeVolume());
+        assertEquals(new BigDecimal("0.1"), cfg.minimumPullbackPercent());
+        assertEquals(new BigDecimal("50"), cfg.maximumPullbackPercent());
+        assertEquals(100_000L, cfg.minimumAverageVolume());
+        assertEquals(new BigDecimal("0.5"), cfg.minimumStockPrice());
+        assertEquals(new BigDecimal("0.5"), cfg.minimumRelativeVolume());
         assertNull(cfg.maximumStockPrice());
-        assertEquals(SwingConfig.TrendFilter.ABOVE_MA_50_AND_200, cfg.trendFilter());
+        assertEquals(SwingConfig.TrendFilter.ABOVE_MA_50, cfg.trendFilter());
         assertEquals(new BigDecimal("6"), cfg.stopLossPercent());
         assertEquals(new BigDecimal("12"), cfg.targetProfitPercent());
         assertEquals(StrategyMode.LIVE, cfg.mode());
@@ -35,11 +35,11 @@ class SwingAnalyzerTest {
         SwingConfig cfg = new SwingConfig(new BigDecimal("-1"), new BigDecimal("0"), -5L,
                 new BigDecimal("0"), new BigDecimal("-2"), null, null, new BigDecimal("-3"),
                 new BigDecimal("-7"), -4, null, StrategyMode.PAPER);
-        assertEquals(new BigDecimal("3"), cfg.minimumPullbackPercent());
-        assertEquals(new BigDecimal("15"), cfg.maximumPullbackPercent());
-        assertEquals(500_000L, cfg.minimumAverageVolume());
-        assertEquals(new BigDecimal("5"), cfg.minimumStockPrice());
-        assertEquals(new BigDecimal("0.8"), cfg.minimumRelativeVolume());
+        assertEquals(new BigDecimal("0.1"), cfg.minimumPullbackPercent());
+        assertEquals(new BigDecimal("50"), cfg.maximumPullbackPercent());
+        assertEquals(100_000L, cfg.minimumAverageVolume());
+        assertEquals(new BigDecimal("0.5"), cfg.minimumStockPrice());
+        assertEquals(new BigDecimal("0.5"), cfg.minimumRelativeVolume());
         assertEquals(new BigDecimal("6"), cfg.stopLossPercent());
         assertEquals(new BigDecimal("12"), cfg.targetProfitPercent());
         assertEquals(10, cfg.maxStocksToAdd());
@@ -62,11 +62,11 @@ class SwingAnalyzerTest {
     void rejectsTooShallowAndTooDeepPullbacks() {
         List<String> log = new ArrayList<>();
         SwingAnalyzer analyzer = new SwingAnalyzer(FIXED, log::add);
-        SwingConfig cfg = SwingConfig.defaults(StrategyMode.PAPER);
+        SwingConfig cfg = strictConfig();
 
-        // 1% off the recent high — below the 3% minimum.
+        // 1% off the recent high — below the strict 3% minimum.
         SwingCandidate shallow = candidate("SHAL", new BigDecimal("1"), new BigDecimal("1.5"), true, true);
-        // 20% off the recent high — above the 15% maximum (trend likely broken).
+        // 20% off the recent high — above the strict 15% maximum (trend likely broken).
         SwingCandidate deep = candidate("DEEP", new BigDecimal("20"), new BigDecimal("1.5"), true, true);
 
         assertTrue(analyzer.analyze(List.of(shallow, deep), cfg).isEmpty());
@@ -75,10 +75,19 @@ class SwingAnalyzerTest {
     }
 
     @Test
+    void defaultsAllowWidePullbackRangeAndLowerPricedNames() {
+        SwingAnalyzer analyzer = new SwingAnalyzer(FIXED, null);
+        SwingConfig cfg = SwingConfig.defaults(StrategyMode.PAPER);
+
+        assertTrue(analyzer.passesFilters(candidate("SHALLOW", new BigDecimal("0.2"), new BigDecimal("0.6"), true, false), cfg));
+        assertTrue(analyzer.passesFilters(candidate("DEEP", new BigDecimal("45"), new BigDecimal("0.6"), true, false), cfg));
+    }
+
+    @Test
     void rejectsWhenNotInConfirmedUptrend() {
         List<String> log = new ArrayList<>();
         SwingAnalyzer analyzer = new SwingAnalyzer(FIXED, log::add);
-        SwingConfig cfg = SwingConfig.defaults(StrategyMode.PAPER); // ABOVE_MA_50_AND_200
+        SwingConfig cfg = strictConfig();
         SwingCandidate broken = candidate("DOWN", new BigDecimal("9"), new BigDecimal("1.5"), false, false);
 
         assertTrue(analyzer.analyze(List.of(broken), cfg).isEmpty());
@@ -133,5 +142,12 @@ class SwingAnalyzerTest {
                 pullback, new BigDecimal("50.5"), new BigDecimal("-1.0"), 2_000_000L, relVol,
                 new BigDecimal("49"), new BigDecimal("48"), new BigDecimal("45"), true, aboveMa50, true,
                 ma50AboveMa200, new BigDecimal("4.0"), new BigDecimal("2.0"));
+    }
+
+    private SwingConfig strictConfig() {
+        return new SwingConfig(new BigDecimal("3"), new BigDecimal("15"), 500_000L, new BigDecimal("5"),
+                new BigDecimal("0.8"), null, SwingConfig.TrendFilter.ABOVE_MA_50_AND_200,
+                new BigDecimal("6"), new BigDecimal("12"), 10, SwingConfig.ExecutionFrequency.MANUAL,
+                StrategyMode.PAPER);
     }
 }

@@ -16,12 +16,13 @@ class GapRocketAnalyzerTest {
     @Test
     void defaultsMatchDialogRequirements() {
         GapRocketConfig cfg = GapRocketConfig.defaults(StrategyMode.LIVE);
-        assertEquals(new BigDecimal("2"), cfg.minimumPremarketGapPercent());
-        assertEquals(500_000L, cfg.minimumPremarketVolume());
-        assertEquals(new BigDecimal("5"), cfg.minimumStockPrice());
-        assertEquals(new BigDecimal("1.5"), cfg.minimumRelativeVolume());
+        assertEquals(BigDecimal.ZERO, cfg.minimumPremarketGapPercent());
+        assertEquals(0L, cfg.minimumPremarketVolume());
+        assertEquals(new BigDecimal("0.5"), cfg.minimumStockPrice());
+        assertEquals(new BigDecimal("0.5"), cfg.minimumRelativeVolume());
         assertNull(cfg.maximumStockPrice());
-        assertTrue(cfg.newsCatalystRequired());
+        assertFalse(cfg.newsCatalystRequired());
+        assertEquals(GapRocketConfig.MarketTrendFilter.DISABLED, cfg.marketTrendFilter());
         assertEquals(GapRocketConfig.EntryStyle.BREAKOUT_RETEST, cfg.entryStyle());
         assertEquals(GapRocketConfig.OpeningRangeDuration.FIFTEEN_MINUTES, cfg.openingRangeDuration());
         assertEquals(StrategyMode.LIVE, cfg.mode());
@@ -31,12 +32,23 @@ class GapRocketAnalyzerTest {
     void analyzeAddsOnlyRecommendationsAtOrAboveThresholdSortedByScore() {
         List<String> log = new ArrayList<>();
         GapRocketAnalyzer analyzer = new GapRocketAnalyzer(Clock.fixed(Instant.parse("2026-06-13T13:45:15Z"), ZoneOffset.UTC), log::add);
-        List<GapRocketRecommendation> result = analyzer.analyze(List.of(strong("NVDA"), weak("ABC")), GapRocketConfig.defaults(StrategyMode.PAPER));
+        List<GapRocketRecommendation> result = analyzer.analyze(List.of(strong("NVDA"), weak("ABC")), strictConfig());
         assertEquals(1, result.size());
         assertEquals("NVDA", result.getFirst().symbol());
         assertTrue(result.getFirst().strategyScore() >= GapRocketAnalyzer.MINIMUM_RECOMMENDATION_SCORE);
         assertEquals(StrategyMode.PAPER, result.getFirst().mode());
         assertTrue(log.stream().anyMatch(line -> line.contains("Rejected ABC")));
+    }
+
+    @Test
+    void defaultsDoNotRequirePremarketGapVolumeTrendOrNews() {
+        GapRocketAnalyzer analyzer = new GapRocketAnalyzer(Clock.fixed(Instant.parse("2026-06-13T13:45:15Z"), ZoneOffset.UTC), null);
+        GapRocketCandidate candidate = new GapRocketCandidate("NVDA", "NVIDIA Corporation", BigDecimal.ZERO,
+                0L, new BigDecimal("5"), new BigDecimal("205"), new BigDecimal("204.50"),
+                new BigDecimal("205"), new BigDecimal("203"), null, "",
+                false, false, new BigDecimal("0.4"), false, new BigDecimal("205"));
+
+        assertTrue(analyzer.passesFilters(candidate, GapRocketConfig.defaults(StrategyMode.PAPER)));
     }
 
     @Test
@@ -71,5 +83,13 @@ class GapRocketAnalyzerTest {
         return new GapRocketCandidate(symbol, symbol + " Inc", new BigDecimal("5"), 1_000_000L, new BigDecimal("2"),
                 new BigDecimal("5"), new BigDecimal("4.8"), new BigDecimal("5.1"), new BigDecimal("4.9"),
                 GapRocketConfig.CatalystType.GENERAL_BREAKING_NEWS, "Minor headline", true, false, new BigDecimal("2"), false, new BigDecimal("5"));
+    }
+
+    private GapRocketConfig strictConfig() {
+        return new GapRocketConfig(new BigDecimal("2"), 500_000L, new BigDecimal("5"), new BigDecimal("1.5"),
+                null, true, null, GapRocketConfig.MarketTrendFilter.EITHER_SPY_OR_QQQ_GREEN,
+                GapRocketConfig.EntryStyle.BREAKOUT_RETEST, GapRocketConfig.OpeningRangeDuration.FIFTEEN_MINUTES,
+                new BigDecimal("5"), new BigDecimal("10"), 10, GapRocketConfig.ExecutionFrequency.MANUAL,
+                StrategyMode.PAPER);
     }
 }

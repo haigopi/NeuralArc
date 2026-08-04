@@ -30,16 +30,16 @@ public record GapRocketConfig(
     public static final LocalTime PRIMARY_WINDOW_END_ET = LocalTime.of(11, 0);
 
     public GapRocketConfig {
-        minimumPremarketGapPercent = defaultIfNull(minimumPremarketGapPercent, "2");
-        minimumStockPrice = defaultIfNull(minimumStockPrice, "5");
-        minimumRelativeVolume = defaultIfNull(minimumRelativeVolume, "1.5");
+        minimumPremarketGapPercent = defaultIfNull(minimumPremarketGapPercent, "0");
+        minimumStockPrice = defaultIfNull(minimumStockPrice, "0.5");
+        minimumRelativeVolume = defaultIfNull(minimumRelativeVolume, "0.5");
         stopLossPercent = defaultIfNull(stopLossPercent, "5");
         takeProfitPercent = defaultIfNull(takeProfitPercent, "10");
-        minimumPremarketVolume = minimumPremarketVolume <= 0 ? 500_000L : minimumPremarketVolume;
+        minimumPremarketVolume = minimumPremarketVolume < 0 ? 0L : minimumPremarketVolume;
         catalystTypes = catalystTypes == null || catalystTypes.isEmpty()
                 ? EnumSet.allOf(CatalystType.class)
                 : EnumSet.copyOf(catalystTypes);
-        marketTrendFilter = marketTrendFilter == null ? MarketTrendFilter.EITHER_SPY_OR_QQQ_GREEN : marketTrendFilter;
+        marketTrendFilter = marketTrendFilter == null ? MarketTrendFilter.DISABLED : marketTrendFilter;
         entryStyle = entryStyle == null ? EntryStyle.BREAKOUT_RETEST : entryStyle;
         openingRangeDuration = openingRangeDuration == null ? OpeningRangeDuration.FIFTEEN_MINUTES : openingRangeDuration;
         maxStocksToAdd = maxStocksToAdd <= 0 ? 10 : maxStocksToAdd;
@@ -70,8 +70,8 @@ public record GapRocketConfig(
     }
 
     public static GapRocketConfig defaults(StrategyMode mode) {
-        return new GapRocketConfig(new BigDecimal("2"), 500_000L, new BigDecimal("5"), new BigDecimal("1.5"),
-                null, true, EnumSet.allOf(CatalystType.class), MarketTrendFilter.EITHER_SPY_OR_QQQ_GREEN,
+        return new GapRocketConfig(BigDecimal.ZERO, 0L, new BigDecimal("0.5"), new BigDecimal("0.5"),
+                null, false, EnumSet.allOf(CatalystType.class), MarketTrendFilter.DISABLED,
                 EntryStyle.BREAKOUT_RETEST, OpeningRangeDuration.FIFTEEN_MINUTES, new BigDecimal("5"),
                 new BigDecimal("10"), 10, ExecutionFrequency.MANUAL, mode, List.of());
     }

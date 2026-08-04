@@ -35,18 +35,18 @@ public record DipHunterConfig(
     public static final LocalTime PRIMARY_WINDOW_END_ET = LocalTime.of(15, 30);
 
     public DipHunterConfig {
-        minimumPullbackPercent = posOrDefault(minimumPullbackPercent, "3");
-        maximumPullbackPercent = posOrDefault(maximumPullbackPercent, "15");
+        minimumPullbackPercent = posOrDefault(minimumPullbackPercent, "0.1");
+        maximumPullbackPercent = posOrDefault(maximumPullbackPercent, "50");
         if (maximumPullbackPercent.compareTo(minimumPullbackPercent) < 0) {
             maximumPullbackPercent = minimumPullbackPercent;
         }
-        minimumStockPrice = posOrDefault(minimumStockPrice, "5");
-        minimumRelativeVolume = posOrDefault(minimumRelativeVolume, "1.2");
-        minimumAverageVolume = minimumAverageVolume <= 0 ? 500_000L : minimumAverageVolume;
+        minimumStockPrice = posOrDefault(minimumStockPrice, "0.5");
+        minimumRelativeVolume = posOrDefault(minimumRelativeVolume, "0.5");
+        minimumAverageVolume = minimumAverageVolume <= 0 ? 100_000L : minimumAverageVolume;
         stopLossPercent = posOrDefault(stopLossPercent, "5");
         takeProfitPercent = posOrDefault(takeProfitPercent, "10");
-        trendFilter = trendFilter == null ? TrendFilter.ABOVE_MA_20_OR_50 : trendFilter;
-        bounceConfirmation = bounceConfirmation == null ? BounceConfirmation.INTRADAY_REVERSAL : bounceConfirmation;
+        trendFilter = trendFilter == null ? TrendFilter.DISABLED : trendFilter;
+        bounceConfirmation = bounceConfirmation == null ? BounceConfirmation.MANUAL_REVIEW : bounceConfirmation;
         maxStocksToAdd = maxStocksToAdd <= 0 ? 10 : maxStocksToAdd;
         executionFrequency = executionFrequency == null ? ExecutionFrequency.MANUAL : executionFrequency;
         mode = mode == null ? StrategyMode.PAPER : mode;
@@ -65,8 +65,8 @@ public record DipHunterConfig(
     }
 
     public static DipHunterConfig defaults(StrategyMode mode) {
-        return new DipHunterConfig(new BigDecimal("3"), new BigDecimal("15"), 500_000L, new BigDecimal("5"),
-                new BigDecimal("1.2"), null, TrendFilter.ABOVE_MA_20_OR_50, BounceConfirmation.INTRADAY_REVERSAL,
+        return new DipHunterConfig(new BigDecimal("0.1"), new BigDecimal("50"), 100_000L, new BigDecimal("0.5"),
+                new BigDecimal("0.5"), null, TrendFilter.DISABLED, BounceConfirmation.MANUAL_REVIEW,
                 new BigDecimal("5"), new BigDecimal("10"), 10, ExecutionFrequency.MANUAL, mode, List.of());
     }
 

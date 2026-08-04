@@ -38,17 +38,17 @@ public record SwingConfig(
     public static final LocalTime PRIMARY_WINDOW_END_ET = LocalTime.of(15, 45);
 
     public SwingConfig {
-        minimumPullbackPercent = posOrDefault(minimumPullbackPercent, "3");
-        maximumPullbackPercent = posOrDefault(maximumPullbackPercent, "15");
+        minimumPullbackPercent = posOrDefault(minimumPullbackPercent, "0.1");
+        maximumPullbackPercent = posOrDefault(maximumPullbackPercent, "50");
         if (maximumPullbackPercent.compareTo(minimumPullbackPercent) < 0) {
             maximumPullbackPercent = minimumPullbackPercent;
         }
-        minimumStockPrice = posOrDefault(minimumStockPrice, "5");
-        minimumRelativeVolume = posOrDefault(minimumRelativeVolume, "0.8");
-        minimumAverageVolume = minimumAverageVolume <= 0 ? 500_000L : minimumAverageVolume;
+        minimumStockPrice = posOrDefault(minimumStockPrice, "0.5");
+        minimumRelativeVolume = posOrDefault(minimumRelativeVolume, "0.5");
+        minimumAverageVolume = minimumAverageVolume <= 0 ? 100_000L : minimumAverageVolume;
         stopLossPercent = posOrDefault(stopLossPercent, "6");
         targetProfitPercent = posOrDefault(targetProfitPercent, "12");
-        trendFilter = trendFilter == null ? TrendFilter.ABOVE_MA_50_AND_200 : trendFilter;
+        trendFilter = trendFilter == null ? TrendFilter.ABOVE_MA_50 : trendFilter;
         maxStocksToAdd = maxStocksToAdd <= 0 ? 10 : maxStocksToAdd;
         executionFrequency = executionFrequency == null ? ExecutionFrequency.MANUAL : executionFrequency;
         mode = mode == null ? StrategyMode.PAPER : mode;
@@ -67,8 +67,8 @@ public record SwingConfig(
     }
 
     public static SwingConfig defaults(StrategyMode mode) {
-        return new SwingConfig(new BigDecimal("3"), new BigDecimal("15"), 500_000L, new BigDecimal("5"),
-                new BigDecimal("0.8"), null, TrendFilter.ABOVE_MA_50_AND_200, new BigDecimal("6"),
+        return new SwingConfig(new BigDecimal("0.1"), new BigDecimal("50"), 100_000L, new BigDecimal("0.5"),
+                new BigDecimal("0.5"), null, TrendFilter.ABOVE_MA_50, new BigDecimal("6"),
                 new BigDecimal("12"), 10, ExecutionFrequency.MANUAL, mode, List.of());
     }
 

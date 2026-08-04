@@ -5242,12 +5242,13 @@ public class TradingFrame extends JFrame {
     }
 
     private void refreshStrategyTableRow(int modelRow) {
+        if (modelRow < 0 || modelRow >= strategyTableModel.getRowCount()) {
+            return;
+        }
         rememberSelectedStrategy();
         preservingSelection = true;
-        if (modelRow >= 0 && modelRow < strategies.size()) {
-            refreshStrategyTradeSnapshot(strategies.get(modelRow));
-        }
-        strategyTableModel.fireTableRowsUpdated(modelRow, modelRow);
+        refreshStrategyTradeSnapshot(strategies.get(modelRow));
+        fireStrategyTableRowUpdatedIfVisible(modelRow);
         preservingSelection = false;
         SwingUtilities.invokeLater(this::restoreSelectedRow);
     }
@@ -5534,13 +5535,27 @@ public class TradingFrame extends JFrame {
             return;
         }
         int modelRow = strategies.indexOf(entry);
-        if (modelRow < 0) {
+        if (modelRow < 0 || modelRow >= strategyTableModel.getRowCount()) {
             return;
         }
-        strategyTableModel.fireTableRowsUpdated(modelRow, modelRow);
+        fireStrategyTableRowUpdatedIfVisible(modelRow);
         if (selectedStrategyId != null && selectedStrategyId.equals(strategyId)) {
             refreshPanels();
         }
+    }
+
+    private void fireStrategyTableRowUpdatedIfVisible(int modelRow) {
+        RowSorter<? extends javax.swing.table.TableModel> rowSorter = strategyTable.getRowSorter();
+        if (rowSorter != null) {
+            try {
+                if (strategyTable.convertRowIndexToView(modelRow) < 0) {
+                    return;
+                }
+            } catch (IndexOutOfBoundsException ex) {
+                return;
+            }
+        }
+        strategyTableModel.fireTableRowsUpdated(modelRow, modelRow);
     }
 
     private int pollingProgressPercent(ManagedStrategy entry) {
