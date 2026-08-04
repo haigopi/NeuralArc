@@ -237,7 +237,7 @@ final class GapAndGoCoordinator {
                 List<GapRocketCandidate> scanned = scanner.candidates(symbols);
                 GapRocketConfig effectiveConfig = config;
                 AiRecommendationSettings aiSettings = appSettingsService.loadAiRecommendationSettings();
-                if (isAiProviderConfigured(aiSettings)) {
+                if (config.newsCatalystRequired() && isAiProviderConfigured(aiSettings)) {
                     NewsCatalystResolver resolver = new NewsCatalystResolver(
                             AiRecommendationProviderFactory.create(aiSettings),
                             new HttpAlpacaNewsClient(ui.runtimeApiKey(), ui.runtimeApiSecret()),

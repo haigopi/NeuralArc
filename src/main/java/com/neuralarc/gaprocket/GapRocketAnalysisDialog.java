@@ -9,13 +9,13 @@ import java.math.BigDecimal;
 
 public final class GapRocketAnalysisDialog extends JDialog {
     public static final String TITLE = "Analyze Gap-and-Go Stocks - Executes 9:45 AM ET to 11:00 AM ET";
-    private final JTextField minGap = new JTextField("5", 8);
-    private final JTextField minVolume = new JTextField("1000000", 8);
-    private final JTextField minPrice = new JTextField("5", 8);
-    private final JTextField minRelVolume = new JTextField("2", 8);
+    private final JTextField minGap = new JTextField("0", 8);
+    private final JTextField minVolume = new JTextField("0", 8);
+    private final JTextField minPrice = new JTextField("0.5", 8);
+    private final JTextField minRelVolume = new JTextField("0.5", 8);
     private final JTextField maxPrice = new JTextField("", 8);
     private final JTextArea candidateSymbols = new JTextArea(3, 24);
-    private final JCheckBox catalystRequired = new JCheckBox("News Catalyst Required", true);
+    private final JCheckBox catalystRequired = new JCheckBox("News Catalyst Required", false);
     private final JComboBox<GapRocketConfig.MarketTrendFilter> trend = new JComboBox<>(GapRocketConfig.MarketTrendFilter.values());
     private final JComboBox<GapRocketConfig.EntryStyle> entry = new JComboBox<>(GapRocketConfig.EntryStyle.values());
     private final JComboBox<GapRocketConfig.OpeningRangeDuration> range = new JComboBox<>(GapRocketConfig.OpeningRangeDuration.values());
@@ -58,13 +58,13 @@ public final class GapRocketAnalysisDialog extends JDialog {
         fields.setOpaque(false);
         int row = 0;
         row = addField(fields, row, "Minimum Premarket Gap %", minGap,
-                "Only include stocks already above the previous close by at least this percent before the open. Example: 5 means +5% or higher.");
+                "Default 0 accepts the live screener list without rejecting flat or small-gap names before scoring.");
         row = addField(fields, row, "Minimum Premarket Volume", minVolume,
-                "Require enough premarket shares traded to avoid thin, hard-to-fill movers. Default is 1,000,000 shares.");
+                "Default 0 prevents premarket volume from blocking otherwise valid live candidates such as large-cap movers.");
         row = addField(fields, row, "Minimum Stock Price", minPrice,
                 "Reject very low-priced stocks below this value before scoring.");
         row = addField(fields, row, "Minimum Relative Volume", minRelVolume,
-                "Require current activity to be meaningfully higher than normal. Example: 2 means at least 2x typical volume.");
+                "Default 0.5 keeps the scanner broad; raise it when you only want unusually active symbols.");
         row = addField(fields, row, "Maximum Stock Price", maxPrice,
                 "Optional cap for high-priced stocks. Leave blank to allow any price above the minimum.");
         row = addField(fields, row, "Candidate Symbols (optional)", new JScrollPane(candidateSymbols),
@@ -72,8 +72,7 @@ public final class GapRocketAnalysisDialog extends JDialog {
                         + "tickers, separated by commas or spaces, to scan only those. NeuralArc does not use hardcoded stock candidates.");
         row = addField(fields, row, "News Catalyst Required", catalystRequired,
                 "Require a fresh news catalyst (earnings, FDA, upgrade, contract, or breaking news) confirmed by the "
-                        + "configured AI provider's live web search. Candidates with no catalyst are rejected. Disable to "
-                        + "rank on gap and volume alone, or if no AI provider is configured.");
+                        + "configured AI provider's live web search. Disabled by default so news/API rate limits do not block selections.");
         row = addField(fields, row, "Market Trend Filter", trend,
                 "Require SPY, QQQ, or either index to be green so long ideas align with the morning market tone. Disabled skips this check.");
         row = addField(fields, row, "Entry Style", entry,
