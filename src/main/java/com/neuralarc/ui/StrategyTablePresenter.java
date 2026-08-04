@@ -78,7 +78,7 @@ public final class StrategyTablePresenter {
                 queueableSessionError,
                 brokerUnavailableActive,
                 null,
-                null
+                (PendingOrderSummary) null
         );
     }
 
@@ -99,6 +99,7 @@ public final class StrategyTablePresenter {
                 queueableSessionError,
                 brokerUnavailableActive,
                 realizedPnl,
+                null,
                 null
         );
     }
@@ -111,6 +112,53 @@ public final class StrategyTablePresenter {
             boolean queueableSessionError,
             boolean brokerUnavailableActive,
             BigDecimal realizedPnl,
+            BigDecimal lastSellPrice
+    ) {
+        return displayStatusLabel(
+                strategy,
+                position,
+                marketClosedSuppressed,
+                waitingForFill,
+                queueableSessionError,
+                brokerUnavailableActive,
+                realizedPnl,
+                lastSellPrice,
+                null
+        );
+    }
+
+    public String displayStatusLabel(
+            Strategy strategy,
+            Position position,
+            boolean marketClosedSuppressed,
+            boolean waitingForFill,
+            boolean queueableSessionError,
+            boolean brokerUnavailableActive,
+            BigDecimal realizedPnl,
+            PendingOrderSummary pendingManualBuy
+    ) {
+        return displayStatusLabel(
+                strategy,
+                position,
+                marketClosedSuppressed,
+                waitingForFill,
+                queueableSessionError,
+                brokerUnavailableActive,
+                realizedPnl,
+                null,
+                pendingManualBuy
+        );
+    }
+
+    public String displayStatusLabel(
+            Strategy strategy,
+            Position position,
+            boolean marketClosedSuppressed,
+            boolean waitingForFill,
+            boolean queueableSessionError,
+            boolean brokerUnavailableActive,
+            BigDecimal realizedPnl,
+            BigDecimal lastSellPrice,
             PendingOrderSummary pendingManualBuy
     ) {
         if (strategy == null) {
@@ -157,7 +205,7 @@ public final class StrategyTablePresenter {
                 return expiredStatusLabel(strategy);
             }
         }
-        String completedLabel = completedBookedStatusLabel(strategy, realizedPnl);
+        String completedLabel = completedBookedStatusLabel(strategy, realizedPnl, lastSellPrice);
         if (!completedLabel.isBlank()) {
             return completedLabel;
         }
@@ -196,20 +244,28 @@ public final class StrategyTablePresenter {
         return lifecycle;
     }
 
-    private String completedBookedStatusLabel(Strategy strategy, BigDecimal realizedPnl) {
+    private String completedBookedStatusLabel(Strategy strategy, BigDecimal realizedPnl, BigDecimal lastSellPrice) {
         if (strategy == null
                 || strategy.status() != StrategyStatus.COMPLETED
                 || strategy.currentState() != StrategyLifecycleState.COMPLETED) {
             return "";
         }
         BigDecimal booked = realizedPnl == null ? BigDecimal.ZERO : Monetary.round(realizedPnl);
+        String sellPrice = bookedSellPriceDescription(lastSellPrice);
         if (booked.compareTo(BigDecimal.ZERO) > 0) {
-            return "Completed - Profit Booked $" + booked.toPlainString();
+            return "Completed - Profit Booked $" + booked.toPlainString() + sellPrice;
         }
         if (booked.compareTo(BigDecimal.ZERO) < 0) {
-            return "Completed - Loss Booked $" + booked.abs().toPlainString();
+            return "Completed - Loss Booked $" + booked.abs().toPlainString() + sellPrice;
         }
         return "Completed";
+    }
+
+    private String bookedSellPriceDescription(BigDecimal lastSellPrice) {
+        if (lastSellPrice == null || lastSellPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return "";
+        }
+        return " @ $" + Monetary.round(lastSellPrice).toPlainString();
     }
 
     private String expiredStatusLabel(Strategy strategy) {

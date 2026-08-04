@@ -77,6 +77,26 @@ public class HelpDialog extends JDialog {
             "Review the confirmation dialog before submitting any sell action."
         },
         {
+            "Application - How do Portfolio buy actions work?",
+            "Portfolio buy actions are bulk order tools for reducing repeated row-by-row work.\n\n" +
+            "- Average Down Losing Positions submits one manual buy order for each losing open position in the current workspace scope.\n" +
+            "- From a workspace tab, only that workspace is included. From the All tab, all visible workspaces are included.\n" +
+            "- Patient average-down places limit buys below each position's cached market price by your selected pullback percent.\n" +
+            "- Immediate average-down sends market buys, prioritizing execution while accepting that the final fill can move.\n" +
+            "- Double-down size buys the same share count already held for each symbol; Controlled add uses one fixed quantity per symbol.\n\n" +
+            "Use these actions deliberately. Averaging down can lower average cost, but it also increases exposure to positions already moving against you."
+        },
+        {
+            "Application - What are pending scanner buy actions?",
+            "Pending scanner rows are recommendations that have been saved locally but have not yet submitted the base limit buy order.\n\n" +
+            "- Place Limit Buy for All Pending Positions submits base limit buys for every pending recommendation in the current scope.\n" +
+            "- Place Limit Buy for Losing Pending Positions targets amber pending rows where the planned base buy is above the cached current price.\n" +
+            "- Place Limit Buy for Gaining Pending Positions targets green pending rows where the planned base buy is below the cached current price.\n" +
+            "- Clean All Pending Base Buys deletes unsubmitted pending recommendations; it does not cancel broker orders or sell positions.\n" +
+            "- Cancel amber/green pending buys removes only the matching unsubmitted pending recommendations.\n\n" +
+            "If a row already placed a broker order, use the pending order cancel actions instead of cleanup."
+        },
+        {
             "Application - What does Kill Switch do?",
             "Kill Switch is for stopping strategy activity quickly.\n\n" +
             "- It pauses active strategies.\n" +
@@ -146,6 +166,14 @@ public class HelpDialog extends JDialog {
             "- Latest prices can be fetched in one multi-symbol call per mode.\n" +
             "- Cached position snapshots are then used by the grid, selected position panel, and status summaries.\n\n" +
             "This avoids one broker request per table cell."
+        },
+        {
+            "Scan History - Where can I review previous scanner runs?",
+            "Dedicated scanner workspaces keep a local scan history so you can review what happened after a run.\n\n" +
+            "- Each workspace stores scan results separately, so Gap Rocket, ORB Engine, Dip Hunter, VWAP Desk, and Swing Vault stay isolated.\n" +
+            "- History helps explain why a run produced recommendations, produced no candidates, or skipped symbols.\n" +
+            "- Scheduled scans and manual scans can both leave useful context for later troubleshooting.\n\n" +
+            "Use scan history with the event log: history shows the run outcome, while the log explains detailed accept/reject reasons."
         },
         {
             "Alpaca - Which APIs are involved?",
@@ -223,8 +251,9 @@ public class HelpDialog extends JDialog {
             "or VWAP (Volume-Weighted Average Price) pullback entries in the morning grid.\n\n" +
             "When to act: Around the open, when a ranked candidate confirms its setup. Gap Rocket is a fast morning strategy, " +
             "so candidates can change quickly in the first minutes of trading.\n\n" +
-            "Important to understand: A gap needs real volume and a catalyst behind it; an empty state means no live candidate " +
-            "currently qualifies, not that the app is broken.\n\n" +
+            "Important to understand: Defaults are intentionally broad so the scanner can show candidates instead of staying empty. " +
+            "News catalyst is optional by default; enable News Catalyst Required only when you want live news/AI confirmation to be a hard gate. " +
+            "If the grid still shows no rows, check the event log for filter reasons such as spread too wide, missing live bars, or score below minimum.\n\n" +
             "Risk: Gaps are volatile and can reverse hard ('gap and crap'). Use the stop loss, size positions small, and do not " +
             "chase a move that has already run far from your planned entry."
         },
@@ -248,8 +277,9 @@ public class HelpDialog extends JDialog {
             "setups on live data, and tracks planned entries in its grid.\n\n" +
             "When to act: When a strong name has pulled back into the configured range and the trend is still intact. Acting on a " +
             "name whose trend has already broken defeats the strategy.\n\n" +
-            "Important to understand: A dip is only attractive while the larger uptrend holds. The Minimum/Maximum Pullback % " +
-            "settings keep you out of both shallow noise and full breakdowns.\n\n" +
+            "Important to understand: Defaults now use a broad pullback range and manual-review confirmation so the scanner can surface more candidates. " +
+            "Tighten Minimum Pullback %, Maximum Pullback %, trend filter, or bounce confirmation when you want fewer, stricter ideas. " +
+            "If a run is empty, the event log usually says whether symbols were too shallow, too deep, below price minimum, or missing enough daily history.\n\n" +
             "Risk: A 'dip' can become a sustained downtrend. The stop loss protects against a pullback that keeps falling; honour " +
             "it rather than averaging down into weakness."
         },
@@ -276,12 +306,20 @@ public class HelpDialog extends JDialog {
             "back toward that high with a stop below support. Scheduled runs scan once per trading day.\n\n" +
             "When to act: During the regular session when a confirmed uptrend has pulled back into the configured range near " +
             "support. Because it is a swing strategy, you are planning a hold of days to weeks, not minutes.\n\n" +
-            "Important to understand: Swing Vault holds overnight and over weekends, so positions are exposed to gaps from news " +
-            "and earnings while the market is closed. The Reward/Risk figure shows the trade-off back toward the recent high " +
-            "before you commit. Confirm there is no earnings report inside your intended hold window.\n\n" +
+            "Important to understand: Defaults are broad enough to include smaller pullbacks and lower-priced names, while still requiring price above the 50-day moving average. " +
+            "Raise the trend filter to ABOVE_MA_50_AND_200 or STACKED_UPTREND when you want stricter swing candidates. " +
+            "Swing Vault holds overnight and over weekends, so confirm there is no earnings report inside your intended hold window.\n\n" +
             "Risk: Overnight and weekend gaps can move price past your stop before it can act, so a daily stop is not a guaranteed " +
             "exit price. Size positions for a multi-day hold, keep risk per trade small, and avoid holding through known events " +
             "unless that is your intent."
+        },
+        {
+            "Strategy Workspaces - Why do duplicate symbols behave differently by tab?",
+            "Duplicate-symbol checks are scoped by workspace and mode.\n\n" +
+            "- The same ticker can exist in different strategy workspaces when your settings allow multiple strategies for the same symbol.\n" +
+            "- A duplicate in Gap Rocket does not automatically block a separate Swing Vault or Dip Hunter plan.\n" +
+            "- Paper and Live strategies remain separate even when the ticker is the same.\n\n" +
+            "This lets you test different playbooks for the same stock while still keeping each strategy's orders, history, and workspace counts separate."
         },
         {
             "Strategies - Scheduling and auto-execute",
@@ -326,6 +364,14 @@ public class HelpDialog extends JDialog {
             "- Enable Stop Loss: Turns stop-loss monitoring on or off.\n" +
             "- Stop Loss Price: The limit area where the app should attempt to exit when price moves against the strategy.\n\n" +
             "Disabling stop loss removes an important risk control. Only do that when you have another exit plan."
+        },
+        {
+            "Risk Controls - Auto Adjust Risk and Stop Loss",
+            "Auto Adjust Risk helps resize strategy risk before you save or apply a plan.\n\n" +
+            "- It can adjust staged buy levels and stop-loss planning from the configured risk assumptions.\n" +
+            "- Use it when a recommendation looks directionally useful but the position size or stop is too aggressive for your account.\n" +
+            "- Review every adjusted value before saving; the tool changes the plan, not the market risk.\n\n" +
+            "This is a planning aid. It does not guarantee that Alpaca fills the order at the planned level or that the stop exits at the expected price."
         },
         {
             "Profit Controls - Sell Trigger",

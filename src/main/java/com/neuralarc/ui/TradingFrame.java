@@ -4855,6 +4855,7 @@ public class TradingFrame extends JFrame {
                 entry.strategy.status() == StrategyStatus.FAILED && isQueueableSessionError(entry.strategy.lastError()),
                 !connectionOk || connectionRetryPending,
                 entry.cachedRealizedPnl(),
+                entry.cachedLastSellPrice(),
                 entry.cachedPendingManualBuy()
         );
     }

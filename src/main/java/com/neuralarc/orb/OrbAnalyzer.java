@@ -42,7 +42,11 @@ public final class OrbAnalyzer {
     }
 
     private OrbRecommendation toRecommendation(OpeningRangeSnapshot s, OrbCandidate c, OrbConfig cfg) {
-        BigDecimal entry = s.high().multiply(BigDecimal.ONE.add(cfg.entryBufferPercent().movePointLeft(2))).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal breakoutEntry = s.high().multiply(BigDecimal.ONE.add(cfg.entryBufferPercent().movePointLeft(2)));
+        BigDecimal discountedOpenOrCurrent = discountedLowerOpenOrCurrent(c);
+        BigDecimal entry = discountedOpenOrCurrent == null
+                ? breakoutEntry.setScale(2, RoundingMode.HALF_UP)
+                : breakoutEntry.min(discountedOpenOrCurrent).setScale(2, RoundingMode.HALF_UP);
         BigDecimal rawStop = switch (cfg.stopMode()) {
             case RANGE_LOW, ATR_ADJUSTED -> s.low();
             case MID_RANGE -> s.high().add(s.low()).divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
@@ -57,6 +61,29 @@ public final class OrbAnalyzer {
         return new OrbRecommendation(s.symbol(), s.high().setScale(2, RoundingMode.HALF_UP), s.low().setScale(2, RoundingMode.HALF_UP),
                 entry, stop, target, score, rationale, cfg.riskPercent(), s.rangePercent(), cfg.rangeDurationMinutes(),
                 OrbStatus.RANGE_CAPTURED, cfg.mode(), Instant.now(clock));
+    }
+
+    private BigDecimal discountedLowerOpenOrCurrent(OrbCandidate candidate) {
+        if (candidate == null) {
+            return null;
+        }
+        BigDecimal lower = lowerPositive(candidate.regularSessionOpen(), candidate.latestPrice());
+        if (lower == null) {
+            return null;
+        }
+        return lower.multiply(new BigDecimal("0.95"));
+    }
+
+    private BigDecimal lowerPositive(BigDecimal first, BigDecimal second) {
+        boolean firstValid = first != null && first.compareTo(BigDecimal.ZERO) > 0;
+        boolean secondValid = second != null && second.compareTo(BigDecimal.ZERO) > 0;
+        if (firstValid && secondValid) {
+            return first.min(second);
+        }
+        if (firstValid) {
+            return first;
+        }
+        return secondValid ? second : null;
     }
 
     private String aiRationale(OrbCandidate candidate) {

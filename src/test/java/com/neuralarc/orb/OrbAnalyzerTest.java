@@ -30,11 +30,28 @@ class OrbAnalyzerTest {
         assertEquals(1, recommendations.size());
         OrbRecommendation rec = recommendations.getFirst();
         assertEquals("NVDA", rec.symbol());
-        assertEquals(new BigDecimal("101.10"), rec.plannedEntry());
+        assertEquals(new BigDecimal("96.19"), rec.plannedEntry());
         assertEquals(new BigDecimal("99.00"), rec.stop());
-        assertEquals(new BigDecimal("104.13"), rec.target());
+        assertEquals(new BigDecimal("99.08"), rec.target());
         assertTrue(rec.score() > 0);
         assertEquals(OrbStatus.RANGE_CAPTURED, rec.status());
+    }
+
+    @Test
+    void plannedEntryCapsAtFivePercentBelowLowerOfOpenOrCurrentPrice() {
+        OrbAnalyzer analyzer = new OrbAnalyzer(Clock.fixed(Instant.parse("2026-06-15T14:00:00Z"), ZoneOffset.UTC), null);
+        OrbConfig config = OrbConfig.defaults(StrategyMode.PAPER);
+        OpeningRangeSnapshot snapshot = new OpeningRangeSnapshot("aapl", Instant.parse("2026-06-15T13:30:00Z"),
+                Instant.parse("2026-06-15T13:45:00Z"), new BigDecimal("101.00"), new BigDecimal("99.00"),
+                new BigDecimal("500000"), 15, true, "");
+
+        List<OrbRecommendation> recommendations = analyzer.analyze(List.of(snapshot),
+                List.of(new OrbCandidate("AAPL", new BigDecimal("98.00"), new BigDecimal("100.00"),
+                        new BigDecimal("3.0"), null, new BigDecimal("0.20"), "manual")),
+                config);
+
+        assertEquals(1, recommendations.size());
+        assertEquals(new BigDecimal("93.10"), recommendations.getFirst().plannedEntry());
     }
 
     @Test

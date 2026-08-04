@@ -8,6 +8,7 @@ import com.neuralarc.model.StrategyEventType;
 import com.neuralarc.model.StrategyExecutionEvent;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
+import com.neuralarc.model.StrategyStage;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.util.BrokerOrderStatusUtil;
 
@@ -455,8 +456,8 @@ public class StrategyPollingService {
         if (!matchesRuntimeMode(strategy)) {
             return PollExecutionResult.COMPLETED;
         }
-        if (strategy.status() == StrategyStatus.FAILED) {
-            if (!isExpiryResubmitEligible(strategy) || !strategyEngine.canAutoResubmitExpiredEntryOrder(strategy)) {
+        if (isExpiryResubmitEligible(strategy)) {
+            if (!strategyEngine.canAutoResubmitExpiredEntryOrder(strategy)) {
                 strategy.setLastPolledAt(Instant.now());
                 strategyRepository.save(strategy);
                 return PollExecutionResult.COMPLETED;
@@ -580,9 +581,25 @@ public class StrategyPollingService {
 
     private boolean isExpiryResubmitEligible(Strategy strategy) {
         return strategy != null
-                && strategy.status() == StrategyStatus.FAILED
                 && strategy.resubmitOnExpiryEnabled()
-                && "expired".equals(BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus()));
+                && "expired".equals(BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus()))
+                && (strategy.status() == StrategyStatus.FAILED
+                || (strategy.status() == StrategyStatus.ACTIVE && isPendingBuyOrderState(strategy)));
+    }
+
+    private boolean isPendingBuyOrderState(Strategy strategy) {
+        StrategyLifecycleState state = strategy.currentState();
+        boolean pendingManualBuy = state == StrategyLifecycleState.BASE_BUY_FILLED
+                && StrategyStageSupport.stageForRuleType(strategy.lastTriggeredRuleType())
+                .filter(stage -> stage == StrategyStage.MANUAL_BUY)
+                .isPresent();
+        return state == StrategyLifecycleState.BASE_BUY_PLACED
+                || state == StrategyLifecycleState.BASE_BUY_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED
+                || pendingManualBuy;
     }
 
     private boolean isStreamHealthy(Instant now) {

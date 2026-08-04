@@ -1127,8 +1127,7 @@ public class StrategyService {
             return StrategyCreationResult.failed("Strategy not found");
         }
         Strategy strategy = maybeStrategy.get();
-        boolean expired = strategy.status() == StrategyStatus.FAILED
-                && "expired".equals(BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus()));
+        boolean expired = isExpiredEntryOrderState(strategy);
         if (!expired) {
             return StrategyCreationResult.failed("Strategy is not in an expired state");
         }
@@ -1165,6 +1164,28 @@ public class StrategyService {
             return StrategyCreationResult.failed(error);
         }
         return StrategyCreationResult.success(strategy.id(), order.id(), order.alpacaOrderId(), order.clientOrderId());
+    }
+
+    private boolean isExpiredEntryOrderState(Strategy strategy) {
+        return strategy != null
+                && "expired".equals(BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus()))
+                && (strategy.status() == StrategyStatus.FAILED
+                || (strategy.status() == StrategyStatus.ACTIVE && isPendingBuyOrderState(strategy)));
+    }
+
+    private boolean isPendingBuyOrderState(Strategy strategy) {
+        StrategyLifecycleState state = strategy.currentState();
+        boolean pendingManualBuy = state == StrategyLifecycleState.BASE_BUY_FILLED
+                && StrategyStageSupport.stageForRuleType(strategy.lastTriggeredRuleType())
+                .filter(stage -> stage == StrategyStage.MANUAL_BUY)
+                .isPresent();
+        return state == StrategyLifecycleState.BASE_BUY_PLACED
+                || state == StrategyLifecycleState.BASE_BUY_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED
+                || pendingManualBuy;
     }
 
     public record StrategyCreationResult(

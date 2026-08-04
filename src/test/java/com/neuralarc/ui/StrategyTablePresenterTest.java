@@ -379,6 +379,26 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void completedStatusShowsProfitBookedAmountWithSellPrice() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.COMPLETED);
+        strategy.setCurrentState(StrategyLifecycleState.COMPLETED);
+
+        String label = presenter.displayStatusLabel(
+                strategy,
+                new Position("AAPL"),
+                false,
+                false,
+                false,
+                false,
+                new BigDecimal("123.456"),
+                new BigDecimal("101.234")
+        );
+
+        assertEquals("Completed - Profit Booked $123.46 @ $101.23", label);
+    }
+
+    @Test
     void completedStatusShowsLossBookedAmount() {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.COMPLETED);
