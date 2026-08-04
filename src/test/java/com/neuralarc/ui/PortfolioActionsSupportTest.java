@@ -636,6 +636,12 @@ class PortfolioActionsSupportTest {
         assertEquals(List.of("MSFT"), support.filterTargets(rows,
                         PortfolioActionsSupport.BulkAction.CANCEL_GREEN_PENDING_BUYS).stream()
                 .map(entry -> entry.strategy.symbol()).toList());
+        assertEquals(List.of("AAPL"), support.filterTargets(rows,
+                        PortfolioActionsSupport.BulkAction.PLACE_AMBER_PENDING_BASE_BUYS).stream()
+                .map(entry -> entry.strategy.symbol()).toList());
+        assertEquals(List.of("MSFT"), support.filterTargets(rows,
+                        PortfolioActionsSupport.BulkAction.PLACE_GREEN_PENDING_BASE_BUYS).stream()
+                .map(entry -> entry.strategy.symbol()).toList());
     }
 
     private static void setCachedLastPrice(ManagedStrategy entry, String price) {

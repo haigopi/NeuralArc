@@ -13,8 +13,10 @@ import javax.swing.JPopupMenu;
 import javax.swing.SwingWorker;
 import javax.swing.border.EmptyBorder;
 import java.awt.Color;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -38,6 +40,9 @@ final class PortfolioActionsController {
                 StrategyService.SellExecutionSource executionSource
         );
         StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy);
+        Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets);
+        StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity);
+        StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice);
         JMenuItem createMenuItem(String text, String iconPath, Runnable action);
         int confirm(Object message, String title, int optionType, int messageType);
         void showMessage(Object message, String title, int messageType);
@@ -83,8 +88,14 @@ final class PortfolioActionsController {
                 () -> handleSellAction(PortfolioActionsSupport.Scope.LOSS_ONLY_MARKET, SellSubmissionType.MARKET)));
         menu.add(sectionSeparator());
         menu.add(sectionHeader("Order Placement"));
-        menu.add(gateway.createMenuItem("Place Pending Base Buys", "icons/submit.svg",
-                this::handlePlacePendingBaseBuys));
+        menu.add(gateway.createMenuItem("Average Down Losing Positions", "icons/submit.svg",
+                this::handleAverageLosingPositions));
+        menu.add(gateway.createMenuItem("Place Limit Buy for Losing Pending Positions", "icons/submit.svg",
+                () -> handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_AMBER_PENDING_BASE_BUYS)));
+        menu.add(gateway.createMenuItem("Place Limit Buy for Gaining Pending Positions", "icons/submit.svg",
+                () -> handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_GREEN_PENDING_BASE_BUYS)));
+        menu.add(gateway.createMenuItem("Place Limit Buy for All Pending Positions", "icons/submit.svg",
+                () -> handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_PENDING_BASE_BUYS)));
         menu.add(sectionSeparator());
         menu.add(sectionHeader("Order Cleanup"));
         menu.add(gateway.createMenuItem("Clean All Pending Base Buys", "icons/delete.svg",
@@ -209,7 +220,42 @@ final class PortfolioActionsController {
     }
 
     private void handlePlacePendingBaseBuys() {
-        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.PLACE_PENDING_BASE_BUYS;
+        handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_PENDING_BASE_BUYS);
+    }
+
+    private void handleAverageLosingPositions() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.AVERAGE_LOSING_POSITIONS;
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
+        if (targets.isEmpty()) {
+            gateway.actionSkipped(action.menuLabel(), action.emptyMessage());
+            gateway.showMessage(action.emptyMessage(), action.dialogTitle(), JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        Optional<AverageLosingPositionsSelection> selection = gateway.chooseAverageLosingPositions(targets);
+        if (selection.isEmpty()) {
+            gateway.actionCanceled(action.menuLabel());
+            return;
+        }
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+
+        gateway.log(action.logPrefix() + " preparing " + targets.size()
+                + " losing position(s) for averaging.");
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return averageLosingPositionTargets(targets, selection.get());
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    private void handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction action) {
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
             return;
@@ -447,6 +493,31 @@ final class PortfolioActionsController {
         });
     }
 
+    PortfolioActionsSupport.BatchResult averageLosingPositionTargets(
+            List<ManagedStrategy> targets,
+            AverageLosingPositionsSelection selection
+    ) {
+        return runTargetsInParallel(targets, entry -> {
+            int quantity = averageBuyQuantity(entry, selection);
+            if (quantity <= 0) {
+                return TargetResult.skipped(entry.strategy.symbol() + ": quantity must be greater than zero");
+            }
+            StrategyService.StrategyCreationResult result;
+            if (selection.orderType() == AverageLosingPositionsSelection.OrderType.MARKET) {
+                result = gateway.buyMoreAtMarket(entry.strategy, quantity);
+            } else {
+                BigDecimal limitPrice = averageLimitPrice(entry, selection.limitDiscountPercent());
+                if (limitPrice.compareTo(BigDecimal.ZERO) <= 0) {
+                    return TargetResult.skipped(entry.strategy.symbol() + ": current market price is unavailable");
+                }
+                result = gateway.buyMoreAtLimit(entry.strategy, quantity, limitPrice);
+            }
+            return result.success()
+                    ? TargetResult.success(entry.strategy.symbol() + " (" + quantity + ")")
+                    : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+        });
+    }
+
     PortfolioActionsSupport.BatchResult cancelPendingLimitSellTargets(List<ManagedStrategy> targets) {
         return runTargetsInParallel(targets, entry -> {
             StrategyService modeAwareService = modeAwareService(entry);
@@ -609,6 +680,23 @@ final class PortfolioActionsController {
 
     private StrategyService modeAwareService(ManagedStrategy entry) {
         return gateway.strategyServiceForMode(entry.strategy.mode());
+    }
+
+    private int averageBuyQuantity(ManagedStrategy entry, AverageLosingPositionsSelection selection) {
+        if (selection.quantityMode() == AverageLosingPositionsSelection.QuantityMode.FIXED_INPUT_QUANTITY) {
+            return selection.quantity();
+        }
+        return entry.cachedPosition().getTotalShares();
+    }
+
+    private BigDecimal averageLimitPrice(ManagedStrategy entry, BigDecimal discountPercent) {
+        BigDecimal currentPrice = entry.cachedPosition().getLastPrice();
+        if (currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal discount = discountPercent == null ? BigDecimal.ZERO : discountPercent;
+        BigDecimal multiplier = BigDecimal.ONE.subtract(discount.divide(new BigDecimal("100"), 8, java.math.RoundingMode.HALF_UP));
+        return com.neuralarc.util.Monetary.round(currentPrice.multiply(multiplier));
     }
 
     private TargetResult missingBrokerService(ManagedStrategy entry) {

@@ -443,6 +443,92 @@ final class PortfolioActionsSupport {
                 return "Placed";
             }
         },
+        AVERAGE_LOSING_POSITIONS("Average Down Losing Positions") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                if (!isEligibleForManualSell(entry)) {
+                    return false;
+                }
+                Position position = entry.cachedPosition();
+                return position.getTotalShares() > 0
+                        && position.unrealizedPnl().compareTo(BigDecimal.ZERO) < 0;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Average down " + count + " losing open position(s)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Each matching losing position will submit one manual buy order using the execution and sizing plan you selected."
+                        + "<br>Use this when you intentionally want to lower average cost on positions currently below entry.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no losing open positions to average.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Submitted";
+            }
+        },
+        PLACE_AMBER_PENDING_BASE_BUYS("Place Limit Buy for Losing Pending Positions") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return pendingBuyDirection(entry) == OrbPendingBaseBuyRowStyler.PriceDirection.AMBER_LOSER;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Place base limit buy orders for " + count + " losing pending position(s)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Amber pending rows have a base-buy limit above the cached current stock price."
+                        + "<br>Matching pending recommendations will submit their base buy limit order.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no losing pending positions waiting to place limit buys.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Placed";
+            }
+        },
+        PLACE_GREEN_PENDING_BASE_BUYS("Place Limit Buy for Gaining Pending Positions") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return pendingBuyDirection(entry) == OrbPendingBaseBuyRowStyler.PriceDirection.GREEN_GAINER;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Place base limit buy orders for " + count + " gaining pending position(s)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Green pending rows have a base-buy limit below the cached current stock price."
+                        + "<br>Matching pending recommendations will submit their base buy limit order.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no gaining pending positions waiting to place limit buys.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Placed";
+            }
+        },
         CLEAN_PENDING_BASE_BUYS("Clean All Pending Base Buys") {
             @Override
             boolean matches(ManagedStrategy entry) {

@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.ProfitHoldType;
+import com.neuralarc.model.Position;
 import com.neuralarc.model.SellSubmissionType;
 import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
@@ -96,6 +97,49 @@ class PortfolioActionsControllerTest {
     }
 
     @Test
+    void averageLosingPositionTargetsUseCurrentPositionQuantityAndDiscountedLimit() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        PortfolioActionsSupport.BatchResult result = controller.averageLosingPositionTargets(
+                List.of(managedWithPosition("AAPL", 6, "10.00", "8.00")),
+                new AverageLosingPositionsSelection(
+                        AverageLosingPositionsSelection.OrderType.LIMIT_BELOW_MARKET,
+                        AverageLosingPositionsSelection.QuantityMode.CURRENT_POSITION_QUANTITY,
+                        1,
+                        new BigDecimal("2.50")
+                )
+        );
+
+        assertEquals(List.of("AAPL (6)"), result.successes());
+        assertTrue(result.failures().isEmpty());
+        assertEquals("AAPL-id", gateway.limitBuyStrategyId);
+        assertEquals(6, gateway.limitBuyQuantity);
+        assertEquals(0, new BigDecimal("7.80").compareTo(gateway.limitBuyPrice));
+    }
+
+    @Test
+    void averageLosingPositionTargetsCanUseFixedQuantityMarketBuy() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        PortfolioActionsSupport.BatchResult result = controller.averageLosingPositionTargets(
+                List.of(managedWithPosition("AAPL", 6, "10.00", "8.00")),
+                new AverageLosingPositionsSelection(
+                        AverageLosingPositionsSelection.OrderType.MARKET,
+                        AverageLosingPositionsSelection.QuantityMode.FIXED_INPUT_QUANTITY,
+                        3,
+                        BigDecimal.ZERO
+                )
+        );
+
+        assertEquals(List.of("AAPL (3)"), result.successes());
+        assertTrue(result.failures().isEmpty());
+        assertEquals("AAPL-id", gateway.marketBuyStrategyId);
+        assertEquals(3, gateway.marketBuyQuantity);
+    }
+
+    @Test
     void deletePendingBaseBuyTargetsDeleteThroughGateway() {
         FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
         PortfolioActionsController controller = new PortfolioActionsController(gateway);
@@ -147,6 +191,17 @@ class PortfolioActionsControllerTest {
         return new ManagedStrategy(strategy);
     }
 
+    private static ManagedStrategy managedWithPosition(String symbol, int shares, String averageCost, String lastPrice) {
+        ManagedStrategy managed = managed(symbol);
+        managed.strategy.setStatus(StrategyStatus.ACTIVE);
+        managed.strategy.setCurrentState(StrategyLifecycleState.BUY_LIMIT_1_FILLED);
+        Position position = new Position(symbol);
+        position.applyBuy(shares, new BigDecimal(averageCost));
+        position.setLastPrice(new BigDecimal(lastPrice));
+        managed.setCachedPosition(position);
+        return managed;
+    }
+
     private static final class BlockingRepositionService extends StrategyService {
         private final AtomicInteger active = new AtomicInteger();
         private final AtomicInteger maxConcurrent = new AtomicInteger();
@@ -181,6 +236,11 @@ class PortfolioActionsControllerTest {
         private final java.util.List<String> deletedPaperStrategyIds = new java.util.ArrayList<>();
         private final java.util.List<String> placedPendingStrategyIds = new java.util.ArrayList<>();
         private final java.util.List<String> deletedPendingBaseBuyIds = new java.util.ArrayList<>();
+        private String marketBuyStrategyId;
+        private int marketBuyQuantity;
+        private String limitBuyStrategyId;
+        private int limitBuyQuantity;
+        private BigDecimal limitBuyPrice;
         private StrategyMode selectedViewMode = StrategyMode.PAPER;
         private boolean blockSell;
 
@@ -224,6 +284,20 @@ class PortfolioActionsControllerTest {
         @Override
         public StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy) {
             placedPendingStrategyIds.add(strategy.id());
+            return StrategyService.StrategyCreationResult.success(strategy.id(), "order", "alpaca", "client");
+        }
+        @Override public java.util.Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets) {
+            return java.util.Optional.empty();
+        }
+        @Override public StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity) {
+            marketBuyStrategyId = strategy.id();
+            marketBuyQuantity = quantity;
+            return StrategyService.StrategyCreationResult.success(strategy.id(), "order", "alpaca", "client");
+        }
+        @Override public StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice) {
+            limitBuyStrategyId = strategy.id();
+            limitBuyQuantity = quantity;
+            this.limitBuyPrice = limitPrice;
             return StrategyService.StrategyCreationResult.success(strategy.id(), "order", "alpaca", "client");
         }
         @Override

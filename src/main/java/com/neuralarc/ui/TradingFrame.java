@@ -644,6 +644,15 @@ public class TradingFrame extends JFrame {
             @Override public StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy) {
                 return TradingFrame.this.placePendingBaseBuy(strategy);
             }
+            @Override public Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets) {
+                return TradingFrame.this.chooseAverageLosingPositions(targets);
+            }
+            @Override public StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity) {
+                return TradingFrame.this.buyMoreAtMarket(strategy, quantity);
+            }
+            @Override public StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice) {
+                return TradingFrame.this.buyMoreAtLimit(strategy, quantity, limitPrice, false);
+            }
             @Override public JMenuItem createMenuItem(String text, String iconPath, Runnable action) { return TradingFrame.this.createStatusMenuItem(text, iconPath, action); }
             @Override public int confirm(Object message, String title, int optionType, int messageType) {
                 return JOptionPane.showConfirmDialog(TradingFrame.this, message, title, optionType, messageType);
@@ -3253,6 +3262,10 @@ public class TradingFrame extends JFrame {
             return Optional.of(Math.max(1, number.intValue()));
         }
         return Optional.empty();
+    }
+
+    private Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets) {
+        return AverageLosingPositionsDialog.show(this, targets);
     }
 
     private StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity) {
