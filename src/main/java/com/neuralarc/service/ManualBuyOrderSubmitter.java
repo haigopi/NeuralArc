@@ -85,7 +85,11 @@ final class ManualBuyOrderSubmitter {
             return StrategyService.StrategyCreationResult.failed("Quantity must be greater than zero");
         }
         Strategy strategy = maybeStrategy.get();
-        if (strategy.status() != StrategyStatus.ACTIVE && strategy.status() != StrategyStatus.PAUSED) {
+        boolean completedLimitReentry = strategy.status() == StrategyStatus.COMPLETED
+                && orderType == StrategyOrderType.LIMIT;
+        if (strategy.status() != StrategyStatus.ACTIVE
+                && strategy.status() != StrategyStatus.PAUSED
+                && !completedLimitReentry) {
             return StrategyService.StrategyCreationResult.failed("Only active or paused strategies can submit a manual buy");
         }
 
@@ -142,6 +146,11 @@ final class ManualBuyOrderSubmitter {
             strategy.setLastEvent(error);
             strategyRepository.save(strategy);
             return StrategyService.StrategyCreationResult.failed(error);
+        }
+        if (completedLimitReentry) {
+            strategy.setStatus(StrategyStatus.ACTIVE);
+            strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+            strategyRepository.save(strategy);
         }
         stateMachine.transition(
                 strategy,

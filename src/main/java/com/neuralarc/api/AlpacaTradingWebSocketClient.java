@@ -17,8 +17,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.logging.Logger;
 
 public class AlpacaTradingWebSocketClient {
+    private static final Logger LOGGER = Logger.getLogger(AlpacaTradingWebSocketClient.class.getName());
+
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     private final String streamUrl;
     private final String apiKey;
@@ -64,7 +67,7 @@ public class AlpacaTradingWebSocketClient {
     private void runLoop(Consumer<AlpacaTradeUpdateEvent> onEvent, Consumer<String> onStatus, Consumer<Throwable> onError) {
         while (running.get()) {
             try {
-                connectOnce(onEvent, onStatus);
+                connectOnce(onEvent, onStatus, onError);
                 retryDelaySeconds.set(2);
                 waitForSocketClose();
             } catch (Exception ex) {
@@ -79,8 +82,12 @@ public class AlpacaTradingWebSocketClient {
         }
     }
 
-    private void connectOnce(Consumer<AlpacaTradeUpdateEvent> onEvent, Consumer<String> onStatus) throws InterruptedException {
-        TradingListener listener = new TradingListener(onEvent, onStatus);
+    private void connectOnce(
+            Consumer<AlpacaTradeUpdateEvent> onEvent,
+            Consumer<String> onStatus,
+            Consumer<Throwable> onError
+    ) throws InterruptedException {
+        TradingListener listener = new TradingListener(onEvent, onStatus, onError);
         WebSocket socket = httpClient.newWebSocketBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/json")
@@ -128,6 +135,7 @@ public class AlpacaTradingWebSocketClient {
     private final class TradingListener implements WebSocket.Listener {
         private final Consumer<AlpacaTradeUpdateEvent> onEvent;
         private final Consumer<String> onStatus;
+        private final Consumer<Throwable> onError;
         private final StringBuilder textBuffer = new StringBuilder();
         private final List<byte[]> binaryChunks = new ArrayList<>();
         private final CountDownLatch authorizationLatch = new CountDownLatch(1);
@@ -135,9 +143,14 @@ public class AlpacaTradingWebSocketClient {
         private int binarySize;
         private volatile String handshakeError;
 
-        private TradingListener(Consumer<AlpacaTradeUpdateEvent> onEvent, Consumer<String> onStatus) {
+        private TradingListener(
+                Consumer<AlpacaTradeUpdateEvent> onEvent,
+                Consumer<String> onStatus,
+                Consumer<Throwable> onError
+        ) {
             this.onEvent = onEvent;
             this.onStatus = onStatus;
+            this.onError = onError;
         }
 
         @Override
@@ -180,20 +193,50 @@ public class AlpacaTradingWebSocketClient {
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
             AlpacaTradingWebSocketClient.this.webSocket = null;
+            if (running.get()) {
+                onStatus.accept("WebSocket closed: status=" + statusCode
+                        + (reason == null || reason.isBlank() ? "" : " reason=" + reason));
+            }
             return WebSocket.Listener.super.onClose(webSocket, statusCode, reason);
         }
 
         @Override
         public void onError(WebSocket webSocket, Throwable error) {
             AlpacaTradingWebSocketClient.this.webSocket = null;
+            if (running.get()) {
+                onError.accept(error);
+            }
             WebSocket.Listener.super.onError(webSocket, error);
         }
 
         private void publishPayload(String payload) {
             processControlPayload(payload);
-            for (AlpacaTradeUpdateEvent event : AlpacaTradeUpdateEventParser.parseAll(payload)) {
+            List<AlpacaTradeUpdateEvent> events = AlpacaTradeUpdateEventParser.parseAll(payload);
+            if (events.isEmpty()) {
+                LOGGER.fine(() -> "[STREAM][WS] Received non-trade payload summary=" + payloadSummary(payload));
+            }
+            for (AlpacaTradeUpdateEvent event : events) {
+                LOGGER.info(() -> "[STREAM][WS] Parsed trade update event="
+                        + event.eventType()
+                        + " orderId=" + safe(event.orderData() == null ? "" : event.orderData().orderId())
+                        + " clientOrderId=" + safe(event.orderData() == null ? "" : event.orderData().clientOrderId())
+                        + " symbol=" + safe(event.orderData() == null ? "" : event.orderData().symbol())
+                        + " side=" + safe(event.orderData() == null ? "" : event.orderData().side())
+                        + " status=" + safe(event.orderData() == null ? "" : event.orderData().status()));
                 onEvent.accept(event);
             }
+        }
+
+        private String payloadSummary(String payload) {
+            if (payload == null) {
+                return "null";
+            }
+            String trimmed = payload.replaceAll("\\s+", " ").trim();
+            return trimmed.length() <= 240 ? trimmed : trimmed.substring(0, 240) + "...";
+        }
+
+        private String safe(String value) {
+            return value == null || value.isBlank() ? "-" : value.trim();
         }
 
         private void processControlPayload(String payload) {

@@ -93,6 +93,15 @@ class TradeStreamLifecycleCoordinatorTest {
     }
 
     @Test
+    void mapStatusDoesNotMisclassifyUnauthorizedAsAuthorized() {
+        TradeStreamLifecycleCoordinator.StreamStatusPresentation presentation =
+                TradeStreamLifecycleCoordinator.mapStatus("Authorization stream: status=unauthorized action=authenticate");
+
+        assertEquals("error", presentation.label());
+        assertEquals(new Color(180, 30, 30), presentation.color());
+    }
+
+    @Test
     void tradeEventWithoutMatchedStrategyDoesNotRequestTargetedPositionRefresh() {
         FakeGateway gateway = new FakeGateway();
         gateway.onTradeUpdateResult = Optional.empty();
@@ -150,4 +159,3 @@ class TradeStreamLifecycleCoordinatorTest {
         @Override public void stop() { stopped = true; }
     }
 }
-

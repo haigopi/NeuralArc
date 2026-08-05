@@ -3,6 +3,7 @@ package com.neuralarc.ui;
 import com.neuralarc.analytics.AnalyticsEvent;
 import com.neuralarc.model.BrokerType;
 import com.neuralarc.model.Position;
+import com.neuralarc.model.RepositionSubmissionType;
 import com.neuralarc.model.SellSubmissionType;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyLifecycleState;
@@ -299,6 +300,31 @@ class StrategyActionsControllerTest {
     }
 
     @Test
+    void buyMoreAtLimitIsAvailableForCompletedStrategy() {
+        Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.COMPLETED);
+        FakeGateway gateway = new FakeGateway(strategy);
+        gateway.limitBuySelection = Optional.of(new ManualLimitBuySelection(5, new BigDecimal("9.25")));
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.buyMoreAtLimitPrice(0);
+
+        assertEquals(1, gateway.backgroundTasksRun);
+        assertEquals(strategy.id(), gateway.limitBuyStrategyId);
+    }
+
+    @Test
+    void buyMoreAtMarketRemainsUnavailableForCompletedStrategy() {
+        FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.COMPLETED));
+        gateway.marketBuyQuantity = Optional.of(5);
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.buyMoreAtMarketPrice(0);
+
+        assertEquals(0, gateway.backgroundTasksRun);
+        assertNull(gateway.marketBuyStrategyId);
+    }
+
+    @Test
     void buyMoreAtLimitPassesAutoRepositionSelection() {
         Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE);
         FakeGateway gateway = new FakeGateway(strategy);
@@ -356,14 +382,29 @@ class StrategyActionsControllerTest {
         Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.FAILED);
         strategy.setLatestOrderStatus("expired");
         FakeGateway gateway = new FakeGateway(strategy);
-        gateway.confirmResult = JOptionPane.YES_OPTION;
+        gateway.repositionSelection = Optional.of(RepositionSubmissionType.LIMIT_BUY);
         StrategyActionsController controller = new StrategyActionsController(gateway);
 
         controller.repositionExpiredStrategy(0);
 
-        assertEquals(1, gateway.confirmCalls);
         assertEquals(1, gateway.backgroundTasksRun);
         assertEquals(strategy.id(), gateway.repositionedStrategyId);
+        assertEquals(RepositionSubmissionType.LIMIT_BUY, gateway.repositionSubmissionType);
+    }
+
+    @Test
+    void repositionExpiredStrategyCanSubmitMarketBuy() {
+        Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        FakeGateway gateway = new FakeGateway(strategy);
+        gateway.repositionSelection = Optional.of(RepositionSubmissionType.MARKET_BUY);
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.repositionExpiredStrategy(0);
+
+        assertEquals(1, gateway.backgroundTasksRun);
+        assertEquals(strategy.id(), gateway.repositionedStrategyId);
+        assertEquals(RepositionSubmissionType.MARKET_BUY, gateway.repositionSubmissionType);
     }
 
     @Test
@@ -484,6 +525,8 @@ class StrategyActionsControllerTest {
         Optional<SellSubmissionType> sellSelection = Optional.of(SellSubmissionType.LIMIT);
         int sellSelectionCalls;
         SellSubmissionType lastSellSubmissionType;
+        Optional<RepositionSubmissionType> repositionSelection = Optional.of(RepositionSubmissionType.LIMIT_BUY);
+        RepositionSubmissionType repositionSubmissionType;
         String excludedCaptureStrategyId;
         String marketBuyStrategyId;
         Optional<Integer> marketBuyQuantity = Optional.of(1);
@@ -550,6 +593,9 @@ class StrategyActionsControllerTest {
             sellSelectionCalls++;
             return sellSelection;
         }
+        @Override public Optional<RepositionSubmissionType> chooseRepositionSubmissionType(Strategy strategy) {
+            return repositionSelection;
+        }
         @Override
         public StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType) {
             lastSellSubmissionType = submissionType;
@@ -584,8 +630,12 @@ class StrategyActionsControllerTest {
             return StrategyService.StrategyCreationResult.success(strategy.id(), "ord", "alpaca", "client");
         }
         @Override
-        public StrategyService.StrategyCreationResult repositionExpiredStrategy(String strategyId) {
+        public StrategyService.StrategyCreationResult repositionExpiredStrategy(
+                String strategyId,
+                RepositionSubmissionType submissionType
+        ) {
             repositionedStrategyId = strategyId;
+            repositionSubmissionType = submissionType;
             return StrategyService.StrategyCreationResult.success(strategyId, "ord", "alpaca", "client");
         }
         boolean cancelablePendingLimitBuy;

@@ -836,6 +836,10 @@ public class TradingFrame extends JFrame {
                 return Optional.empty();
             }
             @Override
+            public Optional<RepositionSubmissionType> chooseRepositionSubmissionType(Strategy strategy) {
+                return RepositionSubmissionTypeDialog.show(TradingFrame.this, strategy);
+            }
+            @Override
             public StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType) {
                 return TradingFrame.this.sellPosition(strategy, submissionType);
             }
@@ -865,14 +869,17 @@ public class TradingFrame extends JFrame {
             ) {
                 return TradingFrame.this.buyMoreAtLimit(strategy, quantity, limitPrice, repositionAfterExpiry);
             }
-            @Override public StrategyService.StrategyCreationResult repositionExpiredStrategy(String strategyId) {
+            @Override public StrategyService.StrategyCreationResult repositionExpiredStrategy(
+                    String strategyId,
+                    RepositionSubmissionType submissionType
+            ) {
                 StrategyService service = strategyRepository.findById(strategyId)
                         .map(strategy -> strategyServiceForMode(strategy.mode()))
                         .orElse(strategyService);
                 if (service == null) {
                     return StrategyService.StrategyCreationResult.failed("strategy service is not configured");
                 }
-                return service.repositionExpiredStrategy(strategyId);
+                return service.repositionExpiredStrategy(strategyId, submissionType);
             }
             @Override public StrategyService.LimitBuyCancelResult cancelPendingLimitBuys(Strategy strategy) {
                 StrategyService service = strategyServiceForMode(strategy.mode());
@@ -2582,15 +2589,10 @@ public class TradingFrame extends JFrame {
         if (snapshot == null || config == null || config.mode() != PortfolioCaptureMode.TARGET_MONITORING) {
             return "";
         }
-        String targetLabel = config.targetType() == PortfolioCaptureTargetType.PROFIT_PERCENT
-                ? Monetary.round(config.targetValue()) + "%"
-                : "$" + Monetary.round(config.targetValue());
         // Show the same P&L as this tab's bottom summary / the status bar (All Stocks), from the
         // single centralized source — not the capture calculator's eligible-subset total.
         BigDecimal contextPnl = computeWorkspaceSnapshot(selectedWorkspaceId).total();
-        return "Monitoring Active | P&L $" + Monetary.round(contextPnl)
-                + " | Target " + targetLabel
-                + " | Progress " + Monetary.round(snapshot.targetProgressPercent()) + "%";
+        return PortfolioCaptureIndicatorPresenter.targetMonitoringText(snapshot, config, contextPnl);
     }
 
     private void refreshCapturePortfolioModeVisibility() {
@@ -2646,13 +2648,13 @@ public class TradingFrame extends JFrame {
         if (storedIndicatorText == null || storedIndicatorText.isBlank()) {
             return storedIndicatorText == null ? "" : storedIndicatorText;
         }
-        if (!storedIndicatorText.matches(".*P&L \\$-?[0-9.]+.*")) {
+        if (!storedIndicatorText.matches(".*(?:Live )?P&L \\$-?[0-9.]+.*")) {
             return storedIndicatorText;
         }
         String livePnl = Monetary.round(computeWorkspaceSnapshot(selectedWorkspaceId).total()).toPlainString();
         return storedIndicatorText.replaceFirst(
-                "P&L \\$-?[0-9.]+",
-                java.util.regex.Matcher.quoteReplacement("P&L $" + livePnl));
+                "(?:Live )?P&L \\$-?[0-9.]+",
+                java.util.regex.Matcher.quoteReplacement("Live P&L $" + livePnl));
     }
 
     private void applySelectedCapturePortfolioState() {
@@ -2662,25 +2664,38 @@ public class TradingFrame extends JFrame {
             return;
         }
         PortfolioCaptureUiStateStore.State state = capturePortfolioUiStates.state(key);
-        capturePortfolioButton.setText(state.buttonText());
-        capturePortfolioButton.setEnabled(state.buttonEnabled());
         // The capture P&L text is shown only while monitoring is enabled for THIS strategy tab,
         // and rendered rainbow. The P&L amount is re-derived live from the single centralized source
         // at paint time so it stays in lock-step with the top status bar / tab summary (the stored
         // string can be stale, e.g. computed before broker positions loaded).
         boolean showIndicator = state.monitoringActive() && !state.indicatorText().isBlank();
         String indicatorText = showIndicator ? withLiveCapturePnl(state.indicatorText()) : "";
+        capturePortfolioButton.setText(capturePortfolioButtonText(state, showIndicator));
+        capturePortfolioButton.setEnabled(state.buttonEnabled());
         capturePortfolioIndicator.setVisible(showIndicator);
         capturePortfolioIndicator.setText(showIndicator ? RainbowText.toHtml(indicatorText) : "");
         capturePortfolioIndicator.setForeground(state.monitoringActive() ? CAPTURE_INDICATOR_ACTIVE_TEXT : CAPTURE_INDICATOR_IDLE_TEXT);
-        capturePortfolioIndicator.setToolTipText(state.monitoringActive()
-                ? TooltipStyler.text("Liquidate Portfolio monitoring is evaluating current portfolio P&L against the configured target.", 320)
-                : null);
+        String activeTooltip = showIndicator ? indicatorText
+                : "Liquidate Portfolio monitoring is evaluating current portfolio P&L against the configured target.";
+        capturePortfolioIndicator.setToolTipText(state.monitoringActive() ? TooltipStyler.text(activeTooltip, 420) : null);
+        capturePortfolioButton.setToolTipText(state.monitoringActive()
+                ? TooltipStyler.text(activeTooltip, 420)
+                : capturePortfolioDefaultTooltip());
         if (state.pulseActive()) {
             startCapturePortfolioPulse();
         } else {
             stopCapturePortfolioPulse();
         }
+    }
+
+    private String capturePortfolioButtonText(PortfolioCaptureUiStateStore.State state, boolean showIndicator) {
+        if (state.busy()) {
+            return state.buttonText();
+        }
+        if (showIndicator) {
+            return "Liquidation Monitor Active";
+        }
+        return state.buttonText();
     }
 
     private void updateCaptureAutomationState(PortfolioCaptureAutomationState state, int loopCount, int pendingCanceled) {
@@ -5471,19 +5486,20 @@ public class TradingFrame extends JFrame {
             return;
         }
         if (shouldShowPollingIndicator(entry)) {
-            long baseTime = entry.strategy.lastPolledAt() == null
-                    ? System.currentTimeMillis()
-                    : entry.strategy.lastPolledAt().toEpochMilli();
-            long derivedNextDueAtMillis = baseTime + entry.pollIntervalMillis;
-            if (!entry.countdownActive || entry.nextPollDueAtMillis <= 0L) {
-                entry.countdownActive = true;
-                entry.nextPollDueAtMillis = derivedNextDueAtMillis;
-                return;
-            }
-            if (entry.strategy.lastPolledAt() != null
-                    && Math.abs(derivedNextDueAtMillis - entry.nextPollDueAtMillis) > 500L) {
-                entry.nextPollDueAtMillis = derivedNextDueAtMillis;
-            }
+            Instant lastPolledAt = entry.strategy.lastPolledAt();
+            PollingCountdownPolicy.Result result = PollingCountdownPolicy.resolve(
+                    entry.countdownActive,
+                    entry.nextPollDueAtMillis,
+                    entry.lastAppliedPolledAtEpochMilli,
+                    entry.lastAppliedPollIntervalMillis,
+                    lastPolledAt == null ? null : lastPolledAt.toEpochMilli(),
+                    entry.pollIntervalMillis,
+                    System.currentTimeMillis()
+            );
+            entry.countdownActive = true;
+            entry.nextPollDueAtMillis = result.nextPollDueAtMillis();
+            entry.lastAppliedPolledAtEpochMilli = result.lastAppliedPolledAtEpochMilli();
+            entry.lastAppliedPollIntervalMillis = result.lastAppliedPollIntervalMillis();
         } else {
             entry.countdownActive = false;
             entry.nextPollDueAtMillis = 0L;
@@ -5784,27 +5800,29 @@ public class TradingFrame extends JFrame {
         searchControls.add(searchField);
         panel.add(searchControls, BorderLayout.WEST);
         if (searchField == currentStrategiesSearchField) {
-            // Pin the button in EAST so BorderLayout always grants it its full preferred
-            // width — it must never be clipped at the toolbar edge. The status indicator
-            // lives in the flexible CENTER region so its variable-length text can shrink
-            // (or clip) without ever squeezing the button.
             capturePortfolioIndicator.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
             capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
+            capturePortfolioIndicator.setHorizontalAlignment(SwingConstants.RIGHT);
+            JPanel indicatorPanel = new JPanel(new BorderLayout());
+            indicatorPanel.setOpaque(false);
+            indicatorPanel.setBorder(new EmptyBorder(0, 12, 0, 8));
+            indicatorPanel.add(capturePortfolioIndicator, BorderLayout.EAST);
+            panel.add(indicatorPanel, BorderLayout.CENTER);
+
+            // Pin buttons in EAST so BorderLayout always grants them their full preferred
+            // width. The variable-length liquidation status now lives in CENTER and can
+            // shrink without disappearing behind the blinking Liquidate Portfolio button.
             JPanel captureControls = new JPanel(new GridBagLayout());
             captureControls.setOpaque(false);
             GridBagConstraints captureGbc = new GridBagConstraints();
             captureGbc.anchor = GridBagConstraints.CENTER;
-            // P&L indicator sits immediately to the LEFT of the Capture/Liquidate button.
             captureGbc.gridx = 0;
-            captureGbc.insets = new Insets(0, 0, 0, 8);
-            captureControls.add(capturePortfolioIndicator, captureGbc);
-            captureGbc.gridx = 1;
             captureGbc.insets = new Insets(0, 0, 0, 0);
             captureControls.add(capturePortfolioButton, captureGbc);
-            captureGbc.gridx = 2;
+            captureGbc.gridx = 1;
             captureGbc.insets = new Insets(0, 8, 0, 0);
             captureControls.add(addStrategyButton, captureGbc);
-            captureGbc.gridx = 3;
+            captureGbc.gridx = 2;
             captureGbc.insets = new Insets(0, 8, 0, 0);
             captureControls.add(portfolioActionsButton, captureGbc);
             panel.add(captureControls, BorderLayout.EAST);

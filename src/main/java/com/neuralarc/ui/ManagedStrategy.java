@@ -24,6 +24,8 @@ final class ManagedStrategy {
     volatile long lastDisplayedPositionFetchAtMillis;
     volatile long pollIntervalMillis;
     volatile long nextPollDueAtMillis;
+    volatile long lastAppliedPolledAtEpochMilli;
+    volatile long lastAppliedPollIntervalMillis;
     volatile boolean countdownActive;
     volatile boolean pollInFlight;
     private volatile Boolean overnightEligible;

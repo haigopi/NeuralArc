@@ -57,9 +57,18 @@ final class BaseBuyPriceGuard {
         BigDecimal effectiveReductionPercent = normalizeReductionPercent(reductionPercent);
         BigDecimal reducedFromOriginal = reduce(basePrice, effectiveReductionPercent);
         BigDecimal reducedFromWeakest = reduce(weakestObserved, effectiveReductionPercent);
-        BigDecimal guarded = Monetary.round(reducedFromOriginal.min(reducedFromWeakest));
+        BigDecimal guarded = belowCurrentPrice(Monetary.round(reducedFromOriginal.min(reducedFromWeakest)), latestPrice);
         return new GuardedPrice(guarded, "Market indicators weakened; reduced base buy limit from $"
                 + basePrice.toPlainString() + " to $" + guarded.toPlainString());
+    }
+
+    private BigDecimal belowCurrentPrice(BigDecimal value, BigDecimal latestPrice) {
+        BigDecimal rounded = Monetary.round(value);
+        if (!positive(latestPrice) || rounded.compareTo(latestPrice) < 0) {
+            return rounded;
+        }
+        BigDecimal oneCentBelow = Monetary.round(latestPrice.subtract(new BigDecimal("0.01")));
+        return oneCentBelow.compareTo(BigDecimal.ZERO) > 0 ? oneCentBelow : rounded;
     }
 
     private List<MarketBar> safeDailyBars(AlpacaClient client, String symbol) {

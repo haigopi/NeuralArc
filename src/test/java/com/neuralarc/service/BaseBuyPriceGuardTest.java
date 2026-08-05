@@ -52,6 +52,40 @@ class BaseBuyPriceGuardTest {
     }
 
     @Test
+    void reducesBasePriceWhenCurrentPriceEqualsLimit() {
+        FakeAlpacaClient client = new FakeAlpacaClient(
+                new BigDecimal("100.00"),
+                List.of(bar("105.00", "110.00"))
+        );
+
+        BaseBuyPriceGuard.GuardedPrice result = guard.guardedBaseBuyPrice(
+                client,
+                "AAPL",
+                new BigDecimal("100.00"),
+                new BigDecimal("100.00")
+        );
+
+        assertEquals(new BigDecimal("98.00"), result.price());
+    }
+
+    @Test
+    void reducesBasePriceBelowCurrentPriceWhenLimitIsAboveQuote() {
+        FakeAlpacaClient client = new FakeAlpacaClient(
+                new BigDecimal("95.00"),
+                List.of(bar("105.00", "110.00"))
+        );
+
+        BaseBuyPriceGuard.GuardedPrice result = guard.guardedBaseBuyPrice(
+                client,
+                "AAPL",
+                new BigDecimal("100.00"),
+                new BigDecimal("95.00")
+        );
+
+        assertEquals(new BigDecimal("93.10"), result.price());
+    }
+
+    @Test
     void usesConfiguredReductionPercentWhenIndicatorsWeaken() {
         FakeAlpacaClient client = new FakeAlpacaClient(
                 new BigDecimal("99.00"),

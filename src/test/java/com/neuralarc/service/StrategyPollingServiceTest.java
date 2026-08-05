@@ -758,6 +758,58 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void pendingSellPollsAtConfiguredIntervalEvenWhenStreamRecentlyHandledAnotherEvent() throws Exception {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        strategy.setLastPolledAt(Instant.now().minusSeconds(61));
+        strategy.setLatestOrderStatus("pending_new");
+        strategy.setLatestAlpacaOrderId("ord-sell");
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 1, new BigDecimal("220.00")));
+        f.orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.TARGET_SELL,
+                "ord-sell", "client-sell", "NVDA",
+                StrategyOrderSide.SELL, StrategyOrderType.LIMIT,
+                new BigDecimal("221.10"), BigDecimal.ZERO,
+                BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO,
+                StrategyOrderStatus.PENDING,
+                Instant.now().minusSeconds(90), Instant.now().minusSeconds(90), null, "{}"
+        ));
+        f.alpaca.orderById.put("ord-sell", new AlpacaOrderData(
+                "ord-sell", "client-sell", "NVDA", "sell", "limit",
+                new BigDecimal("221.10"), BigDecimal.ONE, new BigDecimal("221.10"), "filled", "{}"
+        ));
+        f.alpaca.position = Optional.empty();
+        Strategy other = f.activeStrategy("AAPL", false);
+        f.orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), other.id(), StrategyStage.BASE_BUY,
+                "ord-other", "client-other", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT,
+                new BigDecimal("8.00"), BigDecimal.ZERO,
+                BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO,
+                StrategyOrderStatus.PENDING,
+                Instant.now().minusSeconds(90), Instant.now().minusSeconds(90), null, "{}"
+        ));
+        f.service.onTradeUpdate(new AlpacaTradeUpdateEvent(
+                "fill",
+                new AlpacaOrderData("ord-other", "client-other", "AAPL", "buy", "limit",
+                        new BigDecimal("8.00"), BigDecimal.ONE, new BigDecimal("8.00"), "filled", "{}")
+        ));
+
+        f.service.pollDueStrategies();
+
+        f.awaitTrue(() -> f.orders.findByAlpacaOrderId("ord-sell")
+                        .map(order -> order.status() == StrategyOrderStatus.FILLED)
+                        .orElse(false),
+                "Pending sell should reconcile from broker at configured polling interval");
+        Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyLifecycleState.COMPLETED, updated.currentState());
+        assertEquals("filled", updated.latestOrderStatus());
+        assertEquals(StrategyOrderStatus.FILLED, f.orders.findByAlpacaOrderId("ord-sell").orElseThrow().status());
+    }
+
+    @Test
     void profitableExitDoesNotRecreateStaleLossBuyBeforeRestart() {
         Fixture f = new Fixture();
         Strategy strategy = new Strategy(

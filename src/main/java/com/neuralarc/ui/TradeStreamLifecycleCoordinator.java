@@ -31,11 +31,19 @@ public final class TradeStreamLifecycleCoordinator {
         stop();
         if (!gateway.webSocketEnabled()) {
             gateway.updateStreamStatus("disabled", STREAM_IDLE);
+            gateway.log("[STREAM] Trading WebSocket disabled by app metadata.");
             return;
         }
-        streamClient = streamClientFactory.create(gateway.streamUrl(liveMode), apiKey, apiSecret);
+        String streamUrl = gateway.streamUrl(liveMode);
+        gateway.log("[STREAM] Starting trading WebSocket mode=" + (liveMode ? "LIVE" : "PAPER")
+                + " url=" + safeStreamUrl(streamUrl)
+                + " credentialsConfigured=" + credentialsConfigured(apiKey, apiSecret));
+        streamClient = streamClientFactory.create(streamUrl, apiKey, apiSecret);
         if (streamClient == null || !streamClient.isConfigured()) {
             gateway.updateStreamStatus("not configured", STREAM_WARN);
+            gateway.log("[STREAM] Trading WebSocket not configured. urlPresent="
+                    + (streamUrl != null && !streamUrl.isBlank())
+                    + " credentialsConfigured=" + credentialsConfigured(apiKey, apiSecret));
             return;
         }
 
@@ -56,7 +64,18 @@ public final class TradeStreamLifecycleCoordinator {
                     gateway.onStreamError(message);
                 }
         );
-        gateway.log("[STREAM] Connected trading WebSocket.");
+        gateway.log("[STREAM] Trading WebSocket worker started; awaiting authorization and listen acknowledgement.");
+    }
+
+    private String safeStreamUrl(String streamUrl) {
+        if (streamUrl == null || streamUrl.isBlank()) {
+            return "-";
+        }
+        return streamUrl.trim();
+    }
+
+    private boolean credentialsConfigured(String apiKey, String apiSecret) {
+        return apiKey != null && !apiKey.isBlank() && apiSecret != null && !apiSecret.isBlank();
     }
 
     public void stop() {
@@ -100,6 +119,9 @@ public final class TradeStreamLifecycleCoordinator {
 
     static StreamStatusPresentation mapStatus(String status) {
         String normalized = status == null ? "" : status.toLowerCase();
+        if (normalized.contains("unauthorized") || normalized.contains("error") || normalized.contains("failed")) {
+            return new StreamStatusPresentation("error", STREAM_ERR);
+        }
         if (normalized.contains("authorized")) {
             return new StreamStatusPresentation("authorized", STREAM_OK);
         }

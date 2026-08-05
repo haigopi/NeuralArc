@@ -9,8 +9,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.logging.Logger;
 
 public final class AlpacaTradeUpdateEventParser {
+    private static final Logger LOGGER = Logger.getLogger(AlpacaTradeUpdateEventParser.class.getName());
+
     private AlpacaTradeUpdateEventParser() {
     }
 
@@ -36,8 +39,13 @@ public final class AlpacaTradeUpdateEventParser {
                 return events;
             }
             parseObject(new JSONObject(normalized)).ifPresent(events::add);
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            LOGGER.fine(() -> "[STREAM][PARSE] Ignored non-trade or malformed payload: "
+                    + payloadSummary(payload) + " error=" + ex.getClass().getSimpleName());
             return events;
+        }
+        if (events.isEmpty()) {
+            LOGGER.fine(() -> "[STREAM][PARSE] Payload contained no trade update: " + payloadSummary(payload));
         }
         return events;
     }
@@ -83,9 +91,22 @@ public final class AlpacaTradeUpdateEventParser {
                     submittedAt
             );
             return Optional.of(new AlpacaTradeUpdateEvent(eventType, orderData));
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            LOGGER.fine(() -> "[STREAM][PARSE] Failed to parse trade update object: "
+                    + payloadSummary(root.toString()) + " error=" + ex.getClass().getSimpleName());
             return Optional.empty();
         }
+    }
+
+    private static String payloadSummary(String payload) {
+        if (payload == null) {
+            return "null";
+        }
+        String trimmed = payload.replaceAll("\\s+", " ").trim();
+        if (trimmed.length() <= 240) {
+            return trimmed;
+        }
+        return trimmed.substring(0, 240) + "...";
     }
 
     private static BigDecimal parseMoney(String value) {

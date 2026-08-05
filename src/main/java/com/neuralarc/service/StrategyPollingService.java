@@ -8,6 +8,7 @@ import com.neuralarc.model.StrategyEventType;
 import com.neuralarc.model.StrategyExecutionEvent;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
+import com.neuralarc.model.StrategyOrder;
 import com.neuralarc.model.StrategyStage;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.util.BrokerOrderStatusUtil;
@@ -37,6 +38,7 @@ public class StrategyPollingService {
     private static final int STREAM_POLL_BACKOFF_MULTIPLIER = 3;
 
     private final StrategyRepository strategyRepository;
+    private final StrategyOrderRepository orderRepository;
     private final StrategyExecutionEventRepository eventRepository;
     private final StrategyEngine strategyEngine;
     private final StrategyService strategyService;
@@ -122,6 +124,7 @@ public class StrategyPollingService {
             WorkspaceRepository workspaceRepository
     ) {
         this.strategyRepository = strategyRepository;
+        this.orderRepository = orderRepository;
         this.eventRepository = eventRepository;
         this.appSettingsService = appSettingsService;
         this.marketHoursService = marketHoursService;
@@ -532,7 +535,11 @@ public class StrategyPollingService {
                         + updateEvent.eventType()
                         + " because no matching local order was found for orderId="
                         + updateEvent.orderData().orderId()
-                        + " clientOrderId=" + updateEvent.orderData().clientOrderId());
+                        + " clientOrderId=" + updateEvent.orderData().clientOrderId()
+                        + " symbol=" + updateEvent.orderData().symbol()
+                        + " side=" + updateEvent.orderData().side()
+                        + " status=" + updateEvent.orderData().status()
+                        + " localPendingSameSymbol=" + localPendingOrderSummary(updateEvent.orderData().symbol()));
             }
             return appliedStrategyId;
         } catch (Exception ex) {
@@ -547,7 +554,7 @@ public class StrategyPollingService {
         }
         long elapsedSeconds = Duration.between(strategy.lastPolledAt(), now).getSeconds();
         long pollInterval = Math.max(1, strategy.pollingIntervalSeconds());
-        if (isStreamHealthy(now)) {
+        if (isStreamHealthy(now) && !isPendingSellOrderState(strategy)) {
             pollInterval = pollInterval * STREAM_POLL_BACKOFF_MULTIPLIER;
         }
         return elapsedSeconds >= pollInterval;
@@ -600,6 +607,44 @@ public class StrategyPollingService {
                 || state == StrategyLifecycleState.BUY_LIMIT_2_PLACED
                 || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED
                 || pendingManualBuy;
+    }
+
+    private boolean isPendingSellOrderState(Strategy strategy) {
+        if (strategy == null) {
+            return false;
+        }
+        StrategyLifecycleState state = strategy.currentState();
+        return state == StrategyLifecycleState.SELL_PLACED
+                || state == StrategyLifecycleState.SELL_PARTIALLY_FILLED;
+    }
+
+    private String localPendingOrderSummary(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return "[]";
+        }
+        String normalizedSymbol = symbol.trim().toUpperCase(Locale.ROOT);
+        List<String> summaries = new ArrayList<>();
+        for (Strategy strategy : strategyRepository.findAll()) {
+            if (strategy.symbol() == null || !normalizedSymbol.equals(strategy.symbol().trim().toUpperCase(Locale.ROOT))) {
+                continue;
+            }
+            for (StrategyOrder order : orderRepository.findByStrategyId(strategy.id())) {
+                if (order.isPending()) {
+                    summaries.add("{strategyId=" + strategy.id()
+                            + ",stage=" + order.stage()
+                            + ",side=" + order.side()
+                            + ",status=" + order.status()
+                            + ",alpacaOrderId=" + safeLogValue(order.alpacaOrderId())
+                            + ",clientOrderId=" + safeLogValue(order.clientOrderId())
+                            + "}");
+                }
+            }
+        }
+        return summaries.isEmpty() ? "[]" : summaries.toString();
+    }
+
+    private String safeLogValue(String value) {
+        return value == null || value.isBlank() ? "-" : value.trim();
     }
 
     private boolean isStreamHealthy(Instant now) {
