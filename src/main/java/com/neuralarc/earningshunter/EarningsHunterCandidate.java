@@ -14,6 +14,10 @@ public record EarningsHunterCandidate(
         BigDecimal dayChangePercent,
         long averageVolume,
         BigDecimal relativeVolume,
+        BigDecimal recentLow20,
+        BigDecimal recentLow63,
+        BigDecimal recentLow126,
+        BigDecimal supportGravityPrice,
         List<NewsArticle> earningsArticles,
         Instant latestEarningsNewsAt
 ) {}

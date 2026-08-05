@@ -24,9 +24,9 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 public final class EarningsHunterLiveScanner {
-    private static final int LOOKBACK_DAYS = 80;
+    private static final int LOOKBACK_DAYS = 190;
     private static final int NEWS_LIMIT = 10;
-    private static final int MINIMUM_HISTORY = 20;
+    private static final int MINIMUM_HISTORY = 80;
     private static final List<String> EARNINGS_TERMS = List.of(
             "earnings", "eps", "revenue", "quarter", "quarterly", "guidance", "results", "beat", "miss");
 
@@ -87,10 +87,16 @@ public final class EarningsHunterLiveScanner {
                 : BigDecimal.ZERO;
         BigDecimal dayChange = current.subtract(previous.close()).multiply(BigDecimal.valueOf(100))
                 .divide(previous.close(), 2, RoundingMode.HALF_UP);
+        BigDecimal recentLow20 = recentLow(history, 20);
+        BigDecimal recentLow63 = recentLow(history, 63);
+        BigDecimal recentLow126 = recentLow(history, 126);
+        BigDecimal supportGravity = supportGravityPrice(current, recentLow20, recentLow63, recentLow126);
         Instant latestNewsAt = earningsArticles.stream().map(NewsArticle::createdAt)
                 .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
         return Optional.of(new EarningsHunterCandidate(symbol, symbol, Monetary.round(current),
                 Monetary.round(previous.close()), dayChange, averageVolume.longValue(), relativeVolume,
+                Monetary.round(recentLow20), Monetary.round(recentLow63), Monetary.round(recentLow126),
+                Monetary.round(supportGravity),
                 earningsArticles, latestNewsAt));
     }
 
@@ -115,6 +121,37 @@ public final class EarningsHunterLiveScanner {
         List<MarketBar> window = history.subList(history.size() - count, history.size());
         BigDecimal sum = window.stream().map(MarketBar::volume).reduce(BigDecimal.ZERO, BigDecimal::add);
         return sum.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal recentLow(List<MarketBar> history, int period) {
+        int count = Math.min(period, history.size());
+        List<MarketBar> window = history.subList(history.size() - count, history.size());
+        return window.stream()
+                .map(MarketBar::low)
+                .filter(this::valid)
+                .min(BigDecimal::compareTo)
+                .orElse(BigDecimal.ZERO);
+    }
+
+    private BigDecimal supportGravityPrice(
+            BigDecimal current,
+            BigDecimal recentLow20,
+            BigDecimal recentLow63,
+            BigDecimal recentLow126
+    ) {
+        if (!valid(current) || !valid(recentLow20) || !valid(recentLow63) || !valid(recentLow126)) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal supportCentroid = recentLow20.multiply(new BigDecimal("0.50"))
+                .add(recentLow63.multiply(new BigDecimal("0.30")))
+                .add(recentLow126.multiply(new BigDecimal("0.20")));
+        if (supportCentroid.compareTo(BigDecimal.ZERO) <= 0 || supportCentroid.compareTo(current) >= 0) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal distanceToSupport = current.subtract(supportCentroid);
+        BigDecimal pullbackEntry = current.subtract(distanceToSupport.multiply(new BigDecimal("0.382")));
+        BigDecimal floor = recentLow126.multiply(new BigDecimal("1.01"));
+        return pullbackEntry.max(floor).min(current);
     }
 
     private boolean valid(BigDecimal value) {

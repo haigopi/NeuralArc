@@ -15,6 +15,7 @@ public final class EarningsHunterAnalysisDialog extends JDialog {
     private final JTextField minRelVolume = new JTextField("0.5", 8);
     private final JTextField maxPrice = new JTextField("", 8);
     private final JTextField minNewsScore = new JTextField("50", 8);
+    private final JTextField entryDiscount = new JTextField("2", 8);
     private final JTextField stop = new JTextField("5", 8);
     private final JTextField target = new JTextField("10", 8);
     private final JTextField maxStocks = new JTextField("10", 8);
@@ -41,7 +42,8 @@ public final class EarningsHunterAnalysisDialog extends JDialog {
         return new EarningsHunterConfig(Integer.parseInt(windowDays.getText()), Long.parseLong(minAvgVolume.getText()),
                 new BigDecimal(minPrice.getText()), new BigDecimal(minRelVolume.getText()),
                 maxPrice.getText().isBlank() ? null : new BigDecimal(maxPrice.getText()),
-                new BigDecimal(minNewsScore.getText()), new BigDecimal(stop.getText()), new BigDecimal(target.getText()),
+                new BigDecimal(minNewsScore.getText()), new BigDecimal(entryDiscount.getText()),
+                new BigDecimal(stop.getText()), new BigDecimal(target.getText()),
                 Integer.parseInt(maxStocks.getText()), mode, EarningsHunterLiveScanner.parseSymbols(candidateSymbols.getText()));
     }
 
@@ -61,10 +63,12 @@ public final class EarningsHunterAnalysisDialog extends JDialog {
                 "Optional cap for high-priced stocks. Leave blank to allow any price above the minimum.");
         row = addField(fields, row, "Minimum News Score", minNewsScore,
                 "Scores the strength of earnings-related articles and price reaction. Raise it for stricter filtering; lower it to see more candidates.");
+        row = addField(fields, row, "Entry Discount Below Current Price %", entryDiscount,
+                "Safety cap for the entry. The scanner also computes support from the lowest daily lows across roughly 1, 3, and 6 months, then chooses the lower of that support-gravity entry or this flat discount.");
         row = addField(fields, row, "Stop Loss %", stop,
-                "Planning risk from the entry price for the strategy row.");
+                "Planning risk from the discounted entry price for the strategy row.");
         row = addField(fields, row, "Target Profit %", target,
-                "Planning target above the entry price for the strategy row.");
+                "Planning target above the discounted entry price for the strategy row.");
         row = addField(fields, row, "Max Stocks to Add", maxStocks,
                 "Limit how many qualifying recommendations are added after scoring.");
         row = addField(fields, row, "Candidate Symbols (optional)", new JScrollPane(candidateSymbols),
@@ -138,6 +142,7 @@ public final class EarningsHunterAnalysisDialog extends JDialog {
         minRelVolume.setText(c.minimumRelativeVolume().toPlainString());
         maxPrice.setText(c.maximumStockPrice() == null ? "" : c.maximumStockPrice().toPlainString());
         minNewsScore.setText(c.minimumNewsScore().toPlainString());
+        entryDiscount.setText(c.entryDiscountPercent().toPlainString());
         stop.setText(c.stopLossPercent().toPlainString());
         target.setText(c.targetProfitPercent().toPlainString());
         maxStocks.setText(String.valueOf(c.maxStocksToAdd()));

@@ -50,7 +50,7 @@ public final class EarningsHunterAnalyzer {
     }
 
     private EarningsHunterRecommendation toRecommendation(EarningsHunterCandidate c, EarningsHunterConfig cfg, int score) {
-        BigDecimal entry = c.currentPrice().setScale(2, RoundingMode.HALF_UP);
+        BigDecimal entry = plannedEntryPrice(c, cfg);
         BigDecimal stop = entry.multiply(BigDecimal.ONE.subtract(cfg.stopLossPercent().movePointLeft(2)))
                 .setScale(2, RoundingMode.HALF_UP);
         BigDecimal target = entry.multiply(BigDecimal.ONE.add(cfg.targetProfitPercent().movePointLeft(2)))
@@ -59,6 +59,20 @@ public final class EarningsHunterAnalyzer {
                 c.previousClose(), c.dayChangePercent(), c.averageVolume(), c.relativeVolume(), summary(c),
                 catalystScore(c), score, entry, cfg.stopLossPercent(), stop, cfg.targetProfitPercent(), target,
                 EarningsHunterStatus.RECOMMENDED, cfg.mode(), Instant.now(clock));
+    }
+
+    private BigDecimal plannedEntryPrice(EarningsHunterCandidate c, EarningsHunterConfig cfg) {
+        BigDecimal current = c.currentPrice() == null ? BigDecimal.ZERO : c.currentPrice();
+        BigDecimal discount = cfg.entryDiscountPercent().movePointLeft(2);
+        BigDecimal discountEntry = current.multiply(BigDecimal.ONE.subtract(discount));
+        BigDecimal supportEntry = c.supportGravityPrice();
+        BigDecimal entry = supportEntry != null && supportEntry.compareTo(BigDecimal.ZERO) > 0
+                ? discountEntry.min(supportEntry)
+                : discountEntry;
+        if (entry.compareTo(BigDecimal.ZERO) <= 0 || current.compareTo(BigDecimal.ZERO) <= 0) {
+            return current.setScale(2, RoundingMode.HALF_UP);
+        }
+        return entry.min(current).setScale(2, RoundingMode.HALF_UP);
     }
 
     private boolean passesScoreThreshold(EarningsHunterRecommendation recommendation) {

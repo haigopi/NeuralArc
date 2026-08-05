@@ -13,6 +13,7 @@ public record EarningsHunterConfig(
         BigDecimal minimumRelativeVolume,
         BigDecimal maximumStockPrice,
         BigDecimal minimumNewsScore,
+        BigDecimal entryDiscountPercent,
         BigDecimal stopLossPercent,
         BigDecimal targetProfitPercent,
         int maxStocksToAdd,
@@ -28,6 +29,7 @@ public record EarningsHunterConfig(
         minimumStockPrice = posOrDefault(minimumStockPrice, "0.5");
         minimumRelativeVolume = posOrDefault(minimumRelativeVolume, "0.5");
         minimumNewsScore = posOrDefault(minimumNewsScore, "50");
+        entryDiscountPercent = nonNegativeOrDefault(entryDiscountPercent, "2");
         stopLossPercent = posOrDefault(stopLossPercent, "5");
         targetProfitPercent = posOrDefault(targetProfitPercent, "10");
         maxStocksToAdd = maxStocksToAdd <= 0 ? 10 : maxStocksToAdd;
@@ -37,11 +39,16 @@ public record EarningsHunterConfig(
 
     public static EarningsHunterConfig defaults(StrategyMode mode) {
         return new EarningsHunterConfig(7, 100_000L, new BigDecimal("0.5"), new BigDecimal("0.5"),
-                null, new BigDecimal("50"), new BigDecimal("5"), new BigDecimal("10"), 10, mode, List.of());
+                null, new BigDecimal("50"), new BigDecimal("2"), new BigDecimal("5"), new BigDecimal("10"), 10, mode, List.of());
     }
 
     private static BigDecimal posOrDefault(BigDecimal value, String fallback) {
         BigDecimal v = value == null ? new BigDecimal(fallback) : value;
         return v.compareTo(BigDecimal.ZERO) <= 0 ? new BigDecimal(fallback) : v;
+    }
+
+    private static BigDecimal nonNegativeOrDefault(BigDecimal value, String fallback) {
+        BigDecimal v = value == null ? new BigDecimal(fallback) : value;
+        return v.compareTo(BigDecimal.ZERO) < 0 ? new BigDecimal(fallback) : v;
     }
 }
