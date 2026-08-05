@@ -40,7 +40,7 @@ class PendingBaseBuyPlacementSupportTest {
     @Test
     void detectsScannerPendingPlacementStatuses() {
         Strategy pending = strategy("AAPL");
-        pending.setLatestOrderStatus("VWAP_RECOMMENDED");
+        pending.setLatestOrderStatus("EARNINGS_HUNTER_RECOMMENDED");
         Strategy activeOrder = strategy("MSFT");
         activeOrder.setLatestOrderStatus("new");
 

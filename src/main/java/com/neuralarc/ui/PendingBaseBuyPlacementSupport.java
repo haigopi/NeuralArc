@@ -16,7 +16,8 @@ final class PendingBaseBuyPlacementSupport {
                 || OrbCoordinator.isPendingOrderPlacement(strategy)
                 || DipHunterCoordinator.isPendingOrderPlacement(strategy)
                 || VwapCoordinator.isPendingOrderPlacement(strategy)
-                || SwingCoordinator.isPendingOrderPlacement(strategy);
+                || SwingCoordinator.isPendingOrderPlacement(strategy)
+                || EarningsHunterCoordinator.isPendingOrderPlacement(strategy);
     }
 
     static BigDecimal adjustedBaseBuyLimit(BigDecimal baseBuyLimitPrice, BigDecimal todayLow) {

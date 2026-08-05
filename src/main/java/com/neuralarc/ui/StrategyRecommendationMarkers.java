@@ -15,7 +15,8 @@ final class StrategyRecommendationMarkers {
                 || status.startsWith("ORB_")
                 || status.startsWith("DIP_HUNTER_")
                 || status.startsWith("VWAP_")
-                || status.startsWith("SWING_");
+                || status.startsWith("SWING_")
+                || status.startsWith("EARNINGS_HUNTER_");
     }
 
     static String sourceLabel(Strategy strategy) {
@@ -37,6 +38,9 @@ final class StrategyRecommendationMarkers {
         }
         if (status.startsWith("SWING_")) {
             return "Swing Vault strategy";
+        }
+        if (status.startsWith("EARNINGS_HUNTER_")) {
+            return "Earnings Hunter strategy";
         }
         return "";
     }

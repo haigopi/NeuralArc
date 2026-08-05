@@ -43,7 +43,7 @@ public record StrategyWorkspaceTemplate(String name, String code, String descrip
                 new StrategyWorkspaceTemplate("Profit Shield", "SHIELD",
                         "Defensive book focused on protecting realized gains.", false),
                 new StrategyWorkspaceTemplate("Earnings Hunter", "EARNINGS",
-                        "Event-driven trades around earnings announcements.", false),
+                        "Scan live earnings-related news plus current market reaction, rank event-driven long setups, and track planned entries in a dedicated Earnings Hunter grid.", true),
                 new StrategyWorkspaceTemplate("Manual Trades", "MANUAL",
                         "A home for discretionary, manually managed trades.", true),
                 new StrategyWorkspaceTemplate("Custom Strategy", CUSTOM_CODE,

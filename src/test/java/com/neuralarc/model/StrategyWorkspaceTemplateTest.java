@@ -34,11 +34,11 @@ class StrategyWorkspaceTemplateTest {
         assertTrue(implemented(catalog, "DIP"));
         assertTrue(implemented(catalog, "VWAP"));
         assertTrue(implemented(catalog, "SWING"));
+        assertTrue(implemented(catalog, "EARNINGS"));
         assertTrue(implemented(catalog, "MANUAL"));
         assertTrue(implemented(catalog, StrategyWorkspaceTemplate.CUSTOM_CODE));
         // Placeholders that are advertised but not yet implemented.
         assertFalse(implemented(catalog, "SHIELD"));
-        assertFalse(implemented(catalog, "EARNINGS"));
     }
 
     private static boolean implemented(List<StrategyWorkspaceTemplate> catalog, String code) {

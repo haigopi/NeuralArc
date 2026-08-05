@@ -22,6 +22,9 @@ import com.neuralarc.orb.OrbPanel;
 import com.neuralarc.diphunter.DipHunterAnalysisDialog;
 import com.neuralarc.diphunter.DipHunterConfig;
 import com.neuralarc.diphunter.DipHunterPanel;
+import com.neuralarc.earningshunter.EarningsHunterAnalysisDialog;
+import com.neuralarc.earningshunter.EarningsHunterConfig;
+import com.neuralarc.earningshunter.EarningsHunterPanel;
 import com.neuralarc.vwap.VwapAnalysisDialog;
 import com.neuralarc.vwap.VwapConfig;
 import com.neuralarc.vwap.VwapPanel;
@@ -386,12 +389,14 @@ public class TradingFrame extends JFrame {
     private static final String DIP_HUNTER_WORKSPACE_CODE = "DIP";
     private static final String VWAP_WORKSPACE_CODE = "VWAP";
     private static final String SWING_WORKSPACE_CODE = "SWING";
+    private static final String EARNINGS_HUNTER_WORKSPACE_CODE = "EARNINGS";
     private static final String STRATEGIES_GRID_CARD = "strategiesGrid";
     private static final String GAP_ROCKET_EMPTY_CARD = "gapRocketEmpty";
     private static final String ORB_EMPTY_CARD = "orbEmpty";
     private static final String DIP_HUNTER_EMPTY_CARD = "dipHunterEmpty";
     private static final String VWAP_EMPTY_CARD = "vwapEmpty";
     private static final String SWING_EMPTY_CARD = "swingEmpty";
+    private static final String EARNINGS_HUNTER_EMPTY_CARD = "earningsHunterEmpty";
     private final JTabbedPane strategyTabs = new JTabbedPane();
     private final JTextField currentStrategiesSearchField = new JTextField(24);
     private final JTextField tradeHistorySearchField = new JTextField(24);
@@ -417,17 +422,20 @@ public class TradingFrame extends JFrame {
     private final JButton swingAnalyzeButton = new JButton(SwingPanel.ANALYZE_BUTTON_TEXT);
     private final JLabel swingScheduleStatusLabel = new JLabel();
     private final JButton swingCancelScheduleButton = new JButton("Cancel Schedule");
+    private final JButton earningsHunterAnalyzeButton = new JButton(EarningsHunterPanel.ANALYZE_BUTTON_TEXT);
     private final ScanHistoryTablePanel gapRocketScanHistoryPanel = new ScanHistoryTablePanel();
     private final ScanHistoryTablePanel orbScanHistoryPanel = new ScanHistoryTablePanel();
     private final ScanHistoryTablePanel dipHunterScanHistoryPanel = new ScanHistoryTablePanel();
     private final ScanHistoryTablePanel vwapScanHistoryPanel = new ScanHistoryTablePanel();
     private final ScanHistoryTablePanel swingScanHistoryPanel = new ScanHistoryTablePanel();
+    private final ScanHistoryTablePanel earningsHunterScanHistoryPanel = new ScanHistoryTablePanel();
     private JPanel headerPanel;
     private final EnumMap<StrategyMode, GapRocketConfig> lastGapRocketConfigs = new EnumMap<>(StrategyMode.class);
     private final EnumMap<StrategyMode, OrbConfig> lastOrbConfigs = new EnumMap<>(StrategyMode.class);
     private final EnumMap<StrategyMode, DipHunterConfig> lastDipHunterConfigs = new EnumMap<>(StrategyMode.class);
     private final EnumMap<StrategyMode, VwapConfig> lastVwapConfigs = new EnumMap<>(StrategyMode.class);
     private final EnumMap<StrategyMode, SwingConfig> lastSwingConfigs = new EnumMap<>(StrategyMode.class);
+    private final EnumMap<StrategyMode, EarningsHunterConfig> lastEarningsHunterConfigs = new EnumMap<>(StrategyMode.class);
     private CardLayout strategiesGridCardLayout;
     private JPanel strategiesGridCardPanel;
     private BottomStatusBars bottomStatusBars;
@@ -451,6 +459,7 @@ public class TradingFrame extends JFrame {
     private final DipHunterCoordinator dipHunterCoordinator;
     private final VwapCoordinator vwapCoordinator;
     private final SwingCoordinator swingCoordinator;
+    private final EarningsHunterCoordinator earningsHunterCoordinator;
     private final AutoRiskAdjustmentService autoRiskAdjustmentService;
     private final WorkspaceService workspaceService;
     // Dynamic strategy-workspace tabs; null workspace = the All Stocks view.
@@ -561,6 +570,8 @@ public class TradingFrame extends JFrame {
                 appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
         swingCoordinator = new SwingCoordinator(new SwingCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
+        earningsHunterCoordinator = new EarningsHunterCoordinator(new EarningsHunterCoordinatorUi(),
+                strategyRepository, scanHistoryRepository, uiPollingExecutor);
         autoRiskAdjustmentService = new AutoRiskAdjustmentService(strategyRepository, marketHoursService,
                 java.time.Clock.systemUTC(), this::latestPriceForAutoAdjust, this::log);
         workspaceService = new WorkspaceService(workspaceRepository, strategyRepository);
@@ -5912,6 +5923,9 @@ public class TradingFrame extends JFrame {
         strategiesGridCardPanel.add(
                 wrapEmptyStateWithScanHistory(new SwingPanel(this::openSwingAnalysisDialog, true),
                         swingScanHistoryPanel), SWING_EMPTY_CARD);
+        strategiesGridCardPanel.add(
+                wrapEmptyStateWithScanHistory(new EarningsHunterPanel(this::openEarningsHunterAnalysisDialog, true),
+                        earningsHunterScanHistoryPanel), EARNINGS_HUNTER_EMPTY_CARD);
         strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
         return strategiesGridCardPanel;
     }
@@ -6009,6 +6023,11 @@ public class TradingFrame extends JFrame {
         swingCancelScheduleButton.setToolTipText(TooltipStyler.text(
                 "Cancel the autonomous Swing Vault schedule for this workspace.", 320));
         swingCancelScheduleButton.addActionListener(event -> swingCoordinator.cancelSchedule());
+        earningsHunterAnalyzeButton.setVisible(false);
+        earningsHunterAnalyzeButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        earningsHunterAnalyzeButton.setFocusPainted(false);
+        earningsHunterAnalyzeButton.setToolTipText(TooltipStyler.text(EarningsHunterPanel.EMPTY_STATE_TEXT, 420));
+        earningsHunterAnalyzeButton.addActionListener(event -> openEarningsHunterAnalysisDialog());
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 2));
         actions.setOpaque(false);
         actions.add(gapRocketScheduleStatusLabel);
@@ -6027,6 +6046,7 @@ public class TradingFrame extends JFrame {
         actions.add(swingScheduleStatusLabel);
         actions.add(swingCancelScheduleButton);
         actions.add(swingAnalyzeButton);
+        actions.add(earningsHunterAnalyzeButton);
         bottom.add(actions, BorderLayout.EAST);
         return bottom;
     }
@@ -6419,17 +6439,20 @@ public class TradingFrame extends JFrame {
         boolean selectedDipHunter = isSelectedDipHunterWorkspace();
         boolean selectedVwap = isSelectedVwapWorkspace();
         boolean selectedSwing = isSelectedSwingWorkspace();
+        boolean selectedEarningsHunter = isSelectedEarningsHunterWorkspace();
         boolean showGapRocketEmptyState = selectedGapRocket && selectedWorkspaceStrategyCount() == 0;
         boolean showOrbEmptyState = selectedOrb && selectedWorkspaceStrategyCount() == 0;
         boolean showDipHunterEmptyState = selectedDipHunter && selectedWorkspaceStrategyCount() == 0;
         boolean showVwapEmptyState = selectedVwap && selectedWorkspaceStrategyCount() == 0;
         boolean showSwingEmptyState = selectedSwing && selectedWorkspaceStrategyCount() == 0;
+        boolean showEarningsHunterEmptyState = selectedEarningsHunter && selectedWorkspaceStrategyCount() == 0;
         gapRocketAnalyzeButton.setVisible(selectedGapRocket && !showGapRocketEmptyState);
         gapRocketPlaceOrdersButton.setVisible(selectedGapRocket && !showGapRocketEmptyState);
         orbAnalyzeButton.setVisible(selectedOrb && !showOrbEmptyState);
         dipHunterAnalyzeButton.setVisible(selectedDipHunter && !showDipHunterEmptyState);
         vwapAnalyzeButton.setVisible(selectedVwap && !showVwapEmptyState);
         swingAnalyzeButton.setVisible(selectedSwing && !showSwingEmptyState);
+        earningsHunterAnalyzeButton.setVisible(selectedEarningsHunter && !showEarningsHunterEmptyState);
         GapAndGoSchedule currentGapSchedule = gapAndGoCoordinator == null ? null : gapAndGoCoordinator.currentSchedule();
         boolean gapScheduled = currentGapSchedule != null && currentGapSchedule.enabled();
         gapRocketScheduleStatusLabel.setVisible(selectedGapRocket && gapScheduled);
@@ -6465,6 +6488,9 @@ public class TradingFrame extends JFrame {
         } else if (showSwingEmptyState) {
             refreshScanHistoryPanel(swingScanHistoryPanel);
             strategiesGridCardLayout.show(strategiesGridCardPanel, SWING_EMPTY_CARD);
+        } else if (showEarningsHunterEmptyState) {
+            refreshScanHistoryPanel(earningsHunterScanHistoryPanel);
+            strategiesGridCardLayout.show(strategiesGridCardPanel, EARNINGS_HUNTER_EMPTY_CARD);
         } else {
             strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
         }
@@ -6528,6 +6554,16 @@ public class TradingFrame extends JFrame {
         return workspaceService.findById(selectedWorkspaceId)
                 .map(StrategyWorkspace::code)
                 .map(SWING_WORKSPACE_CODE::equalsIgnoreCase)
+                .orElse(false);
+    }
+
+    private boolean isSelectedEarningsHunterWorkspace() {
+        if (selectedWorkspaceId == null) {
+            return false;
+        }
+        return workspaceService.findById(selectedWorkspaceId)
+                .map(StrategyWorkspace::code)
+                .map(EARNINGS_HUNTER_WORKSPACE_CODE::equalsIgnoreCase)
                 .orElse(false);
     }
 
@@ -6721,6 +6757,22 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    private void openEarningsHunterAnalysisDialog() {
+        EarningsHunterConfig lastConfig = lastEarningsHunterConfigs.get(selectedViewMode);
+        EarningsHunterAnalysisDialog dialog = new EarningsHunterAnalysisDialog(this, selectedViewMode, lastConfig);
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+        if (!dialog.accepted()) {
+            return;
+        }
+        EarningsHunterConfig selectedModeConfig = dialog.config();
+        lastEarningsHunterConfigs.put(selectedViewMode, selectedModeConfig);
+        switch (dialog.runMode()) {
+            case ANALYZE -> earningsHunterCoordinator.analyze(selectedModeConfig, false);
+            case ANALYZE_AND_EXECUTE -> earningsHunterCoordinator.analyze(selectedModeConfig, true);
+        }
+    }
+
     /** Load any persisted schedules and start the autonomous schedulers. */
     public void startBackgroundSchedulers() {
         gapAndGoCoordinator.start();
@@ -6806,6 +6858,19 @@ public class TradingFrame extends JFrame {
 
     /** Refresh the grid after the coordinator applies Swing Vault recommendations (called on the EDT). */
     private void onSwingRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
+        syncStrategiesFromRepository();
+        refreshStrategyTableData();
+        applyCurrentStrategiesRowFilter();
+        refreshWorkspaceSummary();
+        refreshStrategyWorkspaceEmptyState();
+        updateStatusBar();
+        if (firstAddedStrategyId != null && firstAddedStrategyId.length() > 0
+                && workspaceId.equals(selectedWorkspaceId)) {
+            SwingUtilities.invokeLater(() -> selectAndRevealStrategy(firstAddedStrategyId));
+        }
+    }
+
+    private void onEarningsHunterRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
         syncStrategiesFromRepository();
         refreshStrategyTableData();
         applyCurrentStrategiesRowFilter();
@@ -6968,6 +7033,22 @@ public class TradingFrame extends JFrame {
             onSwingRecommendationsApplied(workspaceId, firstAddedStrategyId);
         }
         @Override public void onScheduleChanged(SwingSchedule schedule) { updateSwingScheduleBadge(schedule); }
+        @Override public java.awt.Component dialogParent() { return TradingFrame.this; }
+    }
+
+    private final class EarningsHunterCoordinatorUi implements EarningsHunterCoordinator.Ui {
+        @Override public String runtimeApiKey() { return runtimeApiKey; }
+        @Override public String runtimeApiSecret() { return runtimeApiSecret; }
+        @Override public boolean connectionOk() { return connectionOk; }
+        @Override public String selectedModeLabel() { return TradingFrame.this.selectedModeLabel(); }
+        @Override public int defaultStrategyPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
+        @Override public String selectedWorkspaceId() { return selectedWorkspaceId; }
+        @Override public boolean isEarningsHunterWorkspaceSelected() { return isSelectedEarningsHunterWorkspace(); }
+        @Override public void log(String message) { TradingFrame.this.log(message); }
+        @Override public void setScanButtonsEnabled(boolean enabled) { earningsHunterAnalyzeButton.setEnabled(enabled); }
+        @Override public void onRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
+            onEarningsHunterRecommendationsApplied(workspaceId, firstAddedStrategyId);
+        }
         @Override public java.awt.Component dialogParent() { return TradingFrame.this; }
     }
 
