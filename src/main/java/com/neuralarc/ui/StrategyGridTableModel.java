@@ -54,7 +54,12 @@ final class StrategyGridTableModel extends AbstractTableModel {
             return new Position("");
         }
         if (GapRocketDisplaySupport.suppressBrokerPosition(entry.strategy)) {
-            return new Position(entry.strategy.symbol());
+            Position scannerPosition = new Position(entry.strategy.symbol());
+            Position cached = entry.cachedPosition();
+            if (cached != null && cached.getLastPrice().compareTo(java.math.BigDecimal.ZERO) > 0) {
+                scannerPosition.setLastPrice(cached.getLastPrice());
+            }
+            return scannerPosition;
         }
         return entry.cachedPosition();
     }

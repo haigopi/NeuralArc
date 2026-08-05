@@ -144,12 +144,19 @@ final class PortfolioRefreshController {
             gateway.refreshStrategyTableContent();
             gateway.refreshPanels();
             gateway.updateStatusBar();
-            actionLog.completed(REFRESH_ACTION_NAME, "Refreshed "
-                    + snapshots.size()
-                    + " strategy position snapshot(s) from Alpaca.");
+            actionLog.completed(REFRESH_ACTION_NAME, refreshSuccessMessage(stored, snapshots));
         } finally {
             finishRefresh();
         }
+    }
+
+    private String refreshSuccessMessage(List<Strategy> stored, Map<String, Position> snapshots) {
+        long eligibleStoredCount = stored == null ? 0L : stored.stream().filter(this::includeInRefresh).count();
+        return "Refreshed " + snapshots.size()
+                + " position snapshot(s) for " + eligibleStoredCount
+                + " current/recoverable strategy row(s) across all workspaces and modes. "
+                + "The visible All Stocks grid may show fewer current rows because it is filtered by selected mode, "
+                + "workspace scope, and current/history visibility.";
     }
 
     private void applyFailedRefresh(int generation, boolean manualTrigger, Exception ex) {
@@ -176,6 +183,9 @@ final class PortfolioRefreshController {
             if (generation != refreshGeneration.get()) {
                 return;
             }
+            if (!refreshInFlight.get()) {
+                return;
+            }
             if (attempt < MAX_STUCK_REFRESH_RETRIES) {
                 scheduleRefreshRetry(generation, manualTrigger, attempt + 1);
                 return;
@@ -198,6 +208,9 @@ final class PortfolioRefreshController {
     }
 
     private void scheduleRefreshRetry(int generation, boolean manualTrigger, int nextAttempt) {
+        if (!refreshInFlight.get()) {
+            return;
+        }
         actionLog.failed(REFRESH_ACTION_NAME, "Refresh attempt " + nextAttempt
                 + " of " + (MAX_STUCK_REFRESH_RETRIES + 1)
                 + " timed out while waiting for Alpaca portfolio data. Retrying automatically.");
@@ -219,9 +232,16 @@ final class PortfolioRefreshController {
     }
 
     private boolean includeInRefresh(Strategy strategy) {
-        return strategy != null
-                && strategy.status() != StrategyStatus.ARCHIVED
-                && strategy.status() != StrategyStatus.STOPPED;
+        if (strategy == null) {
+            return false;
+        }
+        if (strategy.status() == StrategyStatus.ACTIVE
+                || strategy.status() == StrategyStatus.PAUSED
+                || strategy.status() == StrategyStatus.FAILED) {
+            return true;
+        }
+        return strategy.status() == StrategyStatus.CREATED
+                && StrategyRecommendationMarkers.isScannerRecommendationRow(strategy);
     }
 
     private List<Strategy> findInvalidBrokerMissingStrategies(List<Strategy> stored) {

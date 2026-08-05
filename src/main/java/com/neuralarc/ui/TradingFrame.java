@@ -5818,16 +5818,16 @@ public class TradingFrame extends JFrame {
 
     private void configureFilledOrdersColumnWidths() {
         setTableColumnWidth(0, 70, 52, 90);
-        setTableColumnWidth(1, 88, 68, 110);
-        setTableColumnWidth(2, 96, 76, 120);
-        setFlexibleTableColumnWidth(3, 260, 180, Integer.MAX_VALUE);
-        setTableColumnWidth(4, 48, 40, 58);
-        setTableColumnWidth(5, 88, 70, 112);
-        setTableColumnWidth(6, 44, 34, 54);
+        setTableColumnWidth(1, 108, 78, 150);
+        setTableColumnWidth(2, 190, 130, 280);
+        setTableColumnWidth(3, 360, 220, 560);
+        setTableColumnWidth(4, 64, 52, 78);
+        setTableColumnWidth(5, 98, 78, 130);
+        setTableColumnWidth(6, 50, 38, 62);
         setTableColumnWidth(7, 64, 52, 76);
         setTableColumnWidth(8, 64, 52, 76);
-        setFlexibleTableColumnWidth(9, 240, 170, Integer.MAX_VALUE);
-        setTableColumnWidth(10, 200, 170, 240);
+        setTableColumnWidth(9, 110, 82, 150);
+        setTableColumnWidth(10, 280, 220, 380);
     }
 
     private void setTableColumnWidth(int columnIndex, int preferredWidth, int minWidth, int maxWidth) {

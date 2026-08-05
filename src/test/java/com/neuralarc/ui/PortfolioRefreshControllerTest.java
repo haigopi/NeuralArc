@@ -75,6 +75,29 @@ class PortfolioRefreshControllerTest {
         assertEquals(StrategyOrderStatus.CANCELED, orders.findByAlpacaOrderId("ord-expired").orElseThrow().status());
     }
 
+    @Test
+    void refreshLogClarifiesStoredRowsAreNotVisibleGridRows() throws Exception {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        strategies.save(activePendingStrategy());
+        Strategy completed = activePendingStrategy();
+        completed.setSymbol("MSFT");
+        completed.setStatus(StrategyStatus.COMPLETED);
+        completed.setCurrentState(StrategyLifecycleState.COMPLETED);
+        strategies.save(completed);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        FakeGateway gateway = new FakeGateway(new FakeAlpacaClient());
+        PortfolioRefreshController controller = new PortfolioRefreshController(strategies, orders, executor, gateway);
+
+        controller.refresh(true);
+
+        assertTrue(gateway.finished.await(5, TimeUnit.SECONDS));
+        executor.shutdownNow();
+        assertTrue(gateway.logs.stream().anyMatch(log -> log.contains("current/recoverable strategy row(s)")
+                && log.contains("visible All Stocks grid may show fewer current rows")));
+        assertEquals(List.of("AAPL"), gateway.client.lastLatestPriceSymbols);
+    }
+
     private Strategy activePendingStrategy() {
         return new Strategy(
                 UUID.randomUUID().toString(),
@@ -140,6 +163,7 @@ class PortfolioRefreshControllerTest {
     private static final class FakeGateway implements PortfolioRefreshController.Gateway {
         private final FakeAlpacaClient client;
         private final CountDownLatch finished = new CountDownLatch(1);
+        private final List<String> logs = new ArrayList<>();
 
         private FakeGateway(FakeAlpacaClient client) {
             this.client = client;
@@ -156,13 +180,14 @@ class PortfolioRefreshControllerTest {
         @Override public void refreshStrategyTableContent() { }
         @Override public void refreshPanels() { }
         @Override public void updateStatusBar() { }
-        @Override public void log(String message) { }
+        @Override public void log(String message) { logs.add(message); }
         @Override public void showConnectionRequired() { }
         @Override public void showRefreshFailed(String message) { }
     }
 
     private static final class FakeAlpacaClient extends HttpAlpacaClient {
         private final Map<String, AlpacaOrderData> ordersById = new LinkedHashMap<>();
+        private List<String> lastLatestPriceSymbols = List.of();
 
         private FakeAlpacaClient() {
             super("", "", "https://paper-api.alpaca.markets", "https://data.alpaca.markets");
@@ -171,7 +196,10 @@ class PortfolioRefreshControllerTest {
         @Override public List<AlpacaOrderData> getOpenOrders() { return List.of(); }
         @Override public Optional<AlpacaOrderData> getOrder(String orderId) { return Optional.ofNullable(ordersById.get(orderId)); }
         @Override public List<AlpacaPositionData> getPositions() { return List.of(); }
-        @Override public Map<String, BigDecimal> getLatestPrices(List<String> symbols) { return Map.of(); }
+        @Override public Map<String, BigDecimal> getLatestPrices(List<String> symbols) {
+            lastLatestPriceSymbols = symbols == null ? List.of() : List.copyOf(symbols);
+            return Map.of();
+        }
     }
 
     private static final class InMemoryStrategyRepository implements StrategyRepository {
