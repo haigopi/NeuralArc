@@ -1505,6 +1505,7 @@ public class TradingFrame extends JFrame {
         });
         strategySorter.setSortable(StrategyGridLayoutPresenter.POLLING_COLUMN_INDEX, false); // Polling countdown bar column — not sortable
         strategySorter.setSortable(StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX, false); // Actions button column — not sortable
+        strategySorter.setSortKeys(List.of(new RowSorter.SortKey(5, SortOrder.DESCENDING)));
         applyCurrentStrategiesRowFilter();
         strategyTable.setRowSorter(strategySorter);
         strategyTable.getTableHeader().addMouseListener(new MouseAdapter() {
