@@ -79,5 +79,30 @@ class PollingCellPresenterTest {
         assertEquals("Polling...", viewModel.labelText());
         assertTrue(viewModel.progress() >= 8 && viewModel.progress() <= 92);
     }
-}
 
+    @Test
+    void overduePollingAnimatesInsteadOfFreezingAtFullBar() {
+        PollingCellPresenter.PollingCellState state = new PollingCellPresenter.PollingCellState(
+                StrategyStatus.ACTIVE,
+                false,
+                false,
+                "",
+                "",
+                false,
+                false,
+                60_000L,
+                1_000L,
+                60L,
+                false
+        );
+
+        PollingCellPresenter.PollingCellViewModel first = presenter.present(state, palette, 2_400L);
+        PollingCellPresenter.PollingCellViewModel second = presenter.present(state, palette, 3_600L);
+
+        assertEquals("Poll due...", first.labelText());
+        assertTrue(first.tooltip().contains("waiting for the polling worker"));
+        assertTrue(first.progress() >= 8 && first.progress() <= 92);
+        assertTrue(second.progress() >= 8 && second.progress() <= 92);
+        assertFalse(first.progress() == second.progress());
+    }
+}

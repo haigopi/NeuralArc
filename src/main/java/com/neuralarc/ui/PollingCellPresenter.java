@@ -37,7 +37,11 @@ public final class PollingCellPresenter {
 
     public PollingCellViewModel present(PollingCellState state, PollingCellPalette palette, long nowMillis) {
         boolean showPollingIndicator = shouldShowPollingIndicator(state.strategyStatus(), state.waitingForFill());
-        int progress = state.pollInFlight()
+        boolean pollDue = showPollingIndicator
+                && state.nextPollDueAtMillis() > 0L
+                && nowMillis >= state.nextPollDueAtMillis();
+        boolean animatePoll = state.pollInFlight() || pollDue;
+        int progress = animatePoll
                 ? animatedPollingProgressPercent(nowMillis)
                 : pollingProgressPercent(showPollingIndicator, state.pollIntervalMillis(), state.nextPollDueAtMillis(), nowMillis);
         long secondsRemaining = pollingSecondsRemaining(showPollingIndicator, state.pollIntervalMillis(), state.nextPollDueAtMillis(), nowMillis);
@@ -47,7 +51,7 @@ public final class PollingCellPresenter {
         Color trackBackground = state.selected()
                 ? new Color(palette.selectionTrackBackground().getRed(), palette.selectionTrackBackground().getGreen(), palette.selectionTrackBackground().getBlue(), 60)
                 : palette.normalTrackBackground();
-        Color progressForeground = state.pollInFlight()
+        Color progressForeground = animatePoll
                 ? palette.inFlightForeground()
                 : !showPollingIndicator && state.paused()
                 ? palette.pausedForeground()
@@ -59,6 +63,8 @@ public final class PollingCellPresenter {
                 ? "Polling..."
                 : state.closedMarketPaused()
                 ? "Market Closed"
+                : pollDue
+                ? "Poll due..."
                 : state.strategyStatus() == StrategyStatus.FAILED
                 ? "Position Closed"
                 : state.strategyStatus() == StrategyStatus.COMPLETED
@@ -77,6 +83,8 @@ public final class PollingCellPresenter {
                 ? "Polling broker data now. Countdown resumes after the current request/response cycle completes."
                 : state.closedMarketPaused()
                 ? "Polling is paused because the market is closed. Alpaca refresh calls are suppressed until the next trading session opens."
+                : pollDue
+                ? "This strategy is due to poll and is waiting for the polling worker to start."
                 : showPollingIndicator
                 ? secondsRemaining + " seconds remaining out of " + totalSeconds + " seconds"
                 : state.paused()
@@ -146,4 +154,3 @@ public final class PollingCellPresenter {
     ) {
     }
 }
-
