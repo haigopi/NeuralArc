@@ -13,6 +13,8 @@ import com.neuralarc.util.BrokerOrderStatusUtil;
 import com.neuralarc.util.Monetary;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class StrategyTablePresenter {
     public String formatLifecycleStateForDisplay(StrategyLifecycleState state) {
@@ -271,10 +273,43 @@ public final class StrategyTablePresenter {
     private String expiredStatusLabel(Strategy strategy) {
         String waitingRule = expiredWaitingRuleLabel(strategy);
         String autoExtension = expiredAutoExtensionLabel(strategy);
+        String rulesSuffix = rulesSetSuffix(strategy);
         if (waitingRule.isBlank()) {
-            return "Expired - " + autoExtension;
+            return "Expired for @" + priceExample(strategy.baseBuyLimitPrice()) + " - " + autoExtension + rulesSuffix;
         }
-        return "Expired (" + waitingRule + " - waiting to fill) - " + autoExtension;
+        return "Expired (" + waitingRule + " - waiting to fill) - " + autoExtension + rulesSuffix;
+    }
+
+    private String rulesSetSuffix(Strategy strategy) {
+        String summary = configuredRulesSummary(strategy);
+        return summary.isBlank() ? "" : " | Rules: " + summary;
+    }
+
+    /** Every rule configured on the strategy, for display alongside a terminal/expired status where the pending order alone doesn't explain the full setup. */
+    private String configuredRulesSummary(Strategy strategy) {
+        List<String> parts = new ArrayList<>();
+        if (strategy.baseBuyQuantity() > 0 && strategy.baseBuyLimitPrice().compareTo(BigDecimal.ZERO) > 0) {
+            parts.add("Base Buy " + strategy.baseBuyQuantity() + " @ $" + strategy.baseBuyLimitPrice().toPlainString());
+        }
+        if (hasConfiguredBuyLimit1(strategy)) {
+            parts.add("Buy Limit 1 " + strategy.buyLimit1Quantity() + " @ $" + strategy.buyLimit1Price().toPlainString());
+        }
+        if (hasConfiguredBuyLimit2(strategy)) {
+            parts.add("Buy Limit 2 " + strategy.buyLimit2Quantity() + " @ $" + strategy.buyLimit2Price().toPlainString());
+        }
+        if (strategy.automatedStopLossEnabled()) {
+            parts.add("Stop Loss" + stopLossDescription(strategy));
+        }
+        if (strategy.targetSellEnabled()) {
+            parts.add("Target Sell" + priceDescription(" @ $", strategy.targetSellPrice()));
+        }
+        if (strategy.profitHoldEnabled()) {
+            parts.add("Profit Hold" + profitHoldDescription(strategy));
+        }
+        if (strategy.profitControlMode() == ProfitControlMode.AUTOMATIC_STOP_SELL) {
+            parts.add("Automatic Stop Sell" + automaticStopSellThresholdDescription(strategy));
+        }
+        return String.join("; ", parts);
     }
 
     private String expiredAutoExtensionLabel(Strategy strategy) {
@@ -493,10 +528,24 @@ public final class StrategyTablePresenter {
     }
 
     private String profitHoldDescription(Strategy strategy) {
-        if (strategy.profitHoldType() == ProfitHoldType.FIXED_AMOUNT_TRAILING) {
-            return amountDescription(" by $", strategy.profitHoldAmount());
+        String base = strategy.profitHoldType() == ProfitHoldType.FIXED_AMOUNT_TRAILING
+                ? amountDescription(" by $", strategy.profitHoldAmount())
+                : amountDescription(" by ", strategy.profitHoldPercent(), "%");
+        if (base.isBlank()) {
+            return base;
         }
-        return amountDescription(" by ", strategy.profitHoldPercent(), "%");
+        return base + profitActivationThresholdSuffix(strategy);
+    }
+
+    private String profitActivationThresholdSuffix(Strategy strategy) {
+        BigDecimal threshold = strategy.automaticStopSellThreshold();
+        if (threshold == null || threshold.compareTo(BigDecimal.ZERO) <= 0) {
+            return "";
+        }
+        String formatted = strategy.automaticStopSellThresholdType() == ThresholdType.PERCENTAGE
+                ? threshold.toPlainString() + "%"
+                : "$" + threshold.toPlainString();
+        return "/" + formatted;
     }
 
     private String currentPriceDescription(Position position) {
@@ -651,6 +700,9 @@ public final class StrategyTablePresenter {
         }
         if (name.contains("gap_rocket")) {
             return "Gap and go strategy";
+        }
+        if (name.contains("earnings_hunter")) {
+            return "Earnings Hunter strategy";
         }
         if (isSmartPicksSource(combined)) {
             return smartPicksEntrySource(combined);

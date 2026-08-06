@@ -1,6 +1,7 @@
 package com.neuralarc.service;
 
 import com.neuralarc.api.AlpacaClient;
+import com.neuralarc.api.AlpacaPositionData;
 import com.neuralarc.api.AlpacaTradeUpdateEvent;
 import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.Strategy;
@@ -48,9 +49,13 @@ public class StrategyPollingService {
     private final StrategyMode strategyMode;
     private final TradingSessionPolicy tradingSessionPolicy;
     private final ExecutorService pollExecutor;
+    private final PositionValidationBatchCoordinator batchCoordinator;
+    private final PositionValidationAttemptTracker attemptTracker = new PositionValidationAttemptTracker();
+    private final AdaptivePollingPacer adaptivePollingPacer = new AdaptivePollingPacer();
     private final Set<String> inFlightStrategyIds = ConcurrentHashMap.newKeySet();
     private volatile Instant lastStreamingEventAt;
     private volatile Boolean lastTradingSessionOpen;
+    private volatile AppSettingsService.AppSettings lastLoadedSettings;
     private volatile PollListener pollListener = PollListener.NOOP;
     private volatile PollCycleSnapshot lastPollCycleSnapshot = new PollCycleSnapshot(false, false, 0, 0, 0, 0);
     private final Set<String> pendingMarketClosedAutoRepairedStrategyIds = Collections.synchronizedSet(new LinkedHashSet<>());
@@ -130,6 +135,7 @@ public class StrategyPollingService {
         this.marketHoursService = marketHoursService;
         this.alpacaClient = alpacaClient;
         this.strategyMode = strategyMode;
+        this.batchCoordinator = new PositionValidationBatchCoordinator(alpacaClient);
         this.tradingSessionPolicy = new TradingSessionPolicy(marketHoursService, alpacaClient);
         StrategyEventBus eventBus = new StrategyEventBus();
         StrategyStateMachine stateMachine = new StrategyStateMachine(eventRepository, eventBus);
@@ -164,6 +170,7 @@ public class StrategyPollingService {
     public int pollDueStrategies() {
         Instant now = Instant.now();
         AppSettingsService.AppSettings settings = appSettingsService.load();
+        this.lastLoadedSettings = settings;
         boolean autoPauseForMarketClose = settings.autoPausePollingWhenMarketClosed();
         int totalStrategies = 0;
         int eligibleStrategies = 0;
@@ -226,10 +233,46 @@ public class StrategyPollingService {
             }
         }
 
+        // Pull forward strategies that aren't due yet but are within the 5s catch-up window of a
+        // same-bucket strategy that IS due this cycle, so they join the same batch instead of
+        // triggering a separate broker round-trip a few seconds later. Never overrides a
+        // strategy's own pollingIntervalSeconds — only ever fires it up to 5s early.
+        if (!due.isEmpty() && !eligible.isEmpty()) {
+            Set<String> dueIds = new LinkedHashSet<>();
+            Set<Long> dueBuckets = new LinkedHashSet<>();
+            for (Strategy s : due) {
+                dueIds.add(s.id());
+                dueBuckets.add(PollingBatchScheduler.nearestBucketSeconds(s.pollingIntervalSeconds()));
+            }
+            Map<String, Long> notYetDueNaturalDueAt = new LinkedHashMap<>();
+            Map<String, Long> notYetDueBuckets = new LinkedHashMap<>();
+            Map<String, Strategy> notYetDueById = new LinkedHashMap<>();
+            for (Strategy s : eligible) {
+                if (dueIds.contains(s.id()) || s.lastPolledAt() == null) {
+                    continue;
+                }
+                long naturalDueAtMillis = s.lastPolledAt().toEpochMilli()
+                        + effectivePollingIntervalSeconds(s, now) * 1000L;
+                notYetDueNaturalDueAt.put(s.id(), naturalDueAtMillis);
+                notYetDueBuckets.put(s.id(), PollingBatchScheduler.nearestBucketSeconds(s.pollingIntervalSeconds()));
+                notYetDueById.put(s.id(), s);
+            }
+            Set<String> pulledForwardIds = PollingBatchScheduler.pullForwardCandidateStrategyIds(
+                    dueBuckets, notYetDueNaturalDueAt, notYetDueBuckets, now.toEpochMilli());
+            for (String pulledId : pulledForwardIds) {
+                Strategy pulled = notYetDueById.get(pulledId);
+                if (pulled != null) {
+                    due.add(pulled);
+                    skippedNotDue--;
+                }
+            }
+        }
+
         // Batch-fetch latest prices for ALL eligible strategy symbols in one API call
         // whenever at least one strategy is due to poll.  This replaces per-strategy
         // getLatestPrice() calls inside reconcile() and reduces total broker API usage.
         Map<String, BigDecimal> priceCache = Map.of();
+        BrokerSnapshotBatch snapshotBatch = null;
         if (!due.isEmpty()) {
             List<String> symbols = new ArrayList<>();
             for (Strategy s : eligible) {
@@ -250,13 +293,19 @@ public class StrategyPollingService {
                     LOGGER.log(Level.WARNING, "[POLL][PRICE_CACHE] Batch price fetch failed, will fall back to per-symbol calls", ex);
                 }
             }
+            snapshotBatch = batchCoordinator.fetchSnapshotBatchOrNull();
+            attemptTracker.recordCycleBatchResult(snapshotBatch != null);
+            final int dueCountForLog = due.size();
+            LOGGER.info(() -> "[POLL][BATCH] one combined position+order snapshot fetch covers " + dueCountForLog
+                    + " due strategies this cycle (previously " + dueCountForLog + " individual getPosition/getOpenOrders calls)");
         }
 
         int dueStrategies = 0;
         final Map<String, BigDecimal> finalPriceCache = priceCache;
+        final BrokerSnapshotBatch finalSnapshotBatch = snapshotBatch;
         for (Strategy strategy : due) {
             String strategyId = strategy.id();
-            if (submitPollTask(strategyId, finalPriceCache)) {
+            if (submitPollTask(strategyId, finalPriceCache, finalSnapshotBatch)) {
                 dueStrategies++;
             }
         }
@@ -316,7 +365,32 @@ public class StrategyPollingService {
 
     /** Legacy single-strategy poll (no price cache). Used in tests and manual triggers. */
     public void pollStrategy(String strategyId) {
-        runPollIfNotInFlight(strategyId, Map.of());
+        runPollIfNotInFlight(strategyId, Map.of(), null);
+    }
+
+    /**
+     * Forces an immediate out-of-band poll for one strategy, bypassing the due-time gate, and
+     * clears the shared validation-attempt tracker — the "Refresh Now" affordance shown when
+     * polling is in the Warning-Paused state.
+     */
+    public void pollStrategyNow(String strategyId) {
+        attemptTracker.resetOnManualRefresh();
+        runPollIfNotInFlight(strategyId, Map.of(), null);
+    }
+
+    /** True once the shared batch snapshot fetch has failed at least once in a row this session. */
+    public boolean isValidationWarningPaused() {
+        return attemptTracker.isWarningPaused();
+    }
+
+    public int activeValidationAttempt() {
+        return attemptTracker.activeAttempt();
+    }
+
+    /** 0 means unlimited/disabled — matches {@code AppSettings.maxValidationAttemptsBeforePause()}. */
+    public int maxValidationAttemptsBeforePause() {
+        AppSettingsService.AppSettings settings = lastLoadedSettings;
+        return settings == null ? 0 : settings.maxValidationAttemptsBeforePause();
     }
 
     /**
@@ -333,7 +407,7 @@ public class StrategyPollingService {
             if (strategyId == null || strategyId.isBlank() || !seen.add(strategyId)) {
                 continue;
             }
-            if (submitPollTask(strategyId, Map.of())) {
+            if (submitPollTask(strategyId, Map.of(), null)) {
                 submitted++;
             }
         }
@@ -342,16 +416,16 @@ public class StrategyPollingService {
 
     /** Poll a single strategy using the pre-fetched price cache from the current cycle. */
     void pollStrategy(String strategyId, Map<String, BigDecimal> priceCache) {
-        runPollIfNotInFlight(strategyId, priceCache);
+        runPollIfNotInFlight(strategyId, priceCache, null);
     }
 
-    private boolean submitPollTask(String strategyId, Map<String, BigDecimal> priceCache) {
+    private boolean submitPollTask(String strategyId, Map<String, BigDecimal> priceCache, BrokerSnapshotBatch snapshotBatch) {
         if (!markStrategyInFlight(strategyId)) {
             LOGGER.fine(() -> "[POLL][SCHEDULER][" + strategyId + "] Skipping dispatch because a poll is already in flight");
             return false;
         }
         try {
-            pollExecutor.submit(() -> executePoll(strategyId, priceCache));
+            pollExecutor.submit(() -> executePoll(strategyId, priceCache, snapshotBatch));
             return true;
         } catch (RuntimeException ex) {
             inFlightStrategyIds.remove(strategyId);
@@ -359,12 +433,12 @@ public class StrategyPollingService {
         }
     }
 
-    private void runPollIfNotInFlight(String strategyId, Map<String, BigDecimal> priceCache) {
+    private void runPollIfNotInFlight(String strategyId, Map<String, BigDecimal> priceCache, BrokerSnapshotBatch snapshotBatch) {
         if (!markStrategyInFlight(strategyId)) {
             LOGGER.fine(() -> "[POLL][SCHEDULER][" + strategyId + "] Ignoring poll request because a poll is already in flight");
             return;
         }
-        executePoll(strategyId, priceCache);
+        executePoll(strategyId, priceCache, snapshotBatch);
     }
 
     private boolean markStrategyInFlight(String strategyId) {
@@ -394,7 +468,7 @@ public class StrategyPollingService {
         String strategyId = strategy.id();
         try {
             pollListener.onPollStarted(strategyId);
-            strategyEngine.refreshOrderStatuses(strategy);
+            strategyEngine.refreshOrderStatuses(strategy, null);
             strategyRepository.findById(strategyId).ifPresent(updated -> {
                 if (isExpiryResubmitEligible(updated) && strategyEngine.canAutoResubmitExpiredEntryOrder(updated)) {
                     LOGGER.info(() -> "[POLL][MARKET_CLOSED_EXPIRY_RESUBMIT][" + updated.symbol()
@@ -432,10 +506,10 @@ public class StrategyPollingService {
                 && shouldPoll(strategy, now);
     }
 
-    private void executePoll(String strategyId, Map<String, BigDecimal> priceCache) {
+    private void executePoll(String strategyId, Map<String, BigDecimal> priceCache, BrokerSnapshotBatch snapshotBatch) {
         try {
             pollListener.onPollStarted(strategyId);
-            PollExecutionResult result = doPollStrategy(strategyId, priceCache);
+            PollExecutionResult result = doPollStrategy(strategyId, priceCache, snapshotBatch);
             if (result == PollExecutionResult.FAILED) {
                 pollListener.onPollFailed(strategyId);
             } else {
@@ -450,7 +524,7 @@ public class StrategyPollingService {
         }
     }
 
-    private PollExecutionResult doPollStrategy(String strategyId, Map<String, BigDecimal> priceCache) {
+    private PollExecutionResult doPollStrategy(String strategyId, Map<String, BigDecimal> priceCache, BrokerSnapshotBatch snapshotBatch) {
         Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
         if (maybeStrategy.isEmpty()) {
             return PollExecutionResult.COMPLETED;
@@ -477,14 +551,23 @@ public class StrategyPollingService {
         if (strategy.status() != StrategyStatus.ACTIVE) {
             return PollExecutionResult.COMPLETED;
         }
+        AppSettingsService.AppSettings settings = lastLoadedSettings;
+        if (settings != null && settings.maxValidationAttemptsBeforePause() > 0
+                && attemptTracker.activeAttempt() > settings.maxValidationAttemptsBeforePause()) {
+            String symbol = strategy.symbol();
+            LOGGER.fine(() -> "[POLL][MAX_ATTEMPTS][" + symbol + "] Skipping reconcile; validation paused after "
+                    + settings.maxValidationAttemptsBeforePause() + " consecutive failed batch fetches. Use Refresh Now to resume.");
+            return PollExecutionResult.COMPLETED;
+        }
 
         try {
-            List<StrategyEngine.RuleOutcome> outcomes = strategyEngine.reconcileTracked(strategy, priceCache);
+            List<StrategyEngine.RuleOutcome> outcomes = strategyEngine.reconcileTracked(strategy, priceCache, snapshotBatch);
             eventRepository.save(event(strategy.id(), StrategyEventType.POLL_SUCCESS,
                     "Poll completed", "{\"strategyId\":\"" + strategy.id() + "\"}"));
             if (!outcomes.isEmpty()) {
                 pollListener.onRulesAnalyzed(strategy.id(), strategy.symbol(), outcomes);
             }
+            recordAdaptivePacingObservation(strategy, priceCache, snapshotBatch);
             return PollExecutionResult.COMPLETED;
         } catch (Exception ex) {
             strategy.setStatus(StrategyStatus.PAUSED);
@@ -497,6 +580,26 @@ public class StrategyPollingService {
             LOGGER.log(Level.WARNING, "Polling failed for strategy " + strategy.id(), ex);
             return PollExecutionResult.FAILED;
         }
+    }
+
+    /**
+     * Feeds this cycle's observed price/position into the adaptive pacer, unless an order is
+     * still pending (an in-flight order always polls at full speed regardless of pacing).
+     */
+    private void recordAdaptivePacingObservation(Strategy strategy, Map<String, BigDecimal> priceCache, BrokerSnapshotBatch snapshotBatch) {
+        if (isPendingBuyOrderState(strategy) || isPendingSellOrderState(strategy)) {
+            adaptivePollingPacer.reset(strategy.id());
+            return;
+        }
+        String symbolKey = strategy.symbol() == null ? "" : strategy.symbol().trim().toUpperCase(Locale.ROOT);
+        BigDecimal price = priceCache.get(symbolKey);
+        AlpacaPositionData position = snapshotBatch == null ? null : snapshotBatch.positionsBySymbol().get(symbolKey);
+        adaptivePollingPacer.recordObservation(
+                strategy.id(),
+                price,
+                position == null ? null : position.quantity(),
+                position == null ? null : position.avgEntryPrice()
+        );
     }
 
     public void setPollListener(PollListener pollListener) {
@@ -515,6 +618,7 @@ public class StrategyPollingService {
 
     public void shutdown() {
         pollExecutor.shutdownNow();
+        batchCoordinator.shutdown();
     }
 
     public Optional<String> onTradeUpdate(AlpacaTradeUpdateEvent updateEvent) {
@@ -553,11 +657,29 @@ public class StrategyPollingService {
             return true;
         }
         long elapsedSeconds = Duration.between(strategy.lastPolledAt(), now).getSeconds();
+        long pollInterval = effectivePollingIntervalSeconds(strategy, now);
+        return elapsedSeconds >= pollInterval;
+    }
+
+    public long effectivePollingIntervalSeconds(Strategy strategy) {
+        return effectivePollingIntervalSeconds(strategy, Instant.now());
+    }
+
+    long effectivePollingIntervalSeconds(Strategy strategy, Instant now) {
+        if (strategy == null) {
+            return 1L;
+        }
         long pollInterval = Math.max(1, strategy.pollingIntervalSeconds());
         if (isStreamHealthy(now) && !isPendingSellOrderState(strategy)) {
             pollInterval = pollInterval * STREAM_POLL_BACKOFF_MULTIPLIER;
         }
-        return elapsedSeconds >= pollInterval;
+        AppSettingsService.AppSettings settings = lastLoadedSettings;
+        if (settings != null && settings.adaptivePacingEnabled()
+                && !isPendingBuyOrderState(strategy) && !isPendingSellOrderState(strategy)) {
+            long multiplier = adaptivePollingPacer.pacingMultiplier(strategy.id(), settings.adaptivePacingMaxMultiplier());
+            pollInterval = pollInterval * Math.max(1L, multiplier);
+        }
+        return pollInterval;
     }
 
     private boolean shouldRetryExpiredResubmit(Strategy strategy, Instant now) {
@@ -699,7 +821,7 @@ public class StrategyPollingService {
             if (!strategyEngine.canAutoResubmitExpiredEntryOrder(strategy)) {
                 continue;
             }
-            if (submitPollTask(strategy.id(), Map.of())) {
+            if (submitPollTask(strategy.id(), Map.of(), null)) {
                 submitted++;
             }
         }

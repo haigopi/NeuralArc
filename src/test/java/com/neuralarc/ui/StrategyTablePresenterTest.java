@@ -253,7 +253,12 @@ class StrategyTablePresenterTest {
 
         String label = presenter.displayStatusLabel(strategy, false, false, false);
 
-        assertEquals("Expired - no auto extension set; manual reposition required", label);
+        assertEquals(
+                "Expired for @$100.00 - no auto extension set; manual reposition required"
+                        + " | Rules: Base Buy 10 @ $100.00; Buy Limit 1 5 @ $95.00; Buy Limit 2 5 @ $90.00;"
+                        + " Stop Loss @ $85.00; Target Sell @ $120.00",
+                label
+        );
     }
 
     @Test
@@ -271,7 +276,9 @@ class StrategyTablePresenterTest {
                 "Expired (Limit Base Buy Placed - waiting to fill) - auto extension enabled; "
                         + "after polling or closed-market refresh detects expiry, a guarded base limit buy can be reposted. "
                         + "Example: base $100.00 is kept when quote/previous close/yesterday low are above it; "
-                        + "weak indicators reduce it by 2.00% and it is never increased automatically",
+                        + "weak indicators reduce it by 2.00% and it is never increased automatically"
+                        + " | Rules: Base Buy 10 @ $100.00; Buy Limit 1 5 @ $95.00; Buy Limit 2 5 @ $90.00;"
+                        + " Stop Loss @ $85.00; Target Sell @ $120.00",
                 label
         );
     }
@@ -286,7 +293,9 @@ class StrategyTablePresenterTest {
         String label = presenter.displayStatusLabel(strategy, false, false, false);
 
         assertEquals(
-                "Expired (Limit Buy 1 Placed - waiting to fill) - no auto extension set; manual reposition required",
+                "Expired (Limit Buy 1 Placed - waiting to fill) - no auto extension set; manual reposition required"
+                        + " | Rules: Base Buy 10 @ $100.00; Buy Limit 1 5 @ $95.00; Buy Limit 2 5 @ $90.00;"
+                        + " Stop Loss @ $85.00; Target Sell @ $120.00",
                 label
         );
     }

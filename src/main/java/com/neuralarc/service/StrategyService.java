@@ -311,7 +311,7 @@ public class StrategyService {
         }
         strategyRepository.findById(strategyId).ifPresent(strategy -> {
             if (serviceModeMatches(strategy)) {
-                strategyEngine.refreshOrderStatuses(strategy);
+                strategyEngine.refreshOrderStatuses(strategy, null);
             }
         });
     }

@@ -52,7 +52,11 @@ class AppSettingsServiceTest {
                 true,
                 75,
                 false,
-                false
+                false,
+                10,
+                3,
+                false,
+                6
         );
 
         service.save(expected);
@@ -68,6 +72,29 @@ class AppSettingsServiceTest {
         assertEquals(75, loaded.defaultStrategyPollingSeconds());
         assertFalse(loaded.defaultRepeatCycleAfterProfitExitEnabled());
         assertFalse(loaded.defaultResubmitOnExpiryEnabled());
+        assertEquals(10, loaded.validationBatchWindowSeconds());
+        assertEquals(3, loaded.maxValidationAttemptsBeforePause());
+        assertFalse(loaded.adaptivePacingEnabled());
+        assertEquals(6, loaded.adaptivePacingMaxMultiplier());
+    }
+
+    @Test
+    void validationBatchingSettingsDefaultToDisabledUnlimitedBehavior() {
+        AppSettingsService.AppSettings defaults = new AppSettingsService.AppSettings(
+                "user@example.com",
+                true,
+                true,
+                false,
+                BrokerType.ALPACA,
+                ApplicationMode.PAPER,
+                true
+        );
+
+        assertEquals(AppSettingsService.DEFAULT_VALIDATION_BATCH_WINDOW_SECONDS, defaults.validationBatchWindowSeconds());
+        assertEquals(0, defaults.maxValidationAttemptsBeforePause(),
+                "max attempts must default to 0 (disabled/unlimited) so existing strategies keep polling indefinitely");
+        assertTrue(defaults.adaptivePacingEnabled());
+        assertEquals(AppSettingsService.DEFAULT_ADAPTIVE_PACING_MAX_MULTIPLIER, defaults.adaptivePacingMaxMultiplier());
     }
 
     @Test

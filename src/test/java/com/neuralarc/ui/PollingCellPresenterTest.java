@@ -44,7 +44,6 @@ class PollingCellPresenterTest {
                         true,
                         10_000L,
                         20_000L,
-                        10L,
                         false
                 ),
                 palette,
@@ -69,7 +68,6 @@ class PollingCellPresenterTest {
                         false,
                         10_000L,
                         20_000L,
-                        10L,
                         true
                 ),
                 palette,
@@ -92,14 +90,13 @@ class PollingCellPresenterTest {
                 false,
                 60_000L,
                 1_000L,
-                60L,
                 false
         );
 
         PollingCellPresenter.PollingCellViewModel first = presenter.present(state, palette, 2_400L);
         PollingCellPresenter.PollingCellViewModel second = presenter.present(state, palette, 3_600L);
 
-        assertEquals("Poll due...", first.labelText());
+        assertEquals("0s / 60s", first.labelText());
         assertTrue(first.tooltip().contains("waiting for the polling worker"));
         assertTrue(first.progress() >= 8 && first.progress() <= 92);
         assertTrue(second.progress() >= 8 && second.progress() <= 92);

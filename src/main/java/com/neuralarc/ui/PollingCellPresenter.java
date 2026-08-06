@@ -45,7 +45,7 @@ public final class PollingCellPresenter {
                 ? animatedPollingProgressPercent(nowMillis)
                 : pollingProgressPercent(showPollingIndicator, state.pollIntervalMillis(), state.nextPollDueAtMillis(), nowMillis);
         long secondsRemaining = pollingSecondsRemaining(showPollingIndicator, state.pollIntervalMillis(), state.nextPollDueAtMillis(), nowMillis);
-        long totalSeconds = Math.max(1L, state.pollingIntervalSeconds());
+        long totalSeconds = Math.max(1L, Math.round(state.pollIntervalMillis() / 1000.0d));
 
         Color rowBackground = state.selected() ? palette.selectionBackground() : palette.tableBackground();
         Color trackBackground = state.selected()
@@ -63,8 +63,6 @@ public final class PollingCellPresenter {
                 ? "Polling..."
                 : state.closedMarketPaused()
                 ? "Market Closed"
-                : pollDue
-                ? "Poll due..."
                 : state.strategyStatus() == StrategyStatus.FAILED
                 ? "Position Closed"
                 : state.strategyStatus() == StrategyStatus.COMPLETED
@@ -84,7 +82,7 @@ public final class PollingCellPresenter {
                 : state.closedMarketPaused()
                 ? "Polling is paused because the market is closed. Alpaca refresh calls are suppressed until the next trading session opens."
                 : pollDue
-                ? "This strategy is due to poll and is waiting for the polling worker to start."
+                ? "This strategy is due to poll and is waiting for the polling worker to start (0s remaining)."
                 : showPollingIndicator
                 ? secondsRemaining + " seconds remaining out of " + totalSeconds + " seconds"
                 : state.paused()
@@ -123,7 +121,6 @@ public final class PollingCellPresenter {
             boolean closedMarketPaused,
             long pollIntervalMillis,
             long nextPollDueAtMillis,
-            long pollingIntervalSeconds,
             boolean selected
     ) {
     }

@@ -48,7 +48,9 @@ public final class WorkspaceAccounting {
             BigDecimal capitalAllocated,
             int openPositions,
             int closedTrades,
-            double winRatePercent
+            double winRatePercent,
+            BigDecimal gainingTotal,
+            BigDecimal losingTotal
     ) {
     }
 
@@ -64,6 +66,8 @@ public final class WorkspaceAccounting {
         BigDecimal realized = BigDecimal.ZERO;
         BigDecimal unrealized = BigDecimal.ZERO;
         BigDecimal capital = BigDecimal.ZERO;
+        BigDecimal gainingTotal = BigDecimal.ZERO;
+        BigDecimal losingTotal = BigDecimal.ZERO;
         int openPositions = 0;
         for (StrategyAccount account : accounts) {
             if (!matches(targetWorkspaceId, account.workspaceId())) {
@@ -74,6 +78,12 @@ public final class WorkspaceAccounting {
             capital = capital.add(nonNull(account.capitalAllocated()));
             if (account.openShares() > 0) {
                 openPositions++;
+                BigDecimal accountUnrealized = nonNull(account.unrealizedPnl());
+                if (accountUnrealized.compareTo(BigDecimal.ZERO) > 0) {
+                    gainingTotal = gainingTotal.add(accountUnrealized);
+                } else if (accountUnrealized.compareTo(BigDecimal.ZERO) < 0) {
+                    losingTotal = losingTotal.add(accountUnrealized);
+                }
             }
         }
 
@@ -103,7 +113,9 @@ public final class WorkspaceAccounting {
                 Monetary.round(capital),
                 openPositions,
                 totalSells,
-                winRate
+                winRate,
+                Monetary.round(gainingTotal),
+                Monetary.round(losingTotal)
         );
     }
 

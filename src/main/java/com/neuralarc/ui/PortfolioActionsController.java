@@ -96,6 +96,8 @@ final class PortfolioActionsController {
                 () -> handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_GREEN_PENDING_BASE_BUYS)));
         menu.add(gateway.createMenuItem("Place Limit Buy for All Pending Positions", "icons/submit.svg",
                 () -> handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_PENDING_BASE_BUYS)));
+        menu.add(gateway.createMenuItem("Reposition Expired", "icons/submit.svg",
+                this::handleRepositionExpired));
         menu.add(sectionSeparator());
         menu.add(sectionHeader("Order Cleanup"));
         menu.add(gateway.createMenuItem("Clean All Pending Base Buys", "icons/delete.svg",
@@ -125,8 +127,6 @@ final class PortfolioActionsController {
             deletePaperEntries.setToolTipText("Paper cleanup is disabled while viewing LIVE mode.");
         }
         menu.add(deletePaperEntries);
-        menu.add(gateway.createMenuItem("Reposition Expired", "icons/submit.svg",
-                this::handleRepositionExpired));
         menu.add(gateway.createMenuItem("Remove Inactive List", "icons/delete.svg",
                 this::handleRemoveInactiveList));
         menu.add(gateway.createMenuItem("Promote All to Live", "icons/add-stock-strategy.svg",

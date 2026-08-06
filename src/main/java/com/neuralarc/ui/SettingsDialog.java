@@ -79,6 +79,7 @@ public class SettingsDialog extends JDialog {
     private final JComboBox<BrokerType> brokerBox = new JComboBox<>(BrokerType.values());
     private final JComboBox<ApplicationMode> appModeBox = new JComboBox<>(ApplicationMode.values());
     private final AiRecommendationSettingsPanel aiRecommendationSettingsPanel = new AiRecommendationSettingsPanel();
+    private final PositionValidationSettingsPanel validationSettingsPanel = new PositionValidationSettingsPanel();
     private final AppSettingsService appSettingsService;
     private transient Function<ConnectionRequest, ConnectionResult> connectionVerifier;
     private transient Function<Path, StrategyTransferResult> strategyExportHandler;
@@ -102,7 +103,11 @@ public class SettingsDialog extends JDialog {
             AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED,
             AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS,
             AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
-            AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
+            AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED,
+            AppSettingsService.DEFAULT_VALIDATION_BATCH_WINDOW_SECONDS,
+            AppSettingsService.DEFAULT_MAX_VALIDATION_ATTEMPTS_BEFORE_PAUSE,
+            AppSettingsService.DEFAULT_ADAPTIVE_PACING_ENABLED,
+            AppSettingsService.DEFAULT_ADAPTIVE_PACING_MAX_MULTIPLIER
     );
     private boolean savedDuringOpen;
 
@@ -286,6 +291,8 @@ public class SettingsDialog extends JDialog {
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(aiRecommendationSettingsPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
+        content.add(validationSettingsPanel);
+        content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(createCollapsibleSection("Diagnostics Log Sharing", diagnosticsPanel, true));
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(createCollapsibleSection("Trading Hours", marketHoursPanel, true));
@@ -468,7 +475,11 @@ public class SettingsDialog extends JDialog {
                     emailOnSellExecuted(),
                     pollingSeconds,
                     defaultRepeatCycleAfterProfitExitEnabled(),
-                    defaultResubmitOnExpiryEnabled()
+                    defaultResubmitOnExpiryEnabled(),
+                    validationSettingsPanel.validationBatchWindowSeconds(),
+                    validationSettingsPanel.maxValidationAttemptsBeforePause(),
+                    validationSettingsPanel.adaptivePacingEnabled(),
+                    validationSettingsPanel.adaptivePacingMaxMultiplier()
             ));
             appSettingsService.saveEndpoint(getEndpoint());
             appSettingsService.saveVerboseApiJsonLoggingEnabled(verboseApiJsonLogging.isSelected());
@@ -487,6 +498,7 @@ public class SettingsDialog extends JDialog {
                 appSettingsService.saveCredentials(mode, key, secret);
             }
             appliedSettings = appSettingsService.load();
+            validationSettingsPanel.populate(appliedSettings);
             syncAppliedCredentialCache();
             savedDuringOpen = true;
             if (resetTradingDataAfterSave && alpacaAccountChangedHandler != null) {
@@ -536,6 +548,7 @@ public class SettingsDialog extends JDialog {
     private void loadAll() {
         suppressModeSwitchHandling = true;
         appliedSettings = appSettingsService.load();
+        validationSettingsPanel.populate(appliedSettings);
         emailField.setText(appliedSettings.userEmail());
         endpointField.setText(appSettingsService.loadEndpoint());
         verboseApiJsonLogging.setSelected(appSettingsService.loadVerboseApiJsonLoggingEnabled());
@@ -667,8 +680,13 @@ public class SettingsDialog extends JDialog {
                     AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED,
                     AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS,
                     AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
-                    AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
+                    AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED,
+                    AppSettingsService.DEFAULT_VALIDATION_BATCH_WINDOW_SECONDS,
+                    AppSettingsService.DEFAULT_MAX_VALIDATION_ATTEMPTS_BEFORE_PAUSE,
+                    AppSettingsService.DEFAULT_ADAPTIVE_PACING_ENABLED,
+                    AppSettingsService.DEFAULT_ADAPTIVE_PACING_MAX_MULTIPLIER
             );
+            validationSettingsPanel.populate(appliedSettings);
             appliedCredentialCache.clear();
             connectionStatus.setText("All local data deleted — reloading from Alpaca…");
             connectionStatus.setForeground(TEXT_MUTED);

@@ -287,6 +287,7 @@ public class TradingFrame extends JFrame {
     private final Map<ApplicationMode, BrokerPositionsCacheEntry> brokerPositionSnapshotCache = new ConcurrentHashMap<>();
     private final MarketStatusPresenter marketStatusPresenter = new MarketStatusPresenter();
     private final PollingCellPresenter pollingCellPresenter = new PollingCellPresenter();
+    private final PositionValidationCellPresenter positionValidationCellPresenter = new PositionValidationCellPresenter();
     private final StatusBarPresenter statusBarPresenter = new StatusBarPresenter();
     private final StrategyActionsPresenter strategyActionsPresenter = new StrategyActionsPresenter();
     private final StrategyGridLayoutPresenter strategyGridLayoutPresenter = new StrategyGridLayoutPresenter();
@@ -1411,6 +1412,15 @@ public class TradingFrame extends JFrame {
                     return;
                 }
 
+                if (e.getButton() == java.awt.event.MouseEvent.BUTTON1
+                        && viewRow >= 0 && viewRow < strategies.size()
+                        && viewCol == StrategyGridLayoutPresenter.POLLING_COLUMN_INDEX
+                        && refreshNowHotspotAtMousePoint(viewRow, e.getX())) {
+                    ManagedStrategy refreshTarget = strategies.get(strategyTable.convertRowIndexToModel(viewRow));
+                    SwingUtilities.invokeLater(() -> strategyPollingService.pollStrategyNow(refreshTarget.strategy.id()));
+                    return;
+                }
+
                 // Dispatch the action buttons via the same fixed-width zones used by the renderer.
                 // Use invokeLater so the action runs AFTER ALL mousePressed handlers
                 // (ours + BasicTableUI) have finished — this is critical because:
@@ -1460,8 +1470,11 @@ public class TradingFrame extends JFrame {
                 // an actual data row — NOT over the empty viewport space below the rows.
                 int viewRow = strategyTable.rowAtPoint(e.getPoint());
                 int viewCol = strategyTable.columnAtPoint(e.getPoint());
-                if (viewRow >= 0 && viewCol == StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX
-                        && actionAtMousePoint(viewRow, e.getX()) != StrategyGridActionLayout.Action.NONE) {
+                boolean overAction = viewRow >= 0 && viewCol == StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX
+                        && actionAtMousePoint(viewRow, e.getX()) != StrategyGridActionLayout.Action.NONE;
+                boolean overRefreshNow = viewRow >= 0 && viewCol == StrategyGridLayoutPresenter.POLLING_COLUMN_INDEX
+                        && refreshNowHotspotAtMousePoint(viewRow, e.getX());
+                if (overAction || overRefreshNow) {
                     strategyTable.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
                 } else {
                     strategyTable.setCursor(java.awt.Cursor.getDefaultCursor());
@@ -1871,6 +1884,22 @@ public class TradingFrame extends JFrame {
             @Override
             public void windowClosing(WindowEvent e) {
                 shutdownAllStrategies();
+            }
+
+            // Only the 250ms countdown-repaint timer pauses while minimized, purely to save CPU.
+            // strategyPollingTimer (and the background StrategyPollingService it drives) keeps
+            // running unconditionally — stop-loss/fill detection must never go stale just because
+            // the window lost focus.
+            @Override
+            public void windowIconified(WindowEvent e) {
+                pollingIndicatorTimer.stop();
+            }
+
+            @Override
+            public void windowDeiconified(WindowEvent e) {
+                pollingIndicatorTimer.start();
+                strategyTable.repaint();
+                filledOrdersTable.repaint();
             }
         });
         setExtendedState(getExtendedState() | JFrame.MAXIMIZED_BOTH);
@@ -4834,6 +4863,9 @@ public class TradingFrame extends JFrame {
     }
 
     private boolean isWaitingForFill(Strategy strategy) {
+        if (strategy.status() != StrategyStatus.ACTIVE) {
+            return false;
+        }
         String latestOrderStatus = strategy.latestOrderStatus();
         if (latestOrderStatus != null) {
             if (BrokerOrderStatusUtil.isWaitingForFill(latestOrderStatus)) {
@@ -4874,11 +4906,13 @@ public class TradingFrame extends JFrame {
         if (entry == null) {
             return "";
         }
+        Position cachedPosition = entry.cachedPosition();
+        boolean waitingForFill = isWaitingForFill(entry.strategy) && cachedPosition.getTotalShares() == 0;
         return strategyTablePresenter.displayStatusLabel(
                 entry.strategy,
-                entry.cachedPosition(),
+                cachedPosition,
                 isStrategySessionSuppressed(entry.strategy),
-                isWaitingForFill(entry.strategy),
+                waitingForFill,
                 entry.strategy.status() == StrategyStatus.FAILED && isQueueableSessionError(entry.strategy.lastError()),
                 !connectionOk || connectionRetryPending,
                 entry.cachedRealizedPnl(),
@@ -5482,7 +5516,7 @@ public class TradingFrame extends JFrame {
 
 
     private void resetPollingCountdown(ManagedStrategy entry) {
-        entry.pollIntervalMillis = Math.max(1L, entry.strategy.pollingIntervalSeconds()) * 1000L;
+        entry.pollIntervalMillis = effectivePollingIntervalMillis(entry);
         if (entry.pollInFlight) {
             return;
         }
@@ -5514,7 +5548,7 @@ public class TradingFrame extends JFrame {
     }
 
     private void markPollingCycleCompleted(ManagedStrategy entry) {
-        entry.pollIntervalMillis = Math.max(1L, entry.strategy.pollingIntervalSeconds()) * 1000L;
+        entry.pollIntervalMillis = effectivePollingIntervalMillis(entry);
         entry.countdownActive = true;
         entry.nextPollDueAtMillis = System.currentTimeMillis() + entry.pollIntervalMillis;
     }
@@ -5540,6 +5574,7 @@ public class TradingFrame extends JFrame {
             return;
         }
         entry.pollInFlight = false;
+        entry.lastValidationSuccessAtMillis = System.currentTimeMillis();
         if (shouldShowPollingIndicator(entry)) {
             markPollingCycleCompleted(entry);
         } else {
@@ -5620,6 +5655,18 @@ public class TradingFrame extends JFrame {
             entry.countdownActive = true;
             entry.nextPollDueAtMillis = System.currentTimeMillis() + entry.pollIntervalMillis;
         }
+    }
+
+    private long effectivePollingIntervalMillis(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return 1_000L;
+        }
+        long configuredMillis = Math.max(1L, entry.strategy.pollingIntervalSeconds()) * 1_000L;
+        if (strategyPollingService == null || entry.strategy.mode() != selectedViewMode) {
+            return configuredMillis;
+        }
+        long effectiveSeconds = Math.max(1L, strategyPollingService.effectivePollingIntervalSeconds(entry.strategy));
+        return effectiveSeconds * 1_000L;
     }
 
     private ManagedStrategy findStrategyById(String strategyId) {
@@ -5732,6 +5779,18 @@ public class TradingFrame extends JFrame {
                 ? "Overnight eligible: checking"
                 : strategy.overnightEligible() ? "Overnight eligible: yes" : "Overnight eligible: no";
         return base + "\n" + overnightHint;
+    }
+
+    private String appendValidationHints(String tooltip, PositionValidationCellPresenter.ViewModel validationViewModel) {
+        String base = tooltip == null || tooltip.isBlank() ? "Polling status" : tooltip;
+        if (validationViewModel.lifecycleState() == PositionValidationCellPresenter.ValidationLifecycleState.WARNING_PAUSED) {
+            return base + "\n" + validationViewModel.attemptLabel()
+                    + "\nUnable to reach the broker for the shared position/order snapshot. Click Refresh Now to retry.";
+        }
+        if (!validationViewModel.countdownText().isBlank()) {
+            return base + "\n" + validationViewModel.countdownText() + "\n" + validationViewModel.attemptLabel();
+        }
+        return base;
     }
 
     private void setStatus(String message, Color color) {
@@ -7846,6 +7905,7 @@ public class TradingFrame extends JFrame {
     private final class PollingBarRenderer extends JPanel implements TableCellRenderer {
         private final JProgressBar progressBar = new JProgressBar(0, 100);
         private final JLabel countdownLabel = new JLabel();
+        private final JLabel refreshNowLabel = new JLabel("Refresh Now");
 
         private PollingBarRenderer() {
             super(new BorderLayout());
@@ -7855,6 +7915,13 @@ public class TradingFrame extends JFrame {
             countdownLabel.setFont(FontLoader.ui(Font.PLAIN, 10f));
             countdownLabel.setHorizontalAlignment(SwingConstants.LEFT);
             countdownLabel.setBorder(new EmptyBorder(0, 8, 0, 0));
+            refreshNowLabel.setOpaque(false);
+            refreshNowLabel.setFont(FontLoader.ui(Font.BOLD, 10f));
+            refreshNowLabel.setHorizontalAlignment(SwingConstants.RIGHT);
+            refreshNowLabel.setBorder(new EmptyBorder(0, 4, 0, 0));
+            refreshNowLabel.setForeground(new Color(66, 133, 244));
+            refreshNowLabel.setPreferredSize(new Dimension(PositionValidationHotspotLayout.REFRESH_NOW_WIDTH, 0));
+            refreshNowLabel.setVisible(false);
             progressBar.setOpaque(false);
             progressBar.setBorder(BorderFactory.createEmptyBorder());
             progressBar.setStringPainted(false);
@@ -7896,25 +7963,32 @@ public class TradingFrame extends JFrame {
             barWrapper.add(progressBar, new GridBagConstraints());
             add(barWrapper, BorderLayout.WEST);
             add(countdownLabel, BorderLayout.CENTER);
+            add(refreshNowLabel, BorderLayout.EAST);
         }
 
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
             int modelRow = table.convertRowIndexToModel(row);
             ManagedStrategy strategy = strategies.get(modelRow);
-            PollingCellPresenter.PollingCellViewModel viewModel = pollingCellPresenter.present(
-                    new PollingCellPresenter.PollingCellState(
-                            strategy.strategy.status(),
-                            isWaitingForFill(strategy.strategy),
-                            strategy.isPaused(),
-                            strategy.pauseLabel(),
-                            strategy.pauseTooltip(),
-                            strategy.pollInFlight,
-                            isAutoPausedForClosedMarket(strategy),
-                            strategy.pollIntervalMillis,
-                            strategy.nextPollDueAtMillis,
-                            strategy.strategy.pollingIntervalSeconds(),
-                            isSelected
+            long nowMillis = System.currentTimeMillis();
+            PositionValidationCellPresenter.ViewModel validationViewModel = positionValidationCellPresenter.present(
+                    new PositionValidationCellPresenter.State(
+                            new PollingCellPresenter.PollingCellState(
+                                    strategy.strategy.status(),
+                                    isWaitingForFill(strategy.strategy),
+                                    strategy.isPaused(),
+                                    strategy.pauseLabel(),
+                                    strategy.pauseTooltip(),
+                                    strategy.pollInFlight,
+                                    isAutoPausedForClosedMarket(strategy),
+                                    strategy.pollIntervalMillis,
+                                    strategy.nextPollDueAtMillis,
+                                    isSelected
+                            ),
+                            strategyPollingService.isValidationWarningPaused(),
+                            strategyPollingService.activeValidationAttempt(),
+                            strategyPollingService.maxValidationAttemptsBeforePause(),
+                            strategy.lastValidationSuccessAtMillis
                     ),
                     new PollingCellPresenter.PollingCellPalette(
                             table.getBackground(),
@@ -7928,8 +8002,9 @@ public class TradingFrame extends JFrame {
                             new Color(60, 30, 140),
                             new Color(66, 133, 244)
                     ),
-                    System.currentTimeMillis()
+                    nowMillis
             );
+            PollingCellPresenter.PollingCellViewModel viewModel = validationViewModel.base();
 
             // Apply alternating row background colors
             if (isSelected) {
@@ -7938,15 +8013,31 @@ public class TradingFrame extends JFrame {
                 setBackground(row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD);
             }
             setBorder(tableCellBorder(5, 10, 5, 10));
-            progressBar.setValue(viewModel.progress());
+            boolean warningPaused = validationViewModel.lifecycleState() == PositionValidationCellPresenter.ValidationLifecycleState.WARNING_PAUSED;
+            // The countdown can reach 0 seconds before the polling worker actually picks the
+            // strategy up (worker pool contention, or the shared batch fetch still in flight).
+            // The base view model shows an animated "in progress" bar for that window but its
+            // label falls back to a literal "0s / 60s" — label and bar must agree, so surface an
+            // explicit "Poll due..." state instead of a countdown that looks finished but isn't.
+            boolean pollDue = viewModel.showPollingIndicator()
+                    && !strategy.pollInFlight
+                    && strategy.nextPollDueAtMillis > 0L
+                    && nowMillis >= strategy.nextPollDueAtMillis;
+            progressBar.setValue(warningPaused ? 0 : viewModel.progress());
             progressBar.setBackground(viewModel.trackBackground());
-            progressBar.setForeground(viewModel.progressForeground());
-            countdownLabel.setForeground(viewModel.labelForeground());
-            countdownLabel.setText(viewModel.labelText());
-            String tooltipText = TooltipStyler.text(appendSessionHint(viewModel.tooltip(), strategy));
+            progressBar.setForeground(warningPaused ? STATUS_TEXT_PAUSED : viewModel.progressForeground());
+            countdownLabel.setForeground(warningPaused ? STATUS_TEXT_PAUSED : viewModel.labelForeground());
+            countdownLabel.setText(
+                    warningPaused ? "Unable to validate"
+                    : pollDue ? "Poll due…"
+                    : viewModel.labelText());
+            refreshNowLabel.setVisible(validationViewModel.showRefreshNowAffordance());
+            String tooltipText = TooltipStyler.text(
+                    appendValidationHints(appendSessionHint(viewModel.tooltip(), strategy), validationViewModel));
             setToolTipText(tooltipText);
             progressBar.setToolTipText(tooltipText);
             countdownLabel.setToolTipText(tooltipText);
+            refreshNowLabel.setToolTipText(tooltipText);
             return this;
         }
     }
@@ -8086,6 +8177,16 @@ public class TradingFrame extends JFrame {
         return StrategyGridActionLayout.actionAt(cellRect.width, xInCell, promoteVisible);
     }
 
+    private boolean refreshNowHotspotAtMousePoint(int viewRow, int mouseX) {
+        int modelRow = strategyTable.convertRowIndexToModel(viewRow);
+        if (modelRow < 0 || modelRow >= strategies.size()) {
+            return false;
+        }
+        boolean showRefreshNow = strategyPollingService.isValidationWarningPaused();
+        java.awt.Rectangle cellRect = strategyTable.getCellRect(viewRow, StrategyGridLayoutPresenter.POLLING_COLUMN_INDEX, false);
+        int xInCell = mouseX - cellRect.x;
+        return PositionValidationHotspotLayout.isRefreshNowHotspot(cellRect.width, xInCell, showRefreshNow);
+    }
 
     private Color selectionAwareRowColor(boolean selected, int row) {
         if (selected) {

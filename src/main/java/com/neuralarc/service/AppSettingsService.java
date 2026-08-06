@@ -28,6 +28,10 @@ public class AppSettingsService {
     public static final boolean DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED = true;
     public static final boolean DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED = true;
     public static final boolean DEFAULT_VERBOSE_API_JSON_LOGGING = false;
+    public static final int DEFAULT_VALIDATION_BATCH_WINDOW_SECONDS = 5;
+    public static final int DEFAULT_MAX_VALIDATION_ATTEMPTS_BEFORE_PAUSE = 0;
+    public static final boolean DEFAULT_ADAPTIVE_PACING_ENABLED = true;
+    public static final int DEFAULT_ADAPTIVE_PACING_MAX_MULTIPLIER = 4;
 
     private static final String KEY_VERBOSE_API_JSON_LOGGING = "logging.verboseApiJson";
     private static final String KEY_USER_EMAIL = "userEmail";
@@ -40,6 +44,10 @@ public class AppSettingsService {
     private static final String KEY_STRATEGY_DEFAULT_POLLING_SECONDS = "strategyDefaultPollingSeconds";
     private static final String KEY_STRATEGY_DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT = "strategyDefaultRepeatCycleAfterProfitExit";
     private static final String KEY_STRATEGY_DEFAULT_RESUBMIT_ON_EXPIRY = "strategyDefaultResubmitOnExpiry";
+    private static final String KEY_VALIDATION_BATCH_WINDOW_SECONDS = "validationBatchWindowSeconds";
+    private static final String KEY_MAX_VALIDATION_ATTEMPTS_BEFORE_PAUSE = "maxValidationAttemptsBeforePause";
+    private static final String KEY_ADAPTIVE_PACING_ENABLED = "adaptivePacingEnabled";
+    private static final String KEY_ADAPTIVE_PACING_MAX_MULTIPLIER = "adaptivePacingMaxMultiplier";
     private static final String KEY_BROKER = "broker";
     private static final String KEY_APPLICATION_MODE = "applicationMode";
     private static final String KEY_ENDPOINT = "endpoint";
@@ -94,7 +102,11 @@ public class AppSettingsService {
                 parseBoolean(readSetting(KEY_EMAIL_ON_SELL_EXECUTED, false), DEFAULT_EMAIL_ON_SELL_EXECUTED),
                 parsePositiveInt(readSetting(KEY_STRATEGY_DEFAULT_POLLING_SECONDS, false), DEFAULT_STRATEGY_POLLING_SECONDS),
                 parseBoolean(readSetting(KEY_STRATEGY_DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT, false), DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED),
-                parseBoolean(readSetting(KEY_STRATEGY_DEFAULT_RESUBMIT_ON_EXPIRY, false), DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED)
+                parseBoolean(readSetting(KEY_STRATEGY_DEFAULT_RESUBMIT_ON_EXPIRY, false), DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED),
+                parsePositiveInt(readSetting(KEY_VALIDATION_BATCH_WINDOW_SECONDS, false), DEFAULT_VALIDATION_BATCH_WINDOW_SECONDS),
+                parseNonNegativeInt(readSetting(KEY_MAX_VALIDATION_ATTEMPTS_BEFORE_PAUSE, false), DEFAULT_MAX_VALIDATION_ATTEMPTS_BEFORE_PAUSE),
+                parseBoolean(readSetting(KEY_ADAPTIVE_PACING_ENABLED, false), DEFAULT_ADAPTIVE_PACING_ENABLED),
+                parsePositiveInt(readSetting(KEY_ADAPTIVE_PACING_MAX_MULTIPLIER, false), DEFAULT_ADAPTIVE_PACING_MAX_MULTIPLIER)
         );
     }
 
@@ -110,6 +122,10 @@ public class AppSettingsService {
             writeSetting(KEY_STRATEGY_DEFAULT_POLLING_SECONDS, String.valueOf(Math.max(1, settings.defaultStrategyPollingSeconds())), false);
             writeSetting(KEY_STRATEGY_DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT, String.valueOf(settings.defaultRepeatCycleAfterProfitExitEnabled()), false);
             writeSetting(KEY_STRATEGY_DEFAULT_RESUBMIT_ON_EXPIRY, String.valueOf(settings.defaultResubmitOnExpiryEnabled()), false);
+            writeSetting(KEY_VALIDATION_BATCH_WINDOW_SECONDS, String.valueOf(Math.max(1, settings.validationBatchWindowSeconds())), false);
+            writeSetting(KEY_MAX_VALIDATION_ATTEMPTS_BEFORE_PAUSE, String.valueOf(Math.max(0, settings.maxValidationAttemptsBeforePause())), false);
+            writeSetting(KEY_ADAPTIVE_PACING_ENABLED, String.valueOf(settings.adaptivePacingEnabled()), false);
+            writeSetting(KEY_ADAPTIVE_PACING_MAX_MULTIPLIER, String.valueOf(Math.max(1, settings.adaptivePacingMaxMultiplier())), false);
             writeSetting(KEY_BROKER, (settings.brokerType() == null ? BrokerType.ALPACA : settings.brokerType()).name(), false);
             writeSetting(KEY_APPLICATION_MODE, (settings.applicationMode() == null ? ApplicationMode.PAPER : settings.applicationMode()).name(), false);
         } catch (SQLException ex) {
@@ -235,6 +251,10 @@ public class AppSettingsService {
 
     private int parsePositiveInt(String value, int fallback) {
         return Math.max(1, parseInt(value, fallback));
+    }
+
+    private int parseNonNegativeInt(String value, int fallback) {
+        return Math.max(0, parseInt(value, fallback));
     }
 
     private Duration parseDuration(String value, Duration fallback) {
@@ -392,10 +412,17 @@ public class AppSettingsService {
             boolean emailOnSellExecuted,
             int defaultStrategyPollingSeconds,
             boolean defaultRepeatCycleAfterProfitExitEnabled,
-            boolean defaultResubmitOnExpiryEnabled
+            boolean defaultResubmitOnExpiryEnabled,
+            int validationBatchWindowSeconds,
+            int maxValidationAttemptsBeforePause,
+            boolean adaptivePacingEnabled,
+            int adaptivePacingMaxMultiplier
     ) {
         public AppSettings {
             defaultStrategyPollingSeconds = Math.max(1, defaultStrategyPollingSeconds);
+            validationBatchWindowSeconds = Math.max(1, validationBatchWindowSeconds);
+            maxValidationAttemptsBeforePause = Math.max(0, maxValidationAttemptsBeforePause);
+            adaptivePacingMaxMultiplier = Math.max(1, adaptivePacingMaxMultiplier);
         }
 
         public AppSettings(
@@ -421,7 +448,11 @@ public class AppSettingsService {
                     emailOnSellExecuted,
                     DEFAULT_STRATEGY_POLLING_SECONDS,
                     DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
-                    DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
+                    DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED,
+                    DEFAULT_VALIDATION_BATCH_WINDOW_SECONDS,
+                    DEFAULT_MAX_VALIDATION_ATTEMPTS_BEFORE_PAUSE,
+                    DEFAULT_ADAPTIVE_PACING_ENABLED,
+                    DEFAULT_ADAPTIVE_PACING_MAX_MULTIPLIER
             );
         }
 
@@ -446,7 +477,11 @@ public class AppSettingsService {
                     DEFAULT_EMAIL_ON_SELL_EXECUTED,
                     DEFAULT_STRATEGY_POLLING_SECONDS,
                     DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
-                    DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
+                    DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED,
+                    DEFAULT_VALIDATION_BATCH_WINDOW_SECONDS,
+                    DEFAULT_MAX_VALIDATION_ATTEMPTS_BEFORE_PAUSE,
+                    DEFAULT_ADAPTIVE_PACING_ENABLED,
+                    DEFAULT_ADAPTIVE_PACING_MAX_MULTIPLIER
             );
         }
     }

@@ -130,7 +130,7 @@ public class StrategyEngine {
      * Delegates to the tracked overload with an empty price cache; outcomes are discarded.
      */
     public void reconcile(Strategy strategy) {
-        reconcileTracked(strategy, Map.of());
+        reconcileTracked(strategy, Map.of(), null);
     }
 
     /**
@@ -138,7 +138,7 @@ public class StrategyEngine {
      * Returns the list of rule outcomes so the caller can surface them to the UI log.
      * Package-private: only intended for use by {@link StrategyPollingService}.
      */
-    List<RuleOutcome> reconcileTracked(Strategy strategy, Map<String, BigDecimal> priceCache) {
+    List<RuleOutcome> reconcileTracked(Strategy strategy, Map<String, BigDecimal> priceCache, BrokerSnapshotBatch snapshotBatch) {
         List<RuleOutcome> outcomes = new ArrayList<>();
         if (!isAutoExecutionAllowed(strategy.id())) {
             logPoll(strategy, "POLL", "SKIPPED", "Strategy is no longer active (likely manually canceled/paused)");
@@ -146,8 +146,8 @@ public class StrategyEngine {
         }
         AppSettingsService.AppSettings settings = appSettingsService.load();
         boolean sessionOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
-        refreshOrderStatuses(strategy);
-        Optional<AlpacaPositionData> position = alpacaClient.getPosition(strategy.symbol());
+        refreshOrderStatuses(strategy, snapshotBatch);
+        Optional<AlpacaPositionData> position = BrokerSnapshotResolver.resolvePosition(alpacaClient, strategy, snapshotBatch);
 
         // Use pre-fetched price when available; fall back to position market price or individual call.
         String symbolKey = strategy.symbol() != null ? strategy.symbol().toUpperCase() : "";
@@ -163,7 +163,7 @@ public class StrategyEngine {
         }
 
         List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
-        List<AlpacaOrderData> remoteOpenOrders = alpacaClient.getOpenOrders(strategy.symbol());
+        List<AlpacaOrderData> remoteOpenOrders = BrokerSnapshotResolver.resolveOpenOrders(alpacaClient, strategy, snapshotBatch);
         logPoll(strategy, "POLL", "STARTED",
                 "state=" + strategy.currentState().name()
                         + ", latestPrice=" + latestPrice.toPlainString()
@@ -482,13 +482,13 @@ public class StrategyEngine {
         submitBaseBuy(strategy, true, latestPrice);
     }
 
-    void refreshOrderStatuses(Strategy strategy) {
+    void refreshOrderStatuses(Strategy strategy, BrokerSnapshotBatch snapshotBatch) {
         List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
         for (StrategyOrder order : orders) {
             if (order.alpacaOrderId() == null || order.alpacaOrderId().isBlank() || order.isTerminal()) {
                 continue;
             }
-            Optional<AlpacaOrderData> latest = alpacaClient.getOrder(order.alpacaOrderId());
+            Optional<AlpacaOrderData> latest = BrokerSnapshotResolver.resolveOrderIfChanged(alpacaClient, order, snapshotBatch);
             if (latest.isEmpty()) {
                 continue;
             }

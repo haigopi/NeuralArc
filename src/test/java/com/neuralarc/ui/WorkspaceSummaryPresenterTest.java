@@ -20,13 +20,17 @@ class WorkspaceSummaryPresenterTest {
                 new BigDecimal("3500.00"),
                 3,
                 12,
-                75.0
+                75.0,
+                new BigDecimal("28.50"),
+                new BigDecimal("-100.74")
         );
         String line = presenter.summaryLine("Momentum Lab", snapshot);
 
         assertTrue(line.startsWith("Momentum Lab"), line);
         assertTrue(line.contains("Realized $1245.00"), line);
         assertTrue(line.contains("Unrealized -$72.24"), line);
+        assertTrue(line.contains("Gaining $28.50"), line);
+        assertTrue(line.contains("Losing -$100.74"), line);
         assertTrue(line.contains("Total $1172.76"), line);
         assertTrue(line.contains("Win 75%"), line);
         assertTrue(line.contains("Open 3"), line);

@@ -51,7 +51,7 @@ public final class OrbAnalyzer {
             case RANGE_LOW, ATR_ADJUSTED -> s.low();
             case MID_RANGE -> s.high().add(s.low()).divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
         };
-        BigDecimal stop = rawStop.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal stop = clampStopBelowEntry(rawStop, entry, cfg.riskPercent()).setScale(2, RoundingMode.HALF_UP);
         BigDecimal target = entry.multiply(BigDecimal.ONE.add(cfg.takeProfitPercent().movePointLeft(2))).setScale(2, RoundingMode.HALF_UP);
         int score = score(s, c, cfg);
         String rationale = "ORB long breakout: range " + s.low().setScale(2, RoundingMode.HALF_UP).toPlainString()
@@ -61,6 +61,15 @@ public final class OrbAnalyzer {
         return new OrbRecommendation(s.symbol(), s.high().setScale(2, RoundingMode.HALF_UP), s.low().setScale(2, RoundingMode.HALF_UP),
                 entry, stop, target, score, rationale, cfg.riskPercent(), s.rangePercent(), cfg.rangeDurationMinutes(),
                 OrbStatus.RANGE_CAPTURED, cfg.mode(), Instant.now(clock));
+    }
+
+    /** Range-low/mid-range stop can land at or above the discounted entry when price has since gapped down; fall back to riskPercent below entry so stop-loss always protects downside. */
+    private BigDecimal clampStopBelowEntry(BigDecimal rawStop, BigDecimal entry, BigDecimal riskPercent) {
+        if (rawStop.compareTo(entry) < 0) {
+            return rawStop;
+        }
+        BigDecimal fallbackStop = entry.multiply(BigDecimal.ONE.subtract(riskPercent.movePointLeft(2)));
+        return fallbackStop.compareTo(BigDecimal.ZERO) > 0 ? fallbackStop : entry.multiply(new BigDecimal("0.99"));
     }
 
     private BigDecimal discountedLowerOpenOrCurrent(OrbCandidate candidate) {

@@ -465,6 +465,10 @@ class StrategyPollingServiceTest {
         f.strategies.save(blocked);
         f.strategies.save(fast);
         f.alpaca.blockOpenOrdersForSymbol(blocked.symbol());
+        // The combined per-cycle snapshot batch would otherwise short-circuit the per-symbol
+        // getOpenOrders(symbol) gate below; fail it once so this cycle falls back to per-strategy
+        // resolution, which is what this test exercises (dispatch stays non-blocking per strategy).
+        f.alpaca.failNextOpenOrdersBatch();
 
         long firstStartedAt = System.nanoTime();
         int firstDue = f.service.pollDueStrategies();
@@ -506,6 +510,141 @@ class StrategyPollingServiceTest {
                 blockedBaseline,
                 "Blocked strategy should finish once its broker call is released"
         );
+    }
+
+    @Test
+    void pollDueStrategiesUsesOneCombinedBatchInsteadOfPerStrategyCalls() throws Exception {
+        Fixture f = new Fixture();
+        Strategy a = f.activeStrategy("AAPL", false);
+        Strategy b = f.activeStrategy("MSFT", false);
+        Instant baselineA = Instant.now().minusSeconds(60);
+        Instant baselineB = Instant.now().minusSeconds(60);
+        a.setLastPolledAt(baselineA);
+        b.setLastPolledAt(baselineB);
+        f.strategies.save(a);
+        f.strategies.save(b);
+        f.alpaca.positionsBySymbol.put("AAPL",
+                new AlpacaPositionData("AAPL", new BigDecimal("1"), new BigDecimal("8.00"), new BigDecimal("8.00"), "{}"));
+
+        int due = f.service.pollDueStrategies();
+
+        assertEquals(2, due);
+        f.awaitLastPolledAfter(a.id(), baselineA, "Strategy A should complete its poll");
+        f.awaitLastPolledAfter(b.id(), baselineB, "Strategy B should complete its poll");
+        assertEquals(1, f.alpaca.positionsBatchCalls, "Positions should be fetched once for the whole cycle, not once per strategy");
+        assertEquals(1, f.alpaca.openOrdersBatchCalls, "Open orders should be fetched once for the whole cycle, not once per strategy");
+        assertEquals(0, f.alpaca.positionCalls, "Per-strategy getPosition must not run when the combined batch already succeeded");
+    }
+
+    @Test
+    void pullsForwardNearbyStrategyIntoTheSameBatchCycle() throws Exception {
+        Fixture f = new Fixture();
+        Strategy due = f.activeStrategy("AAPL", false);
+        due.setPollingIntervalSeconds(15);
+        due.setLastPolledAt(Instant.now().minusSeconds(20));
+        f.strategies.save(due);
+
+        Strategy nearby = f.activeStrategy("MSFT", false);
+        nearby.setPollingIntervalSeconds(15);
+        Instant nearbyBaseline = Instant.now().minusSeconds(12); // natural due time ~3s from now, within the 5s catch-up window
+        nearby.setLastPolledAt(nearbyBaseline);
+        f.strategies.save(nearby);
+
+        int dueCount = f.service.pollDueStrategies();
+
+        assertEquals(2, dueCount, "The nearby same-bucket strategy should be pulled forward into this cycle");
+        f.awaitLastPolledAfter(nearby.id(), nearbyBaseline, "Pulled-forward strategy should complete its poll this cycle, not a later one");
+    }
+
+    @Test
+    void fallsBackToPerStrategyCallsWhenTheCombinedBatchFetchFails() throws Exception {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy("AAPL", false);
+        Instant baseline = Instant.now().minusSeconds(60);
+        strategy.setLastPolledAt(baseline);
+        f.strategies.save(strategy);
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("8.00"), "{}"));
+        f.alpaca.failNextOpenOrdersBatch();
+
+        f.service.pollDueStrategies();
+
+        f.awaitLastPolledAfter(strategy.id(), baseline, "Strategy should still complete its poll via per-strategy fallback");
+        assertTrue(f.alpaca.positionCalls > 0, "Per-strategy getPosition should be used as fallback when the combined batch fetch fails");
+    }
+
+    @Test
+    void openOrderChangeDetectionSkipsGetOrderForStillOpenOrdersAndCallsOnceWhenFilled() throws Exception {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy("AAPL", false);
+        Instant baseline = Instant.now().minusSeconds(60);
+        strategy.setLastPolledAt(baseline);
+        f.strategies.save(strategy);
+        f.alpaca.position = Optional.empty();
+        StrategyOrder pendingBase = new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY,
+                "ord-open-test", "client-open-test", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT,
+                new BigDecimal("8.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO,
+                StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        );
+        f.addOrder(pendingBase);
+
+        f.service.pollDueStrategies();
+        f.awaitLastPolledAfter(strategy.id(), baseline, "First poll should complete");
+
+        assertEquals(0, f.alpaca.orderCalls,
+                "An order still present in the shared open-orders snapshot should not trigger an individual getOrder call");
+
+        Instant secondBaseline = f.strategies.findById(strategy.id()).orElseThrow().lastPolledAt();
+        f.alpaca.orderById.put("ord-open-test", new AlpacaOrderData(
+                "ord-open-test", "client-open-test", "AAPL", "buy", "limit",
+                new BigDecimal("8.00"), new BigDecimal("8.00"), new BigDecimal("10"), "filled", "{}"
+        ));
+        Strategy again = f.strategies.findById(strategy.id()).orElseThrow();
+        again.setLastPolledAt(Instant.now().minusSeconds(60));
+        f.strategies.save(again);
+
+        f.service.pollDueStrategies();
+        f.awaitLastPolledAfter(strategy.id(), secondBaseline, "Second poll should complete");
+
+        assertEquals(1, f.alpaca.orderCalls,
+                "An order that dropped out of the shared open-orders snapshot should get exactly one individual getOrder call");
+    }
+
+    @Test
+    void maxAttemptsDefaultsToUnlimitedAndKeepsPollingThroughRepeatedBatchFailures() throws Exception {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy("AAPL", false);
+        Instant baseline = Instant.now().minusSeconds(60);
+        strategy.setLastPolledAt(baseline);
+        f.strategies.save(strategy);
+        f.alpaca.failNextOpenOrdersBatch();
+
+        f.service.pollDueStrategies();
+
+        f.awaitLastPolledAfter(strategy.id(), baseline,
+                "Strategy should still be polled after a batch failure since max attempts defaults to unlimited/disabled");
+        assertTrue(f.service.isValidationWarningPaused(),
+                "The tracker should still surface the failure for the UI even though polling itself was unaffected");
+    }
+
+    @Test
+    void pollStrategyNowClearsWarningPausedState() throws Exception {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy("AAPL", false);
+        Instant baseline = Instant.now().minusSeconds(60);
+        strategy.setLastPolledAt(baseline);
+        f.strategies.save(strategy);
+        f.alpaca.failNextOpenOrdersBatch();
+        f.service.pollDueStrategies();
+        f.awaitLastPolledAfter(strategy.id(), baseline, "Initial poll should complete via fallback");
+        assertTrue(f.service.isValidationWarningPaused());
+
+        f.service.pollStrategyNow(strategy.id());
+
+        assertFalse(f.service.isValidationWarningPaused(), "Manual refresh should clear the warning-paused state immediately");
     }
 
     @Test
@@ -1358,8 +1497,11 @@ class StrategyPollingServiceTest {
     private static final class FakeAlpacaClient implements AlpacaClient {
         BigDecimal latestPrice = new BigDecimal("8.00");
         Optional<AlpacaPositionData> position = Optional.empty();
+        final Map<String, AlpacaPositionData> positionsBySymbol = new ConcurrentHashMap<>();
         final Map<String, AlpacaOrderData> orderById = new HashMap<>();
         final Map<String, Boolean> overnightEligibleBySymbol = new HashMap<>();
+        int positionsBatchCalls;
+        int openOrdersBatchCalls;
         int orderCounter;
         int positionCalls;
         int priceCalls;
@@ -1372,6 +1514,7 @@ class StrategyPollingServiceTest {
         BigDecimal nextLimitSellFilledAveragePrice = Monetary.zero();
         private volatile CountDownLatch openOrdersEnteredLatch;
         private volatile CountDownLatch openOrdersReleaseLatch;
+        private volatile boolean failNextOpenOrdersBatch;
         private final Map<String, CountDownLatch> openOrdersEnteredBySymbol = new ConcurrentHashMap<>();
         private final Map<String, CountDownLatch> openOrdersReleaseBySymbol = new ConcurrentHashMap<>();
         private final Map<String, Integer> openOrderCallsBySymbol = new ConcurrentHashMap<>();
@@ -1460,9 +1603,20 @@ class StrategyPollingServiceTest {
 
         @Override
         public List<AlpacaOrderData> getOpenOrders() {
+            if (failNextOpenOrdersBatch) {
+                failNextOpenOrdersBatch = false;
+                throw new RuntimeException("simulated combined snapshot batch failure");
+            }
             openOrderCalls++;
+            openOrdersBatchCalls++;
             awaitOpenOrdersGateIfConfigured();
             return orderById.values().stream().filter(this::isOpenOrder).toList();
+        }
+
+        /** Forces the next shared batch snapshot fetch to fail, so per-strategy resolution falls back
+         *  to the individual getPosition/getOpenOrders(symbol) calls exercised by the blocking gates above. */
+        void failNextOpenOrdersBatch() {
+            failNextOpenOrdersBatch = true;
         }
 
         @Override
@@ -1473,11 +1627,16 @@ class StrategyPollingServiceTest {
         @Override
         public Optional<AlpacaPositionData> getPosition(String symbol) {
             positionCalls++;
-            return position;
+            AlpacaPositionData bySymbol = positionsBySymbol.get(normalize(symbol));
+            return bySymbol != null ? Optional.of(bySymbol) : position;
         }
 
         @Override
         public List<AlpacaPositionData> getPositions() {
+            positionsBatchCalls++;
+            if (!positionsBySymbol.isEmpty()) {
+                return new ArrayList<>(positionsBySymbol.values());
+            }
             return position.map(List::of).orElseGet(List::of);
         }
 

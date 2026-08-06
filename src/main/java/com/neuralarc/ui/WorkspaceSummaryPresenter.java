@@ -14,6 +14,8 @@ final class WorkspaceSummaryPresenter {
         return label
                 + "  •  Realized " + money(snapshot.realized())
                 + "  •  Unrealized " + money(snapshot.unrealized())
+                + "  •  Gaining " + money(snapshot.gainingTotal())
+                + "  •  Losing " + money(snapshot.losingTotal())
                 + "  •  Total " + money(snapshot.total())
                 + "  •  Daily " + money(snapshot.dailyRealized())
                 + "  •  Win " + percent(snapshot.winRatePercent())

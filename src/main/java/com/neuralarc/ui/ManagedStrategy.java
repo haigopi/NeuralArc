@@ -28,6 +28,7 @@ final class ManagedStrategy {
     volatile long lastAppliedPollIntervalMillis;
     volatile boolean countdownActive;
     volatile boolean pollInFlight;
+    volatile long lastValidationSuccessAtMillis;
     private volatile Boolean overnightEligible;
     private volatile boolean pauseResumeBusy;
     private volatile String pauseResumeBusyText = "";
