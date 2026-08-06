@@ -16,6 +16,7 @@ import com.neuralarc.model.StrategyOrderType;
 import com.neuralarc.model.StrategyStage;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.model.StopLossType;
+import com.neuralarc.service.StrategyExecutionEventRepository;
 import com.neuralarc.service.StrategyOrderRepository;
 import com.neuralarc.service.StrategyRepository;
 import org.junit.jupiter.api.Test;
@@ -62,7 +63,13 @@ class PortfolioRefreshControllerTest {
         ));
         ExecutorService executor = Executors.newSingleThreadExecutor();
         FakeGateway gateway = new FakeGateway(client);
-        PortfolioRefreshController controller = new PortfolioRefreshController(strategies, orders, executor, gateway);
+        PortfolioRefreshController controller = new PortfolioRefreshController(
+                strategies,
+                orders,
+                new InMemoryEventRepository(),
+                executor,
+                gateway
+        );
 
         controller.refresh(true);
 
@@ -87,7 +94,13 @@ class PortfolioRefreshControllerTest {
         strategies.save(completed);
         ExecutorService executor = Executors.newSingleThreadExecutor();
         FakeGateway gateway = new FakeGateway(new FakeAlpacaClient());
-        PortfolioRefreshController controller = new PortfolioRefreshController(strategies, orders, executor, gateway);
+        PortfolioRefreshController controller = new PortfolioRefreshController(
+                strategies,
+                orders,
+                new InMemoryEventRepository(),
+                executor,
+                gateway
+        );
 
         controller.refresh(true);
 
@@ -95,6 +108,36 @@ class PortfolioRefreshControllerTest {
         executor.shutdownNow();
         assertTrue(gateway.logs.stream().anyMatch(log -> log.contains("current/recoverable strategy row(s)")
                 && log.contains("visible All Stocks grid may show fewer current rows")));
+        assertEquals(List.of("AAPL"), gateway.client.lastLatestPriceSymbols);
+    }
+
+    @Test
+    void refreshDeletesNeverVisibleStaleRowsBeforeSnapshotRefresh() throws Exception {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        strategies.save(activePendingStrategy());
+        Strategy staleFailed = activePendingStrategy();
+        staleFailed.setSymbol("TSLA");
+        staleFailed.setStatus(StrategyStatus.FAILED);
+        staleFailed.setCurrentState(StrategyLifecycleState.FAILED);
+        staleFailed.setLatestOrderStatus("rejected");
+        strategies.save(staleFailed);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        FakeGateway gateway = new FakeGateway(new FakeAlpacaClient());
+        PortfolioRefreshController controller = new PortfolioRefreshController(
+                strategies,
+                orders,
+                new InMemoryEventRepository(),
+                executor,
+                gateway
+        );
+
+        controller.refresh(true);
+
+        assertTrue(gateway.finished.await(5, TimeUnit.SECONDS));
+        executor.shutdownNow();
+        assertEquals(1, strategies.findAll().size());
+        assertTrue(gateway.logs.stream().anyMatch(log -> log.contains("Deleted 1 stale strategy record(s)")));
         assertEquals(List.of("AAPL"), gateway.client.lastLatestPriceSymbols);
     }
 
@@ -235,5 +278,11 @@ class PortfolioRefreshControllerTest {
         @Override public void deleteByStrategyId(String strategyId) {
             orders.values().removeIf(order -> strategyId.equals(order.strategyId()));
         }
+    }
+
+    private static final class InMemoryEventRepository implements StrategyExecutionEventRepository {
+        @Override public void save(com.neuralarc.model.StrategyExecutionEvent event) { }
+        @Override public List<com.neuralarc.model.StrategyExecutionEvent> findByStrategyId(String strategyId) { return List.of(); }
+        @Override public void deleteByStrategyId(String strategyId) { }
     }
 }

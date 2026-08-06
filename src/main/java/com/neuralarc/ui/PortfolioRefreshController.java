@@ -16,6 +16,7 @@ import com.neuralarc.model.StrategyStage;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.util.BrokerOrderStatusUtil;
+import com.neuralarc.service.StrategyExecutionEventRepository;
 import com.neuralarc.service.StrategyRepository;
 import com.neuralarc.service.StrategyOrderRepository;
 import com.neuralarc.service.StrategyService;
@@ -61,6 +62,7 @@ final class PortfolioRefreshController {
 
     private final StrategyRepository strategyRepository;
     private final StrategyOrderRepository orderRepository;
+    private final StrategyExecutionEventRepository eventRepository;
     private final ExecutorService executor;
     private final Gateway gateway;
     private final UserActionLogSupport actionLog;
@@ -70,11 +72,13 @@ final class PortfolioRefreshController {
     PortfolioRefreshController(
             StrategyRepository strategyRepository,
             StrategyOrderRepository orderRepository,
+            StrategyExecutionEventRepository eventRepository,
             ExecutorService executor,
             Gateway gateway
     ) {
         this.strategyRepository = strategyRepository;
         this.orderRepository = orderRepository;
+        this.eventRepository = eventRepository;
         this.executor = executor;
         this.gateway = gateway;
         this.actionLog = new UserActionLogSupport(gateway::log);
@@ -115,6 +119,10 @@ final class PortfolioRefreshController {
     private void refreshInBackground(boolean manualTrigger, int generation) {
         try {
             List<Strategy> stored = strategyRepository.findAll();
+            int purgedCount = purgeNeverVisibleStaleStrategies(stored);
+            if (purgedCount > 0) {
+                stored = strategyRepository.findAll();
+            }
             Map<String, Position> snapshots = loadPositionSnapshots(stored);
             int reconciledCount = reconcileLeftoverLocalBrokerState(stored, snapshots);
             if (reconciledCount > 0) {
@@ -126,6 +134,67 @@ final class PortfolioRefreshController {
         } catch (Exception ex) {
             runOnEdt(() -> applyFailedRefresh(generation, manualTrigger, ex));
         }
+    }
+
+    private int purgeNeverVisibleStaleStrategies(List<Strategy> stored) {
+        if (stored == null || stored.isEmpty()) {
+            return 0;
+        }
+        int deleted = 0;
+        for (Strategy strategy : stored) {
+            if (strategy == null || strategy.id() == null || strategy.id().isBlank()) {
+                continue;
+            }
+            List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
+            if (!isNeverVisibleStaleStrategy(strategy, orders)) {
+                continue;
+            }
+            orderRepository.deleteByStrategyId(strategy.id());
+            eventRepository.deleteByStrategyId(strategy.id());
+            strategyRepository.deleteById(strategy.id());
+            deleted++;
+        }
+        if (deleted > 0) {
+            gateway.log("[Portfolio Refresh] Deleted " + deleted
+                    + " stale strategy record(s) that are never shown in current or history grids.");
+        }
+        return deleted;
+    }
+
+    private boolean isNeverVisibleStaleStrategy(Strategy strategy, List<StrategyOrder> orders) {
+        StrategyStatus status = strategy.status();
+        if (status == null) {
+            return false;
+        }
+        if (status == StrategyStatus.ARCHIVED || status == StrategyStatus.STOPPED) {
+            return !hasFilledOrders(orders);
+        }
+        if (status == StrategyStatus.COMPLETED) {
+            return strategy.restartAfterExitEnabled() && !hasFilledOrders(orders);
+        }
+        if (status != StrategyStatus.FAILED) {
+            return false;
+        }
+        if (isFailedVisibleInCurrentGrid(strategy)) {
+            return false;
+        }
+        if (hasPendingOrders(orders)) {
+            return false;
+        }
+        return !hasFilledOrders(orders);
+    }
+
+    private boolean isFailedVisibleInCurrentGrid(Strategy strategy) {
+        String normalized = BrokerOrderStatusUtil.normalize(strategy.latestOrderStatus());
+        return "invalid".equals(normalized) || "expired".equals(normalized);
+    }
+
+    private boolean hasPendingOrders(List<StrategyOrder> orders) {
+        return orders != null && orders.stream().anyMatch(StrategyOrder::isPending);
+    }
+
+    private boolean hasFilledOrders(List<StrategyOrder> orders) {
+        return orders != null && orders.stream().anyMatch(order -> order.status() == StrategyOrderStatus.FILLED);
     }
 
     private void applySuccessfulRefresh(

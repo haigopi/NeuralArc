@@ -578,6 +578,7 @@ public class TradingFrame extends JFrame {
         portfolioRefreshController = new PortfolioRefreshController(
                 strategyRepository,
                 strategyOrderRepository,
+                strategyEventRepository,
                 uiPollingExecutor,
                 new PortfolioRefreshController.Gateway() {
                     @Override public boolean isConnected() { return connectionOk; }
