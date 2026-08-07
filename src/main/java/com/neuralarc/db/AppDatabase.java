@@ -201,6 +201,7 @@ public final class AppDatabase {
         applyMigration("013_swing_schedules",        this::migration013);
         applyMigration("014_auto_adjust_risk",       this::migration014);
         applyMigration("015_strategy_scan_history",   this::migration015);
+        applyMigration("016_remote_sync_suppressions", this::migration016);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -529,6 +530,22 @@ public final class AppDatabase {
                     )""");
             st.execute("CREATE INDEX IF NOT EXISTS idx_scan_history_workspace "
                     + "ON strategy_scan_history(workspace_id, ran_at)");
+        }
+    }
+
+    /**
+     * Symbols the operator deleted, per mode. The broker still reports their positions/orders, so
+     * without this the remote sync would immediately recreate a strategy the user just removed.
+     */
+    private void migration016() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS remote_sync_suppressions (
+                        symbol       TEXT NOT NULL,
+                        mode         TEXT NOT NULL,
+                        suppressed_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        PRIMARY KEY (symbol, mode)
+                    )""");
         }
     }
 

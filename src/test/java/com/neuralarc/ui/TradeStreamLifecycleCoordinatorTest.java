@@ -65,6 +65,26 @@ class TradeStreamLifecycleCoordinatorTest {
         assertTrue(gateway.uiRefreshTriggered);
         assertEquals(1, gateway.syncStrategiesCalls);
         assertEquals(1, gateway.refreshTableCalls);
+        assertEquals(1, gateway.toasts.size(), "a fill should surface a toast");
+        assertTrue(gateway.toasts.get(0).text().contains("AAPL"), gateway.toasts.get(0).text());
+    }
+
+    @Test
+    void routineOrderAcknowledgementDoesNotRaiseAToast() {
+        FakeGateway gateway = new FakeGateway();
+        TradeStreamLifecycleCoordinator coordinator = new TradeStreamLifecycleCoordinator(
+                gateway, (ignoredUrl, ignoredKey, ignoredSecret) -> gateway.client);
+        AlpacaTradeUpdateEvent event = new AlpacaTradeUpdateEvent(
+                "new",
+                new AlpacaOrderData("oid", "cid", "AAPL", "buy", "limit", new BigDecimal("10"),
+                        BigDecimal.ZERO, BigDecimal.ZERO, "new", "{}")
+        );
+
+        coordinator.onTradeEvent(event);
+
+        assertTrue(gateway.toasts.isEmpty(), "acknowledgements must not toast, but must still update the UI");
+        assertTrue(gateway.tradeUpdateForwarded);
+        assertEquals(1, gateway.refreshTableCalls);
     }
 
     @Test
@@ -127,6 +147,7 @@ class TradeStreamLifecycleCoordinatorTest {
         int syncStrategiesCalls;
         int refreshTableCalls;
         Optional<String> onTradeUpdateResult = Optional.of("strategy-1");
+        final java.util.List<TradeEventToastFormatter.ToastMessage> toasts = new java.util.ArrayList<>();
         final FakeStreamClient client = new FakeStreamClient();
 
         @Override public boolean webSocketEnabled() { return webSocketEnabled; }
@@ -137,6 +158,7 @@ class TradeStreamLifecycleCoordinatorTest {
         @Override public boolean canProcessTradeUpdates() { return true; }
         @Override public Optional<String> onTradeUpdate(AlpacaTradeUpdateEvent event) { tradeUpdateForwarded = true; return onTradeUpdateResult; }
         @Override public void refreshDisplayedPositionFromStream(String strategyId) { lastRefreshedStrategyId = strategyId; }
+        @Override public void showTradeEventToast(TradeEventToastFormatter.ToastMessage message) { toasts.add(message); }
         @Override public void invokeLater(Runnable runnable) { runnable.run(); }
         @Override public void syncStrategiesFromRepository() { uiRefreshTriggered = true; syncStrategiesCalls++; }
         @Override public void refreshStrategyTableContent() { refreshTableCalls++; }

@@ -36,6 +36,11 @@ public class StrategyEngine {
     private final ExpiredEntryOrderResubmitter expiredEntryOrderResubmitter;
     private final BaseBuyPriceGuard baseBuyPriceGuard = new BaseBuyPriceGuard();
     private WorkspaceCodeResolver workspaceCodeResolver = WorkspaceCodeResolver.unassigned();
+    private final StopLossAutoCorrector stopLossAutoCorrector;
+
+    void setAutoCorrectionListener(StopLossAutoCorrector.AutoCorrectionListener listener) {
+        stopLossAutoCorrector.setListener(listener);
+    }
 
     void setWorkspaceCodeResolver(WorkspaceCodeResolver resolver) {
         this.workspaceCodeResolver = resolver == null ? WorkspaceCodeResolver.unassigned() : resolver;
@@ -101,6 +106,7 @@ public class StrategyEngine {
         this.marketHoursService = marketHoursService;
         this.emailNotificationService = emailNotificationService;
         this.expiredEntryOrderResubmitter = new ExpiredEntryOrderResubmitter(orderRepository, alpacaClient);
+        this.stopLossAutoCorrector = new StopLossAutoCorrector(strategyRepository, stateMachine);
         this.profitControlEvaluator = new StrategyProfitControlEvaluator(
                 strategyRepository,
                 stateMachine,
@@ -415,35 +421,17 @@ public class StrategyEngine {
     }
 
     private void evaluateManagedStopLoss(Strategy strategy, AlpacaPositionData position, BigDecimal latestPrice, List<StrategyOrder> orders, List<RuleOutcome> outcomes) {
-        if (!strategy.automatedStopLossEnabled()) {
-            logRule(strategy, "STOP_LOSS", "SKIPPED", "Disabled", outcomes);
-            return;
+        ManagedStopLossEvaluator.Decision decision =
+                ManagedStopLossEvaluator.decide(strategy, position, latestPrice, orders);
+        String detail = decision.action() == ManagedStopLossEvaluator.Action.AUTO_CORRECT
+                ? stopLossAutoCorrector.correct(strategy, decision.threshold(), latestPrice)
+                : decision.detail();
+        logRule(strategy, "STOP_LOSS", decision.action().logStatus(), detail, outcomes);
+        if (decision.action() == ManagedStopLossEvaluator.Action.SELL) {
+            submitSellOrder(strategy, StrategyStage.STOP_LOSS, position.quantity(), latestPrice,
+                    StrategyLifecycleState.SELL_PLACED, "Stop loss sell submitted", StrategyEventType.STOP_LOSS_TRIGGERED);
         }
-        if (hasPendingOrFilledStage(orders, StrategyStage.STOP_LOSS)) {
-            logRule(strategy, "STOP_LOSS", "SKIPPED", "Existing pending or filled stop loss order already present", outcomes);
-            return;
-        }
-        BigDecimal stopThreshold = strategy.stopLossType() == StopLossType.PERCENT_BELOW_AVERAGE_COST
-                ? Monetary.round(position.avgEntryPrice().multiply(BigDecimal.ONE.subtract(strategy.stopLossPercent().divide(new BigDecimal("100")))))
-                : strategy.stopLossPrice();
-        if (stopThreshold.compareTo(BigDecimal.ZERO) <= 0) {
-            logRule(strategy, "STOP_LOSS", "SKIPPED", "Computed threshold is not positive", outcomes);
-            return;
-        }
-        if (latestPrice.compareTo(stopThreshold) > 0) {
-            logRule(strategy, "STOP_LOSS", "NOT_SATISFIED",
-                    "latestPrice=" + latestPrice.toPlainString()
-                            + " > threshold=" + stopThreshold.toPlainString(), outcomes);
-            return;
-        }
-        logRule(strategy, "STOP_LOSS", "SATISFIED",
-                "latestPrice=" + latestPrice.toPlainString()
-                        + " <= threshold=" + stopThreshold.toPlainString()
-                        + ", quantity=" + position.quantity().toPlainString(), outcomes);
-        submitSellOrder(strategy, StrategyStage.STOP_LOSS, position.quantity(), latestPrice,
-                StrategyLifecycleState.SELL_PLACED, "Stop loss sell submitted", StrategyEventType.STOP_LOSS_TRIGGERED);
     }
-
 
     private void maybeRestartStrategy(Strategy strategy, List<StrategyOrder> orders, BigDecimal latestPrice) {
         if (!isAutoExecutionAllowed(strategy.id())) {

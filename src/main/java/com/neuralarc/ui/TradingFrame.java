@@ -11,6 +11,7 @@ import com.neuralarc.db.AppDatabase;
 import com.neuralarc.db.SqliteStrategyExecutionEventRepository;
 import com.neuralarc.db.SqliteStrategyOrderRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
+import com.neuralarc.db.SqliteRemoteSyncSuppressionRepository;
 import com.neuralarc.db.SqliteScanHistoryRepository;
 import com.neuralarc.db.SqliteWorkspaceRepository;
 import com.neuralarc.gaprocket.GapRocketAnalysisDialog;
@@ -291,6 +292,7 @@ public class TradingFrame extends JFrame {
     private final MarketStatusPresenter marketStatusPresenter = new MarketStatusPresenter();
     private final PollingCellPresenter pollingCellPresenter = new PollingCellPresenter();
     private final PositionValidationCellPresenter positionValidationCellPresenter = new PositionValidationCellPresenter();
+    private final ToastNotifier toastNotifier = new ToastNotifier(this);
     private final StatusBarPresenter statusBarPresenter = new StatusBarPresenter();
     private final StrategyActionsPresenter strategyActionsPresenter = new StrategyActionsPresenter();
     private final StrategyGridLayoutPresenter strategyGridLayoutPresenter = new StrategyGridLayoutPresenter();
@@ -458,6 +460,7 @@ public class TradingFrame extends JFrame {
     private final SqliteStrategyExecutionEventRepository strategyEventRepository;
     private final SqliteWorkspaceRepository workspaceRepository;
     private final SqliteScanHistoryRepository scanHistoryRepository;
+    private final SqliteRemoteSyncSuppressionRepository remoteSyncSuppressionRepository;
     private final GapAndGoCoordinator gapAndGoCoordinator;
     private final OrbCoordinator orbCoordinator;
     private final DipHunterCoordinator dipHunterCoordinator;
@@ -564,6 +567,7 @@ public class TradingFrame extends JFrame {
         strategyEventRepository = new SqliteStrategyExecutionEventRepository(appDatabase);
         workspaceRepository = new SqliteWorkspaceRepository(appDatabase);
         scanHistoryRepository = new SqliteScanHistoryRepository(appDatabase);
+        remoteSyncSuppressionRepository = new SqliteRemoteSyncSuppressionRepository(appDatabase);
         gapAndGoCoordinator = new GapAndGoCoordinator(
                 new GapAndGoCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
@@ -1072,6 +1076,11 @@ public class TradingFrame extends JFrame {
             @Override
             public void refreshDisplayedPositionFromStream(String strategyId) {
                 TradingFrame.this.refreshDisplayedPositionFromStream(strategyId);
+            }
+
+            @Override
+            public void showTradeEventToast(TradeEventToastFormatter.ToastMessage message) {
+                toastNotifier.show(message);
             }
 
             @Override
@@ -3449,6 +3458,7 @@ public class TradingFrame extends JFrame {
         strategyOrderRepository.deleteByStrategyId(strategy.id());
         strategyEventRepository.deleteByStrategyId(strategy.id());
         strategyRepository.deleteById(strategy.id());
+        suppressRemoteSyncFor(strategy);
         log("[PORTFOLIO] Deleted trade history record for " + strategy.symbol() + ".");
         return StrategyService.ArchiveResult.success(strategy.id());
     }
@@ -3473,6 +3483,7 @@ public class TradingFrame extends JFrame {
                 strategyOrderRepository.deleteByStrategyId(strategy.id());
                 strategyEventRepository.deleteByStrategyId(strategy.id());
                 strategyRepository.deleteById(strategy.id());
+                suppressRemoteSyncFor(strategy);
             }
             log("[PORTFOLIO] Deleted PAPER mode entry for " + strategy.symbol() + ".");
             return StrategyService.ArchiveResult.success(strategy.id());
@@ -3496,8 +3507,19 @@ public class TradingFrame extends JFrame {
         strategyOrderRepository.deleteByStrategyId(strategy.id());
         strategyEventRepository.deleteByStrategyId(strategy.id());
         strategyRepository.deleteById(strategy.id());
+        suppressRemoteSyncFor(strategy);
         log("[PORTFOLIO] Deleted pending base-buy recommendation for " + strategy.symbol() + ".");
         return StrategyService.ArchiveResult.success(strategy.id());
+    }
+
+    /**
+     * Records a deletion made through the repositories directly (bypassing StrategyService) so the
+     * broker sync does not recreate the strategy from its still-open position or order.
+     */
+    private void suppressRemoteSyncFor(Strategy strategy) {
+        if (strategy != null) {
+            remoteSyncSuppressionRepository.suppress(strategy.symbol(), strategy.mode());
+        }
     }
 
     private boolean autoInitializeConnection() {
@@ -3557,7 +3579,17 @@ public class TradingFrame extends JFrame {
                 }
         );
         strategyService = runtimeServices.strategyService();
+        strategyService.setRemoteSyncSuppressionRepository(remoteSyncSuppressionRepository);
         strategyPollingService = runtimeServices.strategyPollingService();
+        strategyPollingService.setAutoCorrectionListener((strategyId, symbol, message) ->
+                SwingUtilities.invokeLater(() -> notifyAutoCorrection(symbol, message)));
+    }
+
+    /** An automatic safety correction changed a strategy — make it visible, but never block trading. */
+    private void notifyAutoCorrection(String symbol, String message) {
+        log("[AUTO-CORRECTION][" + symbol + "] " + message);
+        toastNotifier.showWarning("Auto-correction applied — " + message);
+        refreshStrategyTableContent();
     }
 
     private void refreshCachedAlpacaClients() {
@@ -5991,17 +6023,21 @@ public class TradingFrame extends JFrame {
     }
 
     private void configureFilledOrdersColumnWidths() {
+        // Narrow, fixed-content columns stay capped so they never sprawl...
         setTableColumnWidth(0, 70, 52, 90);
         setTableColumnWidth(1, 108, 78, 150);
-        setTableColumnWidth(2, 190, 130, 280);
-        setTableColumnWidth(3, 360, 220, 560);
         setTableColumnWidth(4, 64, 52, 78);
         setTableColumnWidth(5, 98, 78, 130);
         setTableColumnWidth(6, 50, 38, 62);
         setTableColumnWidth(7, 64, 52, 76);
         setTableColumnWidth(8, 64, 52, 76);
         setTableColumnWidth(9, 110, 82, 150);
-        setTableColumnWidth(10, 280, 220, 380);
+        // ...while the free-text columns absorb the remaining viewport width. Capping every
+        // column left the table narrower than its scroll pane, which is what produced the dead
+        // strip on the right of the Trade History grid.
+        setFlexibleTableColumnWidth(2, 190, 130);
+        setFlexibleTableColumnWidth(3, 360, 220);
+        setFlexibleTableColumnWidth(10, 280, 200);
     }
 
     private void setTableColumnWidth(int columnIndex, int preferredWidth, int minWidth, int maxWidth) {
@@ -6014,14 +6050,14 @@ public class TradingFrame extends JFrame {
         column.setMaxWidth(maxWidth);
     }
 
-    private void setFlexibleTableColumnWidth(int columnIndex, int preferredWidth, int minWidth, int maxWidth) {
+    /** No max width, so the column can stretch and let the table fill its scroll pane. */
+    private void setFlexibleTableColumnWidth(int columnIndex, int preferredWidth, int minWidth) {
         if (columnIndex < 0 || columnIndex >= filledOrdersTable.getColumnModel().getColumnCount()) {
             return;
         }
         javax.swing.table.TableColumn column = filledOrdersTable.getColumnModel().getColumn(columnIndex);
         column.setPreferredWidth(preferredWidth);
         column.setMinWidth(minWidth);
-        column.setMaxWidth(maxWidth);
     }
 
     private void configureTradeHistorySorting() {

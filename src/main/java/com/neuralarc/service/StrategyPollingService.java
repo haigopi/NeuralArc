@@ -659,6 +659,11 @@ public class StrategyPollingService {
         strategyEngine.setEmailNotificationListener(listener);
     }
 
+    /** Surfaces automatic safety corrections (e.g. a repaired stop loss) to the UI. */
+    public void setAutoCorrectionListener(StopLossAutoCorrector.AutoCorrectionListener listener) {
+        strategyEngine.setAutoCorrectionListener(listener);
+    }
+
     public void shutdown() {
         pollExecutor.shutdownNow();
         batchCoordinator.shutdown();

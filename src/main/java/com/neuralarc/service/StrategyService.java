@@ -1,6 +1,7 @@
 package com.neuralarc.service;
 
 import com.neuralarc.api.AlpacaClient;
+import com.neuralarc.db.SqliteRemoteSyncSuppressionRepository;
 import com.neuralarc.api.AlpacaPositionData;
 import com.neuralarc.model.*;
 import com.neuralarc.util.BrokerOrderStatusUtil;
@@ -41,6 +42,29 @@ public class StrategyService {
     private final MarketHoursService marketHoursService;
     private final ManualBuyOrderSubmitter manualBuyOrderSubmitter;
     private WorkspaceCodeResolver workspaceCodeResolver = WorkspaceCodeResolver.unassigned();
+    private SqliteRemoteSyncSuppressionRepository remoteSyncSuppressionRepository;
+
+    /**
+     * Optional: when absent (tests, alternative wiring) the remote sync simply keeps its previous
+     * behavior of recreating every broker symbol.
+     */
+    public void setRemoteSyncSuppressionRepository(SqliteRemoteSyncSuppressionRepository repository) {
+        this.remoteSyncSuppressionRepository = repository;
+    }
+
+    /** Records that the operator removed this symbol so the broker sync stops resurrecting it. */
+    public void suppressRemoteSync(String symbol) {
+        if (remoteSyncSuppressionRepository != null) {
+            remoteSyncSuppressionRepository.suppress(symbol, defaultStrategyMode);
+        }
+    }
+
+    /** Clears a prior deletion once the operator deliberately tracks the symbol again. */
+    public void allowRemoteSync(String symbol) {
+        if (remoteSyncSuppressionRepository != null) {
+            remoteSyncSuppressionRepository.clear(symbol, defaultStrategyMode);
+        }
+    }
 
     public StrategyService(
             StrategyRepository strategyRepository,
@@ -132,6 +156,8 @@ public class StrategyService {
         strategy.setCurrentState(StrategyLifecycleState.VALIDATED);
         strategy.setPauseReason(PauseReason.NONE);
         strategy.clearLastError();
+        // Deliberately tracking this symbol again overrides any earlier deletion.
+        allowRemoteSync(strategy.symbol());
         strategyRepository.save(strategy);
         stateMachine.transition(strategy, StrategyLifecycleState.VALIDATED, StrategyEventType.STRATEGY_CREATED, "Strategy validated", "{}");
 
@@ -170,12 +196,13 @@ public class StrategyService {
         boolean resubmitManualCancelStrategy = shouldResubmitManualCancelStrategyAfterEdit(persisted)
                 && strategyEngine.canAutoRetryFailed(persisted);
         boolean resubmitEditedStrategy = resubmitClosedStrategy || resubmitManualCancelStrategy;
+        boolean canceledOpenEntryOrders = false;
         if (refreshActiveOrders) {
             // For active strategies, cancel any currently open Alpaca orders before applying
             // edited pricing/quantity so new orders are created from updated settings.
-            cancelPendingRemoteOrders(persisted);
+            canceledOpenEntryOrders = cancelPendingRemoteOrders(persisted);
             if (!persisted.symbol().equalsIgnoreCase(strategy.symbol())) {
-                cancelPendingRemoteOrders(strategy);
+                canceledOpenEntryOrders |= cancelPendingRemoteOrders(strategy);
             }
         }
 
@@ -192,13 +219,51 @@ public class StrategyService {
         stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.STRATEGY_UPDATED, "Strategy updated", "{}");
 
         if (refreshActiveOrders && strategy.status() == StrategyStatus.ACTIVE) {
-            strategyEngine.resumeStrategy(strategy);
+            if (canceledOpenEntryOrders && shouldRepostEntryAfterEdit(strategy)) {
+                // resumeStrategy() bails out when the broker still reports an open order, and a
+                // just-canceled order lingers in pending_cancel for a moment. Relying on it here
+                // silently left the strategy with no entry order at all after an edit, so repost
+                // the base buy directly with the edited price/quantity.
+                cancelPendingLocalEntryOrders(strategy);
+                strategyEngine.submitBaseBuy(strategy, false);
+            } else {
+                strategyEngine.resumeStrategy(strategy);
+            }
         }
         if (resubmitEditedStrategy) {
             strategyEngine.submitBaseBuy(strategy, false);
         }
 
         return Optional.of(strategy);
+    }
+
+    /**
+     * Only repost when the edit left nothing holding the position: no open broker position and no
+     * filled base buy. Editing a strategy that is already filled must never trigger another buy.
+     */
+    private boolean shouldRepostEntryAfterEdit(Strategy strategy) {
+        List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
+        if (StrategyStageSupport.isStageFilled(orders, StrategyStage.BASE_BUY)) {
+            return false;
+        }
+        try {
+            return alpacaClient.getPosition(strategy.symbol())
+                    .filter(com.neuralarc.api.AlpacaPositionData::exists)
+                    .isEmpty();
+        } catch (RuntimeException ex) {
+            // Broker unreachable: skip the repost rather than risk duplicating an entry.
+            return false;
+        }
+    }
+
+    private void cancelPendingLocalEntryOrders(Strategy strategy) {
+        for (StrategyOrder order : orderRepository.findByStrategyId(strategy.id())) {
+            if (!order.isPending() || order.side() != StrategyOrderSide.BUY) {
+                continue;
+            }
+            order.setStatus(StrategyOrderStatus.CANCELED);
+            orderRepository.save(order);
+        }
     }
 
     private boolean shouldResubmitClosedStrategyAfterEdit(Strategy persisted) {
@@ -426,11 +491,15 @@ public class StrategyService {
     }
 
     public void delete(String strategyId) {
-        strategyRepository.findById(strategyId).ifPresent(this::cancelPendingRemoteOrders);
+        Optional<Strategy> deleted = strategyRepository.findById(strategyId);
+        deleted.ifPresent(this::cancelPendingRemoteOrders);
         stop(strategyId);
         strategyRepository.deleteById(strategyId);
         orderRepository.deleteByStrategyId(strategyId);
         eventRepository.deleteByStrategyId(strategyId);
+        // The broker keeps reporting this symbol's position/order, so record the deletion or the
+        // next remote sync would recreate the strategy the operator just removed.
+        deleted.ifPresent(strategy -> suppressRemoteSync(strategy.symbol()));
     }
 
     public Optional<Strategy> recoverStaleRestartFailure(String strategyId) {
@@ -654,6 +723,11 @@ public class StrategyService {
                 .map(Strategy::symbol)
                 .map(String::toUpperCase)
                 .collect(Collectors.toCollection(HashSet::new));
+        // Symbols the operator deleted. Their broker position/order usually still exists, so
+        // without this they would be recreated on the very next sync.
+        Set<String> suppressedSymbols = remoteSyncSuppressionRepository == null
+                ? Set.of()
+                : remoteSyncSuppressionRepository.suppressedSymbols(defaultStrategyMode);
 
         Map<String, List<com.neuralarc.api.AlpacaOrderData>> openOrdersBySymbol = alpacaClient.getOpenOrders().stream()
                 .filter(order -> order.symbol() != null && !order.symbol().isBlank())
@@ -667,7 +741,7 @@ public class StrategyService {
 
         List<Strategy> created = new java.util.ArrayList<>();
         for (String symbol : remoteSymbols) {
-            if (localSymbols.contains(symbol)) {
+            if (localSymbols.contains(symbol) || suppressedSymbols.contains(symbol)) {
                 continue;
             }
             Strategy strategy = buildRemoteStrategy(symbol, openOrdersBySymbol.getOrDefault(symbol, List.of()), positionsBySymbol.get(symbol));
@@ -836,10 +910,11 @@ public class StrategyService {
         };
     }
 
-    private void cancelPendingRemoteOrders(Strategy strategy) {
+    /** @return true when at least one open broker order was canceled. */
+    private boolean cancelPendingRemoteOrders(Strategy strategy) {
         List<com.neuralarc.api.AlpacaOrderData> openOrders = alpacaClient.getOpenOrders(strategy.symbol());
         if (openOrders.isEmpty()) {
-            return;
+            return false;
         }
         boolean canceledAny = false;
         for (com.neuralarc.api.AlpacaOrderData order : openOrders) {
@@ -860,6 +935,7 @@ public class StrategyService {
             stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.ORDER_STATUS_UPDATED,
                     "Open Alpaca orders canceled for strategy " + strategy.symbol(), "{}");
         }
+        return canceledAny;
     }
 
     private Strategy buildRemoteStrategy(
