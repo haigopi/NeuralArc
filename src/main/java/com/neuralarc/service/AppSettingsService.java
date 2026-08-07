@@ -30,7 +30,10 @@ public class AppSettingsService {
     public static final boolean DEFAULT_VERBOSE_API_JSON_LOGGING = false;
     public static final int DEFAULT_VALIDATION_BATCH_WINDOW_SECONDS = 5;
     public static final int DEFAULT_MAX_VALIDATION_ATTEMPTS_BEFORE_PAUSE = 0;
-    public static final boolean DEFAULT_ADAPTIVE_PACING_ENABLED = true;
+    // Off by default: relaxing the interval silently stretches how often stop-loss/target rules are
+    // actually evaluated (up to the max multiplier), and it makes the grid countdown re-anchor
+    // mid-cycle so the progress bar and the seconds label disagree. Opt-in only.
+    public static final boolean DEFAULT_ADAPTIVE_PACING_ENABLED = false;
     public static final int DEFAULT_ADAPTIVE_PACING_MAX_MULTIPLIER = 4;
 
     private static final String KEY_VERBOSE_API_JSON_LOGGING = "logging.verboseApiJson";

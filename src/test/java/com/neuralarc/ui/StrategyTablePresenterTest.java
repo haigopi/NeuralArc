@@ -337,6 +337,55 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void dayPriceColumnsRenderBaseBuyFillAndTodaysRange() {
+        StrategyTablePresenter.DayPrices prices = new StrategyTablePresenter.DayPrices(
+                new BigDecimal("179.31"),
+                new BigDecimal("180.10"),
+                new BigDecimal("178.20"),
+                new BigDecimal("185.90")
+        );
+
+        assertEquals("179.31", presenter.valueAt(strategy(), new Position("AAPL"),
+                BigDecimal.ZERO, BigDecimal.ZERO, 12, "Active", prices));
+        assertEquals("180.10", presenter.valueAt(strategy(), new Position("AAPL"),
+                BigDecimal.ZERO, BigDecimal.ZERO, 13, "Active", prices));
+        assertEquals("178.20", presenter.valueAt(strategy(), new Position("AAPL"),
+                BigDecimal.ZERO, BigDecimal.ZERO, 14, "Active", prices));
+        assertEquals("185.90", presenter.valueAt(strategy(), new Position("AAPL"),
+                BigDecimal.ZERO, BigDecimal.ZERO, 15, "Active", prices));
+    }
+
+    @Test
+    void dayPriceColumnsShowDashRatherThanZeroWhenDataIsMissing() {
+        // Market data or the fill may simply not be available yet; a fabricated 0.00 would read
+        // as a real price on a trading screen, so these must render "-".
+        for (int column : new int[]{12, 13, 14, 15}) {
+            assertEquals("-", presenter.valueAt(strategy(), new Position("AAPL"),
+                            BigDecimal.ZERO, BigDecimal.ZERO, column, "Active",
+                            StrategyTablePresenter.DayPrices.EMPTY),
+                    "column " + column + " must render a dash when unavailable");
+            assertEquals("-", presenter.valueAt(strategy(), new Position("AAPL"),
+                            BigDecimal.ZERO, BigDecimal.ZERO, column, "Active",
+                            new StrategyTablePresenter.DayPrices(
+                                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)),
+                    "column " + column + " must render a dash for a zero price");
+        }
+    }
+
+    @Test
+    void existingColumnContractIsUnchangedByTheNewDayPriceColumns() {
+        // The grid expresses ordering via its own mapping table, so presenter indices must stay put.
+        Position position = new Position("AAPL");
+        position.applyBuy(2, new BigDecimal("100.00"));
+        position.setLastPrice(new BigDecimal("110.00"));
+
+        assertEquals("AAPL", presenter.valueAt(strategy(), position, BigDecimal.ZERO, BigDecimal.ZERO, 0, "s"));
+        assertEquals(2, presenter.valueAt(strategy(), position, BigDecimal.ZERO, BigDecimal.ZERO, 2, "s"));
+        assertEquals("100.00", presenter.valueAt(strategy(), position, BigDecimal.ZERO, BigDecimal.ZERO, 3, "s"));
+        assertEquals("110.00", presenter.valueAt(strategy(), position, BigDecimal.ZERO, BigDecimal.ZERO, 4, "s"));
+    }
+
+    @Test
     void valueAtShowsConfiguredTimeInForce() {
         Strategy strategy = strategy();
         strategy.setTimeInForce(com.neuralarc.model.TimeInForce.GTC);

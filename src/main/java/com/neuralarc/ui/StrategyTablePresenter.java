@@ -241,9 +241,31 @@ public final class StrategyTablePresenter {
         }
         if (strategy.status() == StrategyStatus.ACTIVE && isWaitingForNextRule(strategy.currentState())) {
             String activeRule = resolveActiveRuleLabel(strategy, position);
-            return activeRule.isBlank() ? lifecycle + " - Monitoring next configured rule" : activeRule;
+            String monitoring = activeRule.isBlank() ? lifecycle + " - Monitoring next configured rule" : activeRule;
+            return monitoring + averagedInDescription(strategy, position);
         }
         return lifecycle;
+    }
+
+    /**
+     * The blended price an averaged-down position is now carried at. Only shown once the position
+     * holds more than the base buy quantity — i.e. a loss buy, manual buy, or average-down actually
+     * added to it. For an un-averaged entry the average cost is just the entry price, so repeating
+     * it next to every active rule would be noise.
+     */
+    private String averagedInDescription(Strategy strategy, Position position) {
+        if (strategy == null || position == null || position.getTotalShares() <= 0) {
+            return "";
+        }
+        if (position.getTotalShares() <= Math.max(0, strategy.baseBuyQuantity())) {
+            return "";
+        }
+        BigDecimal averageCost = position.getAverageCost();
+        if (averageCost == null || averageCost.compareTo(BigDecimal.ZERO) <= 0) {
+            return "";
+        }
+        return " | Averaged in @ $" + Monetary.round(averageCost).toPlainString()
+                + " x" + position.getTotalShares();
     }
 
     private String completedBookedStatusLabel(Strategy strategy, BigDecimal realizedPnl, BigDecimal lastSellPrice) {
@@ -649,6 +671,34 @@ public final class StrategyTablePresenter {
             int columnIndex,
             String statusLabel
     ) {
+        return valueAt(strategy, position, lastSellPrice, realizedPnl, columnIndex, statusLabel, DayPrices.EMPTY);
+    }
+
+    public Object valueAt(
+            Strategy strategy,
+            Position position,
+            BigDecimal lastSellPrice,
+            BigDecimal realizedPnl,
+            int columnIndex,
+            String statusLabel,
+            DayPrices dayPrices
+    ) {
+        DayPrices prices = dayPrices == null ? DayPrices.EMPTY : dayPrices;
+        switch (columnIndex) {
+            case 12 -> {
+                return positivePriceOrDash(prices.baseBuyExecutedPrice());
+            }
+            case 13 -> {
+                return positivePriceOrDash(prices.open());
+            }
+            case 14 -> {
+                return positivePriceOrDash(prices.low());
+            }
+            case 15 -> {
+                return positivePriceOrDash(prices.high());
+            }
+            default -> { }
+        }
         if (columnIndex >= 2 && columnIndex <= 6) {
             return switch (columnIndex) {
                 case 2 -> displayQuantity(strategy, position);
@@ -852,6 +902,21 @@ public final class StrategyTablePresenter {
             return realizedPnl.toPlainString();
         }
         return "-";
+    }
+
+    private String positivePriceOrDash(BigDecimal value) {
+        if (value == null || value.compareTo(BigDecimal.ZERO) <= 0) {
+            return "-";
+        }
+        return Monetary.round(value).toPlainString();
+    }
+
+    /**
+     * Per-row prices that don't come from {@link Position} or {@link Strategy}: the actual executed
+     * base-buy fill price, and today's session open/low/high from batched market data.
+     */
+    public record DayPrices(BigDecimal baseBuyExecutedPrice, BigDecimal open, BigDecimal low, BigDecimal high) {
+        public static final DayPrices EMPTY = new DayPrices(null, null, null, null);
     }
 
     public record PendingOrderSummary(BigDecimal limitPrice, BigDecimal quantity) {

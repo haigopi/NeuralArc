@@ -62,6 +62,16 @@ public interface AlpacaClient {
     }
 
     /**
+     * Batch-fetch today's session bar (open/high/low/close) for multiple symbols in a single API
+     * call, keyed by uppercased symbol. Powers the grid's Open / Today's Low / Today's High
+     * columns without one request per row. Default is empty so existing fakes stay compatible;
+     * an empty/missing entry must render as "-" rather than a fabricated price.
+     */
+    default Map<String, MarketBar> getDailySnapshots(List<String> symbols) {
+        return Map.of();
+    }
+
+    /**
      * Batch-fetch the latest trade price for multiple symbols in a single API call.
      * The default implementation falls back to calling {@link #getLatestPrice} for each
      * symbol individually; concrete broker clients should override this with a real

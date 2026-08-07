@@ -37,10 +37,10 @@ public final class PollingCellPresenter {
 
     public PollingCellViewModel present(PollingCellState state, PollingCellPalette palette, long nowMillis) {
         boolean showPollingIndicator = shouldShowPollingIndicator(state.strategyStatus(), state.waitingForFill());
-        boolean pollDue = showPollingIndicator
-                && state.nextPollDueAtMillis() > 0L
-                && nowMillis >= state.nextPollDueAtMillis();
-        boolean animatePoll = state.pollInFlight() || pollDue;
+        // Only an actual in-flight poll animates. A countdown that has merely reached zero keeps
+        // showing its real progress and rolls straight into the next cycle, so the bar never
+        // detaches from the seconds label.
+        boolean animatePoll = state.pollInFlight();
         int progress = animatePoll
                 ? animatedPollingProgressPercent(nowMillis)
                 : pollingProgressPercent(showPollingIndicator, state.pollIntervalMillis(), state.nextPollDueAtMillis(), nowMillis);
@@ -81,8 +81,6 @@ public final class PollingCellPresenter {
                 ? "Polling broker data now. Countdown resumes after the current request/response cycle completes."
                 : state.closedMarketPaused()
                 ? "Polling is paused because the market is closed. Alpaca refresh calls are suppressed until the next trading session opens."
-                : pollDue
-                ? "This strategy is due to poll and is waiting for the polling worker to start (0s remaining)."
                 : showPollingIndicator
                 ? secondsRemaining + " seconds remaining out of " + totalSeconds + " seconds"
                 : state.paused()

@@ -79,7 +79,10 @@ class PollingCellPresenterTest {
     }
 
     @Test
-    void overduePollingAnimatesInsteadOfFreezingAtFullBar() {
+    void overdueCountdownKeepsShowingRealProgressInsteadOfAnimating() {
+        // A countdown that has merely reached zero is not a distinct "poll due" state: it keeps
+        // its real (full) bar and rolls into the next cycle, so the bar can never drift away from
+        // the seconds label.
         PollingCellPresenter.PollingCellState state = new PollingCellPresenter.PollingCellState(
                 StrategyStatus.ACTIVE,
                 false,
@@ -97,9 +100,8 @@ class PollingCellPresenterTest {
         PollingCellPresenter.PollingCellViewModel second = presenter.present(state, palette, 3_600L);
 
         assertEquals("0s / 60s", first.labelText());
-        assertTrue(first.tooltip().contains("waiting for the polling worker"));
-        assertTrue(first.progress() >= 8 && first.progress() <= 92);
-        assertTrue(second.progress() >= 8 && second.progress() <= 92);
-        assertFalse(first.progress() == second.progress());
+        assertEquals(100, first.progress());
+        assertEquals(first.progress(), second.progress(), "an overdue countdown must not animate");
+        assertFalse(first.tooltip().contains("waiting for the polling worker"));
     }
 }

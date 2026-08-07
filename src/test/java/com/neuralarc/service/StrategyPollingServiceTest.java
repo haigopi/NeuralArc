@@ -631,6 +631,34 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void aGenuinelyInFlightStrategyIsNotDispatchedTwice() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy("AAPL", false);
+        strategy.setLastPolledAt(Instant.now().minusSeconds(60));
+        f.strategies.save(strategy);
+        f.service.markStrategyInFlightForTest(strategy.id(), false);
+
+        assertEquals(0, f.service.pollDueStrategies(),
+                "A poll that is legitimately still running must not be dispatched a second time");
+    }
+
+    @Test
+    void aWedgedPollDoesNotBlockTheStrategyFromEverBeingDispatchedAgain() throws Exception {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy("AAPL", false);
+        Instant baseline = Instant.now().minusSeconds(60);
+        strategy.setLastPolledAt(baseline);
+        f.strategies.save(strategy);
+        // A worker that never returned leaves the in-flight marker behind. Without reclaiming it
+        // this strategy would silently stop being polled for the rest of the session.
+        f.service.markStrategyInFlightForTest(strategy.id(), true);
+
+        assertEquals(1, f.service.pollDueStrategies(),
+                "A stale in-flight lock must be reclaimed so the strategy keeps being polled");
+        f.awaitLastPolledAfter(strategy.id(), baseline, "Reclaimed strategy should complete a real poll");
+    }
+
+    @Test
     void pollStrategyNowClearsWarningPausedState() throws Exception {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy("AAPL", false);

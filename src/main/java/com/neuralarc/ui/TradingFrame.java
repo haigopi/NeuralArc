@@ -236,9 +236,12 @@ public class TradingFrame extends JFrame {
     private static final int STREAM_RECONNECT_BASE_DELAY_MILLIS = 2 * 60 * 1000;
     private static final int STREAM_RECONNECT_MAX_DELAY_MILLIS = 30 * 60 * 1000;
     private static final int STREAM_RECONNECT_RESET_HOUR = 6;
-    private static final int STRATEGY_STOCK_PRICE_COLUMN = 3;
+    private static final int STRATEGY_STOCK_PRICE_COLUMN = 7;
+    private static final int STRATEGY_PNL_COLUMN = 8;
     private static final long STOCK_PRICE_TOOLTIP_TTL_MILLIS = 30_000L;
     private static final long BROKER_POSITION_SNAPSHOT_TTL_MILLIS = 15_000L;
+    /** Today's open never moves and the high/low drift slowly, so one batch call per 30s is ample. */
+    private static final long DAILY_BAR_SNAPSHOT_TTL_MILLIS = 30_000L;
     /** Gap between polling ticks that indicates the system was suspended (slept). */
     private static final long WAKE_GAP_DETECTION_MS = 30_000L;
     private static final Color HEADER_STATUS_DEFAULT = new Color(220, 220, 255);
@@ -330,7 +333,7 @@ public class TradingFrame extends JFrame {
             if (viewCol == STRATEGY_STOCK_PRICE_COLUMN) {
                 return strategyStockPriceTooltip(viewRow);
             }
-            if (viewCol != 6) {
+            if (viewCol != StrategyGridLayoutPresenter.STATUS_COLUMN_INDEX) {
                 return null;
             }
             Strategy strategy = strategies.get(modelRow).strategy;
@@ -483,6 +486,7 @@ public class TradingFrame extends JFrame {
     private StrategyService strategyService;
     private StrategyPollingService strategyPollingService;
     private long lastBrokerBackedUiRefreshAtMillis;
+    private volatile long lastDailyBarFetchAtMillis;
     private String runtimeApiKey = "";
     private String runtimeApiSecret = "";
     private volatile HttpAlpacaClient paperModeClient;
@@ -1364,7 +1368,7 @@ public class TradingFrame extends JFrame {
         StatusRowRenderer statusRowRenderer = new StatusRowRenderer();
         strategyTable.setDefaultRenderer(Object.class, statusRowRenderer);
         strategyTable.setDefaultRenderer(Number.class, statusRowRenderer);
-        strategyTable.getColumnModel().getColumn(5).setCellRenderer(new UnrealizedPnLRenderer());
+        strategyTable.getColumnModel().getColumn(STRATEGY_PNL_COLUMN).setCellRenderer(new UnrealizedPnLRenderer());
         strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.POLLING_COLUMN_INDEX).setCellRenderer(new PollingBarRenderer());
         strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX).setCellRenderer(new ActionsRenderer());
         // Preferred widths express the desired layout when there is room; minimums are kept
@@ -1375,14 +1379,20 @@ public class TradingFrame extends JFrame {
         strategyTable.getColumnModel().getColumn(0).setMinWidth(50);
         strategyTable.getColumnModel().getColumn(1).setPreferredWidth(92);
         strategyTable.getColumnModel().getColumn(1).setMinWidth(54);
-        strategyTable.getColumnModel().getColumn(6).setPreferredWidth(340);
-        strategyTable.getColumnModel().getColumn(6).setMinWidth(120);
-        strategyTable.getColumnModel().getColumn(8).setPreferredWidth(95);
-        strategyTable.getColumnModel().getColumn(8).setMinWidth(70);
-        strategyTable.getColumnModel().getColumn(9).setPreferredWidth(210);
-        strategyTable.getColumnModel().getColumn(9).setMinWidth(110);
-        strategyTable.getColumnModel().getColumn(10).setPreferredWidth(180);
-        strategyTable.getColumnModel().getColumn(10).setMinWidth(100);
+        // Price block (Buy Down, Avg Cost, Open, Today's Low, Today's High, Current Price) — all
+        // short numeric cells, kept compact so Status keeps the spare width.
+        for (int priceColumn = 2; priceColumn <= 7; priceColumn++) {
+            strategyTable.getColumnModel().getColumn(priceColumn).setPreferredWidth(96);
+            strategyTable.getColumnModel().getColumn(priceColumn).setMinWidth(64);
+        }
+        strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.STATUS_COLUMN_INDEX).setPreferredWidth(340);
+        strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.STATUS_COLUMN_INDEX).setMinWidth(120);
+        strategyTable.getColumnModel().getColumn(12).setPreferredWidth(95);
+        strategyTable.getColumnModel().getColumn(12).setMinWidth(70);
+        strategyTable.getColumnModel().getColumn(13).setPreferredWidth(210);
+        strategyTable.getColumnModel().getColumn(13).setMinWidth(110);
+        strategyTable.getColumnModel().getColumn(14).setPreferredWidth(180);
+        strategyTable.getColumnModel().getColumn(14).setMinWidth(100);
         applyStrategyGridColumnLayout();
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
@@ -1486,10 +1496,11 @@ public class TradingFrame extends JFrame {
         // Make table sortable — click column headers to sort
         strategySorter = new TableRowSorter<>(strategyTableModel);
         strategySorter.setComparator(0, (left, right) -> compareNumericCells(left, right));
-        strategySorter.setComparator(2, (left, right) -> compareNumericCells(left, right));
-        strategySorter.setComparator(3, (left, right) -> compareNumericCells(left, right));
-        strategySorter.setComparator(4, (left, right) -> compareNumericCells(left, right));
-        strategySorter.setComparator(5, (left, right) -> {
+        // Price block + Market Value: Buy Down, Avg Cost, Open, Low, High, Current Price, Market Value.
+        for (int numericColumn : new int[]{2, 3, 4, 5, 6, 7, 9}) {
+            strategySorter.setComparator(numericColumn, (left, right) -> compareNumericCells(left, right));
+        }
+        strategySorter.setComparator(STRATEGY_PNL_COLUMN, (left, right) -> {
             BigDecimal leftValue = sortableNumericValue(left);
             BigDecimal rightValue = sortableNumericValue(right);
             if (leftValue == null && rightValue == null) {
@@ -1505,7 +1516,7 @@ public class TradingFrame extends JFrame {
         });
         strategySorter.setSortable(StrategyGridLayoutPresenter.POLLING_COLUMN_INDEX, false); // Polling countdown bar column — not sortable
         strategySorter.setSortable(StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX, false); // Actions button column — not sortable
-        strategySorter.setSortKeys(List.of(new RowSorter.SortKey(5, SortOrder.DESCENDING)));
+        strategySorter.setSortKeys(List.of(new RowSorter.SortKey(STRATEGY_PNL_COLUMN, SortOrder.DESCENDING)));
         applyCurrentStrategiesRowFilter();
         strategyTable.setRowSorter(strategySorter);
         strategyTable.getTableHeader().addMouseListener(new MouseAdapter() {
@@ -3640,11 +3651,13 @@ public class TradingFrame extends JFrame {
                 Map<String, Position> positionSnapshots = !snapshotRefreshStrategies.isEmpty()
                         ? loadPositionSnapshotsForStrategies(snapshotRefreshStrategies)
                         : Map.of();
+                Map<String, MarketBar> dailyBars = loadDailyBarSnapshots(stored);
                 SwingUtilities.invokeLater(() -> {
                     try {
                         syncStrategies(stored);
                         applyOvernightEligibilitySnapshots(overnightEligibility);
                         applyPositionSnapshots(positionSnapshots);
+                        applyDailyBarSnapshots(dailyBars);
                         if (dueStrategies > 0 && shouldRunBrokerBackedUiRefresh()) {
                             refreshStrategyTableContent();
                             refreshPanels();
@@ -3909,6 +3922,59 @@ public class TradingFrame extends JFrame {
             return;
         }
         brokerPositionSnapshotCache.remove(mode == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER);
+    }
+
+    /**
+     * One batched market-data call for every visible symbol's today-session bar, powering the
+     * Open / Today's Low / Today's High columns. Throttled by {@link #DAILY_BAR_SNAPSHOT_TTL_MILLIS}
+     * and run off the EDT by the caller. Returns empty when unavailable so the grid shows "-"
+     * rather than a stale or fabricated price.
+     */
+    private Map<String, MarketBar> loadDailyBarSnapshots(List<Strategy> stored) {
+        if (stored == null || stored.isEmpty() || currentBrokerType != BrokerType.ALPACA) {
+            return Map.of();
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastDailyBarFetchAtMillis < DAILY_BAR_SNAPSHOT_TTL_MILLIS) {
+            return Map.of();
+        }
+        HttpAlpacaClient client = alpacaClientForMode(selectedViewMode == StrategyMode.LIVE
+                ? ApplicationMode.LIVE
+                : ApplicationMode.PAPER);
+        if (client == null) {
+            return Map.of();
+        }
+        List<String> symbols = stored.stream()
+                .filter(strategy -> strategy.symbol() != null && !strategy.symbol().isBlank())
+                .map(strategy -> strategy.symbol().trim().toUpperCase(Locale.ROOT))
+                .distinct()
+                .toList();
+        if (symbols.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            Map<String, MarketBar> bars = client.getDailySnapshots(symbols);
+            lastDailyBarFetchAtMillis = now;
+            return bars;
+        } catch (Exception ex) {
+            log("Daily open/high/low fetch failed: " + ex.getMessage());
+            return Map.of();
+        }
+    }
+
+    private void applyDailyBarSnapshots(Map<String, MarketBar> bars) {
+        if (bars == null || bars.isEmpty()) {
+            return;
+        }
+        for (ManagedStrategy entry : strategies) {
+            if (entry.strategy == null || entry.strategy.symbol() == null) {
+                continue;
+            }
+            MarketBar bar = bars.get(entry.strategy.symbol().trim().toUpperCase(Locale.ROOT));
+            if (bar != null) {
+                entry.setCachedDailyBar(bar);
+            }
+        }
     }
 
     private void applyPositionSnapshots(Map<String, Position> snapshots) {
@@ -5106,6 +5172,25 @@ public class TradingFrame extends JFrame {
         BigDecimal lastSellPrice = latestFilledSellPrice(orders);
         BigDecimal realized = realizedPnlForOrders(orders);
         entry.setTradeSnapshot(lastSellPrice, realized, latestPendingManualBuy(orders));
+        entry.setCachedBaseBuyExecutedPrice(baseBuyExecutedPrice(orders));
+    }
+
+    /**
+     * The price the base buy actually filled at, not the configured limit. Falls back to the most
+     * recent filled buy of any stage so a manually-entered position still shows what was paid.
+     */
+    private BigDecimal baseBuyExecutedPrice(List<StrategyOrder> orders) {
+        return orders.stream()
+                .filter(order -> order.side() == StrategyOrderSide.BUY)
+                .filter(order -> order.status() == StrategyOrderStatus.FILLED)
+                .filter(order -> order.filledAveragePrice() != null
+                        && order.filledAveragePrice().compareTo(BigDecimal.ZERO) > 0)
+                .sorted(Comparator.comparing(
+                        (StrategyOrder order) -> order.stage() == StrategyStage.BASE_BUY ? 0 : 1)
+                        .thenComparing(StrategyOrder::filledAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(StrategyOrder::filledAveragePrice)
+                .findFirst()
+                .orElse(Monetary.zero());
     }
 
     private StrategyTablePresenter.PendingOrderSummary latestPendingManualBuy(List<StrategyOrder> orders) {
@@ -5653,6 +5738,16 @@ public class TradingFrame extends JFrame {
             return;
         }
         if (entry.nextPollDueAtMillis <= 0L) {
+            entry.countdownActive = true;
+            entry.nextPollDueAtMillis = System.currentTimeMillis() + entry.pollIntervalMillis;
+            return;
+        }
+        // Self-heal a countdown that is overdue by more than a full interval. That means no poll
+        // completion re-anchored it for at least two cycles (worker backlog, a dropped listener
+        // callback, or a poll that returned early without stamping lastPolledAt), which would
+        // otherwise leave the row frozen on "Poll due" forever instead of showing a live counter.
+        if (!entry.pollInFlight
+                && System.currentTimeMillis() - entry.nextPollDueAtMillis > entry.pollIntervalMillis) {
             entry.countdownActive = true;
             entry.nextPollDueAtMillis = System.currentTimeMillis() + entry.pollIntervalMillis;
         }
@@ -7971,6 +8066,7 @@ public class TradingFrame extends JFrame {
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
             int modelRow = table.convertRowIndexToModel(row);
             ManagedStrategy strategy = strategies.get(modelRow);
+            ensurePollingCountdownScheduled(strategy);
             long nowMillis = System.currentTimeMillis();
             PositionValidationCellPresenter.ViewModel validationViewModel = positionValidationCellPresenter.present(
                     new PositionValidationCellPresenter.State(
@@ -8015,23 +8111,11 @@ public class TradingFrame extends JFrame {
             }
             setBorder(tableCellBorder(5, 10, 5, 10));
             boolean warningPaused = validationViewModel.lifecycleState() == PositionValidationCellPresenter.ValidationLifecycleState.WARNING_PAUSED;
-            // The countdown can reach 0 seconds before the polling worker actually picks the
-            // strategy up (worker pool contention, or the shared batch fetch still in flight).
-            // The base view model shows an animated "in progress" bar for that window but its
-            // label falls back to a literal "0s / 60s" — label and bar must agree, so surface an
-            // explicit "Poll due..." state instead of a countdown that looks finished but isn't.
-            boolean pollDue = viewModel.showPollingIndicator()
-                    && !strategy.pollInFlight
-                    && strategy.nextPollDueAtMillis > 0L
-                    && nowMillis >= strategy.nextPollDueAtMillis;
             progressBar.setValue(warningPaused ? 0 : viewModel.progress());
             progressBar.setBackground(viewModel.trackBackground());
             progressBar.setForeground(warningPaused ? STATUS_TEXT_PAUSED : viewModel.progressForeground());
             countdownLabel.setForeground(warningPaused ? STATUS_TEXT_PAUSED : viewModel.labelForeground());
-            countdownLabel.setText(
-                    warningPaused ? "Unable to validate"
-                    : pollDue ? "Poll due…"
-                    : viewModel.labelText());
+            countdownLabel.setText(warningPaused ? "Unable to validate" : viewModel.labelText());
             refreshNowLabel.setVisible(validationViewModel.showRefreshNowAffordance());
             String tooltipText = TooltipStyler.text(
                     appendValidationHints(appendSessionHint(viewModel.tooltip(), strategy), validationViewModel));

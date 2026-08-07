@@ -48,9 +48,12 @@ class RuleTriggeredHistoryPresenterTest {
         );
 
         assertTrue(label.contains("<b>Current:</b> Sell trigger active @ $110.00 | Waiting 5m"));
-        assertTrue(label.contains("Base Buy placed @ $100.00/10 on 2026-05-18T14:30:00Z"));
-        assertTrue(label.contains("Base Buy partially filled @ $100.25/5 on 2026-05-18T14:31:00Z"));
-        assertTrue(label.contains("Target Sell sold @ $110.50/5 on 2026-05-18T15:32:00Z"));
+        // Timeline layout: each step is its own row with the timestamp in a separate aligned cell.
+        assertTrue(label.contains("Base Buy placed @ $100.00/10"), label);
+        assertTrue(label.contains("2026-05-18T14:30:00Z"), label);
+        assertTrue(label.contains("Base Buy partially filled @ $100.25/5"), label);
+        assertTrue(label.contains("Target Sell sold @ $110.50/5"), label);
+        assertTrue(label.contains("<table"), label);
     }
 
     @Test
@@ -134,10 +137,11 @@ class RuleTriggeredHistoryPresenterTest {
                 Instant::toString
         );
 
-        assertTrue(label.contains("Base Buy failed x3 @ $100.00/10 from 2026-05-18T14:30:00Z"));
+        assertTrue(label.contains("Base Buy failed x3 @ $100.00/10"), label);
+        // The repeat window collapses into the single time cell for that consolidated row.
+        assertTrue(label.contains("2026-05-18T14:30:00Z"), label);
         assertTrue(label.contains("style='color:#B71C1C; background-color:#FFF59D;'"));
-        assertFalse(label.contains("Base Buy placed @ $100.00/10 on 2026-05-18T14:31:00Z"));
-        assertFalse(label.contains("Base Buy placed @ $100.00/10 on 2026-05-18T14:32:00Z"));
+        assertFalse(label.contains("Base Buy placed @ $100.00/10</td>"), label);
     }
 
     @Test
@@ -173,6 +177,59 @@ class RuleTriggeredHistoryPresenterTest {
         assertTrue(label.contains("Stop Loss sold @ $9.00/5"));
         assertTrue(label.contains("Buy Limit 1 filled @ $8.998/1"));
         assertFalse(label.contains("Buy Limit 1 filled @ $9.00/1"));
+    }
+
+    @Test
+    void averagingDownShowsTheBlendedPriceThePositionIsNowAveragedInAt() {
+        Instant start = Instant.parse("2026-05-18T14:30:00Z");
+        StrategyOrder baseBuy = order(StrategyStage.BASE_BUY, StrategyOrderSide.BUY,
+                new BigDecimal("10.00"), new BigDecimal("10"), new BigDecimal("10"),
+                new BigDecimal("10.00"), StrategyOrderStatus.FILLED, start);
+        StrategyOrder averageDown = order(StrategyStage.MANUAL_BUY, StrategyOrderSide.BUY,
+                new BigDecimal("8.00"), new BigDecimal("10"), new BigDecimal("10"),
+                new BigDecimal("8.00"), StrategyOrderStatus.FILLED, start.plusSeconds(3600));
+
+        String label = presenter.buildLabel("Rules: Stop loss active",
+                List.of(baseBuy, averageDown), Instant::toString);
+
+        // The first entry is not an averaging step, so it shows only its own fill price.
+        assertTrue(label.contains("Base Buy filled @ $10.00/10"), label);
+        assertFalse(label.contains("Base Buy filled @ $10.00/10 - averaged in"), label);
+        // The second buy blends 10 @ $10 with 10 @ $8 → $9.00.
+        assertTrue(label.contains("Manual Buy filled @ $8.00/10 - averaged in @ $9.00"), label);
+    }
+
+    @Test
+    void singleEntryPositionDoesNotClaimToBeAveraged() {
+        Instant start = Instant.parse("2026-05-18T14:30:00Z");
+        StrategyOrder baseBuy = order(StrategyStage.BASE_BUY, StrategyOrderSide.BUY,
+                new BigDecimal("10.00"), new BigDecimal("10"), new BigDecimal("10"),
+                new BigDecimal("10.00"), StrategyOrderStatus.FILLED, start);
+
+        String label = presenter.buildLabel("Rules: Stop loss active", List.of(baseBuy), Instant::toString);
+
+        assertFalse(label.contains("averaged in"), label);
+    }
+
+    @Test
+    void reEntryAfterAFullExitStartsAFreshAverageInsteadOfBlendingAcrossTrades() {
+        Instant start = Instant.parse("2026-05-18T14:30:00Z");
+        StrategyOrder firstBuy = order(StrategyStage.BASE_BUY, StrategyOrderSide.BUY,
+                new BigDecimal("10.00"), new BigDecimal("10"), new BigDecimal("10"),
+                new BigDecimal("10.00"), StrategyOrderStatus.FILLED, start);
+        StrategyOrder fullExit = order(StrategyStage.TARGET_SELL, StrategyOrderSide.SELL,
+                new BigDecimal("12.00"), new BigDecimal("10"), new BigDecimal("10"),
+                new BigDecimal("12.00"), StrategyOrderStatus.FILLED, start.plusSeconds(3600));
+        StrategyOrder reEntry = order(StrategyStage.MANUAL_BUY, StrategyOrderSide.BUY,
+                new BigDecimal("7.00"), new BigDecimal("10"), new BigDecimal("10"),
+                new BigDecimal("7.00"), StrategyOrderStatus.FILLED, start.plusSeconds(7200));
+
+        String label = presenter.buildLabel("Rules: Stop loss active",
+                List.of(firstBuy, fullExit, reEntry), Instant::toString);
+
+        // Blending the pre-exit cost into the re-entry would report a fictional basis.
+        assertFalse(label.contains("averaged in @ $8.50"), label);
+        assertTrue(label.contains("Manual Buy filled @ $7.00/10"), label);
     }
 
     private StrategyOrder order(

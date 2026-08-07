@@ -28,7 +28,48 @@ class StrategyGridTableModelTest {
         StrategyGridTableModel model = new StrategyGridTableModel(
                 List.of(managed), ignored -> "Base buy pending", new StrategyTablePresenter());
 
-        assertEquals("182.45", model.getValueAt(0, 3));
+        assertEquals("182.45", model.getValueAt(0, columnIndex("Current Price")));
+    }
+
+    @Test
+    void dayPriceColumnsShowDashWhenNoMarketDataOrFillIsCached() {
+        Strategy strategy = strategy("NVDA");
+        ManagedStrategy managed = new ManagedStrategy(strategy);
+        StrategyGridTableModel model = new StrategyGridTableModel(
+                List.of(managed), ignored -> "Base buy pending", new StrategyTablePresenter());
+
+        // Never fabricate a price: with no cached fill and no market data these must read "-".
+        assertEquals("-", model.getValueAt(0, columnIndex("Buy Down Price")));
+        assertEquals("-", model.getValueAt(0, columnIndex("Open")));
+        assertEquals("-", model.getValueAt(0, columnIndex("Today's Low")));
+        assertEquals("-", model.getValueAt(0, columnIndex("Today's High")));
+    }
+
+    @Test
+    void dayPriceColumnsRenderCachedFillAndDailyBar() {
+        Strategy strategy = strategy("NVDA");
+        ManagedStrategy managed = new ManagedStrategy(strategy);
+        managed.setCachedBaseBuyExecutedPrice(new BigDecimal("179.31"));
+        managed.setCachedDailyBar(new com.neuralarc.model.MarketBar(
+                "NVDA", "", new BigDecimal("180.10"), new BigDecimal("185.90"),
+                new BigDecimal("178.20"), new BigDecimal("182.45"), BigDecimal.ZERO));
+        StrategyGridTableModel model = new StrategyGridTableModel(
+                List.of(managed), ignored -> "Base buy pending", new StrategyTablePresenter());
+
+        assertEquals("179.31", model.getValueAt(0, columnIndex("Buy Down Price")));
+        assertEquals("180.10", model.getValueAt(0, columnIndex("Open")));
+        assertEquals("178.20", model.getValueAt(0, columnIndex("Today's Low")));
+        assertEquals("185.90", model.getValueAt(0, columnIndex("Today's High")));
+    }
+
+    /** Resolve by header so these assertions survive future column reordering. */
+    private static int columnIndex(String columnName) {
+        for (int i = 0; i < StrategyGridTableModel.COLUMNS.length; i++) {
+            if (StrategyGridTableModel.COLUMNS[i].equals(columnName)) {
+                return i;
+            }
+        }
+        throw new IllegalArgumentException("Unknown grid column: " + columnName);
     }
 
     private static Strategy strategy(String symbol) {

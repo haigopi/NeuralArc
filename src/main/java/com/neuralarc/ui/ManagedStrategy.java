@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.model.MarketBar;
 import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.Position;
 import com.neuralarc.model.Strategy;
@@ -20,6 +21,9 @@ final class ManagedStrategy {
     private Position cachedPosition;
     private BigDecimal cachedLastSellPrice = Monetary.zero();
     private BigDecimal cachedRealizedPnl = Monetary.zero();
+    /** Actual executed fill price of the base buy — what we really paid to enter, not a configured limit. */
+    private volatile BigDecimal cachedBaseBuyExecutedPrice = Monetary.zero();
+    private volatile MarketBar cachedDailyBar;
     private StrategyTablePresenter.PendingOrderSummary cachedPendingManualBuy;
     volatile long lastDisplayedPositionFetchAtMillis;
     volatile long pollIntervalMillis;
@@ -155,6 +159,22 @@ final class ManagedStrategy {
 
     StrategyTablePresenter.PendingOrderSummary cachedPendingManualBuy() {
         return cachedPendingManualBuy;
+    }
+
+    BigDecimal cachedBaseBuyExecutedPrice() {
+        return Monetary.round(cachedBaseBuyExecutedPrice);
+    }
+
+    void setCachedBaseBuyExecutedPrice(BigDecimal price) {
+        this.cachedBaseBuyExecutedPrice = Monetary.round(price);
+    }
+
+    MarketBar cachedDailyBar() {
+        return cachedDailyBar;
+    }
+
+    void setCachedDailyBar(MarketBar dailyBar) {
+        this.cachedDailyBar = dailyBar;
     }
 
     void setTradeSnapshot(BigDecimal lastSellPrice, BigDecimal realizedPnl) {

@@ -329,6 +329,60 @@ public class HttpAlpacaClient implements AlpacaClient {
     }
 
     @Override
+    public Map<String, MarketBar> getDailySnapshots(List<String> symbols) {
+        if (symbols == null || symbols.isEmpty()) {
+            return Map.of();
+        }
+        LinkedHashSet<String> normalizedSymbols = new LinkedHashSet<>();
+        for (String symbol : symbols) {
+            if (symbol != null && !symbol.isBlank()) {
+                normalizedSymbols.add(symbol.trim().toUpperCase());
+            }
+        }
+        if (normalizedSymbols.isEmpty()) {
+            return Map.of();
+        }
+        String endpoint = dataBaseUrl + "/v2/stocks/snapshots?symbols="
+                + URLEncoder.encode(String.join(",", normalizedSymbols), StandardCharsets.UTF_8);
+        HttpRequest request = baseRequest(endpoint).GET().build();
+        Optional<String> body = executeBody(request);
+        if (body.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            JSONObject json = new JSONObject(body.get());
+            // Multi-symbol snapshots come back keyed by symbol at the top level; some responses
+            // nest them under "snapshots". Accept either shape.
+            JSONObject snapshots = json.optJSONObject("snapshots");
+            JSONObject source = snapshots != null ? snapshots : json;
+            Map<String, MarketBar> result = new LinkedHashMap<>();
+            for (String symbol : normalizedSymbols) {
+                JSONObject snapshot = source.optJSONObject(symbol);
+                if (snapshot == null) {
+                    continue;
+                }
+                JSONObject dailyBar = snapshot.optJSONObject("dailyBar");
+                if (dailyBar == null) {
+                    continue;
+                }
+                result.put(symbol, new MarketBar(
+                        symbol,
+                        dailyBar.optString("t", ""),
+                        parseMoneyValue(dailyBar.opt("o")),
+                        parseMoneyValue(dailyBar.opt("h")),
+                        parseMoneyValue(dailyBar.opt("l")),
+                        parseMoneyValue(dailyBar.opt("c")),
+                        parseMoneyValue(dailyBar.opt("v"))
+                ));
+            }
+            return result;
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "Failed to parse batch daily snapshots", ex);
+            return Map.of();
+        }
+    }
+
+    @Override
     public List<MarketBar> getDailyBars(String symbol, LocalDate startDate, LocalDate endDate) {
         if (symbol == null || symbol.isBlank() || startDate == null || endDate == null) {
             return List.of();

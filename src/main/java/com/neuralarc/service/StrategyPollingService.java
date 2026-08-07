@@ -37,6 +37,10 @@ public class StrategyPollingService {
     private static final Logger LOGGER = Logger.getLogger(StrategyPollingService.class.getName());
     private static final int STREAM_HEALTHY_GRACE_SECONDS = 120;
     private static final int STREAM_POLL_BACKOFF_MULTIPLIER = 3;
+    // A single poll makes a handful of broker calls, each capped by the HTTP client's own request
+    // timeout, so a healthy poll finishes well inside this. Anything still "in flight" past it is
+    // wedged, and must be released or that strategy would never be polled again.
+    private static final long STALE_IN_FLIGHT_TIMEOUT_MILLIS = 90_000L;
 
     private final StrategyRepository strategyRepository;
     private final StrategyOrderRepository orderRepository;
@@ -52,7 +56,10 @@ public class StrategyPollingService {
     private final PositionValidationBatchCoordinator batchCoordinator;
     private final PositionValidationAttemptTracker attemptTracker = new PositionValidationAttemptTracker();
     private final AdaptivePollingPacer adaptivePollingPacer = new AdaptivePollingPacer();
-    private final Set<String> inFlightStrategyIds = ConcurrentHashMap.newKeySet();
+    // strategyId -> epoch millis the poll was marked in flight. Timestamped (not a plain Set) so a
+    // wedged/never-returning poll worker can't permanently block a strategy from ever being
+    // dispatched again; see STALE_IN_FLIGHT_TIMEOUT_MILLIS.
+    private final Map<String, Long> inFlightStrategySince = new ConcurrentHashMap<>();
     private volatile Instant lastStreamingEventAt;
     private volatile Boolean lastTradingSessionOpen;
     private volatile AppSettingsService.AppSettings lastLoadedSettings;
@@ -428,7 +435,7 @@ public class StrategyPollingService {
             pollExecutor.submit(() -> executePoll(strategyId, priceCache, snapshotBatch));
             return true;
         } catch (RuntimeException ex) {
-            inFlightStrategyIds.remove(strategyId);
+            inFlightStrategySince.remove(strategyId);
             throw ex;
         }
     }
@@ -441,8 +448,41 @@ public class StrategyPollingService {
         executePoll(strategyId, priceCache, snapshotBatch);
     }
 
+    /** Test seam: pins a strategy in flight without a real worker, simulating a wedged poll. */
+    void markStrategyInFlightForTest(String strategyId, boolean stale) {
+        long since = stale
+                ? System.currentTimeMillis() - STALE_IN_FLIGHT_TIMEOUT_MILLIS - 1L
+                : System.currentTimeMillis();
+        inFlightStrategySince.put(strategyId, since);
+    }
+
+    boolean isStrategyInFlightForTest(String strategyId) {
+        return inFlightStrategySince.containsKey(strategyId);
+    }
+
     private boolean markStrategyInFlight(String strategyId) {
-        return strategyId != null && !strategyId.isBlank() && inFlightStrategyIds.add(strategyId);
+        if (strategyId == null || strategyId.isBlank()) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        Long existingSince = inFlightStrategySince.putIfAbsent(strategyId, now);
+        if (existingSince == null) {
+            return true;
+        }
+        long heldMillis = now - existingSince;
+        if (heldMillis < STALE_IN_FLIGHT_TIMEOUT_MILLIS) {
+            LOGGER.fine(() -> "[POLL][SCHEDULER][" + strategyId + "] Skipping dispatch; a poll has been in flight for "
+                    + heldMillis + "ms");
+            return false;
+        }
+        // Reclaim the slot. Without this a wedged worker would keep this strategy out of every
+        // future cycle, silently freezing its rule evaluation (stop loss, target sell) forever.
+        if (!inFlightStrategySince.replace(strategyId, existingSince, now)) {
+            return false;
+        }
+        LOGGER.warning(() -> "[POLL][SCHEDULER][" + strategyId + "] Previous poll never completed after "
+                + heldMillis + "ms; releasing the stale in-flight lock and re-dispatching");
+        return true;
     }
 
     private boolean refreshOrderStatusWhileMarketClosed(Strategy strategy, Instant now) {
@@ -459,7 +499,7 @@ public class StrategyPollingService {
             pollExecutor.submit(() -> executeMarketClosedOrderStatusRefresh(strategy, now));
             return true;
         } catch (RuntimeException ex) {
-            inFlightStrategyIds.remove(strategyId);
+            inFlightStrategySince.remove(strategyId);
             throw ex;
         }
     }
@@ -493,7 +533,7 @@ public class StrategyPollingService {
             pollListener.onPollFailed(strategyId);
             LOGGER.log(Level.WARNING, "Market-closed order status refresh failed for strategy " + strategyId, ex);
         } finally {
-            inFlightStrategyIds.remove(strategyId);
+            inFlightStrategySince.remove(strategyId);
         }
     }
 
@@ -520,7 +560,7 @@ public class StrategyPollingService {
             pollListener.onPollFailed(strategyId);
             LOGGER.log(Level.WARNING, "Polling failed for strategy " + strategyId, ex);
         } finally {
-            inFlightStrategyIds.remove(strategyId);
+            inFlightStrategySince.remove(strategyId);
         }
     }
 
@@ -557,6 +597,9 @@ public class StrategyPollingService {
             String symbol = strategy.symbol();
             LOGGER.fine(() -> "[POLL][MAX_ATTEMPTS][" + symbol + "] Skipping reconcile; validation paused after "
                     + settings.maxValidationAttemptsBeforePause() + " consecutive failed batch fetches. Use Refresh Now to resume.");
+            // Stamp the attempt so the scheduler doesn't re-select this strategy every tick while paused.
+            strategy.setLastPolledAt(Instant.now());
+            strategyRepository.save(strategy);
             return PollExecutionResult.COMPLETED;
         }
 

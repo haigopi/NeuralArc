@@ -93,7 +93,8 @@ class AppSettingsServiceTest {
         assertEquals(AppSettingsService.DEFAULT_VALIDATION_BATCH_WINDOW_SECONDS, defaults.validationBatchWindowSeconds());
         assertEquals(0, defaults.maxValidationAttemptsBeforePause(),
                 "max attempts must default to 0 (disabled/unlimited) so existing strategies keep polling indefinitely");
-        assertTrue(defaults.adaptivePacingEnabled());
+        assertFalse(defaults.adaptivePacingEnabled(),
+                "adaptive pacing must default OFF so strategies poll at exactly their configured interval");
         assertEquals(AppSettingsService.DEFAULT_ADAPTIVE_PACING_MAX_MULTIPLIER, defaults.adaptivePacingMaxMultiplier());
     }
 
