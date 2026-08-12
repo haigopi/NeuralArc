@@ -17,6 +17,7 @@ final class RepositionSubmissionTypeDialog {
                 + "<b>Reposition expired " + strategy.symbol() + "?</b><br><br>"
                 + "<b>Limit Buy</b>: reactivates the strategy and submits a fresh base limit buy using existing strategy rules.<br>"
                 + "<b>Market Buy</b>: reactivates the strategy and submits an immediate market buy for the base buy quantity."
+                + "<br><br>After choosing <b>Limit Buy</b>, select Time In Force (<b>DAY</b> or <b>GTC</b>)."
                 + "<br><br>Strategies with open positions or open orders are skipped by the service for safety."
                 + "</body></html>";
         int choice = JOptionPane.showOptionDialog(

@@ -9,6 +9,7 @@ import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.service.StrategyService;
 import org.junit.jupiter.api.Test;
 
@@ -390,6 +391,7 @@ class StrategyActionsControllerTest {
         assertEquals(1, gateway.backgroundTasksRun);
         assertEquals(strategy.id(), gateway.repositionedStrategyId);
         assertEquals(RepositionSubmissionType.LIMIT_BUY, gateway.repositionSubmissionType);
+        assertEquals(TimeInForce.DAY, gateway.repositionTimeInForce);
     }
 
     @Test
@@ -405,6 +407,22 @@ class StrategyActionsControllerTest {
         assertEquals(1, gateway.backgroundTasksRun);
         assertEquals(strategy.id(), gateway.repositionedStrategyId);
         assertEquals(RepositionSubmissionType.MARKET_BUY, gateway.repositionSubmissionType);
+        assertEquals(TimeInForce.DAY, gateway.repositionTimeInForce);
+    }
+
+    @Test
+    void repositionExpiredStrategyCancelsWhenTimeInForceSelectionCanceled() {
+        Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        FakeGateway gateway = new FakeGateway(strategy);
+        gateway.repositionSelection = Optional.of(RepositionSubmissionType.LIMIT_BUY);
+        gateway.repositionTimeInForceSelection = Optional.empty();
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.repositionExpiredStrategy(0);
+
+        assertEquals(0, gateway.backgroundTasksRun);
+        assertNull(gateway.repositionedStrategyId);
     }
 
     @Test
@@ -526,7 +544,9 @@ class StrategyActionsControllerTest {
         int sellSelectionCalls;
         SellSubmissionType lastSellSubmissionType;
         Optional<RepositionSubmissionType> repositionSelection = Optional.of(RepositionSubmissionType.LIMIT_BUY);
+        Optional<TimeInForce> repositionTimeInForceSelection = Optional.of(TimeInForce.DAY);
         RepositionSubmissionType repositionSubmissionType;
+        TimeInForce repositionTimeInForce;
         String excludedCaptureStrategyId;
         String marketBuyStrategyId;
         Optional<Integer> marketBuyQuantity = Optional.of(1);
@@ -596,6 +616,9 @@ class StrategyActionsControllerTest {
         @Override public Optional<RepositionSubmissionType> chooseRepositionSubmissionType(Strategy strategy) {
             return repositionSelection;
         }
+        @Override public Optional<TimeInForce> chooseRepositionTimeInForce(Strategy strategy) {
+            return repositionTimeInForceSelection;
+        }
         @Override
         public StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType) {
             lastSellSubmissionType = submissionType;
@@ -632,10 +655,12 @@ class StrategyActionsControllerTest {
         @Override
         public StrategyService.StrategyCreationResult repositionExpiredStrategy(
                 String strategyId,
-                RepositionSubmissionType submissionType
+                RepositionSubmissionType submissionType,
+                TimeInForce timeInForce
         ) {
             repositionedStrategyId = strategyId;
             repositionSubmissionType = submissionType;
+            repositionTimeInForce = timeInForce;
             return StrategyService.StrategyCreationResult.success(strategyId, "ord", "alpaca", "client");
         }
         boolean cancelablePendingLimitBuy;

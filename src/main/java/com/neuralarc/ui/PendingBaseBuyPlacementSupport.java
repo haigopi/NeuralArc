@@ -17,6 +17,7 @@ final class PendingBaseBuyPlacementSupport {
                 || DipHunterCoordinator.isPendingOrderPlacement(strategy)
                 || VwapCoordinator.isPendingOrderPlacement(strategy)
                 || SwingCoordinator.isPendingOrderPlacement(strategy)
+                || RangeRiderCoordinator.isPendingOrderPlacement(strategy)
                 || EarningsHunterCoordinator.isPendingOrderPlacement(strategy);
     }
 

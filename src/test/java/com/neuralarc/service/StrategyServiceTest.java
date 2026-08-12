@@ -911,6 +911,34 @@ class StrategyServiceTest {
     }
 
     @Test
+    void repositionExpiredStrategyAppliesSelectedTimeInForce() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.FAILED);
+        strategy.setCurrentState(StrategyLifecycleState.FAILED);
+        strategy.setLatestOrderStatus("expired");
+        strategy.setLatestAlpacaOrderId("expired-order");
+        strategy.setTimeInForce(TimeInForce.DAY);
+        strategies.save(strategy);
+
+        StrategyService.StrategyCreationResult result = service.repositionExpiredStrategy(
+                strategy.id(),
+                RepositionSubmissionType.LIMIT_BUY,
+                TimeInForce.GTC
+        );
+
+        assertTrue(result.success(), result.error());
+        Strategy persisted = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(TimeInForce.GTC, persisted.timeInForce());
+        assertEquals(TimeInForce.GTC, alpaca.lastSubmittedLimitBuyTimeInForce);
+    }
+
+    @Test
     void repositionExpiredStrategyResubmitsActivePendingBaseBuy() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
@@ -1911,9 +1939,22 @@ class StrategyServiceTest {
         private List<AlpacaPositionData> allPositions = List.of();
         private final List<AlpacaOrderData> submittedOrders = new ArrayList<>();
         private boolean rejectBuyOrdersWithSessionMessage;
+        private TimeInForce lastSubmittedLimitBuyTimeInForce = TimeInForce.DAY;
 
         @Override
         public AlpacaOrderData submitLimitBuyOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
+            return submitLimitBuyOrder(symbol, quantity, limitPrice, clientOrderId, TimeInForce.DAY);
+        }
+
+        @Override
+        public AlpacaOrderData submitLimitBuyOrder(
+                String symbol,
+                int quantity,
+                BigDecimal limitPrice,
+                String clientOrderId,
+                TimeInForce timeInForce
+        ) {
+            lastSubmittedLimitBuyTimeInForce = timeInForce == null ? TimeInForce.DAY : timeInForce;
             if (rejectBuyOrdersWithSessionMessage) {
                 return new AlpacaOrderData(
                         "",

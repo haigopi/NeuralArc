@@ -152,6 +152,20 @@ class TradingFrameRestoreSelectionGuardTest {
         assertEquals(StrategyMode.PAPER, TradingFrame.startupViewMode(List.of(archivedLive, stoppedLive)));
     }
 
+    @Test
+    void pollsPaperPositionsOnlyInPaperViewAndAlwaysPollsLivePositions() {
+        assertFalse(TradingFrame.shouldPollPositionMode(StrategyMode.PAPER, StrategyMode.LIVE));
+        assertTrue(TradingFrame.shouldPollPositionMode(StrategyMode.PAPER, StrategyMode.PAPER));
+        assertTrue(TradingFrame.shouldPollPositionMode(StrategyMode.LIVE, StrategyMode.LIVE));
+        assertTrue(TradingFrame.shouldPollPositionMode(StrategyMode.LIVE, StrategyMode.PAPER));
+    }
+
+    @Test
+    void runsCompanionLivePollingOnlyInPaperView() {
+        assertTrue(TradingFrame.shouldRunCompanionLivePolling(StrategyMode.PAPER));
+        assertFalse(TradingFrame.shouldRunCompanionLivePolling(StrategyMode.LIVE));
+    }
+
     private Strategy failedStrategy() {
         return new Strategy(
                 UUID.randomUUID().toString(),

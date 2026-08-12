@@ -40,6 +40,8 @@ public record StrategyWorkspaceTemplate(String name, String code, String descrip
                 // dedicated high-relative-volume momentum scanner — avoid offering two overlapping ones.
                 new StrategyWorkspaceTemplate("Swing Vault", "SWING",
                         "Scan strong, up-trending stocks that have pulled back to a rising moving-average support zone on the daily chart, rank the best multi-day swing setups on live data, and track planned entries (target = recent high) in a dedicated Swing Vault grid.", true),
+                new StrategyWorkspaceTemplate("Range Rider", "RANGE",
+                        "Analyze the last three weeks of daily bars for actively traded stocks, average each session's open, high, and low, and plan a same-day income trade — buy near the average daily low, sell near the average daily high — in a dedicated Range Rider grid.", true),
                 new StrategyWorkspaceTemplate("Profit Shield", "SHIELD",
                         "Defensive book focused on protecting realized gains.", false),
                 new StrategyWorkspaceTemplate("Earnings Hunter", "EARNINGS",

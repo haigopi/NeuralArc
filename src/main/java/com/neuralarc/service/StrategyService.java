@@ -1199,6 +1199,14 @@ public class StrategyService {
     }
 
     public StrategyCreationResult repositionExpiredStrategy(String strategyId, RepositionSubmissionType submissionType) {
+        return repositionExpiredStrategy(strategyId, submissionType, null);
+    }
+
+    public StrategyCreationResult repositionExpiredStrategy(
+            String strategyId,
+            RepositionSubmissionType submissionType,
+            TimeInForce timeInForce
+    ) {
         if (strategyId == null || strategyId.isBlank()) {
             return StrategyCreationResult.failed("Strategy id is missing");
         }
@@ -1221,6 +1229,9 @@ public class StrategyService {
         strategy.setPauseReason(PauseReason.NONE);
         strategy.setLatestOrderStatus("");
         strategy.setLatestAlpacaOrderId("");
+        if (submissionType != RepositionSubmissionType.MARKET_BUY) {
+            strategy.setTimeInForce(timeInForce == null ? strategy.timeInForce() : timeInForce);
+        }
         strategy.clearLastError();
         strategyRepository.save(strategy);
         stateMachine.transition(

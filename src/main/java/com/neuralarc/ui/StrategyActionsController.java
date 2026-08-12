@@ -9,6 +9,7 @@ import com.neuralarc.model.SellSubmissionType;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.service.StrategyService;
 import com.neuralarc.util.BrokerOrderStatusUtil;
 import com.neuralarc.util.Monetary;
@@ -302,13 +303,23 @@ public final class StrategyActionsController {
             actionLog.canceled("Reposition Expired " + strategy.symbol());
             return;
         }
+        Optional<TimeInForce> timeInForce = Optional.of(TimeInForce.DAY);
+        if (submissionType.get() == RepositionSubmissionType.LIMIT_BUY) {
+            timeInForce = gateway.chooseRepositionTimeInForce(strategy);
+            if (timeInForce.isEmpty()) {
+                actionLog.canceled("Reposition Expired " + strategy.symbol());
+                return;
+            }
+        }
 
         actionLog.started("Reposition Expired " + strategy.symbol());
+        Optional<TimeInForce> selectedTimeInForce = timeInForce;
         gateway.runBackgroundTask(
                 () -> {
                     StrategyService.StrategyCreationResult result = gateway.repositionExpiredStrategy(
                             strategy.id(),
-                            submissionType.get()
+                            submissionType.get(),
+                            selectedTimeInForce.orElse(TimeInForce.DAY)
                     );
                     if (!result.success()) {
                         throw new IllegalStateException(result.error());
@@ -624,6 +635,7 @@ public final class StrategyActionsController {
         StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason);
         Optional<SellSubmissionType> chooseSellSubmissionType(Strategy strategy);
         Optional<RepositionSubmissionType> chooseRepositionSubmissionType(Strategy strategy);
+        Optional<TimeInForce> chooseRepositionTimeInForce(Strategy strategy);
         Optional<Integer> chooseMarketBuyQuantity(Strategy strategy);
         Optional<ManualLimitBuySelection> chooseLimitBuy(Strategy strategy, BigDecimal currentPrice);
         BigDecimal currentPriceForStrategy(Strategy strategy);
@@ -637,7 +649,8 @@ public final class StrategyActionsController {
         StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType);
         StrategyService.StrategyCreationResult repositionExpiredStrategy(
                 String strategyId,
-                RepositionSubmissionType submissionType
+                RepositionSubmissionType submissionType,
+                TimeInForce timeInForce
         );
         StrategyService.LimitBuyCancelResult cancelPendingLimitBuys(Strategy strategy);
         boolean hasCancelablePendingLimitBuy(Strategy strategy);

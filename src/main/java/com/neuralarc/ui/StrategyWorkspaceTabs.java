@@ -237,6 +237,9 @@ final class StrategyWorkspaceTabs {
         if ("SWING".equalsIgnoreCase(workspace.code())) {
             return TooltipStyler.text("Scan strong, up-trending stocks that have pulled back to a rising moving-average support zone on the daily chart, rank the best multi-day swing setups on live data, and track planned entries (target = recent high) in a dedicated Swing Vault grid.", 360);
         }
+        if ("RANGE".equalsIgnoreCase(workspace.code())) {
+            return TooltipStyler.text("Analyze the last three weeks of daily bars for actively traded stocks, average each session's open, high, and low, and plan a same-day income trade — buy near the average daily low, sell near the average daily high — in a dedicated Range Rider grid.", 360);
+        }
         return workspace.name();
     }
 }
