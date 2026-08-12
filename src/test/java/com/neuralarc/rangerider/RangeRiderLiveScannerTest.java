@@ -38,16 +38,41 @@ class RangeRiderLiveScannerTest {
     }
 
     @Test
-    void excludesTodaysFormingBarFromTheAveragesButUsesItAsTheCurrentPrice() {
+    void expressesTheAveragesAsATypicalDipAndRallyAroundTheOpen() {
         RangeRiderLiveScanner scanner = new RangeRiderLiveScanner(new SteadyRangeFakeApi(), FIXED, ignored -> { });
 
         RangeRiderCandidate c = scanner.candidates(List.of("NVDA"), 15).getFirst();
 
-        // Today's bar prints a far wider 90/110 range; it must not move the averages.
+        // Average open 100, average low 98, average high 102.
+        assertEquals(new BigDecimal("2.0000"), c.averageDipPercent());
+        assertEquals(new BigDecimal("2.0000"), c.averageRallyPercent());
+    }
+
+    @Test
+    void ignoresTodaysFormingBarEntirely() {
+        RangeRiderLiveScanner scanner = new RangeRiderLiveScanner(new SteadyRangeFakeApi(), FIXED, ignored -> { });
+
+        RangeRiderCandidate c = scanner.candidates(List.of("NVDA"), 15).getFirst();
+
+        // Today's bar prints a far wider 90/110 range and a $95 close; neither may reach the candidate.
         assertEquals(new BigDecimal("102.00"), c.averageHigh());
         assertEquals(new BigDecimal("98.00"), c.averageLow());
-        assertEquals(new BigDecimal("95.00"), c.currentPrice(), "today's close is the current price");
+        assertEquals(new BigDecimal("100.00"), c.referencePrice(),
+                "the anchor is the last completed close, never today's partial bar");
         assertTrue(c.sessions().stream().noneMatch(session -> session.date().isEqual(TODAY)));
+    }
+
+    @Test
+    void producesTheSameCandidateWhetherOrNotTodayHasTradedYet() {
+        RangeRiderCandidate withToday = new RangeRiderLiveScanner(new SteadyRangeFakeApi(), FIXED, ignored -> { })
+                .candidates(List.of("NVDA"), 15).getFirst();
+        RangeRiderCandidate beforeOpen = new RangeRiderLiveScanner(new NoTodayBarFakeApi(), FIXED, ignored -> { })
+                .candidates(List.of("NVDA"), 15).getFirst();
+
+        assertEquals(withToday.referencePrice(), beforeOpen.referencePrice());
+        assertEquals(withToday.averageLow(), beforeOpen.averageLow());
+        assertEquals(withToday.averageHigh(), beforeOpen.averageHigh());
+        assertEquals(withToday.averageDipPercent(), beforeOpen.averageDipPercent());
     }
 
     @Test
@@ -116,6 +141,23 @@ class RangeRiderLiveScannerTest {
                 bars.add(bar(symbol, TODAY.minusDays(i) + "T20:00:00Z", "100", "102", "98", "100", "4000000"));
             }
             bars.add(bar(symbol, TODAY + "T20:00:00Z", "100", "110", "90", "95", "5000000"));
+            return bars;
+        }
+
+        @Override
+        public List<MarketBar> getIntradayBars(String symbol, LocalDate startDate, LocalDate endDate, int intervalMinutes) {
+            return List.of();
+        }
+    }
+
+    /** The same completed sessions, but the scan runs before today has printed a bar at all. */
+    private static final class NoTodayBarFakeApi implements AlpacaMarketDataApi {
+        @Override
+        public List<MarketBar> getDailyBars(String symbol, LocalDate startDate, LocalDate endDate) {
+            List<MarketBar> bars = new ArrayList<>();
+            for (int i = 20; i >= 1; i--) {
+                bars.add(bar(symbol, TODAY.minusDays(i) + "T20:00:00Z", "100", "102", "98", "100", "4000000"));
+            }
             return bars;
         }
 

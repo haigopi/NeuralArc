@@ -14,7 +14,7 @@ class RangeRiderConfigCodecTest {
     void roundTripsEveryField() {
         RangeRiderConfig original = new RangeRiderConfig(20, new BigDecimal("3"), new BigDecimal("9"),
                 new BigDecimal("70"), 2_000_000L, new BigDecimal("15"), new BigDecimal("400"),
-                new BigDecimal("0.5"), new BigDecimal("0.75"), new BigDecimal("1.5"), 7,
+                new BigDecimal("65"), new BigDecimal("0.8"), new BigDecimal("1.5"), 7,
                 RangeRiderConfig.ExecutionFrequency.EVERY_30_MINUTES, StrategyMode.LIVE, List.of("AAPL", "MSFT"));
 
         RangeRiderConfig restored = RangeRiderConfigCodec.fromJson(RangeRiderConfigCodec.toJson(original));
@@ -26,8 +26,8 @@ class RangeRiderConfigCodecTest {
         assertEquals(2_000_000L, restored.minimumAverageVolume());
         assertEquals(new BigDecimal("15"), restored.minimumStockPrice());
         assertEquals(new BigDecimal("400"), restored.maximumStockPrice());
-        assertEquals(new BigDecimal("0.5"), restored.entryBufferPercent());
-        assertEquals(new BigDecimal("0.75"), restored.exitBufferPercent());
+        assertEquals(new BigDecimal("65"), restored.targetCapturePercent());
+        assertEquals(new BigDecimal("0.8"), restored.minimumExpectedGainPercent());
         assertEquals(new BigDecimal("1.5"), restored.stopLossPercent());
         assertEquals(7, restored.maxStocksToAdd());
         assertEquals(RangeRiderConfig.ExecutionFrequency.EVERY_30_MINUTES, restored.executionFrequency());

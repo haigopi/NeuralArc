@@ -18,15 +18,17 @@ import java.util.List;
  * documented defaults so persisted or legacy configs never produce a broken scanner.
  *
  * @param lookbackSessions              trading sessions to analyze; 15 ≈ the last three weeks
- * @param entryBufferPercent            how much shallower than the typical dip to place the planned
- *                                      buy, so the limit fills before price reaches the typical low
- * @param exitBufferPercent             how much shallower than the typical rally to place the planned
- *                                      sell, for the same reason
+ * @param targetCapturePercent          what share of the typical dip and rally the plan aims to take.
+ *                                      This is the strategy's central trade-off. Aiming for the full
+ *                                      move (100) only completes on unusually wide, perfectly
+ *                                      positioned sessions — measured fill rates of roughly 7–13%.
+ *                                      Taking half of it (the 50 default) gives up per-trade size but
+ *                                      lifts same-day completion to roughly 50–75%, which is what a
+ *                                      daily-income plan actually needs.
+ * @param minimumExpectedGainPercent    floor on the planned buy-to-sell gain, so a stock whose typical
+ *                                      day is too quiet to cover spread and commission is not offered
  * @param minimumSameDayFillRatePercent minimum share of lookback sessions in which the planned buy and
- *                                      the planned sell would both have been reached on the same day.
- *                                      Requiring a stock to travel its full typical dip <em>and</em>
- *                                      its full typical rally in one session is demanding, so a
- *                                      realistic bar sits well below 100 — 40% is the default.
+ *                                      the planned sell would both have been reached on the same day
  */
 public record RangeRiderConfig(
         int lookbackSessions,
@@ -36,8 +38,8 @@ public record RangeRiderConfig(
         long minimumAverageVolume,
         BigDecimal minimumStockPrice,
         BigDecimal maximumStockPrice,
-        BigDecimal entryBufferPercent,
-        BigDecimal exitBufferPercent,
+        BigDecimal targetCapturePercent,
+        BigDecimal minimumExpectedGainPercent,
         BigDecimal stopLossPercent,
         int maxStocksToAdd,
         ExecutionFrequency executionFrequency,
@@ -61,14 +63,17 @@ public record RangeRiderConfig(
         if (maximumAverageRangePercent.compareTo(minimumAverageRangePercent) < 0) {
             maximumAverageRangePercent = minimumAverageRangePercent;
         }
-        minimumSameDayFillRatePercent = nonNegativeOrDefault(minimumSameDayFillRatePercent, "40");
+        minimumSameDayFillRatePercent = nonNegativeOrDefault(minimumSameDayFillRatePercent, "50");
         if (minimumSameDayFillRatePercent.compareTo(BigDecimal.valueOf(100)) > 0) {
             minimumSameDayFillRatePercent = BigDecimal.valueOf(100);
         }
         minimumAverageVolume = minimumAverageVolume <= 0 ? 1_000_000L : minimumAverageVolume;
         minimumStockPrice = posOrDefault(minimumStockPrice, "10");
-        entryBufferPercent = nonNegativeOrDefault(entryBufferPercent, "0.15");
-        exitBufferPercent = nonNegativeOrDefault(exitBufferPercent, "0.15");
+        targetCapturePercent = posOrDefault(targetCapturePercent, "50");
+        if (targetCapturePercent.compareTo(BigDecimal.valueOf(100)) > 0) {
+            targetCapturePercent = BigDecimal.valueOf(100);
+        }
+        minimumExpectedGainPercent = nonNegativeOrDefault(minimumExpectedGainPercent, "0.5");
         stopLossPercent = posOrDefault(stopLossPercent, "2");
         maxStocksToAdd = maxStocksToAdd <= 0 ? 10 : maxStocksToAdd;
         executionFrequency = executionFrequency == null ? ExecutionFrequency.MANUAL : executionFrequency;
@@ -79,18 +84,18 @@ public record RangeRiderConfig(
     public RangeRiderConfig(
             int lookbackSessions, BigDecimal minimumAverageRangePercent, BigDecimal maximumAverageRangePercent,
             BigDecimal minimumSameDayFillRatePercent, long minimumAverageVolume, BigDecimal minimumStockPrice,
-            BigDecimal maximumStockPrice, BigDecimal entryBufferPercent, BigDecimal exitBufferPercent,
+            BigDecimal maximumStockPrice, BigDecimal targetCapturePercent, BigDecimal minimumExpectedGainPercent,
             BigDecimal stopLossPercent, int maxStocksToAdd, ExecutionFrequency executionFrequency, StrategyMode mode
     ) {
         this(lookbackSessions, minimumAverageRangePercent, maximumAverageRangePercent, minimumSameDayFillRatePercent,
-                minimumAverageVolume, minimumStockPrice, maximumStockPrice, entryBufferPercent, exitBufferPercent,
-                stopLossPercent, maxStocksToAdd, executionFrequency, mode, List.of());
+                minimumAverageVolume, minimumStockPrice, maximumStockPrice, targetCapturePercent,
+                minimumExpectedGainPercent, stopLossPercent, maxStocksToAdd, executionFrequency, mode, List.of());
     }
 
     public static RangeRiderConfig defaults(StrategyMode mode) {
         return new RangeRiderConfig(DEFAULT_LOOKBACK_SESSIONS, new BigDecimal("1"), new BigDecimal("12"),
-                new BigDecimal("40"), 1_000_000L, new BigDecimal("10"), null, new BigDecimal("0.15"),
-                new BigDecimal("0.15"), new BigDecimal("2"), 10, ExecutionFrequency.MANUAL, mode, List.of());
+                new BigDecimal("50"), 1_000_000L, new BigDecimal("10"), null, new BigDecimal("50"),
+                new BigDecimal("0.5"), new BigDecimal("2"), 10, ExecutionFrequency.MANUAL, mode, List.of());
     }
 
     private static BigDecimal posOrDefault(BigDecimal value, String fallback) {

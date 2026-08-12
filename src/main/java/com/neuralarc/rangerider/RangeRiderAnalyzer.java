@@ -34,6 +34,8 @@ import java.util.function.Consumer;
 public final class RangeRiderAnalyzer {
     public static final int MINIMUM_RECOMMENDATION_SCORE = 60;
     private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
+    /** A same-day round trip worth this much already earns full marks; more is not better here. */
+    private static final BigDecimal GENEROUS_DAILY_GAIN_PERCENT = new BigDecimal("2.0");
 
     private final Clock clock;
     private final Consumer<String> decisionLog;
@@ -84,16 +86,16 @@ public final class RangeRiderAnalyzer {
     }
 
     /**
-     * How far below a session's open to place the buy, as a fraction. This is the typical dip pulled in
-     * by the entry buffer, so the limit sits slightly above the typical low and fills before it.
+     * How far below a session's open to place the buy, as a fraction: the typical dip scaled down to
+     * the configured capture share, so the limit sits inside the typical low and fills before it.
      */
     public BigDecimal entryFraction(RangeRiderCandidate c, RangeRiderConfig cfg) {
-        return fraction(c.averageDipPercent().subtract(cfg.entryBufferPercent()));
+        return fraction(c.averageDipPercent().multiply(cfg.targetCapturePercent()).movePointLeft(2));
     }
 
     /** How far above a session's open to place the sell, as a fraction — the mirror of the entry. */
     public BigDecimal exitFraction(RangeRiderCandidate c, RangeRiderConfig cfg) {
-        return fraction(c.averageRallyPercent().subtract(cfg.exitBufferPercent()));
+        return fraction(c.averageRallyPercent().multiply(cfg.targetCapturePercent()).movePointLeft(2));
     }
 
     /** The planned buy for the next session, anchored to the last completed close. */
@@ -137,15 +139,16 @@ public final class RangeRiderAnalyzer {
     }
 
     /**
-     * Ranks a plan 0–100. The dominant term is how often the round trip would have completed in one
-     * session; the rest rewards a range that is both worth trading and repeatable, plus real liquidity.
-     * Nothing here reads today's price — the plan is built entirely from completed sessions.
+     * Ranks a plan 0–100: how often the round trip completed in one session (45), how much each
+     * completed trip is worth (20), how repeatable the daily range is (20), and liquidity (15).
+     *
+     * <p>The fill-rate term is scaled from zero rather than from the configured minimum, so tightening
+     * that gate filters candidates without silently re-scoring the ones that survive. Nothing here
+     * reads today's price — the plan is built entirely from completed sessions.
      */
-    public int score(RangeRiderCandidate c, RangeRiderConfig cfg, BigDecimal fillRate) {
-        BigDecimal idealRange = cfg.minimumAverageRangePercent()
-                .add(cfg.maximumAverageRangePercent()).divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
-        int score = bounded(fillRate, cfg.minimumSameDayFillRatePercent(), HUNDRED, 45)
-                + rangeQuality(c.averageRangePercent(), cfg.minimumAverageRangePercent(), idealRange, cfg.maximumAverageRangePercent())
+    public int score(RangeRiderCandidate c, RangeRiderConfig cfg, BigDecimal fillRate, BigDecimal expectedGainPercent) {
+        int score = bounded(fillRate, BigDecimal.ZERO, HUNDRED, 45)
+                + bounded(expectedGainPercent, cfg.minimumExpectedGainPercent(), GENEROUS_DAILY_GAIN_PERCENT, 20)
                 + bounded(c.rangeStabilityPercent(), BigDecimal.ZERO, BigDecimal.valueOf(80), 20)
                 + bounded(BigDecimal.valueOf(c.averageVolume()), BigDecimal.valueOf(cfg.minimumAverageVolume()),
                         BigDecimal.valueOf(cfg.minimumAverageVolume()).multiply(BigDecimal.valueOf(4)), 15);
@@ -159,6 +162,13 @@ public final class RangeRiderAnalyzer {
             reject(c, "buffers leave no workable spread between the planned buy and sell");
             return null;
         }
+        BigDecimal expectedGainPercent = target.subtract(entry)
+                .multiply(HUNDRED).divide(entry, 2, RoundingMode.HALF_UP);
+        if (expectedGainPercent.compareTo(cfg.minimumExpectedGainPercent()) < 0) {
+            reject(c, "planned round trip is worth only " + expectedGainPercent.toPlainString()
+                    + "%, below the " + cfg.minimumExpectedGainPercent().toPlainString() + "% minimum");
+            return null;
+        }
         BigDecimal fillRate = sameDayFillRatePercent(c, cfg);
         if (fillRate.compareTo(cfg.minimumSameDayFillRatePercent()) < 0) {
             reject(c, "planned buy and sell both completed on only " + fillRate.toPlainString()
@@ -166,8 +176,6 @@ public final class RangeRiderAnalyzer {
                     + cfg.minimumSameDayFillRatePercent().toPlainString() + "% minimum");
             return null;
         }
-        BigDecimal expectedGainPercent = target.subtract(entry)
-                .multiply(HUNDRED).divide(entry, 2, RoundingMode.HALF_UP);
         BigDecimal stopLossPrice = entry
                 .multiply(BigDecimal.ONE.subtract(cfg.stopLossPercent().movePointLeft(2)))
                 .setScale(2, RoundingMode.HALF_UP);
@@ -178,7 +186,7 @@ public final class RangeRiderAnalyzer {
                 c.rangeStabilityPercent(),
                 entryTouchRatePercent(c, cfg), fillRate, c.sessionsAnalyzed(),
                 c.previousClose(), c.dayChangePercent(), c.averageVolume(), c.relativeVolume(),
-                score(c, cfg, fillRate), entry, target, expectedGainPercent,
+                score(c, cfg, fillRate, expectedGainPercent), entry, target, expectedGainPercent,
                 cfg.stopLossPercent(), stopLossPrice,
                 RangeRiderStatus.RECOMMENDED, cfg.mode(), Instant.now(clock));
     }
@@ -190,18 +198,6 @@ public final class RangeRiderAnalyzer {
         decisionLog.accept("[Range Rider] Rejected " + recommendation.symbol() + ": score "
                 + recommendation.strategyScore() + " below minimum " + MINIMUM_RECOMMENDATION_SCORE + ".");
         return false;
-    }
-
-    /** Triangular score: 0 at the min/max bounds, full points at the ideal mid-range daily range. */
-    private static int rangeQuality(BigDecimal value, BigDecimal min, BigDecimal ideal, BigDecimal max) {
-        int points = 20;
-        if (value == null || value.compareTo(min) < 0 || value.compareTo(max) > 0) return 0;
-        BigDecimal span = value.compareTo(ideal) <= 0 ? ideal.subtract(min) : max.subtract(ideal);
-        if (span.compareTo(BigDecimal.ZERO) <= 0) return points;
-        BigDecimal distance = value.subtract(ideal).abs();
-        BigDecimal ratio = BigDecimal.ONE.subtract(distance.divide(span, 4, RoundingMode.HALF_UP));
-        if (ratio.compareTo(BigDecimal.ZERO) < 0) return 0;
-        return ratio.multiply(BigDecimal.valueOf(points)).setScale(0, RoundingMode.HALF_UP).intValue();
     }
 
     /** A percentage as a fraction, floored at zero so an over-wide buffer cannot invert the plan. */

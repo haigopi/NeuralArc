@@ -10,15 +10,15 @@ import java.math.BigDecimal;
 public final class RangeRiderAnalysisDialog extends JDialog {
     public static final String TITLE = "Analyze Range Rider Stocks - Executes 9:45 AM ET to 3:30 PM ET";
     private final JTextField lookbackSessions = new JTextField("15", 8);
-    private final JTextField minRange = new JTextField("2", 8);
+    private final JTextField minRange = new JTextField("1", 8);
     private final JTextField maxRange = new JTextField("12", 8);
-    private final JTextField minFillRate = new JTextField("60", 8);
+    private final JTextField minFillRate = new JTextField("50", 8);
     private final JTextField minAvgVolume = new JTextField("1000000", 8);
     private final JTextField minPrice = new JTextField("10", 8);
     private final JTextField maxPrice = new JTextField("", 8);
     private final JTextArea candidateSymbols = new JTextArea(3, 24);
-    private final JTextField entryBuffer = new JTextField("0.25", 8);
-    private final JTextField exitBuffer = new JTextField("0.25", 8);
+    private final JTextField targetCapture = new JTextField("50", 8);
+    private final JTextField minExpectedGain = new JTextField("0.5", 8);
     private final JTextField stop = new JTextField("2", 8);
     private final JTextField maxStocks = new JTextField("10", 8);
     private final JComboBox<RangeRiderConfig.ExecutionFrequency> frequency =
@@ -49,7 +49,7 @@ public final class RangeRiderAnalysisDialog extends JDialog {
                 new BigDecimal(minFillRate.getText().trim()), Long.parseLong(minAvgVolume.getText().trim()),
                 new BigDecimal(minPrice.getText().trim()),
                 maxPrice.getText().isBlank() ? null : new BigDecimal(maxPrice.getText().trim()),
-                new BigDecimal(entryBuffer.getText().trim()), new BigDecimal(exitBuffer.getText().trim()),
+                new BigDecimal(targetCapture.getText().trim()), new BigDecimal(minExpectedGain.getText().trim()),
                 new BigDecimal(stop.getText().trim()), Integer.parseInt(maxStocks.getText().trim()),
                 (RangeRiderConfig.ExecutionFrequency) frequency.getSelectedItem(), mode,
                 RangeRiderLiveScanner.parseSymbols(candidateSymbols.getText()));
@@ -60,13 +60,13 @@ public final class RangeRiderAnalysisDialog extends JDialog {
         fields.setOpaque(false);
         int row = 0;
         row = addField(fields, row, "Lookback Sessions", lookbackSessions,
-                "How many completed trading sessions to average. Default is 15, which is about the last three weeks.");
+                "How many completed trading sessions to average. Default is 15, which is about the last three weeks. Today's unfinished session is never included.");
         row = addField(fields, row, "Minimum Average Daily Range %", minRange,
-                "Require the stock to travel at least this far between its average low and average high. Below this a same-day round trip cannot cover its own costs.");
+                "Require the stock to travel at least this far between its average low and average high on a typical day. Most heavily traded large caps sit between 1% and 3%.");
         row = addField(fields, row, "Maximum Average Daily Range %", maxRange,
                 "Reject stocks whose typical day is wider than this — those moves are news-driven rather than a repeatable daily range.");
         row = addField(fields, row, "Minimum Same-Day Fill Rate %", minFillRate,
-                "Require the planned buy and the planned sell to have both been reached on at least this share of the lookback sessions. Daily bars cannot prove the low came before the high, so this is an optimistic upper bound.");
+                "Require the planned buy and the planned sell to have both been reached on at least this share of the lookback sessions, each measured against that session's own open. Daily bars cannot prove the low came before the high, so this is an optimistic upper bound.");
         row = addField(fields, row, "Minimum Average Volume", minAvgVolume,
                 "Require enough average daily shares traded to ensure liquidity. Default is 1,000,000 shares, which keeps the scan on heavily traded names.");
         row = addField(fields, row, "Minimum Stock Price", minPrice,
@@ -74,12 +74,14 @@ public final class RangeRiderAnalysisDialog extends JDialog {
         row = addField(fields, row, "Maximum Stock Price", maxPrice,
                 "Optional cap for high-priced stocks. Leave blank to allow any price above the minimum.");
         row = addField(fields, row, "Candidate Symbols (optional)", new JScrollPane(candidateSymbols),
-                "Leave blank to auto-discover the day's most actively traded stocks from the Alpaca screener. Or enter specific live "
+                "Leave blank to auto-discover the most actively traded stocks from the Alpaca screener. Or enter specific live "
                         + "tickers, separated by commas or spaces, to scan only those. NeuralArc does not use hardcoded stock candidates.");
-        row = addField(fields, row, "Entry Buffer % above Average Low", entryBuffer,
-                "Place the planned buy this far above the average daily low so the limit fills before price reaches the exact average. Example: 0.25 lifts a $100 average low to $100.25.");
-        row = addField(fields, row, "Exit Buffer % below Average High", exitBuffer,
-                "Place the planned sell this far below the average daily high for the same reason. Example: 0.25 pulls a $104 average high back to $103.74.");
+        row = addField(fields, row, "Range Capture %", targetCapture,
+                "What share of the typical daily dip and rally the plan aims to take. This is the strategy's main trade-off: "
+                        + "aiming for the whole move only completes on unusually wide, perfectly timed days, while taking half of it "
+                        + "gives up size per trade but completes far more often. 50 is the default.");
+        row = addField(fields, row, "Minimum Expected Gain %", minExpectedGain,
+                "Skip stocks whose planned buy-to-sell round trip is worth less than this, so a quiet day is not traded for less than it costs in spread and commission.");
         row = addField(fields, row, "Range Rider Stop Loss %", stop,
                 "Planned risk from the entry price. NeuralArc uses this for strategy-level planning instead of broker blended position accounting. The same-day target is the planned sell price.");
         row = addField(fields, row, "Max Stocks to Add", maxStocks,
@@ -170,8 +172,8 @@ public final class RangeRiderAnalysisDialog extends JDialog {
         minPrice.setText(c.minimumStockPrice().toPlainString());
         maxPrice.setText(c.maximumStockPrice() == null ? "" : c.maximumStockPrice().toPlainString());
         candidateSymbols.setText(String.join(", ", c.candidateSymbols()));
-        entryBuffer.setText(c.entryBufferPercent().toPlainString());
-        exitBuffer.setText(c.exitBufferPercent().toPlainString());
+        targetCapture.setText(c.targetCapturePercent().toPlainString());
+        minExpectedGain.setText(c.minimumExpectedGainPercent().toPlainString());
         stop.setText(c.stopLossPercent().toPlainString());
         maxStocks.setText(String.valueOf(c.maxStocksToAdd()));
         frequency.setSelectedItem(c.executionFrequency());

@@ -25,8 +25,8 @@ public final class RangeRiderConfigCodec {
         json.put("minimumAverageVolume", safe.minimumAverageVolume());
         json.put("minimumStockPrice", safe.minimumStockPrice().toPlainString());
         json.put("maximumStockPrice", safe.maximumStockPrice() == null ? JSONObject.NULL : safe.maximumStockPrice().toPlainString());
-        json.put("entryBufferPercent", safe.entryBufferPercent().toPlainString());
-        json.put("exitBufferPercent", safe.exitBufferPercent().toPlainString());
+        json.put("targetCapturePercent", safe.targetCapturePercent().toPlainString());
+        json.put("minimumExpectedGainPercent", safe.minimumExpectedGainPercent().toPlainString());
         json.put("stopLossPercent", safe.stopLossPercent().toPlainString());
         json.put("maxStocksToAdd", safe.maxStocksToAdd());
         json.put("executionFrequency", safe.executionFrequency().name());
@@ -51,8 +51,8 @@ public final class RangeRiderConfigCodec {
                 json.optLong("minimumAverageVolume", defaults.minimumAverageVolume()),
                 decimal(json, "minimumStockPrice", defaults.minimumStockPrice()),
                 json.isNull("maximumStockPrice") ? null : decimal(json, "maximumStockPrice", null),
-                decimal(json, "entryBufferPercent", defaults.entryBufferPercent()),
-                decimal(json, "exitBufferPercent", defaults.exitBufferPercent()),
+                decimal(json, "targetCapturePercent", defaults.targetCapturePercent()),
+                decimal(json, "minimumExpectedGainPercent", defaults.minimumExpectedGainPercent()),
                 decimal(json, "stopLossPercent", defaults.stopLossPercent()),
                 json.optInt("maxStocksToAdd", defaults.maxStocksToAdd()),
                 enumValue(RangeRiderConfig.ExecutionFrequency.class, json.optString("executionFrequency"), defaults.executionFrequency()),
