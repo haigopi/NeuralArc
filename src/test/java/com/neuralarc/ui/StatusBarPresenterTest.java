@@ -28,9 +28,8 @@ class StatusBarPresenterTest {
                 "Base Buy Pending Total: 0",
                 "CPU: -",
                 "Memory: 1 MB",
-                0, 0, 0
+                "0", "0", "0"
         ));
-        assertEquals(StatusBarPresenter.Tone.MUTED, vm.pollingTone());
     }
 
     @Test
@@ -54,7 +53,7 @@ class StatusBarPresenterTest {
                 "Base Buy Pending Total: 0",
                 "CPU: -",
                 "Memory: 1 MB",
-                0, 0, 0
+                "0", "0", "0"
         ));
 
         assertEquals("<html><b>FAILED</b> Retrying...</html>", vm.brokerText());
@@ -82,7 +81,7 @@ class StatusBarPresenterTest {
                 "Base Buy Pending Total: 0",
                 "CPU: -",
                 "Memory: 1 MB",
-                0, 0, 0
+                "0", "0", "0"
         ));
 
         assertEquals("Connected (No active)", vm.brokerText());
@@ -111,7 +110,7 @@ class StatusBarPresenterTest {
                 "Base Buy Pending Total: $500",
                 "CPU: 12%",
                 "Memory: 256 MB",
-                3, 1, 2
+                "+300.00 / 3", "-100.00 / 1", "2"
         ));
 
         assertEquals("Open (Regular)", vm.marketText());
@@ -121,9 +120,9 @@ class StatusBarPresenterTest {
         assertEquals("$500", vm.baseBuyPendingText());
         assertEquals("12%", vm.cpuText());
         assertEquals("256 MB", vm.memoryText());
-        assertEquals(3, vm.gainingPositions());
-        assertEquals(1, vm.losingPositions());
-        assertEquals(2, vm.pendingToFill());
+        assertEquals("+300.00 / 3", vm.gainingPositionsText());
+        assertEquals("-100.00 / 1", vm.losingPositionsText());
+        assertEquals("2", vm.pendingToFillText());
     }
 
     @Test

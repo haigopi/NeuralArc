@@ -332,9 +332,9 @@ final class BottomStatusBars {
                 + "<br><b>Market Value</b>: " + escapeHtml(model.marketValueText())
                 + "<br><b>Invested Value</b>: " + escapeHtml(model.investedValueText())
                 + "<br><b>Pending Buys</b>: " + escapeHtml(model.baseBuyPendingText())
-                + "<br><b>Gaining Positions</b>: " + model.gainingPositions()
-                + "<br><b>Losing Positions</b>: " + model.losingPositions()
-                + "<br><b>Pending Fill</b>: " + model.pendingToFill()
+                + "<br><b>Gaining Positions</b>: " + escapeHtml(model.gainingPositionsText())
+                + "<br><b>Losing Positions</b>: " + escapeHtml(model.losingPositionsText())
+                + "<br><b>Pending Fill</b>: " + escapeHtml(model.pendingToFillText())
                 + "<br><b>CPU</b>: " + escapeHtml(model.cpuText())
                 + "<br><b>Memory</b>: " + escapeHtml(model.memoryText());
     }

@@ -6601,30 +6601,38 @@ public class TradingFrame extends JFrame {
                 .filter(s -> s.strategy.status() == StrategyStatus.ACTIVE)
                 .count();
         long inactive = Math.max(0L, totalCurrentStrategies - running);
-        long gainingCount = strategies.stream()
-                .filter(this::includeInCurrentStrategiesTab)
-                .filter(s -> s.strategy.status() == StrategyStatus.ACTIVE)
-                .filter(s -> {
-                    Position p = s.cachedPosition();
-                    return p.getTotalShares() > 0
-                            && p.getLastPrice().compareTo(BigDecimal.ZERO) > 0
-                            && p.getLastPrice().compareTo(p.getAverageCost()) > 0;
-                })
-                .count();
-        long losingCount = strategies.stream()
-                .filter(this::includeInCurrentStrategiesTab)
-                .filter(s -> s.strategy.status() == StrategyStatus.ACTIVE)
-                .filter(s -> {
-                    Position p = s.cachedPosition();
-                    return p.getTotalShares() > 0
-                            && p.getLastPrice().compareTo(BigDecimal.ZERO) > 0
-                            && p.getLastPrice().compareTo(p.getAverageCost()) < 0;
-                })
-                .count();
-        long pendingToFillCount = strategies.stream()
-                .filter(this::includeInCurrentStrategiesTab)
-                .filter(s -> isWaitingForFill(s.strategy))
-                .count();
+        // Compute gaining/losing P&L totals and pending-fill count in one pass.
+        BigDecimal gainingPnl = BigDecimal.ZERO;
+        long gainingCount = 0;
+        BigDecimal losingPnl = BigDecimal.ZERO;
+        long losingCount = 0;
+        long pendingToFillCount = 0;
+        for (ManagedStrategy s : strategies) {
+            if (!includeInCurrentStrategiesTab(s)) {
+                continue;
+            }
+            if (s.strategy.status() == StrategyStatus.ACTIVE) {
+                Position p = s.cachedPosition();
+                if (p.getTotalShares() > 0 && p.getLastPrice().compareTo(BigDecimal.ZERO) > 0) {
+                    int cmp = p.getLastPrice().compareTo(p.getAverageCost());
+                    if (cmp > 0) {
+                        gainingPnl = gainingPnl.add(p.unrealizedPnl());
+                        gainingCount++;
+                    } else if (cmp < 0) {
+                        losingPnl = losingPnl.add(p.unrealizedPnl());
+                        losingCount++;
+                    }
+                }
+                if (isWaitingForFill(s.strategy)) {
+                    pendingToFillCount++;
+                }
+            }
+        }
+        String gainingText = gainingCount == 0 ? "0"
+                : "+" + Monetary.round(gainingPnl).toPlainString() + " / " + gainingCount;
+        String losingText = losingCount == 0 ? "0"
+                : Monetary.round(losingPnl).toPlainString() + " / " + losingCount;
+        String pendingText = String.valueOf(pendingToFillCount);
         MarketStatusPresenter.MarketStatusViewModel marketStatusViewModel = currentMarketStatusViewModel();
         String cpuText = formatCpuUsageText();
         String memoryText = formatMemoryUsageText();
@@ -6654,9 +6662,9 @@ public class TradingFrame extends JFrame {
                         baseBuyPendingTotalText,
                         cpuText,
                         memoryText,
-                        gainingCount,
-                        losingCount,
-                        pendingToFillCount
+                        gainingText,
+                        losingText,
+                        pendingText
                 )
         );
         SwingUtilities.invokeLater(() -> {
@@ -6672,9 +6680,9 @@ public class TradingFrame extends JFrame {
             marketValueStatus.setText(statusBarViewModel.marketValueText());
             investedValueStatus.setText(statusBarViewModel.investedValueText());
             baseBuyPendingStatus.setText(statusBarViewModel.baseBuyPendingText());
-            gainingPositionsStatus.setText(String.valueOf(statusBarViewModel.gainingPositions()));
-            losingPositionsStatus.setText(String.valueOf(statusBarViewModel.losingPositions()));
-            pendingToFillStatus.setText(String.valueOf(statusBarViewModel.pendingToFill()));
+            gainingPositionsStatus.setText(statusBarViewModel.gainingPositionsText());
+            losingPositionsStatus.setText(statusBarViewModel.losingPositionsText());
+            pendingToFillStatus.setText(statusBarViewModel.pendingToFillText());
             cpuUsageStatus.setText(statusBarViewModel.cpuText());
             memoryUsageStatus.setText(statusBarViewModel.memoryText());
             statusBar.setText(statusBarViewModel.brokerText());

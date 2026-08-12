@@ -99,7 +99,7 @@ class BottomStatusBarsLayoutTest {
                 "Base Buy Pending Total: $20",
                 "CPU: 10%",
                 "Memory: 120 MB",
-                0, 0, 0
+                "0", "0", "0"
         ));
 
         fixture.bars().updateCompactSummaryAndDetails(vm, "Funds Available: $500");
