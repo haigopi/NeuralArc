@@ -178,6 +178,9 @@ public class TradingFrame extends JFrame {
     private final JLabel marketValueStatus = new JLabel("-");
     private final JLabel investedValueStatus = new JLabel("-");
     private final JLabel baseBuyPendingStatus = new JLabel("0.00");
+    private final JLabel gainingPositionsStatus = new JLabel("0");
+    private final JLabel losingPositionsStatus = new JLabel("0");
+    private final JLabel pendingToFillStatus = new JLabel("0");
     private final JLabel cpuUsageStatus = new JLabel("-");
     private final JLabel memoryUsageStatus = new JLabel("-");
     private final JLabel compactStatusSummary = new JLabel("Broker Not connected   Market Unknown");
@@ -241,8 +244,8 @@ public class TradingFrame extends JFrame {
     private static final int STREAM_RECONNECT_BASE_DELAY_MILLIS = 2 * 60 * 1000;
     private static final int STREAM_RECONNECT_MAX_DELAY_MILLIS = 30 * 60 * 1000;
     private static final int STREAM_RECONNECT_RESET_HOUR = 6;
-    private static final int STRATEGY_STOCK_PRICE_COLUMN = 7;
-    private static final int STRATEGY_PNL_COLUMN = 8;
+    private static final int STRATEGY_STOCK_PRICE_COLUMN = 6;
+    private static final int STRATEGY_PNL_COLUMN = 7;
     private static final long STOCK_PRICE_TOOLTIP_TTL_MILLIS = 30_000L;
     private static final long BROKER_POSITION_SNAPSHOT_TTL_MILLIS = 15_000L;
     /** Today's open never moves and the high/low drift slowly, so one batch call per 30s is ample. */
@@ -1408,20 +1411,20 @@ public class TradingFrame extends JFrame {
         strategyTable.getColumnModel().getColumn(0).setMinWidth(50);
         strategyTable.getColumnModel().getColumn(1).setPreferredWidth(92);
         strategyTable.getColumnModel().getColumn(1).setMinWidth(54);
-        // Price block (Buy Down, Avg Cost, Open, Today's Low, Today's High, Current Price) — all
+        // Price block (Avg Entry, Open, Today's Low, Today's High, Current Price) — all
         // short numeric cells, kept compact so Status keeps the spare width.
-        for (int priceColumn = 2; priceColumn <= 7; priceColumn++) {
+        for (int priceColumn = 2; priceColumn <= 6; priceColumn++) {
             strategyTable.getColumnModel().getColumn(priceColumn).setPreferredWidth(96);
             strategyTable.getColumnModel().getColumn(priceColumn).setMinWidth(64);
         }
         strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.STATUS_COLUMN_INDEX).setPreferredWidth(340);
         strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.STATUS_COLUMN_INDEX).setMinWidth(120);
-        strategyTable.getColumnModel().getColumn(12).setPreferredWidth(95);
-        strategyTable.getColumnModel().getColumn(12).setMinWidth(70);
-        strategyTable.getColumnModel().getColumn(13).setPreferredWidth(210);
-        strategyTable.getColumnModel().getColumn(13).setMinWidth(110);
-        strategyTable.getColumnModel().getColumn(14).setPreferredWidth(180);
-        strategyTable.getColumnModel().getColumn(14).setMinWidth(100);
+        strategyTable.getColumnModel().getColumn(11).setPreferredWidth(95);
+        strategyTable.getColumnModel().getColumn(11).setMinWidth(70);
+        strategyTable.getColumnModel().getColumn(12).setPreferredWidth(210);
+        strategyTable.getColumnModel().getColumn(12).setMinWidth(110);
+        strategyTable.getColumnModel().getColumn(13).setPreferredWidth(180);
+        strategyTable.getColumnModel().getColumn(13).setMinWidth(100);
         applyStrategyGridColumnLayout();
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
@@ -1680,6 +1683,21 @@ public class TradingFrame extends JFrame {
         baseBuyPendingStatus.setVerticalAlignment(SwingConstants.CENTER);
         baseBuyPendingStatus.setHorizontalAlignment(SwingConstants.LEFT);
         baseBuyPendingStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
+        gainingPositionsStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        gainingPositionsStatus.setForeground(STATUS_TEXT_RUNNING);
+        gainingPositionsStatus.setVerticalAlignment(SwingConstants.CENTER);
+        gainingPositionsStatus.setHorizontalAlignment(SwingConstants.LEFT);
+        gainingPositionsStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
+        losingPositionsStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        losingPositionsStatus.setForeground(STATUS_ERR);
+        losingPositionsStatus.setVerticalAlignment(SwingConstants.CENTER);
+        losingPositionsStatus.setHorizontalAlignment(SwingConstants.LEFT);
+        losingPositionsStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
+        pendingToFillStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        pendingToFillStatus.setForeground(BOTTOM_STATUS_ACCENT);
+        pendingToFillStatus.setVerticalAlignment(SwingConstants.CENTER);
+        pendingToFillStatus.setHorizontalAlignment(SwingConstants.LEFT);
+        pendingToFillStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
         cpuUsageStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         cpuUsageStatus.setForeground(BOTTOM_STATUS_ACCENT);
         cpuUsageStatus.setVerticalAlignment(SwingConstants.CENTER);
@@ -1806,6 +1824,9 @@ public class TradingFrame extends JFrame {
                 marketValueStatus,
                 investedValueStatus,
                 baseBuyPendingStatus,
+                gainingPositionsStatus,
+                losingPositionsStatus,
+                pendingToFillStatus,
                 compactStatusSummary,
                 statusDetailsButton,
                 statusRight,
@@ -6580,6 +6601,30 @@ public class TradingFrame extends JFrame {
                 .filter(s -> s.strategy.status() == StrategyStatus.ACTIVE)
                 .count();
         long inactive = Math.max(0L, totalCurrentStrategies - running);
+        long gainingCount = strategies.stream()
+                .filter(this::includeInCurrentStrategiesTab)
+                .filter(s -> s.strategy.status() == StrategyStatus.ACTIVE)
+                .filter(s -> {
+                    Position p = s.cachedPosition();
+                    return p.getTotalShares() > 0
+                            && p.getLastPrice().compareTo(BigDecimal.ZERO) > 0
+                            && p.getLastPrice().compareTo(p.getAverageCost()) > 0;
+                })
+                .count();
+        long losingCount = strategies.stream()
+                .filter(this::includeInCurrentStrategiesTab)
+                .filter(s -> s.strategy.status() == StrategyStatus.ACTIVE)
+                .filter(s -> {
+                    Position p = s.cachedPosition();
+                    return p.getTotalShares() > 0
+                            && p.getLastPrice().compareTo(BigDecimal.ZERO) > 0
+                            && p.getLastPrice().compareTo(p.getAverageCost()) < 0;
+                })
+                .count();
+        long pendingToFillCount = strategies.stream()
+                .filter(this::includeInCurrentStrategiesTab)
+                .filter(s -> isWaitingForFill(s.strategy))
+                .count();
         MarketStatusPresenter.MarketStatusViewModel marketStatusViewModel = currentMarketStatusViewModel();
         String cpuText = formatCpuUsageText();
         String memoryText = formatMemoryUsageText();
@@ -6608,7 +6653,10 @@ public class TradingFrame extends JFrame {
                         availableFundsText,
                         baseBuyPendingTotalText,
                         cpuText,
-                        memoryText
+                        memoryText,
+                        gainingCount,
+                        losingCount,
+                        pendingToFillCount
                 )
         );
         SwingUtilities.invokeLater(() -> {
@@ -6624,6 +6672,9 @@ public class TradingFrame extends JFrame {
             marketValueStatus.setText(statusBarViewModel.marketValueText());
             investedValueStatus.setText(statusBarViewModel.investedValueText());
             baseBuyPendingStatus.setText(statusBarViewModel.baseBuyPendingText());
+            gainingPositionsStatus.setText(String.valueOf(statusBarViewModel.gainingPositions()));
+            losingPositionsStatus.setText(String.valueOf(statusBarViewModel.losingPositions()));
+            pendingToFillStatus.setText(String.valueOf(statusBarViewModel.pendingToFill()));
             cpuUsageStatus.setText(statusBarViewModel.cpuText());
             memoryUsageStatus.setText(statusBarViewModel.memoryText());
             statusBar.setText(statusBarViewModel.brokerText());
@@ -8111,7 +8162,7 @@ public class TradingFrame extends JFrame {
                     setForeground(TABLE_SELECTION_FG);
                 } else {
                     setBackground(row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD);
-                    if (column == 6) {
+                    if (column == StrategyGridLayoutPresenter.STATUS_COLUMN_INDEX) {
                         String latestOrderStatus = BrokerOrderStatusUtil.normalize(strategies.get(modelRow).strategy.latestOrderStatus());
                         if ("rejected".equals(latestOrderStatus)) {
                             setForeground(STATUS_ERR);
@@ -8123,17 +8174,29 @@ public class TradingFrame extends JFrame {
                         } else {
                             setForeground(paused ? STATUS_TEXT_PAUSED : STATUS_TEXT_RUNNING);
                         }
+                    } else if (column == STRATEGY_STOCK_PRICE_COLUMN) {
+                        // Green when current price is above today's open; amber when below.
+                        BigDecimal lastPrice = strategies.get(modelRow).cachedPosition().getLastPrice();
+                        com.neuralarc.model.MarketBar bar = strategies.get(modelRow).cachedDailyBar();
+                        BigDecimal openPrice = bar == null ? null : bar.open();
+                        if (lastPrice != null && lastPrice.compareTo(BigDecimal.ZERO) > 0
+                                && openPrice != null && openPrice.compareTo(BigDecimal.ZERO) > 0) {
+                            int cmp = lastPrice.compareTo(openPrice);
+                            setForeground(cmp > 0 ? STATUS_TEXT_RUNNING : cmp < 0 ? STATUS_TEXT_PAUSED : table.getForeground());
+                        } else {
+                            setForeground(table.getForeground());
+                        }
                     } else if (column == 1) {
-                        Object pnlValue = table.getModel().getValueAt(modelRow, 5);
+                        Object pnlValue = table.getModel().getValueAt(modelRow, STRATEGY_PNL_COLUMN);
                         setForeground(PnlCellStyleSupport.foregroundFor(pnlValue, table.getForeground()));
-                    } else if (column == 9) {
+                    } else if (column == 12) {
                         setForeground(entrySourceTextColor(value, table.getForeground()));
                     } else {
                         setForeground(table.getForeground());
                     }
                 }
             }
-            if (!(column == 6
+            if (!(column == StrategyGridLayoutPresenter.STATUS_COLUMN_INDEX
                     && modelRow >= 0
                     && modelRow < strategies.size()
                     && "rejected".equals(BrokerOrderStatusUtil.normalize(strategies.get(modelRow).strategy.latestOrderStatus())))) {
@@ -8149,8 +8212,9 @@ public class TradingFrame extends JFrame {
         }
 
         private int alignmentForColumn(int column) {
+            // Numeric price and P&L columns are right-aligned; text columns are left-aligned.
             return switch (column) {
-                case 6 -> RIGHT;
+                case 2, 3, 4, 5, 6, 7, 8 -> RIGHT;
                 default -> LEFT;
             };
         }

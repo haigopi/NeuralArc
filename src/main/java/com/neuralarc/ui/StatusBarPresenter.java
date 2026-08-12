@@ -52,7 +52,10 @@ public final class StatusBarPresenter {
                 removePrefix(state.cpuText(), "CPU:"),
                 removePrefix(state.memoryText(), "Memory:"),
                 brokerText,
-                brokerTone
+                brokerTone,
+                state.gainingPositions(),
+                state.losingPositions(),
+                state.pendingToFill()
         );
     }
 
@@ -102,7 +105,10 @@ public final class StatusBarPresenter {
             String availableFundsText,
             String baseBuyPendingText,
             String cpuText,
-            String memoryText
+            String memoryText,
+            long gainingPositions,
+            long losingPositions,
+            long pendingToFill
     ) {
     }
 
@@ -120,7 +126,10 @@ public final class StatusBarPresenter {
             String cpuText,
             String memoryText,
             String brokerText,
-            Tone brokerTone
+            Tone brokerTone,
+            long gainingPositions,
+            long losingPositions,
+            long pendingToFill
     ) {
     }
 

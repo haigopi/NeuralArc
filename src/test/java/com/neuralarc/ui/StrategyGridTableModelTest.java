@@ -39,7 +39,7 @@ class StrategyGridTableModelTest {
                 List.of(managed), ignored -> "Base buy pending", new StrategyTablePresenter());
 
         // Never fabricate a price: with no cached fill and no market data these must read "-".
-        assertEquals("-", model.getValueAt(0, columnIndex("Buy Down Price")));
+        assertEquals("-", model.getValueAt(0, columnIndex("Avg Entry")));
         assertEquals("-", model.getValueAt(0, columnIndex("Open")));
         assertEquals("-", model.getValueAt(0, columnIndex("Today's Low")));
         assertEquals("-", model.getValueAt(0, columnIndex("Today's High")));
@@ -56,7 +56,8 @@ class StrategyGridTableModelTest {
         StrategyGridTableModel model = new StrategyGridTableModel(
                 List.of(managed), ignored -> "Base buy pending", new StrategyTablePresenter());
 
-        assertEquals("179.31", model.getValueAt(0, columnIndex("Buy Down Price")));
+        // Avg Entry falls back to the base buy executed price when the position has no shares yet.
+        assertEquals("179.31", model.getValueAt(0, columnIndex("Avg Entry")));
         assertEquals("180.10", model.getValueAt(0, columnIndex("Open")));
         assertEquals("178.20", model.getValueAt(0, columnIndex("Today's Low")));
         assertEquals("185.90", model.getValueAt(0, columnIndex("Today's High")));

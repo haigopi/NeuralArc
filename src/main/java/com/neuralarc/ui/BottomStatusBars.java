@@ -49,6 +49,9 @@ final class BottomStatusBars {
     private final JLabel marketValueStatus;
     private final JLabel investedValueStatus;
     private final JLabel baseBuyPendingStatus;
+    private final JLabel gainingPositionsStatus;
+    private final JLabel losingPositionsStatus;
+    private final JLabel pendingToFillStatus;
     private final JLabel compactStatusSummary;
     private final JButton statusDetailsButton;
     private final NetworkConnectionStatusIndicator networkConnectionStatus;
@@ -75,6 +78,9 @@ final class BottomStatusBars {
             JLabel marketValueStatus,
             JLabel investedValueStatus,
             JLabel baseBuyPendingStatus,
+            JLabel gainingPositionsStatus,
+            JLabel losingPositionsStatus,
+            JLabel pendingToFillStatus,
             JLabel compactStatusSummary,
             JButton statusDetailsButton,
             JPanel statusRight,
@@ -95,6 +101,9 @@ final class BottomStatusBars {
         this.marketValueStatus = marketValueStatus;
         this.investedValueStatus = investedValueStatus;
         this.baseBuyPendingStatus = baseBuyPendingStatus;
+        this.gainingPositionsStatus = gainingPositionsStatus;
+        this.losingPositionsStatus = losingPositionsStatus;
+        this.pendingToFillStatus = pendingToFillStatus;
         this.compactStatusSummary = compactStatusSummary;
         this.statusDetailsButton = statusDetailsButton;
         this.networkConnectionStatus = new NetworkConnectionStatusIndicator(statusBarPresenter);
@@ -207,7 +216,10 @@ final class BottomStatusBars {
         column = addStatusItem(panel, column, "Funds", availableFundsStatus);
         column = addStatusItem(panel, column, "Market Value", marketValueStatus);
         column = addStatusItem(panel, column, "Invested", investedValueStatus);
-        addStatusItem(panel, column, "Pending Buys", baseBuyPendingStatus);
+        column = addStatusItem(panel, column, "Pending Buys", baseBuyPendingStatus);
+        column = addStatusItem(panel, column, "Gaining", gainingPositionsStatus);
+        column = addStatusItem(panel, column, "Losing", losingPositionsStatus);
+        addStatusItem(panel, column, "Pending Fill", pendingToFillStatus);
         return panel;
     }
 
@@ -320,6 +332,9 @@ final class BottomStatusBars {
                 + "<br><b>Market Value</b>: " + escapeHtml(model.marketValueText())
                 + "<br><b>Invested Value</b>: " + escapeHtml(model.investedValueText())
                 + "<br><b>Pending Buys</b>: " + escapeHtml(model.baseBuyPendingText())
+                + "<br><b>Gaining Positions</b>: " + model.gainingPositions()
+                + "<br><b>Losing Positions</b>: " + model.losingPositions()
+                + "<br><b>Pending Fill</b>: " + model.pendingToFill()
                 + "<br><b>CPU</b>: " + escapeHtml(model.cpuText())
                 + "<br><b>Memory</b>: " + escapeHtml(model.memoryText());
     }
@@ -373,6 +388,9 @@ final class BottomStatusBars {
         marketValueStatus.setHorizontalAlignment(SwingConstants.LEFT);
         investedValueStatus.setHorizontalAlignment(SwingConstants.LEFT);
         baseBuyPendingStatus.setHorizontalAlignment(SwingConstants.LEFT);
+        gainingPositionsStatus.setHorizontalAlignment(SwingConstants.LEFT);
+        losingPositionsStatus.setHorizontalAlignment(SwingConstants.LEFT);
+        pendingToFillStatus.setHorizontalAlignment(SwingConstants.LEFT);
         compactStatusSummary.setHorizontalAlignment(SwingConstants.LEFT);
         statusBar.setForeground(accentColor);
     }

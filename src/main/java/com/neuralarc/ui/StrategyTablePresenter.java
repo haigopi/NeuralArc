@@ -702,7 +702,15 @@ public final class StrategyTablePresenter {
         if (columnIndex >= 2 && columnIndex <= 6) {
             return switch (columnIndex) {
                 case 2 -> displayQuantity(strategy, position);
-                case 3 -> position.getTotalShares() > 0 ? position.getAverageCost().toPlainString() : "-";
+                case 3 -> {
+                    // Avg Entry: show position average cost when shares are held; fall back to the
+                    // base-buy executed price so the column is useful before a position opens.
+                    BigDecimal avgCost = position.getAverageCost();
+                    if (avgCost != null && avgCost.compareTo(java.math.BigDecimal.ZERO) > 0) {
+                        yield avgCost.toPlainString();
+                    }
+                    yield positivePriceOrDash(prices.baseBuyExecutedPrice());
+                }
                 case 4 -> displayPrice(position, lastSellPrice);
                 case 5 -> position.getTotalShares() > 0 ? position.marketValue().toPlainString() : "-";
                 case 6 -> displayPnl(position, realizedPnl);

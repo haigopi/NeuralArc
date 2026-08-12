@@ -98,7 +98,8 @@ class BottomStatusBarsLayoutTest {
                 "Funds Available: $500",
                 "Base Buy Pending Total: $20",
                 "CPU: 10%",
-                "Memory: 120 MB"
+                "Memory: 120 MB",
+                0, 0, 0
         ));
 
         fixture.bars().updateCompactSummaryAndDetails(vm, "Funds Available: $500");
@@ -146,6 +147,9 @@ class BottomStatusBarsLayoutTest {
         private final JLabel marketValueStatus = new JLabel("$1200");
         private final JLabel investedValueStatus = new JLabel("$900");
         private final JLabel baseBuyPendingStatus = new JLabel("$500");
+        private final JLabel gainingPositionsStatus = new JLabel("2");
+        private final JLabel losingPositionsStatus = new JLabel("1");
+        private final JLabel pendingToFillStatus = new JLabel("3");
         private final JLabel compactStatusSummary = new JLabel("Broker Connected");
         private final JButton statusDetailsButton = new JButton("Details");
         private final BottomStatusBars bars;
@@ -168,6 +172,9 @@ class BottomStatusBarsLayoutTest {
                     marketValueStatus,
                     investedValueStatus,
                     baseBuyPendingStatus,
+                    gainingPositionsStatus,
+                    losingPositionsStatus,
+                    pendingToFillStatus,
                     compactStatusSummary,
                     statusDetailsButton,
                     statusRight,
