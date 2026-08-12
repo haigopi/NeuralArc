@@ -18,7 +18,8 @@ class RangeRiderDiscoveryServiceTest {
 
     private static RangeRiderConfig config(String minPrice, String maxPrice, int maxStocks) {
         return new RangeRiderConfig(15, new BigDecimal("1"), new BigDecimal("12"), new BigDecimal("50"),
-                1_000_000L, new BigDecimal(minPrice), maxPrice == null ? null : new BigDecimal(maxPrice),
+                new BigDecimal("40"), 1_000_000L, new BigDecimal(minPrice),
+                maxPrice == null ? null : new BigDecimal(maxPrice),
                 new BigDecimal("50"), new BigDecimal("0.5"), new BigDecimal("2"), maxStocks,
                 RangeRiderConfig.ExecutionFrequency.MANUAL, StrategyMode.PAPER, List.of());
     }

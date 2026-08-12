@@ -169,6 +169,13 @@ public final class RangeRiderAnalyzer {
                     + "%, below the " + cfg.minimumExpectedGainPercent().toPlainString() + "% minimum");
             return null;
         }
+        BigDecimal entryTouchRate = entryTouchRatePercent(c, cfg);
+        if (entryTouchRate.compareTo(cfg.minimumEntryTouchRatePercent()) < 0) {
+            reject(c, "planned entry price was reached on only " + entryTouchRate.toPlainString()
+                    + "% of the last " + c.sessionsAnalyzed() + " sessions, below the "
+                    + cfg.minimumEntryTouchRatePercent().toPlainString() + "% minimum — stock rarely dips to the buy level");
+            return null;
+        }
         BigDecimal fillRate = sameDayFillRatePercent(c, cfg);
         if (fillRate.compareTo(cfg.minimumSameDayFillRatePercent()) < 0) {
             reject(c, "planned buy and sell both completed on only " + fillRate.toPlainString()

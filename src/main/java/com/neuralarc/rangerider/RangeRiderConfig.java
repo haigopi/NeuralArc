@@ -29,12 +29,16 @@ import java.util.List;
  *                                      day is too quiet to cover spread and commission is not offered
  * @param minimumSameDayFillRatePercent minimum share of lookback sessions in which the planned buy and
  *                                      the planned sell would both have been reached on the same day
+ * @param minimumEntryTouchRatePercent  minimum share of lookback sessions in which the planned entry
+ *                                      price was reached at all — separate from whether the exit also
+ *                                      filled. Filters stocks that almost never dip to the buy level.
  */
 public record RangeRiderConfig(
         int lookbackSessions,
         BigDecimal minimumAverageRangePercent,
         BigDecimal maximumAverageRangePercent,
         BigDecimal minimumSameDayFillRatePercent,
+        BigDecimal minimumEntryTouchRatePercent,
         long minimumAverageVolume,
         BigDecimal minimumStockPrice,
         BigDecimal maximumStockPrice,
@@ -63,9 +67,13 @@ public record RangeRiderConfig(
         if (maximumAverageRangePercent.compareTo(minimumAverageRangePercent) < 0) {
             maximumAverageRangePercent = minimumAverageRangePercent;
         }
-        minimumSameDayFillRatePercent = nonNegativeOrDefault(minimumSameDayFillRatePercent, "50");
+        minimumSameDayFillRatePercent = nonNegativeOrDefault(minimumSameDayFillRatePercent, "35");
         if (minimumSameDayFillRatePercent.compareTo(BigDecimal.valueOf(100)) > 0) {
             minimumSameDayFillRatePercent = BigDecimal.valueOf(100);
+        }
+        minimumEntryTouchRatePercent = nonNegativeOrDefault(minimumEntryTouchRatePercent, "40");
+        if (minimumEntryTouchRatePercent.compareTo(BigDecimal.valueOf(100)) > 0) {
+            minimumEntryTouchRatePercent = BigDecimal.valueOf(100);
         }
         minimumAverageVolume = minimumAverageVolume <= 0 ? 1_000_000L : minimumAverageVolume;
         minimumStockPrice = posOrDefault(minimumStockPrice, "10");
@@ -87,15 +95,17 @@ public record RangeRiderConfig(
             BigDecimal maximumStockPrice, BigDecimal targetCapturePercent, BigDecimal minimumExpectedGainPercent,
             BigDecimal stopLossPercent, int maxStocksToAdd, ExecutionFrequency executionFrequency, StrategyMode mode
     ) {
-        this(lookbackSessions, minimumAverageRangePercent, maximumAverageRangePercent, minimumSameDayFillRatePercent,
-                minimumAverageVolume, minimumStockPrice, maximumStockPrice, targetCapturePercent,
-                minimumExpectedGainPercent, stopLossPercent, maxStocksToAdd, executionFrequency, mode, List.of());
+        this(lookbackSessions, minimumAverageRangePercent, maximumAverageRangePercent,
+                minimumSameDayFillRatePercent, new BigDecimal("40"), minimumAverageVolume, minimumStockPrice,
+                maximumStockPrice, targetCapturePercent, minimumExpectedGainPercent,
+                stopLossPercent, maxStocksToAdd, executionFrequency, mode, List.of());
     }
 
     public static RangeRiderConfig defaults(StrategyMode mode) {
         return new RangeRiderConfig(DEFAULT_LOOKBACK_SESSIONS, new BigDecimal("1"), new BigDecimal("12"),
-                new BigDecimal("50"), 1_000_000L, new BigDecimal("10"), null, new BigDecimal("50"),
-                new BigDecimal("0.5"), new BigDecimal("2"), 10, ExecutionFrequency.MANUAL, mode, List.of());
+                new BigDecimal("35"), new BigDecimal("40"), 1_000_000L, new BigDecimal("10"), null,
+                new BigDecimal("50"), new BigDecimal("0.5"), new BigDecimal("2"), 10,
+                ExecutionFrequency.MANUAL, mode, List.of());
     }
 
     private static BigDecimal posOrDefault(BigDecimal value, String fallback) {

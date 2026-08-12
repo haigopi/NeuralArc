@@ -22,6 +22,7 @@ public final class RangeRiderConfigCodec {
         json.put("minimumAverageRangePercent", safe.minimumAverageRangePercent().toPlainString());
         json.put("maximumAverageRangePercent", safe.maximumAverageRangePercent().toPlainString());
         json.put("minimumSameDayFillRatePercent", safe.minimumSameDayFillRatePercent().toPlainString());
+        json.put("minimumEntryTouchRatePercent", safe.minimumEntryTouchRatePercent().toPlainString());
         json.put("minimumAverageVolume", safe.minimumAverageVolume());
         json.put("minimumStockPrice", safe.minimumStockPrice().toPlainString());
         json.put("maximumStockPrice", safe.maximumStockPrice() == null ? JSONObject.NULL : safe.maximumStockPrice().toPlainString());
@@ -48,6 +49,7 @@ public final class RangeRiderConfigCodec {
                 decimal(json, "minimumAverageRangePercent", defaults.minimumAverageRangePercent()),
                 decimal(json, "maximumAverageRangePercent", defaults.maximumAverageRangePercent()),
                 decimal(json, "minimumSameDayFillRatePercent", defaults.minimumSameDayFillRatePercent()),
+                decimal(json, "minimumEntryTouchRatePercent", defaults.minimumEntryTouchRatePercent()),
                 json.optLong("minimumAverageVolume", defaults.minimumAverageVolume()),
                 decimal(json, "minimumStockPrice", defaults.minimumStockPrice()),
                 json.isNull("maximumStockPrice") ? null : decimal(json, "maximumStockPrice", null),

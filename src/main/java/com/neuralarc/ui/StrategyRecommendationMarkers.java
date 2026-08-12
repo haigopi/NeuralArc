@@ -16,6 +16,7 @@ final class StrategyRecommendationMarkers {
                 || status.startsWith("DIP_HUNTER_")
                 || status.startsWith("VWAP_")
                 || status.startsWith("SWING_")
+                || status.startsWith("RANGE_RIDER_")
                 || status.startsWith("EARNINGS_HUNTER_");
     }
 
@@ -38,6 +39,9 @@ final class StrategyRecommendationMarkers {
         }
         if (status.startsWith("SWING_")) {
             return "Swing Vault strategy";
+        }
+        if (status.startsWith("RANGE_RIDER_")) {
+            return "Range Rider strategy";
         }
         if (status.startsWith("EARNINGS_HUNTER_")) {
             return "Earnings Hunter strategy";

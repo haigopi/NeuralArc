@@ -13,7 +13,7 @@ class RangeRiderConfigCodecTest {
     @Test
     void roundTripsEveryField() {
         RangeRiderConfig original = new RangeRiderConfig(20, new BigDecimal("3"), new BigDecimal("9"),
-                new BigDecimal("70"), 2_000_000L, new BigDecimal("15"), new BigDecimal("400"),
+                new BigDecimal("70"), new BigDecimal("55"), 2_000_000L, new BigDecimal("15"), new BigDecimal("400"),
                 new BigDecimal("65"), new BigDecimal("0.8"), new BigDecimal("1.5"), 7,
                 RangeRiderConfig.ExecutionFrequency.EVERY_30_MINUTES, StrategyMode.LIVE, List.of("AAPL", "MSFT"));
 
@@ -23,6 +23,7 @@ class RangeRiderConfigCodecTest {
         assertEquals(new BigDecimal("3"), restored.minimumAverageRangePercent());
         assertEquals(new BigDecimal("9"), restored.maximumAverageRangePercent());
         assertEquals(new BigDecimal("70"), restored.minimumSameDayFillRatePercent());
+        assertEquals(new BigDecimal("55"), restored.minimumEntryTouchRatePercent());
         assertEquals(2_000_000L, restored.minimumAverageVolume());
         assertEquals(new BigDecimal("15"), restored.minimumStockPrice());
         assertEquals(new BigDecimal("400"), restored.maximumStockPrice());
@@ -57,6 +58,7 @@ class RangeRiderConfigCodecTest {
         assertEquals(defaults.minimumAverageRangePercent(), partial.minimumAverageRangePercent());
         assertEquals(defaults.executionFrequency(), partial.executionFrequency());
         assertEquals(defaults.minimumSameDayFillRatePercent(), partial.minimumSameDayFillRatePercent());
+        assertEquals(defaults.minimumEntryTouchRatePercent(), partial.minimumEntryTouchRatePercent());
     }
 
     @Test

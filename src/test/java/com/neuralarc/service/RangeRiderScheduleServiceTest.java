@@ -36,7 +36,8 @@ class RangeRiderScheduleServiceTest {
     private static RangeRiderConfig configWith(RangeRiderConfig.ExecutionFrequency frequency) {
         RangeRiderConfig d = RangeRiderConfig.defaults(StrategyMode.PAPER);
         return new RangeRiderConfig(d.lookbackSessions(), d.minimumAverageRangePercent(),
-                d.maximumAverageRangePercent(), d.minimumSameDayFillRatePercent(), d.minimumAverageVolume(),
+                d.maximumAverageRangePercent(), d.minimumSameDayFillRatePercent(),
+                d.minimumEntryTouchRatePercent(), d.minimumAverageVolume(),
                 d.minimumStockPrice(), d.maximumStockPrice(), d.targetCapturePercent(), d.minimumExpectedGainPercent(),
                 d.stopLossPercent(), d.maxStocksToAdd(), frequency, d.mode(), List.of());
     }

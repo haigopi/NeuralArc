@@ -12,7 +12,8 @@ public final class RangeRiderAnalysisDialog extends JDialog {
     private final JTextField lookbackSessions = new JTextField("15", 8);
     private final JTextField minRange = new JTextField("1", 8);
     private final JTextField maxRange = new JTextField("12", 8);
-    private final JTextField minFillRate = new JTextField("50", 8);
+    private final JTextField minFillRate = new JTextField("35", 8);
+    private final JTextField minEntryTouchRate = new JTextField("40", 8);
     private final JTextField minAvgVolume = new JTextField("1000000", 8);
     private final JTextField minPrice = new JTextField("10", 8);
     private final JTextField maxPrice = new JTextField("", 8);
@@ -46,7 +47,9 @@ public final class RangeRiderAnalysisDialog extends JDialog {
     public RangeRiderConfig config() {
         return new RangeRiderConfig(Integer.parseInt(lookbackSessions.getText().trim()),
                 new BigDecimal(minRange.getText().trim()), new BigDecimal(maxRange.getText().trim()),
-                new BigDecimal(minFillRate.getText().trim()), Long.parseLong(minAvgVolume.getText().trim()),
+                new BigDecimal(minFillRate.getText().trim()),
+                new BigDecimal(minEntryTouchRate.getText().trim()),
+                Long.parseLong(minAvgVolume.getText().trim()),
                 new BigDecimal(minPrice.getText().trim()),
                 maxPrice.getText().isBlank() ? null : new BigDecimal(maxPrice.getText().trim()),
                 new BigDecimal(targetCapture.getText().trim()), new BigDecimal(minExpectedGain.getText().trim()),
@@ -66,7 +69,9 @@ public final class RangeRiderAnalysisDialog extends JDialog {
         row = addField(fields, row, "Maximum Average Daily Range %", maxRange,
                 "Reject stocks whose typical day is wider than this — those moves are news-driven rather than a repeatable daily range.");
         row = addField(fields, row, "Minimum Same-Day Fill Rate %", minFillRate,
-                "Require the planned buy and the planned sell to have both been reached on at least this share of the lookback sessions, each measured against that session's own open. Daily bars cannot prove the low came before the high, so this is an optimistic upper bound.");
+                "Require the planned buy and the planned sell to have both been reached on at least this share of the lookback sessions, each measured against that session's own open. Daily bars cannot prove the low came before the high, so this is an optimistic upper bound. Default is 35.");
+        row = addField(fields, row, "Minimum Entry Touch Rate %", minEntryTouchRate,
+                "Require the planned buy price to have been reached on at least this share of sessions, regardless of whether the exit also filled. Filters stocks that almost never dip to the entry level at all. Default is 40.");
         row = addField(fields, row, "Minimum Average Volume", minAvgVolume,
                 "Require enough average daily shares traded to ensure liquidity. Default is 1,000,000 shares, which keeps the scan on heavily traded names.");
         row = addField(fields, row, "Minimum Stock Price", minPrice,
@@ -168,6 +173,7 @@ public final class RangeRiderAnalysisDialog extends JDialog {
         minRange.setText(c.minimumAverageRangePercent().toPlainString());
         maxRange.setText(c.maximumAverageRangePercent().toPlainString());
         minFillRate.setText(c.minimumSameDayFillRatePercent().toPlainString());
+        minEntryTouchRate.setText(c.minimumEntryTouchRatePercent().toPlainString());
         minAvgVolume.setText(String.valueOf(c.minimumAverageVolume()));
         minPrice.setText(c.minimumStockPrice().toPlainString());
         maxPrice.setText(c.maximumStockPrice() == null ? "" : c.maximumStockPrice().toPlainString());

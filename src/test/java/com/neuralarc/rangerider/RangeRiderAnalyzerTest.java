@@ -23,7 +23,8 @@ class RangeRiderAnalyzerTest {
         assertEquals(15, cfg.lookbackSessions());
         assertEquals(new BigDecimal("1"), cfg.minimumAverageRangePercent());
         assertEquals(new BigDecimal("12"), cfg.maximumAverageRangePercent());
-        assertEquals(new BigDecimal("50"), cfg.minimumSameDayFillRatePercent());
+        assertEquals(new BigDecimal("35"), cfg.minimumSameDayFillRatePercent());
+        assertEquals(new BigDecimal("40"), cfg.minimumEntryTouchRatePercent());
         assertEquals(1_000_000L, cfg.minimumAverageVolume());
         assertEquals(new BigDecimal("10"), cfg.minimumStockPrice());
         assertNull(cfg.maximumStockPrice());
@@ -41,7 +42,8 @@ class RangeRiderAnalyzerTest {
         assertEquals(15, cfg.lookbackSessions());
         assertEquals(new BigDecimal("1"), cfg.minimumAverageRangePercent());
         assertEquals(new BigDecimal("12"), cfg.maximumAverageRangePercent());
-        assertEquals(new BigDecimal("50"), cfg.minimumSameDayFillRatePercent());
+        assertEquals(new BigDecimal("35"), cfg.minimumSameDayFillRatePercent());
+        assertEquals(new BigDecimal("40"), cfg.minimumEntryTouchRatePercent());
         assertEquals(1_000_000L, cfg.minimumAverageVolume());
         assertEquals(new BigDecimal("50"), cfg.targetCapturePercent());
         assertEquals(new BigDecimal("0.5"), cfg.minimumExpectedGainPercent());
@@ -125,8 +127,8 @@ class RangeRiderAnalyzerTest {
     }
 
     /**
-     * Regression guard for the scan that returned nothing: a stock that completes the round trip on
-     * half of its sessions is a genuinely good daily-income candidate and must survive the defaults.
+     * Regression guard: a stock that completes the round trip on half of its sessions (50%) is a
+     * genuinely good daily-income candidate and must survive the 35% default fill-rate minimum.
      */
     @Test
     void aRealisticHalfTheTimeFillRateStillQualifiesUnderTheDefaults() {
@@ -137,6 +139,26 @@ class RangeRiderAnalyzerTest {
 
         assertEquals(1, result.size());
         assertEquals(new BigDecimal("50.00"), result.getFirst().sameDayFillRatePercent());
+    }
+
+    @Test
+    void rejectsWhenEntryPriceIsRarelyReached() {
+        List<String> log = new ArrayList<>();
+        RangeRiderAnalyzer analyzer = new RangeRiderAnalyzer(FIXED, log::add);
+        // 3 sessions that reach both entry and exit; 7 sessions that stay near the open (entry never touched).
+        // This gives a 30% entry touch rate, below the 40% minimum.
+        List<RangeRiderSession> sessions = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            sessions.add(session(i, "100", "105", "95", "100"));
+        }
+        for (int i = 3; i < 10; i++) {
+            sessions.add(session(i, "100", "103", "100.50", "100"));
+        }
+        RangeRiderCandidate c = candidate("NODIP", sessions, 4_000_000L, "100.00");
+
+        assertTrue(analyzer.analyze(List.of(c), RangeRiderConfig.defaults(StrategyMode.PAPER)).isEmpty());
+        assertTrue(log.stream().anyMatch(line -> line.contains("Rejected NODIP")
+                && line.contains("rarely dips to the buy level")));
     }
 
     @Test
@@ -275,9 +297,10 @@ class RangeRiderAnalyzerTest {
     private static RangeRiderConfig withMinimumFillRate(String minimum) {
         RangeRiderConfig d = RangeRiderConfig.defaults(StrategyMode.PAPER);
         return new RangeRiderConfig(d.lookbackSessions(), d.minimumAverageRangePercent(),
-                d.maximumAverageRangePercent(), new BigDecimal(minimum), d.minimumAverageVolume(),
-                d.minimumStockPrice(), d.maximumStockPrice(), d.targetCapturePercent(), d.minimumExpectedGainPercent(),
-                d.stopLossPercent(), d.maxStocksToAdd(), d.executionFrequency(), d.mode(), List.of());
+                d.maximumAverageRangePercent(), new BigDecimal(minimum), d.minimumEntryTouchRatePercent(),
+                d.minimumAverageVolume(), d.minimumStockPrice(), d.maximumStockPrice(), d.targetCapturePercent(),
+                d.minimumExpectedGainPercent(), d.stopLossPercent(), d.maxStocksToAdd(), d.executionFrequency(),
+                d.mode(), List.of());
     }
 
     private static RangeRiderCandidate steadyRange(String symbol, int sessionCount, String low, String high,

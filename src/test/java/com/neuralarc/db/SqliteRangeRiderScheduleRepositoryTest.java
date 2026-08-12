@@ -63,7 +63,7 @@ class SqliteRangeRiderScheduleRepositoryTest {
     void roundTripsTheFullConfigThroughTheDatabase() {
         SqliteRangeRiderScheduleRepository repo = repository();
         RangeRiderConfig config = new RangeRiderConfig(20, new BigDecimal("3"), new BigDecimal("9"),
-                new BigDecimal("70"), 3_000_000L, new BigDecimal("25"), new BigDecimal("500"),
+                new BigDecimal("70"), new BigDecimal("55"), 3_000_000L, new BigDecimal("25"), new BigDecimal("500"),
                 new BigDecimal("65"), new BigDecimal("0.8"), new BigDecimal("1.5"), 5,
                 RangeRiderConfig.ExecutionFrequency.EVERY_15_MINUTES, StrategyMode.PAPER, List.of("AAPL"));
         repo.save(new RangeRiderSchedule("s1", true, LocalTime.of(9, 45), LocalTime.of(9, 45),
@@ -74,6 +74,7 @@ class SqliteRangeRiderScheduleRepositoryTest {
 
         assertEquals(20, loaded.lookbackSessions());
         assertEquals(new BigDecimal("70"), loaded.minimumSameDayFillRatePercent());
+        assertEquals(new BigDecimal("55"), loaded.minimumEntryTouchRatePercent());
         assertEquals(new BigDecimal("65"), loaded.targetCapturePercent());
         assertEquals(new BigDecimal("0.8"), loaded.minimumExpectedGainPercent());
         assertEquals(RangeRiderConfig.ExecutionFrequency.EVERY_15_MINUTES, loaded.executionFrequency());
