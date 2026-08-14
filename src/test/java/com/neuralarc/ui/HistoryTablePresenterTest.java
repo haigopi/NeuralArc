@@ -444,6 +444,33 @@ class HistoryTablePresenterTest {
         assertEquals("100.00", sellRow.realizedPnl());
     }
 
+    @Test
+    void partiallyFilledBuyStillContributesToSellTriggerBookedProfit() {
+        HistoryTablePresenter.HistorySource source = new HistoryTablePresenter.HistorySource(
+                "AAPL",
+                "Paper",
+                "Completed",
+                "Completed",
+                "",
+                Instant.now(),
+                StrategyStatus.COMPLETED,
+                List.of(
+                        partiallyFilledOrder("AAPL", StrategyStage.BASE_BUY, StrategyOrderSide.BUY,
+                                "10", "100.00", "4", "100.00"),
+                        filledOrder("AAPL", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL,
+                                "4", "110.00", "110.00")
+                )
+        );
+
+        List<HistoryTablePresenter.HistoryRow> rows = presenter.buildRows(List.of(source), instant -> "t");
+
+        HistoryTablePresenter.HistoryRow sellRow = rows.stream()
+                .filter(row -> "SELL".equals(row.side()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("40.00", sellRow.realizedPnl());
+    }
+
     private static StrategyOrder filledOrder(
             String symbol,
             StrategyStage stage,
@@ -545,6 +572,38 @@ class HistoryTablePresenterTest {
                 new BigDecimal(filledQuantity),
                 new BigDecimal(fillPrice),
                 StrategyOrderStatus.FILLED,
+                now,
+                now,
+                now,
+                "{}"
+        );
+    }
+
+    private static StrategyOrder partiallyFilledOrder(
+            String symbol,
+            StrategyStage stage,
+            StrategyOrderSide side,
+            String requestedQuantity,
+            String limitPrice,
+            String filledQuantity,
+            String fillPrice
+    ) {
+        Instant now = Instant.parse("2026-05-06T10:00:00Z");
+        return new StrategyOrder(
+                UUID.randomUUID().toString(),
+                "strategy-1",
+                stage,
+                "ord-" + stage.name() + "-partial",
+                "client-" + stage.name() + "-partial",
+                symbol,
+                side,
+                StrategyOrderType.LIMIT,
+                new BigDecimal(limitPrice),
+                BigDecimal.ZERO,
+                new BigDecimal(requestedQuantity),
+                new BigDecimal(filledQuantity),
+                new BigDecimal(fillPrice),
+                StrategyOrderStatus.PARTIALLY_FILLED,
                 now,
                 now,
                 now,

@@ -40,6 +40,7 @@ final class PortfolioActionsController {
                 StrategyService.SellExecutionSource executionSource
         );
         StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy);
+        StrategyService.StrategyCreationResult readjustLosingPendingBaseBuy(ManagedStrategy entry);
         Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets);
         StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity);
         StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice);
@@ -92,6 +93,8 @@ final class PortfolioActionsController {
                 this::handleAverageLosingPositions));
         menu.add(gateway.createMenuItem("Place Limit Buy for Losing Pending Positions", "icons/submit.svg",
                 () -> handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_AMBER_PENDING_BASE_BUYS)));
+        menu.add(gateway.createMenuItem("Readjust Losing Pending Base Buy Positions", "icons/submit.svg",
+                this::handleReadjustLosingPendingBaseBuys));
         menu.add(gateway.createMenuItem("Place Limit Buy for Gaining Pending Positions", "icons/submit.svg",
                 () -> handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_GREEN_PENDING_BASE_BUYS)));
         menu.add(gateway.createMenuItem("Place Limit Buy for All Pending Positions", "icons/submit.svg",
@@ -267,6 +270,28 @@ final class PortfolioActionsController {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
                 return placePendingBaseBuyTargets(targets);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    private void handleReadjustLosingPendingBaseBuys() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.READJUST_AMBER_PENDING_BASE_BUYS;
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+
+        gateway.log(action.logPrefix() + " preparing to readjust " + targets.size()
+                + " losing pending base-buy recommendation(s).");
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return readjustLosingPendingBaseBuyTargets(targets);
             }
 
             @Override
@@ -489,6 +514,21 @@ final class PortfolioActionsController {
                 return TargetResult.success(entry.strategy.symbol());
             }
             gateway.log("[Place Pending Base Buys] failed " + entry.strategy.symbol() + ": " + result.error());
+            return TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+        });
+    }
+
+    PortfolioActionsSupport.BatchResult readjustLosingPendingBaseBuyTargets(List<ManagedStrategy> targets) {
+        return runTargetsInParallel(targets, entry -> {
+            gateway.log("[Readjust Losing Pending Base Buy Positions] evaluating " + entry.strategy.symbol()
+                    + " for base-buy readjustment.");
+            StrategyService.StrategyCreationResult result = gateway.readjustLosingPendingBaseBuy(entry);
+            if (result.success()) {
+                gateway.log("[Readjust Losing Pending Base Buy Positions] readjusted " + entry.strategy.symbol() + ".");
+                return TargetResult.success(entry.strategy.symbol());
+            }
+            gateway.log("[Readjust Losing Pending Base Buy Positions] failed " + entry.strategy.symbol()
+                    + ": " + result.error());
             return TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
         });
     }

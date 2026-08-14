@@ -28,6 +28,11 @@ final class StrategyGridContextMenu {
     private final IntPredicate cancelPendingLimitBuyEnabled;
     private final IntConsumer placePendingBaseBuyHandler;
     private final IntPredicate placePendingBaseBuyEnabled;
+    private final IntConsumer readjustLosingPendingBaseBuyHandler;
+    private final IntPredicate readjustLosingPendingBaseBuyEnabled;
+    private final IntConsumer repositionFromHistoryHandler;
+    private final IntPredicate repositionFromHistoryEnabled;
+    private final Supplier<Boolean> historyTabSelected;
     private final Supplier<List<StrategyWorkspace>> workspacesProvider;
     // (workspaceId, viewRow) — workspaceId is null to move the row back to All Stocks (unassigned).
     private final ObjIntConsumer<String> assignToWorkspaceHandler;
@@ -45,6 +50,11 @@ final class StrategyGridContextMenu {
             IntPredicate cancelPendingLimitBuyEnabled,
             IntConsumer placePendingBaseBuyHandler,
             IntPredicate placePendingBaseBuyEnabled,
+            IntConsumer readjustLosingPendingBaseBuyHandler,
+            IntPredicate readjustLosingPendingBaseBuyEnabled,
+            IntConsumer repositionFromHistoryHandler,
+            IntPredicate repositionFromHistoryEnabled,
+            Supplier<Boolean> historyTabSelected,
             Supplier<List<StrategyWorkspace>> workspacesProvider,
             ObjIntConsumer<String> assignToWorkspaceHandler
     ) {
@@ -60,6 +70,11 @@ final class StrategyGridContextMenu {
         this.cancelPendingLimitBuyEnabled = cancelPendingLimitBuyEnabled;
         this.placePendingBaseBuyHandler = placePendingBaseBuyHandler;
         this.placePendingBaseBuyEnabled = placePendingBaseBuyEnabled;
+        this.readjustLosingPendingBaseBuyHandler = readjustLosingPendingBaseBuyHandler;
+        this.readjustLosingPendingBaseBuyEnabled = readjustLosingPendingBaseBuyEnabled;
+        this.repositionFromHistoryHandler = repositionFromHistoryHandler;
+        this.repositionFromHistoryEnabled = repositionFromHistoryEnabled;
+        this.historyTabSelected = historyTabSelected;
         this.workspacesProvider = workspacesProvider;
         this.assignToWorkspaceHandler = assignToWorkspaceHandler;
     }
@@ -143,6 +158,20 @@ final class StrategyGridContextMenu {
             JMenuItem placePending = item("Place Pending Base Buy");
             placePending.addActionListener(e -> placePendingBaseBuyHandler.accept(viewRow));
             position.add(placePending);
+        }
+        if (readjustLosingPendingBaseBuyHandler != null && readjustLosingPendingBaseBuyEnabled != null) {
+            JMenuItem readjustPending = item("Readjust Losing Pending Base Buy");
+            readjustPending.setEnabled(readjustLosingPendingBaseBuyEnabled.test(viewRow));
+            readjustPending.addActionListener(e -> readjustLosingPendingBaseBuyHandler.accept(viewRow));
+            position.add(readjustPending);
+        }
+        if (Boolean.TRUE.equals(historyTabSelected == null ? null : historyTabSelected.get())
+                && repositionFromHistoryHandler != null
+                && repositionFromHistoryEnabled != null) {
+            JMenuItem repositionHistory = item("Reposition Stock");
+            repositionHistory.setEnabled(repositionFromHistoryEnabled.test(viewRow));
+            repositionHistory.addActionListener(e -> repositionFromHistoryHandler.accept(viewRow));
+            position.add(repositionHistory);
         }
         if (cancelPendingLimitBuyHandler != null
                 && cancelPendingLimitBuyEnabled != null

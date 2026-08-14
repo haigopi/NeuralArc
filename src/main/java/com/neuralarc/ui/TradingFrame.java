@@ -683,6 +683,9 @@ public class TradingFrame extends JFrame {
             @Override public StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy) {
                 return TradingFrame.this.placePendingBaseBuy(strategy);
             }
+            @Override public StrategyService.StrategyCreationResult readjustLosingPendingBaseBuy(ManagedStrategy entry) {
+                return TradingFrame.this.readjustLosingPendingBaseBuy(entry);
+            }
             @Override public Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets) {
                 return TradingFrame.this.chooseAverageLosingPositions(targets);
             }
@@ -1595,6 +1598,17 @@ public class TradingFrame extends JFrame {
         configureFilledOrdersColumnWidths();
         applyTradeHistoryRowFilter();
         filledOrdersTable.setRowSorter(filledOrdersSorter);
+        filledOrdersTable.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent event) {
+                maybeShowTradeHistoryRowPopup(event);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent event) {
+                maybeShowTradeHistoryRowPopup(event);
+            }
+        });
 
         JScrollPane filledOrdersGrid = new JScrollPane(filledOrdersTable);
         filledOrdersGrid.setOpaque(false);
@@ -3304,6 +3318,256 @@ public class TradingFrame extends JFrame {
         }.execute();
     }
 
+    private void readjustLosingPendingBaseBuyFromGrid(int viewRow) {
+        int row = strategyTable.convertRowIndexToModel(viewRow);
+        if (row < 0 || row >= strategies.size()) {
+            return;
+        }
+        ManagedStrategy entry = strategies.get(row);
+        if (!isAmberPendingBaseBuy(entry)) {
+            return;
+        }
+        new SwingWorker<StrategyService.StrategyCreationResult, Void>() {
+            @Override
+            protected StrategyService.StrategyCreationResult doInBackground() {
+                return readjustLosingPendingBaseBuy(entry);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    StrategyService.StrategyCreationResult result = get();
+                    syncStrategiesFromRepository();
+                    refreshStrategyTableData();
+                    applyCurrentStrategiesRowFilter();
+                    refreshWorkspaceSummary();
+                    updateStatusBar();
+                    if (result.success()) {
+                        log("[" + entry.strategy.symbol() + "] Losing pending base-buy recommendation readjusted.");
+                    } else {
+                        log("[" + entry.strategy.symbol() + "] Failed to readjust pending base buy: " + result.error());
+                        JOptionPane.showMessageDialog(
+                                TradingFrame.this,
+                                "Failed to readjust pending base buy for " + entry.strategy.symbol() + ": " + result.error(),
+                                "Readjust Losing Pending Base Buy",
+                                JOptionPane.ERROR_MESSAGE
+                        );
+                    }
+                } catch (Exception ex) {
+                    log("[" + entry.strategy.symbol() + "] Failed to readjust pending base buy: " + ex.getMessage());
+                    JOptionPane.showMessageDialog(
+                            TradingFrame.this,
+                            "Failed to readjust pending base buy for " + entry.strategy.symbol() + ": " + ex.getMessage(),
+                            "Readjust Losing Pending Base Buy",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                }
+            }
+        }.execute();
+    }
+
+    private void repositionStockFromHistory(int viewRow) {
+        if (strategyWorkspaceTabs == null || !strategyWorkspaceTabs.isHistorySelected()) {
+            return;
+        }
+        int row = strategyTable.convertRowIndexToModel(viewRow);
+        if (row < 0 || row >= strategies.size()) {
+            return;
+        }
+        ManagedStrategy entry = strategies.get(row);
+        if (!isHistoryRepositionEligible(entry)) {
+            return;
+        }
+        repositionStockFromHistoryEntry(entry);
+    }
+
+    private void repositionStockFromHistoryEntry(ManagedStrategy entry) {
+        String symbol = entry.strategy.symbol() == null ? "" : entry.strategy.symbol().trim().toUpperCase(Locale.ROOT);
+        String actionName = "Reposition Stock " + symbol;
+        userActionLog.started(actionName);
+        if (!ensureLegalDisclosureAccepted()) {
+            userActionLog.canceled(actionName);
+            return;
+        }
+        String selectedApiKey = savedApiKeyForSelectedMode();
+        String selectedApiSecret = savedApiSecretForSelectedMode();
+        HttpAlpacaMarketDataApi marketDataApi = !selectedApiKey.isBlank() && !selectedApiSecret.isBlank()
+                ? new HttpAlpacaMarketDataApi(selectedApiKey, selectedApiSecret)
+                : null;
+        int defaultPollingSeconds = settingsDialog.appliedDefaultStrategyPollingSeconds();
+        boolean defaultRepeatCycle = settingsDialog.appliedDefaultRepeatCycleAfterProfitExitEnabled();
+        boolean defaultResubmit = settingsDialog.appliedDefaultResubmitOnExpiryEnabled();
+        StrategyConfig prefilledConfig = historyRepositionPrefilledConfig(
+                entry,
+                defaultPollingSeconds,
+                defaultRepeatCycle,
+                defaultResubmit
+        );
+        StrategyDialog dialog = new StrategyDialog(
+                this,
+                prefilledConfig,
+                marketDataApi,
+                autoAnalyzeResultStore,
+                defaultPollingSeconds,
+                defaultRepeatCycle,
+                defaultResubmit
+        );
+        StrategyConfig config = dialog.showDialog();
+        if (config == null) {
+            userActionLog.canceled(actionName);
+            return;
+        }
+        StrategyMode targetMode = selectedViewMode;
+        String targetWorkspaceId = selectedWorkspaceForNewStrategy();
+        boolean allowDuplicateSymbols = settingsDialog.appliedAllowDuplicateSymbolStrategies();
+        if (DuplicateSymbolPolicy.wouldBeDuplicate(
+                config.symbol(),
+                targetMode,
+                strategyRepository.findAll(),
+                allowDuplicateSymbols,
+                targetWorkspaceId,
+                ""
+        )) {
+            userActionLog.failed(actionName, "An active or paused strategy for " + config.symbol() + " already exists.");
+            JOptionPane.showMessageDialog(
+                    this,
+                    duplicateSymbolAlertMessage(config.symbol(), targetWorkspaceId, allowDuplicateSymbols, true),
+                    "Duplicate Symbol",
+                    JOptionPane.WARNING_MESSAGE
+            );
+            syncStrategiesFromRepository();
+            refreshStrategyTableData();
+            return;
+        }
+
+        Strategy strategy = Strategy.fromConfig(
+                UUID.randomUUID().toString(),
+                config.symbol() + " Strategy",
+                config,
+                targetMode
+        );
+        NewStrategyWorkspaceAssignment.apply(strategy, targetWorkspaceId, workspaceService);
+        strategy.setLastEvent("Repositioned from Trade History with base buy @$" + strategy.baseBuyLimitPrice().toPlainString() + ".");
+        StrategyService modeAwareService = strategyServiceForMode(targetMode);
+        if (modeAwareService == null) {
+            userActionLog.failed(actionName, targetMode + " broker client is not configured.");
+            JOptionPane.showMessageDialog(
+                    this,
+                    selectedModeLabel() + " Alpaca credentials are required before repositioning this strategy.",
+                    selectedModeLabel() + " Credentials Required",
+                    JOptionPane.WARNING_MESSAGE
+            );
+            return;
+        }
+        StrategyService.StrategyCreationResult creationResult = modeAwareService.createAndActivate(strategy);
+        if (!creationResult.success()) {
+            userActionLog.failed(actionName, creationResult.error());
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Failed to submit initial Alpaca limit buy order: " + creationResult.error(),
+                    "Reposition Failed",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            log("[" + config.symbol() + "] History reposition failed during initial order placement: " + creationResult.error());
+            return;
+        }
+        log("[" + config.symbol() + "] Repositioned from Trade History. base=$"
+                + strategy.baseBuyLimitPrice().toPlainString()
+                + ", clientOrderId=" + creationResult.clientOrderId());
+        userActionLog.completed(actionName, config.symbol() + " " + selectedModeLabel() + " initial limit buy submitted.");
+        JOptionPane.showMessageDialog(
+                this,
+                "Initial Alpaca limit buy submitted successfully.\nOrder ID: " + creationResult.alpacaOrderId(),
+                "Strategy Repositioned",
+                JOptionPane.INFORMATION_MESSAGE
+        );
+        ensureAnalyticsPublisher();
+        syncStrategiesFromRepository();
+        updateHeaderModeStatus(currentBrokerType);
+        selectedStrategyId = strategy.id();
+        refreshStrategyTableData();
+        SwingUtilities.invokeLater(() -> selectAndRevealStrategy(strategy.id()));
+        updateSelectedStrategy();
+        refreshPanels();
+    }
+
+    private StrategyConfig historyRepositionPrefilledConfig(
+            ManagedStrategy entry,
+            int defaultPollingSeconds,
+            boolean defaultRepeatCycle,
+            boolean defaultResubmit
+    ) {
+        StrategyConfig source = entry.toConfig();
+        BigDecimal baseBuyPrice = historyRepositionBaseBuyPrice(entry);
+        int baseBuyQty = Math.max(1, source.baseBuyQty());
+        return new StrategyConfig(
+                source.symbol(),
+                baseBuyPrice,
+                baseBuyQty,
+                source.stopLossEnabled(),
+                source.stopLoss(),
+                source.sellTriggerEnabled(),
+                source.sellTriggerPrice(),
+                source.lossBuyLevel1Price(),
+                source.lossBuyLevel1Qty(),
+                source.lossBuyLevel2Price(),
+                source.lossBuyLevel2Qty(),
+                source.lossBuyLevelsEnabled(),
+                source.optionalLossExitEnabled(),
+                source.optionalLossExitPrice(),
+                Math.max(1, defaultPollingSeconds),
+                selectedViewMode == StrategyMode.PAPER,
+                source.alpacaTrailingStopEnabled(),
+                source.profitHoldEnabled(),
+                source.profitHoldType(),
+                source.profitHoldPercent(),
+                source.profitHoldAmount(),
+                defaultRepeatCycle,
+                source.profitControlMode(),
+                source.automaticStopSellThresholdType(),
+                source.automaticStopSellThreshold(),
+                source.automaticStopSellTrailingType(),
+                source.automaticStopSellTrailingValue(),
+                defaultResubmit,
+                source.baseBuyRepostReductionPercent(),
+                source.timeInForce(),
+                source.autoAdjustRisk()
+        );
+    }
+
+    private BigDecimal historyRepositionBaseBuyPrice(ManagedStrategy entry) {
+        Strategy strategy = entry.strategy;
+        if (strategy != null && strategy.baseBuyLimitPrice() != null && strategy.baseBuyLimitPrice().signum() > 0) {
+            return Monetary.round(strategy.baseBuyLimitPrice());
+        }
+        BigDecimal executed = entry.cachedBaseBuyExecutedPrice();
+        if (executed != null && executed.signum() > 0) {
+            return Monetary.round(executed);
+        }
+        BigDecimal lastPrice = entry.cachedPosition().getLastPrice();
+        if (lastPrice != null && lastPrice.signum() > 0) {
+            return Monetary.round(lastPrice);
+        }
+        return new BigDecimal("1.00");
+    }
+
+    private boolean rowCanRepositionFromHistory(int viewRow) {
+        int row = strategyTable.convertRowIndexToModel(viewRow);
+        if (row < 0 || row >= strategies.size()) {
+            return false;
+        }
+        return isHistoryRepositionEligible(strategies.get(row));
+    }
+
+    private boolean isHistoryRepositionEligible(ManagedStrategy entry) {
+        return strategyWorkspaceTabs != null
+                && strategyWorkspaceTabs.isHistorySelected()
+                && entry != null
+                && entry.strategy != null
+                && entry.strategy.symbol() != null
+                && !entry.strategy.symbol().isBlank();
+    }
+
     private boolean rowHasCancelablePendingLimitBuy(int viewRow) {
         int row = strategyTable.convertRowIndexToModel(viewRow);
         if (row < 0 || row >= strategies.size()) {
@@ -3321,6 +3585,23 @@ public class TradingFrame extends JFrame {
             return false;
         }
         return PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(strategies.get(row).strategy);
+    }
+
+    private boolean rowHasAmberPendingBaseBuy(int viewRow) {
+        int row = strategyTable.convertRowIndexToModel(viewRow);
+        if (row < 0 || row >= strategies.size()) {
+            return false;
+        }
+        return isAmberPendingBaseBuy(strategies.get(row));
+    }
+
+    private boolean isAmberPendingBaseBuy(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null
+                || !PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(entry.strategy)) {
+            return false;
+        }
+        return OrbPendingBaseBuyRowStyler.priceDirection(entry.strategy, entry.cachedPosition())
+                == OrbPendingBaseBuyRowStyler.PriceDirection.AMBER_LOSER;
     }
 
     private void previewLivePromotion(int viewRow) {
@@ -5315,20 +5596,18 @@ public class TradingFrame extends JFrame {
         return orders.stream()
                 .filter(order -> order.side() == StrategyOrderSide.SELL)
                 .filter(order -> order.status() == StrategyOrderStatus.FILLED || order.status() == StrategyOrderStatus.PARTIALLY_FILLED)
-                .filter(order -> order.filledQuantity().compareTo(BigDecimal.ZERO) > 0)
+                .filter(order -> StrategyOrderFillSupport.resolvedFilledQuantity(order).compareTo(BigDecimal.ZERO) > 0)
                 .max(Comparator
                         .comparing(StrategyOrder::filledAt, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())))
-                .map(order -> order.filledAveragePrice().compareTo(BigDecimal.ZERO) > 0
-                        ? order.filledAveragePrice()
-                        : order.limitPrice())
+                .map(StrategyOrderFillSupport::resolvedFillPrice)
                 .orElse(BigDecimal.ZERO);
     }
 
     private BigDecimal realizedPnlForOrders(List<StrategyOrder> orders) {
         List<StrategyOrder> filledOrders = orders.stream()
                 .filter(order -> order.status() == StrategyOrderStatus.FILLED || order.status() == StrategyOrderStatus.PARTIALLY_FILLED)
-                .filter(order -> order.filledQuantity().compareTo(BigDecimal.ZERO) > 0)
+                .filter(order -> StrategyOrderFillSupport.resolvedFilledQuantity(order).compareTo(BigDecimal.ZERO) > 0)
                 .sorted(Comparator
                         .comparing(StrategyOrder::filledAt, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())))
@@ -5339,10 +5618,8 @@ public class TradingFrame extends JFrame {
         BigDecimal realized = BigDecimal.ZERO;
 
         for (StrategyOrder order : filledOrders) {
-            BigDecimal quantity = order.filledQuantity();
-            BigDecimal fillPrice = order.filledAveragePrice().compareTo(BigDecimal.ZERO) > 0
-                    ? order.filledAveragePrice()
-                    : order.limitPrice();
+            BigDecimal quantity = StrategyOrderFillSupport.resolvedFilledQuantity(order);
+            BigDecimal fillPrice = StrategyOrderFillSupport.resolvedFillPrice(order);
 
             if (order.side() == StrategyOrderSide.BUY) {
                 BigDecimal runningCost = averageCost.multiply(positionQty).add(fillPrice.multiply(quantity));
@@ -7017,6 +7294,52 @@ public class TradingFrame extends JFrame {
         return service.createAndActivate(pending);
     }
 
+    private StrategyService.StrategyCreationResult readjustLosingPendingBaseBuy(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return StrategyService.StrategyCreationResult.failed("strategy is not available");
+        }
+        Strategy strategy = entry.strategy;
+        Strategy pending = strategyRepository.findById(strategy.id()).orElse(strategy);
+        if (!PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(pending)) {
+            return StrategyService.StrategyCreationResult.failed("strategy is not pending base-buy placement");
+        }
+        if (!isAmberPendingBaseBuy(entry)) {
+            return StrategyService.StrategyCreationResult.failed("strategy is not an amber pending base-buy row");
+        }
+        BigDecimal originalLimit = pending.baseBuyLimitPrice();
+        BigDecimal todayLow = loadTodayLow(pending);
+        BigDecimal adjustedLimit = PendingBaseBuyPlacementSupport.adjustedBaseBuyLimit(originalLimit, todayLow);
+        BigDecimal cachedCurrentPrice = entry.cachedPosition() == null ? BigDecimal.ZERO : entry.cachedPosition().getLastPrice();
+        if (cachedCurrentPrice != null && cachedCurrentPrice.signum() > 0
+                && adjustedLimit.compareTo(cachedCurrentPrice) >= 0) {
+            adjustedLimit = Monetary.round(cachedCurrentPrice.multiply(new BigDecimal("0.99")));
+        }
+        if (adjustedLimit.compareTo(BigDecimal.ZERO) <= 0) {
+            return StrategyService.StrategyCreationResult.failed("unable to calculate a valid adjusted base-buy limit");
+        }
+        if (adjustedLimit.compareTo(Monetary.round(originalLimit)) >= 0) {
+            return StrategyService.StrategyCreationResult.failed("base-buy limit is already adjusted and does not need lowering");
+        }
+
+        pending.setBaseBuyLimitPrice(adjustedLimit);
+        String todayLowText = (todayLow != null && todayLow.signum() > 0)
+                ? "$" + Monetary.round(todayLow).toPlainString()
+                : "unavailable";
+        String cachedPriceText = (cachedCurrentPrice != null && cachedCurrentPrice.signum() > 0)
+                ? "$" + Monetary.round(cachedCurrentPrice).toPlainString()
+                : "unavailable";
+        pending.setLastEvent("Losing pending base buy readjusted from $"
+                + Monetary.round(originalLimit).toPlainString()
+                + " to $" + adjustedLimit.toPlainString()
+                + " (todayLow=" + todayLowText + ", cachedPrice=" + cachedPriceText + ").");
+        strategyRepository.save(pending);
+        log("[" + pending.symbol() + "] Readjusted losing pending base buy from $"
+                + Monetary.round(originalLimit).toPlainString()
+                + " to $" + adjustedLimit.toPlainString()
+                + " (todayLow=" + todayLowText + ", cachedPrice=" + cachedPriceText + ").");
+        return StrategyService.StrategyCreationResult.success(pending.id(), "", "", "");
+    }
+
     private BigDecimal loadTodayLow(Strategy strategy) {
         HttpAlpacaClient client = alpacaClientForStrategyMode(strategy.mode());
         if (client == null || strategy.symbol() == null || strategy.symbol().isBlank()) {
@@ -7613,7 +7936,7 @@ public class TradingFrame extends JFrame {
             String workspaceId, List<StrategyOrder> orders, java.time.LocalDate today) {
         List<StrategyOrder> filledOrders = orders.stream()
                 .filter(order -> order.status() == StrategyOrderStatus.FILLED || order.status() == StrategyOrderStatus.PARTIALLY_FILLED)
-                .filter(order -> order.filledQuantity().compareTo(BigDecimal.ZERO) > 0)
+                .filter(order -> StrategyOrderFillSupport.resolvedFilledQuantity(order).compareTo(BigDecimal.ZERO) > 0)
                 .sorted(Comparator
                         .comparing(StrategyOrder::filledAt, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())))
@@ -7623,10 +7946,8 @@ public class TradingFrame extends JFrame {
         BigDecimal positionQty = BigDecimal.ZERO;
         BigDecimal averageCost = BigDecimal.ZERO;
         for (StrategyOrder order : filledOrders) {
-            BigDecimal quantity = order.filledQuantity();
-            BigDecimal fillPrice = order.filledAveragePrice().compareTo(BigDecimal.ZERO) > 0
-                    ? order.filledAveragePrice()
-                    : order.limitPrice();
+            BigDecimal quantity = StrategyOrderFillSupport.resolvedFilledQuantity(order);
+            BigDecimal fillPrice = StrategyOrderFillSupport.resolvedFillPrice(order);
             if (order.side() == StrategyOrderSide.BUY) {
                 BigDecimal runningCost = averageCost.multiply(positionQty).add(fillPrice.multiply(quantity));
                 positionQty = positionQty.add(quantity);
@@ -8567,10 +8888,75 @@ public class TradingFrame extends JFrame {
                 this::rowHasCancelablePendingLimitBuy,
                 this::placePendingBaseBuyFromGrid,
                 this::rowHasPendingBaseBuyPlacement,
+                this::readjustLosingPendingBaseBuyFromGrid,
+                this::rowHasAmberPendingBaseBuy,
+                this::repositionStockFromHistory,
+                this::rowCanRepositionFromHistory,
+                () -> strategyWorkspaceTabs != null && strategyWorkspaceTabs.isHistorySelected(),
                 () -> workspaceService.activeWorkspaces(selectedViewMode),
                 this::assignStrategyRowToWorkspace
         ).show(event);
         return true;
+    }
+
+    private void maybeShowTradeHistoryRowPopup(MouseEvent event) {
+        if (!event.isPopupTrigger() && event.getButton() != MouseEvent.BUTTON3) {
+            return;
+        }
+        int viewRow = filledOrdersTable.rowAtPoint(event.getPoint());
+        int viewCol = filledOrdersTable.columnAtPoint(event.getPoint());
+        if (viewRow < 0 || viewCol < 0) {
+            return;
+        }
+        filledOrdersTable.setRowSelectionInterval(viewRow, viewRow);
+        String symbol = historySymbolAtViewRow(viewRow);
+        ManagedStrategy target = symbol == null ? null : historyRepositionTarget(symbol);
+        JPopupMenu popup = new JPopupMenu();
+        JMenu positionMenu = new JMenu("Position");
+        positionMenu.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
+        JMenuItem reposition = new JMenuItem("Reposition Stock");
+        reposition.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
+        reposition.setEnabled(target != null);
+        reposition.addActionListener(e -> {
+            if (target != null) {
+                repositionStockFromHistoryEntry(target);
+            }
+        });
+        positionMenu.add(reposition);
+        popup.add(positionMenu);
+        popup.show(event.getComponent(), event.getX(), event.getY());
+    }
+
+    private String historySymbolAtViewRow(int viewRow) {
+        int modelRow = filledOrdersTable.convertRowIndexToModel(viewRow);
+        if (modelRow < 0 || modelRow >= filledOrderRows.size()) {
+            return null;
+        }
+        HistoryTablePresenter.HistoryRow row = filledOrderRows.get(modelRow);
+        if (row.style() == HistoryTablePresenter.HistoryRowStyle.SUBTOTAL) {
+            return null;
+        }
+        String symbol = row.symbol();
+        if (symbol == null || symbol.isBlank()) {
+            return null;
+        }
+        return symbol.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private ManagedStrategy historyRepositionTarget(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return null;
+        }
+        return strategies.stream()
+                .filter(entry -> entry != null && entry.strategy != null)
+                .filter(entry -> entry.strategy.mode() == selectedViewMode)
+                .filter(entry -> symbol.equalsIgnoreCase(entry.strategy.symbol()))
+                .filter(this::isHistoryRepositionEligible)
+                .sorted(Comparator.comparing(
+                        (ManagedStrategy entry) -> entry.strategy.updatedAt(),
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .findFirst()
+                .orElse(null);
     }
 
     private void maybeShowStrategyHeaderCopyPopup(MouseEvent event) {

@@ -604,6 +604,16 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
+    void readjustLosingPendingBaseBuysResultLabelIsReadjusted() {
+        String message = support.buildResultMessage(
+                PortfolioActionsSupport.BulkAction.READJUST_AMBER_PENDING_BASE_BUYS,
+                new PortfolioActionsSupport.BatchResult(List.of("AAPL"), List.of())
+        );
+
+        assertTrue(message.contains("Readjusted: 1"));
+    }
+
+    @Test
     void cleanPendingBaseBuysResultLabelIsDeleted() {
         String message = support.buildResultMessage(
                 PortfolioActionsSupport.BulkAction.CLEAN_PENDING_BASE_BUYS,
@@ -638,6 +648,9 @@ class PortfolioActionsSupportTest {
                 .map(entry -> entry.strategy.symbol()).toList());
         assertEquals(List.of("AAPL"), support.filterTargets(rows,
                         PortfolioActionsSupport.BulkAction.PLACE_AMBER_PENDING_BASE_BUYS).stream()
+                .map(entry -> entry.strategy.symbol()).toList());
+        assertEquals(List.of("AAPL"), support.filterTargets(rows,
+                        PortfolioActionsSupport.BulkAction.READJUST_AMBER_PENDING_BASE_BUYS).stream()
                 .map(entry -> entry.strategy.symbol()).toList());
         assertEquals(List.of("MSFT"), support.filterTargets(rows,
                         PortfolioActionsSupport.BulkAction.PLACE_GREEN_PENDING_BASE_BUYS).stream()

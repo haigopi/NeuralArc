@@ -502,6 +502,33 @@ final class PortfolioActionsSupport {
                 return "Placed";
             }
         },
+        READJUST_AMBER_PENDING_BASE_BUYS("Readjust Losing Pending Base Buy Positions") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return pendingBuyDirection(entry) == OrbPendingBaseBuyRowStyler.PriceDirection.AMBER_LOSER;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Readjust base buy limits for " + count + " losing pending position(s)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Amber pending rows have a base-buy limit above the cached current stock price."
+                        + "<br>Matching pending recommendations will be recalculated to a lower base-buy limit so they are ready for placement.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no losing pending positions eligible for base-buy readjustment.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Readjusted";
+            }
+        },
         PLACE_GREEN_PENDING_BASE_BUYS("Place Limit Buy for Gaining Pending Positions") {
             @Override
             boolean matches(ManagedStrategy entry) {

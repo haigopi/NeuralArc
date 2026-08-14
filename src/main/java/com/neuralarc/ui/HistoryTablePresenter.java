@@ -18,11 +18,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Function;
-import java.util.logging.Logger;
 
 public final class HistoryTablePresenter {
-    private static final Logger LOGGER = Logger.getLogger(HistoryTablePresenter.class.getName());
-
     public List<HistoryRow> buildRows(List<HistorySource> sources, Function<Instant, String> timestampFormatter) {
         return buildRows(sources, timestampFormatter, TradeHistoryGroupBy.SYMBOL);
     }
@@ -84,8 +81,10 @@ public final class HistoryTablePresenter {
             return false;
         }
         return source.orders().stream()
-                .anyMatch(order -> order.status() == StrategyOrderStatus.FILLED
+                .anyMatch(order -> (order.status() == StrategyOrderStatus.FILLED
+                        || order.status() == StrategyOrderStatus.PARTIALLY_FILLED)
                         && order.side() == StrategyOrderSide.SELL
+                        && StrategyOrderFillSupport.resolvedFilledQuantity(order).compareTo(BigDecimal.ZERO) > 0
                         && isCompletedSellStage(order.stage()));
     }
 
@@ -104,7 +103,9 @@ public final class HistoryTablePresenter {
             TradeHistoryGroupBy groupBy
     ) {
         List<StrategyOrder> filledOrders = source.orders().stream()
-                .filter(order -> order.status() == StrategyOrderStatus.FILLED)
+                .filter(order -> order.status() == StrategyOrderStatus.FILLED
+                        || order.status() == StrategyOrderStatus.PARTIALLY_FILLED)
+                .filter(order -> StrategyOrderFillSupport.resolvedFilledQuantity(order).compareTo(BigDecimal.ZERO) > 0)
                 .sorted(Comparator
                         .comparing(this::historyTimestamp, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())))
@@ -115,8 +116,8 @@ public final class HistoryTablePresenter {
         BigDecimal averageCost = BigDecimal.ZERO;
 
         for (StrategyOrder order : filledOrders) {
-            BigDecimal quantity = resolvedFilledQuantity(order);
-            BigDecimal fillPrice = resolvedFillPrice(order);
+            BigDecimal quantity = StrategyOrderFillSupport.resolvedFilledQuantity(order);
+            BigDecimal fillPrice = StrategyOrderFillSupport.resolvedFillPrice(order);
             String realizedPnlDisplay = "-";
             String buyPriceDisplay = "-";
 
@@ -352,39 +353,6 @@ public final class HistoryTablePresenter {
             return order.updatedAt();
         }
         return order.submittedAt();
-    }
-
-    private BigDecimal resolvedFillPrice(StrategyOrder order) {
-        if (order == null) {
-            return BigDecimal.ZERO;
-        }
-        if (order.filledAveragePrice() != null && order.filledAveragePrice().compareTo(BigDecimal.ZERO) > 0) {
-            return order.filledAveragePrice();
-        }
-        return order.limitPrice() == null ? BigDecimal.ZERO : order.limitPrice();
-    }
-
-    private BigDecimal resolvedFilledQuantity(StrategyOrder order) {
-        if (order == null) {
-            return BigDecimal.ZERO;
-        }
-        if (order.filledQuantity() != null && order.filledQuantity().compareTo(BigDecimal.ZERO) > 0) {
-            return order.filledQuantity();
-        }
-        if (order.status() == StrategyOrderStatus.FILLED
-                && order.requestedQuantity() != null
-                && order.requestedQuantity().compareTo(BigDecimal.ZERO) > 0) {
-            LOGGER.fine(() -> "[HISTORY][PNL] quantityFallback requestedQuantityUsed"
-                    + " orderId=" + order.id()
-                    + " clientOrderId=" + order.clientOrderId()
-                    + " symbol=" + order.symbol()
-                    + " stage=" + order.stage()
-                    + " side=" + order.side()
-                    + " filledQty=" + order.filledQuantity()
-                    + " requestedQty=" + order.requestedQuantity());
-            return order.requestedQuantity();
-        }
-        return BigDecimal.ZERO;
     }
 
     private String formatStageForHistory(StrategyStage stage) {

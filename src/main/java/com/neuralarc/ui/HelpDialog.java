@@ -91,10 +91,16 @@ public class HelpDialog extends JDialog {
             "Pending scanner rows are recommendations that have been saved locally but have not yet submitted the base limit buy order.\n\n" +
             "- Place Limit Buy for All Pending Positions submits base limit buys for every pending recommendation in the current scope.\n" +
             "- Place Limit Buy for Losing Pending Positions targets amber pending rows where the planned base buy is above the cached current price.\n" +
+            "- Readjust Losing Pending Base Buy Positions lowers amber pending base-buy limits so those rows are ready for placement.\n" +
             "- Place Limit Buy for Gaining Pending Positions targets green pending rows where the planned base buy is below the cached current price.\n" +
             "- Clean All Pending Base Buys deletes unsubmitted pending recommendations; it does not cancel broker orders or sell positions.\n" +
             "- Cancel amber/green pending buys removes only the matching unsubmitted pending recommendations.\n\n" +
             "If a row already placed a broker order, use the pending order cancel actions instead of cleanup."
+        },
+        {
+            "Application - How do I reposition a stock from Trade History?",
+            "From the Trade History tab, right-click the row and use Position -> Reposition Stock.\n\n" +
+            "This opens the strategy dialog prefilled with base-buy-ready defaults so you can confirm or adjust and submit a new base limit buy strategy."
         },
         {
             "Application - What does Kill Switch do?",

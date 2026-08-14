@@ -97,6 +97,24 @@ class PortfolioActionsControllerTest {
     }
 
     @Test
+    void readjustLosingPendingBaseBuyTargetsSubmitThroughGateway() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+        ManagedStrategy pending = managed("AAPL");
+        pending.strategy.setLatestOrderStatus("ORB_RECOMMENDED");
+        pending.strategy.setBaseBuyLimitPrice(new BigDecimal("101.00"));
+        Position position = new Position("AAPL");
+        position.setLastPrice(new BigDecimal("100.00"));
+        pending.setCachedPosition(position);
+
+        PortfolioActionsSupport.BatchResult result = controller.readjustLosingPendingBaseBuyTargets(List.of(pending));
+
+        assertEquals(List.of("AAPL"), result.successes());
+        assertTrue(result.failures().isEmpty());
+        assertEquals(List.of("AAPL-id"), gateway.readjustedPendingStrategyIds);
+    }
+
+    @Test
     void averageLosingPositionTargetsUseCurrentPositionQuantityAndDiscountedLimit() {
         FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
         PortfolioActionsController controller = new PortfolioActionsController(gateway);
@@ -235,6 +253,7 @@ class PortfolioActionsControllerTest {
         private final CountDownLatch sellsEntered = new CountDownLatch(2);
         private final java.util.List<String> deletedPaperStrategyIds = new java.util.ArrayList<>();
         private final java.util.List<String> placedPendingStrategyIds = new java.util.ArrayList<>();
+        private final java.util.List<String> readjustedPendingStrategyIds = new java.util.ArrayList<>();
         private final java.util.List<String> deletedPendingBaseBuyIds = new java.util.ArrayList<>();
         private String marketBuyStrategyId;
         private int marketBuyQuantity;
@@ -285,6 +304,11 @@ class PortfolioActionsControllerTest {
         public StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy) {
             placedPendingStrategyIds.add(strategy.id());
             return StrategyService.StrategyCreationResult.success(strategy.id(), "order", "alpaca", "client");
+        }
+        @Override
+        public StrategyService.StrategyCreationResult readjustLosingPendingBaseBuy(ManagedStrategy entry) {
+            readjustedPendingStrategyIds.add(entry.strategy.id());
+            return StrategyService.StrategyCreationResult.success(entry.strategy.id(), "order", "alpaca", "client");
         }
         @Override public java.util.Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets) {
             return java.util.Optional.empty();

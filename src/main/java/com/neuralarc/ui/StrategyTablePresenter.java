@@ -276,13 +276,22 @@ public final class StrategyTablePresenter {
         }
         BigDecimal booked = realizedPnl == null ? BigDecimal.ZERO : Monetary.round(realizedPnl);
         String sellPrice = bookedSellPriceDescription(lastSellPrice);
+        String completedPrefix = completedPrefix(strategy);
         if (booked.compareTo(BigDecimal.ZERO) > 0) {
-            return "Completed - Profit Booked $" + booked.toPlainString() + sellPrice;
+            return completedPrefix + "Profit Booked $" + booked.toPlainString() + sellPrice;
         }
         if (booked.compareTo(BigDecimal.ZERO) < 0) {
-            return "Completed - Loss Booked $" + booked.abs().toPlainString() + sellPrice;
+            return completedPrefix + "Loss Booked $" + booked.abs().toPlainString() + sellPrice;
         }
         return "Completed";
+    }
+
+    private String completedPrefix(Strategy strategy) {
+        String rule = strategy == null ? null : strategy.lastTriggeredRuleType();
+        if ("TARGET_SELL".equalsIgnoreCase(rule) || "SELL_RULE".equalsIgnoreCase(rule)) {
+            return "Sell Trigger Completed - ";
+        }
+        return "Completed - ";
     }
 
     private String bookedSellPriceDescription(BigDecimal lastSellPrice) {
