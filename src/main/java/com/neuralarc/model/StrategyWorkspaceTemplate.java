@@ -43,7 +43,7 @@ public record StrategyWorkspaceTemplate(String name, String code, String descrip
                 new StrategyWorkspaceTemplate("Range Rider", "RANGE",
                         "Analyze the last three weeks of daily bars for actively traded stocks, average each session's open, high, and low, and plan a same-day income trade — buy near the average daily low, sell near the average daily high — in a dedicated Range Rider grid.", true),
                 new StrategyWorkspaceTemplate("Profit Shield", "SHIELD",
-                        "Defensive book focused on protecting realized gains.", false),
+                        "Defensive book focused on protecting realized gains: scan liquid stocks with quiet daily ranges, shallow historical drawdowns, and an intact long-term trend, rank the most resilient on live data, and track capital-preserving entries with a support-tightened protective stop in a dedicated Profit Shield grid.", true),
                 new StrategyWorkspaceTemplate("Earnings Hunter", "EARNINGS",
                         "Scan live earnings-related news plus current market reaction, rank event-driven long setups, and track planned entries in a dedicated Earnings Hunter grid.", true),
                 new StrategyWorkspaceTemplate("Manual Trades", "MANUAL",

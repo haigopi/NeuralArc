@@ -23,6 +23,9 @@ class StrategyWorkspaceTemplateTest {
         assertTrue(catalog.stream().anyMatch(t -> t.name().equals("Range Rider") && t.code().equals("RANGE")
                 && t.description().contains("last three weeks")
                 && t.description().contains("Range Rider grid")));
+        assertTrue(catalog.stream().anyMatch(t -> t.name().equals("Profit Shield") && t.code().equals("SHIELD")
+                && t.description().contains("protecting realized gains")
+                && t.description().contains("Profit Shield grid")));
         // "Momentum Lab" was folded into Gap Rocket (the dedicated high-relative-volume scanner).
         assertFalse(catalog.stream().anyMatch(t -> t.name().equals("Momentum Lab") || t.code().equals("MOMENTUM")));
         assertTrue(catalog.stream().allMatch(t -> t.description() != null && !t.description().isBlank()));
@@ -38,11 +41,12 @@ class StrategyWorkspaceTemplateTest {
         assertTrue(implemented(catalog, "VWAP"));
         assertTrue(implemented(catalog, "SWING"));
         assertTrue(implemented(catalog, "RANGE"));
+        assertTrue(implemented(catalog, "SHIELD"));
         assertTrue(implemented(catalog, "EARNINGS"));
         assertTrue(implemented(catalog, "MANUAL"));
         assertTrue(implemented(catalog, StrategyWorkspaceTemplate.CUSTOM_CODE));
-        // Placeholders that are advertised but not yet implemented.
-        assertFalse(implemented(catalog, "SHIELD"));
+        // Every advertised template now has a dedicated engine behind it — nothing is a placeholder.
+        assertTrue(catalog.stream().allMatch(StrategyWorkspaceTemplate::implemented));
     }
 
     private static boolean implemented(List<StrategyWorkspaceTemplate> catalog, String code) {

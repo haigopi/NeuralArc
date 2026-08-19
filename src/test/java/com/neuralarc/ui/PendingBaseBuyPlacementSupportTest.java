@@ -48,6 +48,18 @@ class PendingBaseBuyPlacementSupportTest {
         assertFalse(PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(activeOrder));
     }
 
+    @Test
+    void treatsProfitShieldRecommendationsAsPendingBaseBuys() {
+        Strategy recommended = strategy("KO");
+        recommended.setLatestOrderStatus("PROFIT_SHIELD_RECOMMENDED");
+        Strategy monitoring = strategy("PEP");
+        monitoring.setLatestOrderStatus("PROFIT_SHIELD_MONITORING");
+
+        assertTrue(PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(recommended));
+        assertFalse(PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(monitoring),
+                "a monitoring row already has its order armed");
+    }
+
     private static Strategy strategy(String symbol) {
         return new Strategy(
                 UUID.randomUUID().toString(),

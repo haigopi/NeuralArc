@@ -17,7 +17,8 @@ final class StrategyRecommendationMarkers {
                 || status.startsWith("VWAP_")
                 || status.startsWith("SWING_")
                 || status.startsWith("RANGE_RIDER_")
-                || status.startsWith("EARNINGS_HUNTER_");
+                || status.startsWith("EARNINGS_HUNTER_")
+                || status.startsWith("PROFIT_SHIELD_");
     }
 
     static String sourceLabel(Strategy strategy) {
@@ -45,6 +46,9 @@ final class StrategyRecommendationMarkers {
         }
         if (status.startsWith("EARNINGS_HUNTER_")) {
             return "Earnings Hunter strategy";
+        }
+        if (status.startsWith("PROFIT_SHIELD_")) {
+            return "Profit Shield strategy";
         }
         return "";
     }

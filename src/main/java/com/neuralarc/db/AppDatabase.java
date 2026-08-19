@@ -203,6 +203,7 @@ public final class AppDatabase {
         applyMigration("015_strategy_scan_history",   this::migration015);
         applyMigration("016_remote_sync_suppressions", this::migration016);
         applyMigration("017_range_rider_schedules", this::migration017);
+        applyMigration("018_profit_shield_schedules", this::migration018);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -567,6 +568,26 @@ public final class AppDatabase {
                         updated_at               TEXT NOT NULL
                     )""");
             st.execute("CREATE INDEX IF NOT EXISTS idx_range_rider_schedules_workspace ON range_rider_schedules(workspace_id)");
+        }
+    }
+
+    // ── Migration 018 — autonomous Profit Shield schedules ──────────────────
+
+    private void migration018() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS profit_shield_schedules (
+                        id                       TEXT PRIMARY KEY,
+                        enabled                  INTEGER NOT NULL DEFAULT 1,
+                        scan_time_et             TEXT NOT NULL,
+                        window_start_et          TEXT NOT NULL,
+                        window_end_et            TEXT NOT NULL,
+                        execute_after_scan       INTEGER NOT NULL DEFAULT 0,
+                        workspace_id             TEXT NOT NULL DEFAULT '',
+                        config_json              TEXT NOT NULL,
+                        updated_at               TEXT NOT NULL
+                    )""");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_profit_shield_schedules_workspace ON profit_shield_schedules(workspace_id)");
         }
     }
 

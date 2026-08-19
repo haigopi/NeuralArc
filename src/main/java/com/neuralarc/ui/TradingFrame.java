@@ -29,6 +29,9 @@ import com.neuralarc.earningshunter.EarningsHunterPanel;
 import com.neuralarc.vwap.VwapAnalysisDialog;
 import com.neuralarc.vwap.VwapConfig;
 import com.neuralarc.vwap.VwapPanel;
+import com.neuralarc.profitshield.ProfitShieldAnalysisDialog;
+import com.neuralarc.profitshield.ProfitShieldConfig;
+import com.neuralarc.profitshield.ProfitShieldPanel;
 import com.neuralarc.rangerider.RangeRiderAnalysisDialog;
 import com.neuralarc.rangerider.RangeRiderConfig;
 import com.neuralarc.rangerider.RangeRiderPanel;
@@ -39,6 +42,7 @@ import com.neuralarc.model.GapAndGoSchedule;
 import com.neuralarc.model.OrbSchedule;
 import com.neuralarc.model.DipHunterSchedule;
 import com.neuralarc.model.VwapSchedule;
+import com.neuralarc.model.ProfitShieldSchedule;
 import com.neuralarc.model.RangeRiderSchedule;
 import com.neuralarc.model.SwingSchedule;
 import com.neuralarc.service.AutoAnalyzeResultStore;
@@ -403,6 +407,7 @@ public class TradingFrame extends JFrame {
     private static final String VWAP_WORKSPACE_CODE = "VWAP";
     private static final String SWING_WORKSPACE_CODE = "SWING";
     private static final String RANGE_RIDER_WORKSPACE_CODE = "RANGE";
+    private static final String PROFIT_SHIELD_WORKSPACE_CODE = "SHIELD";
     private static final String EARNINGS_HUNTER_WORKSPACE_CODE = "EARNINGS";
     private static final String STRATEGIES_GRID_CARD = "strategiesGrid";
     private static final String GAP_ROCKET_EMPTY_CARD = "gapRocketEmpty";
@@ -411,6 +416,7 @@ public class TradingFrame extends JFrame {
     private static final String VWAP_EMPTY_CARD = "vwapEmpty";
     private static final String SWING_EMPTY_CARD = "swingEmpty";
     private static final String RANGE_RIDER_EMPTY_CARD = "rangeRiderEmpty";
+    private static final String PROFIT_SHIELD_EMPTY_CARD = "profitShieldEmpty";
     private static final String EARNINGS_HUNTER_EMPTY_CARD = "earningsHunterEmpty";
     private final JTabbedPane strategyTabs = new JTabbedPane();
     private final JTextField currentStrategiesSearchField = new JTextField(24);
@@ -440,6 +446,9 @@ public class TradingFrame extends JFrame {
     private final JButton rangeRiderAnalyzeButton = new JButton(RangeRiderPanel.ANALYZE_BUTTON_TEXT);
     private final JLabel rangeRiderScheduleStatusLabel = new JLabel();
     private final JButton rangeRiderCancelScheduleButton = new JButton("Cancel Schedule");
+    private final JButton profitShieldAnalyzeButton = new JButton(ProfitShieldPanel.ANALYZE_BUTTON_TEXT);
+    private final JLabel profitShieldScheduleStatusLabel = new JLabel();
+    private final JButton profitShieldCancelScheduleButton = new JButton("Cancel Schedule");
     private final JButton earningsHunterAnalyzeButton = new JButton(EarningsHunterPanel.ANALYZE_BUTTON_TEXT);
     private final ScanHistoryTablePanel gapRocketScanHistoryPanel = new ScanHistoryTablePanel();
     private final ScanHistoryTablePanel orbScanHistoryPanel = new ScanHistoryTablePanel();
@@ -447,6 +456,7 @@ public class TradingFrame extends JFrame {
     private final ScanHistoryTablePanel vwapScanHistoryPanel = new ScanHistoryTablePanel();
     private final ScanHistoryTablePanel swingScanHistoryPanel = new ScanHistoryTablePanel();
     private final ScanHistoryTablePanel rangeRiderScanHistoryPanel = new ScanHistoryTablePanel();
+    private final ScanHistoryTablePanel profitShieldScanHistoryPanel = new ScanHistoryTablePanel();
     private final ScanHistoryTablePanel earningsHunterScanHistoryPanel = new ScanHistoryTablePanel();
     private JPanel headerPanel;
     private final EnumMap<StrategyMode, GapRocketConfig> lastGapRocketConfigs = new EnumMap<>(StrategyMode.class);
@@ -455,6 +465,7 @@ public class TradingFrame extends JFrame {
     private final EnumMap<StrategyMode, VwapConfig> lastVwapConfigs = new EnumMap<>(StrategyMode.class);
     private final EnumMap<StrategyMode, SwingConfig> lastSwingConfigs = new EnumMap<>(StrategyMode.class);
     private final EnumMap<StrategyMode, RangeRiderConfig> lastRangeRiderConfigs = new EnumMap<>(StrategyMode.class);
+    private final EnumMap<StrategyMode, ProfitShieldConfig> lastProfitShieldConfigs = new EnumMap<>(StrategyMode.class);
     private final EnumMap<StrategyMode, EarningsHunterConfig> lastEarningsHunterConfigs = new EnumMap<>(StrategyMode.class);
     private CardLayout strategiesGridCardLayout;
     private JPanel strategiesGridCardPanel;
@@ -481,6 +492,7 @@ public class TradingFrame extends JFrame {
     private final VwapCoordinator vwapCoordinator;
     private final SwingCoordinator swingCoordinator;
     private final RangeRiderCoordinator rangeRiderCoordinator;
+    private final ProfitShieldCoordinator profitShieldCoordinator;
     private final EarningsHunterCoordinator earningsHunterCoordinator;
     private final AutoRiskAdjustmentService autoRiskAdjustmentService;
     private final WorkspaceService workspaceService;
@@ -597,6 +609,8 @@ public class TradingFrame extends JFrame {
                 appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
         rangeRiderCoordinator = new RangeRiderCoordinator(new RangeRiderCoordinatorUi(), appDatabase, strategyRepository,
                 marketHoursService, scanHistoryRepository, uiPollingExecutor);
+        profitShieldCoordinator = new ProfitShieldCoordinator(new ProfitShieldCoordinatorUi(), appDatabase,
+                strategyRepository, marketHoursService, scanHistoryRepository, uiPollingExecutor);
         earningsHunterCoordinator = new EarningsHunterCoordinator(new EarningsHunterCoordinatorUi(),
                 strategyRepository, scanHistoryRepository, uiPollingExecutor);
         autoRiskAdjustmentService = new AutoRiskAdjustmentService(strategyRepository, marketHoursService,
@@ -6539,6 +6553,9 @@ public class TradingFrame extends JFrame {
                 wrapEmptyStateWithScanHistory(new RangeRiderPanel(this::openRangeRiderAnalysisDialog, true),
                         rangeRiderScanHistoryPanel), RANGE_RIDER_EMPTY_CARD);
         strategiesGridCardPanel.add(
+                wrapEmptyStateWithScanHistory(new ProfitShieldPanel(this::openProfitShieldAnalysisDialog, true),
+                        profitShieldScanHistoryPanel), PROFIT_SHIELD_EMPTY_CARD);
+        strategiesGridCardPanel.add(
                 wrapEmptyStateWithScanHistory(new EarningsHunterPanel(this::openEarningsHunterAnalysisDialog, true),
                         earningsHunterScanHistoryPanel), EARNINGS_HUNTER_EMPTY_CARD);
         strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
@@ -6651,6 +6668,19 @@ public class TradingFrame extends JFrame {
         rangeRiderCancelScheduleButton.setToolTipText(TooltipStyler.text(
                 "Cancel the autonomous Range Rider schedule for this workspace.", 320));
         rangeRiderCancelScheduleButton.addActionListener(event -> rangeRiderCoordinator.cancelSchedule());
+        profitShieldAnalyzeButton.setVisible(false);
+        profitShieldAnalyzeButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        profitShieldAnalyzeButton.setFocusPainted(false);
+        profitShieldAnalyzeButton.setToolTipText(TooltipStyler.text(ProfitShieldPanel.EMPTY_STATE_TEXT, 420));
+        profitShieldAnalyzeButton.addActionListener(event -> openProfitShieldAnalysisDialog());
+        profitShieldScheduleStatusLabel.setVisible(false);
+        profitShieldScheduleStatusLabel.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        profitShieldCancelScheduleButton.setVisible(false);
+        profitShieldCancelScheduleButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        profitShieldCancelScheduleButton.setFocusPainted(false);
+        profitShieldCancelScheduleButton.setToolTipText(TooltipStyler.text(
+                "Cancel the autonomous Profit Shield schedule for this workspace.", 320));
+        profitShieldCancelScheduleButton.addActionListener(event -> profitShieldCoordinator.cancelSchedule());
         earningsHunterAnalyzeButton.setVisible(false);
         earningsHunterAnalyzeButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         earningsHunterAnalyzeButton.setFocusPainted(false);
@@ -6677,6 +6707,9 @@ public class TradingFrame extends JFrame {
         actions.add(rangeRiderScheduleStatusLabel);
         actions.add(rangeRiderCancelScheduleButton);
         actions.add(rangeRiderAnalyzeButton);
+        actions.add(profitShieldScheduleStatusLabel);
+        actions.add(profitShieldCancelScheduleButton);
+        actions.add(profitShieldAnalyzeButton);
         actions.add(earningsHunterAnalyzeButton);
         bottom.add(actions, BorderLayout.EAST);
         return bottom;
@@ -7109,6 +7142,7 @@ public class TradingFrame extends JFrame {
         boolean selectedVwap = isSelectedVwapWorkspace();
         boolean selectedSwing = isSelectedSwingWorkspace();
         boolean selectedRangeRider = isSelectedRangeRiderWorkspace();
+        boolean selectedProfitShield = isSelectedProfitShieldWorkspace();
         boolean selectedEarningsHunter = isSelectedEarningsHunterWorkspace();
         boolean showGapRocketEmptyState = selectedGapRocket && selectedWorkspaceStrategyCount() == 0;
         boolean showOrbEmptyState = selectedOrb && selectedWorkspaceStrategyCount() == 0;
@@ -7116,6 +7150,7 @@ public class TradingFrame extends JFrame {
         boolean showVwapEmptyState = selectedVwap && selectedWorkspaceStrategyCount() == 0;
         boolean showSwingEmptyState = selectedSwing && selectedWorkspaceStrategyCount() == 0;
         boolean showRangeRiderEmptyState = selectedRangeRider && selectedWorkspaceStrategyCount() == 0;
+        boolean showProfitShieldEmptyState = selectedProfitShield && selectedWorkspaceStrategyCount() == 0;
         boolean showEarningsHunterEmptyState = selectedEarningsHunter && selectedWorkspaceStrategyCount() == 0;
         gapRocketAnalyzeButton.setVisible(selectedGapRocket && !showGapRocketEmptyState);
         gapRocketPlaceOrdersButton.setVisible(selectedGapRocket && !showGapRocketEmptyState);
@@ -7124,6 +7159,7 @@ public class TradingFrame extends JFrame {
         vwapAnalyzeButton.setVisible(selectedVwap && !showVwapEmptyState);
         swingAnalyzeButton.setVisible(selectedSwing && !showSwingEmptyState);
         rangeRiderAnalyzeButton.setVisible(selectedRangeRider && !showRangeRiderEmptyState);
+        profitShieldAnalyzeButton.setVisible(selectedProfitShield && !showProfitShieldEmptyState);
         earningsHunterAnalyzeButton.setVisible(selectedEarningsHunter && !showEarningsHunterEmptyState);
         GapAndGoSchedule currentGapSchedule = gapAndGoCoordinator == null ? null : gapAndGoCoordinator.currentSchedule();
         boolean gapScheduled = currentGapSchedule != null && currentGapSchedule.enabled();
@@ -7149,6 +7185,10 @@ public class TradingFrame extends JFrame {
         boolean rangeRiderScheduled = currentRangeRiderSchedule != null && currentRangeRiderSchedule.enabled();
         rangeRiderScheduleStatusLabel.setVisible(selectedRangeRider && rangeRiderScheduled);
         rangeRiderCancelScheduleButton.setVisible(selectedRangeRider && rangeRiderScheduled);
+        ProfitShieldSchedule currentProfitShieldSchedule = profitShieldCoordinator == null ? null : profitShieldCoordinator.currentSchedule();
+        boolean profitShieldScheduled = currentProfitShieldSchedule != null && currentProfitShieldSchedule.enabled();
+        profitShieldScheduleStatusLabel.setVisible(selectedProfitShield && profitShieldScheduled);
+        profitShieldCancelScheduleButton.setVisible(selectedProfitShield && profitShieldScheduled);
         if (showGapRocketEmptyState) {
             refreshScanHistoryPanel(gapRocketScanHistoryPanel);
             strategiesGridCardLayout.show(strategiesGridCardPanel, GAP_ROCKET_EMPTY_CARD);
@@ -7167,6 +7207,9 @@ public class TradingFrame extends JFrame {
         } else if (showRangeRiderEmptyState) {
             refreshScanHistoryPanel(rangeRiderScanHistoryPanel);
             strategiesGridCardLayout.show(strategiesGridCardPanel, RANGE_RIDER_EMPTY_CARD);
+        } else if (showProfitShieldEmptyState) {
+            refreshScanHistoryPanel(profitShieldScanHistoryPanel);
+            strategiesGridCardLayout.show(strategiesGridCardPanel, PROFIT_SHIELD_EMPTY_CARD);
         } else if (showEarningsHunterEmptyState) {
             refreshScanHistoryPanel(earningsHunterScanHistoryPanel);
             strategiesGridCardLayout.show(strategiesGridCardPanel, EARNINGS_HUNTER_EMPTY_CARD);
@@ -7243,6 +7286,16 @@ public class TradingFrame extends JFrame {
         return workspaceService.findById(selectedWorkspaceId)
                 .map(StrategyWorkspace::code)
                 .map(RANGE_RIDER_WORKSPACE_CODE::equalsIgnoreCase)
+                .orElse(false);
+    }
+
+    private boolean isSelectedProfitShieldWorkspace() {
+        if (selectedWorkspaceId == null) {
+            return false;
+        }
+        return workspaceService.findById(selectedWorkspaceId)
+                .map(StrategyWorkspace::code)
+                .map(PROFIT_SHIELD_WORKSPACE_CODE::equalsIgnoreCase)
                 .orElse(false);
     }
 
@@ -7509,6 +7562,23 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    private void openProfitShieldAnalysisDialog() {
+        ProfitShieldConfig lastProfitShieldConfig = lastProfitShieldConfigs.get(selectedViewMode);
+        ProfitShieldAnalysisDialog dialog = new ProfitShieldAnalysisDialog(this, selectedViewMode, lastProfitShieldConfig);
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+        if (!dialog.accepted()) {
+            return;
+        }
+        ProfitShieldConfig selectedModeConfig = dialog.config();
+        lastProfitShieldConfigs.put(selectedViewMode, selectedModeConfig);
+        switch (dialog.runMode()) {
+            case ANALYZE -> profitShieldCoordinator.analyze(selectedModeConfig, false);
+            case ANALYZE_AND_EXECUTE -> profitShieldCoordinator.analyze(selectedModeConfig, true);
+            case SCHEDULE -> profitShieldCoordinator.scheduleOrCancel(selectedModeConfig);
+        }
+    }
+
     private void openEarningsHunterAnalysisDialog() {
         EarningsHunterConfig lastConfig = lastEarningsHunterConfigs.get(selectedViewMode);
         EarningsHunterAnalysisDialog dialog = new EarningsHunterAnalysisDialog(this, selectedViewMode, lastConfig);
@@ -7533,6 +7603,7 @@ public class TradingFrame extends JFrame {
         vwapCoordinator.start();
         swingCoordinator.start();
         rangeRiderCoordinator.start();
+        profitShieldCoordinator.start();
         autoRiskAdjustmentService.start();
     }
 
@@ -7635,6 +7706,32 @@ public class TradingFrame extends JFrame {
                 && workspaceId.equals(selectedWorkspaceId)) {
             SwingUtilities.invokeLater(() -> selectAndRevealStrategy(firstAddedStrategyId));
         }
+    }
+
+    /** Refresh the grid after the coordinator applies Profit Shield recommendations (called on the EDT). */
+    private void onProfitShieldRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
+        syncStrategiesFromRepository();
+        refreshStrategyTableData();
+        applyCurrentStrategiesRowFilter();
+        refreshWorkspaceSummary();
+        refreshStrategyWorkspaceEmptyState();
+        updateStatusBar();
+        if (firstAddedStrategyId != null && firstAddedStrategyId.length() > 0
+                && workspaceId.equals(selectedWorkspaceId)) {
+            SwingUtilities.invokeLater(() -> selectAndRevealStrategy(firstAddedStrategyId));
+        }
+    }
+
+    /** Reflect the current Profit Shield schedule on the action bar (badge + cancel button). */
+    private void updateProfitShieldScheduleBadge(ProfitShieldSchedule schedule) {
+        if (profitShieldScheduleStatusLabel == null) {
+            return;
+        }
+        profitShieldScheduleStatusLabel.setText(schedule != null && schedule.enabled()
+                ? "Scheduled: scan " + schedule.scanTimeEt() + " ET"
+                + (schedule.executeAfterScan() ? " (auto-execute)" : "")
+                : "");
+        refreshStrategyWorkspaceEmptyState();
     }
 
     private void onEarningsHunterRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
@@ -7830,6 +7927,24 @@ public class TradingFrame extends JFrame {
             onRangeRiderRecommendationsApplied(workspaceId, firstAddedStrategyId);
         }
         @Override public void onScheduleChanged(RangeRiderSchedule schedule) { updateRangeRiderScheduleBadge(schedule); }
+        @Override public java.awt.Component dialogParent() { return TradingFrame.this; }
+    }
+
+    /** Bridges {@link ProfitShieldCoordinator}'s needs to this frame without leaking the frame into it. */
+    private final class ProfitShieldCoordinatorUi implements ProfitShieldCoordinator.Ui {
+        @Override public String runtimeApiKey() { return runtimeApiKey; }
+        @Override public String runtimeApiSecret() { return runtimeApiSecret; }
+        @Override public boolean connectionOk() { return connectionOk; }
+        @Override public String selectedModeLabel() { return TradingFrame.this.selectedModeLabel(); }
+        @Override public int defaultStrategyPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
+        @Override public String selectedWorkspaceId() { return selectedWorkspaceId; }
+        @Override public boolean isProfitShieldWorkspaceSelected() { return isSelectedProfitShieldWorkspace(); }
+        @Override public void log(String message) { TradingFrame.this.log(message); }
+        @Override public void setScanButtonsEnabled(boolean enabled) { profitShieldAnalyzeButton.setEnabled(enabled); }
+        @Override public void onRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
+            onProfitShieldRecommendationsApplied(workspaceId, firstAddedStrategyId);
+        }
+        @Override public void onScheduleChanged(ProfitShieldSchedule schedule) { updateProfitShieldScheduleBadge(schedule); }
         @Override public java.awt.Component dialogParent() { return TradingFrame.this; }
     }
 

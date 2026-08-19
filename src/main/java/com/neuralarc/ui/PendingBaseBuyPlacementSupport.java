@@ -18,7 +18,8 @@ final class PendingBaseBuyPlacementSupport {
                 || VwapCoordinator.isPendingOrderPlacement(strategy)
                 || SwingCoordinator.isPendingOrderPlacement(strategy)
                 || RangeRiderCoordinator.isPendingOrderPlacement(strategy)
-                || EarningsHunterCoordinator.isPendingOrderPlacement(strategy);
+                || EarningsHunterCoordinator.isPendingOrderPlacement(strategy)
+                || ProfitShieldCoordinator.isPendingOrderPlacement(strategy);
     }
 
     static BigDecimal adjustedBaseBuyLimit(BigDecimal baseBuyLimitPrice, BigDecimal todayLow) {
