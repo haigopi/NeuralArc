@@ -680,6 +680,19 @@ public class TradingFrame extends JFrame {
             ) {
                 return TradingFrame.this.sellPosition(strategy, submissionType, executionSource);
             }
+            @Override
+            public StrategyService.StrategyCreationResult placeSellTriggerOrder(
+                    Strategy strategy,
+                    StrategyService.SellExecutionSource executionSource
+            ) {
+                StrategyService modeAwareService = strategyServiceForMode(strategy.mode());
+                if (modeAwareService == null) {
+                    return StrategyService.StrategyCreationResult.failed(
+                            "Broker client is not configured for " + strategy.mode().name() + " mode."
+                    );
+                }
+                return modeAwareService.placeSellTriggerOrder(strategy.id(), executionSource);
+            }
             @Override public StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy) {
                 return TradingFrame.this.placePendingBaseBuy(strategy);
             }
@@ -688,6 +701,12 @@ public class TradingFrame extends JFrame {
             }
             @Override public Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets) {
                 return TradingFrame.this.chooseAverageLosingPositions(targets);
+            }
+            @Override public Optional<BigDecimal> chooseSellProfitThresholdPercent(List<ManagedStrategy> targets) {
+                return TradingFrame.this.chooseSellProfitThresholdPercent(targets);
+            }
+            @Override public Optional<Strategy> updateStrategy(Strategy strategy) {
+                return TradingFrame.this.updateStrategyForMode(strategy);
             }
             @Override public StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity) {
                 return TradingFrame.this.buyMoreAtMarket(strategy, quantity);
@@ -3665,6 +3684,18 @@ public class TradingFrame extends JFrame {
 
     private Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets) {
         return AverageLosingPositionsDialog.show(this, targets);
+    }
+
+    private Optional<BigDecimal> chooseSellProfitThresholdPercent(List<ManagedStrategy> targets) {
+        return SellProfitThresholdDialog.show(this, targets);
+    }
+
+    private Optional<Strategy> updateStrategyForMode(Strategy strategy) {
+        StrategyService modeAwareService = strategyServiceForMode(strategy.mode());
+        if (modeAwareService == null) {
+            return Optional.empty();
+        }
+        return modeAwareService.updateStrategy(strategy);
     }
 
     private StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity) {

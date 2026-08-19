@@ -29,6 +29,16 @@ public interface AlpacaClient {
 
     AlpacaOrderData submitLimitSellOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId);
 
+    default AlpacaOrderData submitLimitSellOrder(
+            String symbol,
+            int quantity,
+            BigDecimal limitPrice,
+            String clientOrderId,
+            TimeInForce timeInForce
+    ) {
+        return submitLimitSellOrder(symbol, quantity, limitPrice, clientOrderId);
+    }
+
     AlpacaOrderData submitMarketSellOrder(String symbol, int quantity, String clientOrderId);
 
     AlpacaOrderData submitTrailingStopSellOrder(

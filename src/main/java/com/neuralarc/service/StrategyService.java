@@ -856,6 +856,86 @@ public class StrategyService {
         );
     }
 
+    public StrategyCreationResult placeSellTriggerOrder(String strategyId) {
+        return placeSellTriggerOrder(strategyId, SellExecutionSource.MANUAL_USER);
+    }
+
+    public StrategyCreationResult placeSellTriggerOrder(String strategyId, SellExecutionSource executionSource) {
+        Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
+        if (maybeStrategy.isEmpty()) {
+            return StrategyCreationResult.failed("Strategy not found");
+        }
+        Strategy strategy = maybeStrategy.get();
+        if (!serviceModeMatches(strategy)) {
+            return StrategyCreationResult.failed(serviceModeMismatchMessage(strategy));
+        }
+        if (!strategy.targetSellEnabled() || strategy.targetSellPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            return StrategyCreationResult.failed("Sell trigger is not enabled or has an invalid target price");
+        }
+        Optional<com.neuralarc.api.AlpacaPositionData> position = alpacaClient.getPosition(strategy.symbol());
+        if (position.isEmpty() || !position.get().exists()) {
+            return StrategyCreationResult.failed("No open position to place a sell trigger");
+        }
+        int quantity = strategy.targetSellQuantity(position.get().quantity())
+                .setScale(0, java.math.RoundingMode.DOWN)
+                .intValue();
+        if (quantity <= 0) {
+            return StrategyCreationResult.failed("No open quantity to place a sell trigger");
+        }
+        cancelPendingRemoteOrders(strategy);
+        String clientOrderId = buildClientOrderId(strategy, StrategyStage.TARGET_SELL, workspaceCodeResolver);
+        com.neuralarc.api.AlpacaOrderData submitted = alpacaClient.submitLimitSellOrder(
+                strategy.symbol(),
+                quantity,
+                strategy.targetSellPrice(),
+                clientOrderId,
+                TimeInForce.GTC
+        );
+        Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
+        String enrichedRawJson = withExitMetadata(submitted.rawJson(), executionSource, SellSubmissionType.LIMIT);
+        StrategyOrder order = new StrategyOrder(
+                java.util.UUID.randomUUID().toString(),
+                strategy.id(),
+                StrategyStage.TARGET_SELL,
+                submitted.orderId(),
+                clientOrderId,
+                strategy.symbol(),
+                StrategyOrderSide.SELL,
+                StrategyOrderType.LIMIT,
+                strategy.targetSellPrice(),
+                BigDecimal.ZERO,
+                BigDecimal.valueOf(quantity),
+                submitted.filledQuantity(),
+                submitted.filledAveragePrice(),
+                mapOrderStatus(submitted.status()),
+                submittedAt,
+                Instant.now(),
+                null,
+                enrichedRawJson,
+                TimeInForce.GTC
+        );
+        orderRepository.save(order);
+        strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));
+        strategy.setLatestAlpacaOrderId(order.alpacaOrderId());
+        strategy.setLastTriggeredRuleType("SELL_RULE");
+        strategyRepository.save(strategy);
+        stateMachine.transition(
+                strategy,
+                StrategyLifecycleState.SELL_PLACED,
+                StrategyEventType.ORDER_SUBMITTED,
+                "Sell trigger limit order submitted (GTC)",
+                enrichedRawJson
+        );
+        return StrategyCreationResult.success(
+                strategy.id(),
+                order.id(),
+                order.alpacaOrderId(),
+                order.clientOrderId(),
+                submitted.filledQuantity(),
+                submitted.filledAveragePrice()
+        );
+    }
+
     private String withExitMetadata(
             String rawJson,
             SellExecutionSource executionSource,

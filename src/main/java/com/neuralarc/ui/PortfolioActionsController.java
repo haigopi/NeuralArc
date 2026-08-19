@@ -1,8 +1,11 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.SellSubmissionType;
+import com.neuralarc.model.ProfitControlMode;
+import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyMode;
+import com.neuralarc.model.ThresholdType;
 import com.neuralarc.service.StrategyService;
 
 import javax.swing.AbstractButton;
@@ -39,8 +42,14 @@ final class PortfolioActionsController {
                 SellSubmissionType submissionType,
                 StrategyService.SellExecutionSource executionSource
         );
+        StrategyService.StrategyCreationResult placeSellTriggerOrder(
+                Strategy strategy,
+                StrategyService.SellExecutionSource executionSource
+        );
         StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy);
         StrategyService.StrategyCreationResult readjustLosingPendingBaseBuy(ManagedStrategy entry);
+        Optional<BigDecimal> chooseSellProfitThresholdPercent(List<ManagedStrategy> targets);
+        Optional<Strategy> updateStrategy(Strategy strategy);
         Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets);
         StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity);
         StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice);
@@ -83,6 +92,8 @@ final class PortfolioActionsController {
                 () -> handleSellAction(PortfolioActionsSupport.Scope.ALL_OPEN, SellSubmissionType.LIMIT)));
         menu.add(gateway.createMenuItem("Sell Losing Positions", "icons/delete.svg",
                 () -> handleSellAction(PortfolioActionsSupport.Scope.LOSS_ONLY, SellSubmissionType.LIMIT)));
+        menu.add(gateway.createMenuItem("Position All Sell Triggers", "icons/submit.svg",
+                this::handlePositionAllSellTriggers));
         menu.add(gateway.createMenuItem("Sell All Profitable Positions at Market Value", "icons/submit.svg",
                 () -> handleSellAction(PortfolioActionsSupport.Scope.PROFITABLE_MARKET, SellSubmissionType.MARKET)));
         menu.add(gateway.createMenuItem("Sell All Losing Positions at Market Value", "icons/delete.svg",
@@ -95,6 +106,8 @@ final class PortfolioActionsController {
                 () -> handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_AMBER_PENDING_BASE_BUYS)));
         menu.add(gateway.createMenuItem("Readjust Losing Pending Base Buy Positions", "icons/submit.svg",
                 this::handleReadjustLosingPendingBaseBuys));
+        menu.add(gateway.createMenuItem("Position All Sell Profit Threshold percentage", "icons/submit.svg",
+                this::handlePositionAllSellProfitThresholdPercentage));
         menu.add(gateway.createMenuItem("Place Limit Buy for Gaining Pending Positions", "icons/submit.svg",
                 () -> handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_GREEN_PENDING_BASE_BUYS)));
         menu.add(gateway.createMenuItem("Place Limit Buy for All Pending Positions", "icons/submit.svg",
@@ -132,8 +145,13 @@ final class PortfolioActionsController {
         menu.add(deletePaperEntries);
         menu.add(gateway.createMenuItem("Remove Inactive List", "icons/delete.svg",
                 this::handleRemoveInactiveList));
-        menu.add(gateway.createMenuItem("Promote All to Live", "icons/add-stock-strategy.svg",
-                this::handlePromoteAllToLive));
+        JMenuItem promoteAllToLive = gateway.createMenuItem("Promote All to Live", "icons/add-stock-strategy.svg",
+                this::handlePromoteAllToLive);
+        if (gateway.selectedViewMode() == StrategyMode.LIVE) {
+            promoteAllToLive.setEnabled(false);
+            promoteAllToLive.setToolTipText("Promote All to Live is unavailable while viewing LIVE mode.");
+        }
+        menu.add(promoteAllToLive);
         menu.show(anchor, 0, anchor.getHeight());
         gateway.actionCompleted("Portfolio Actions", "Menu opened.");
     }
@@ -323,6 +341,12 @@ final class PortfolioActionsController {
 
     private void handlePromoteAllToLive() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.PROMOTE_ALL_TO_LIVE;
+        if (gateway.selectedViewMode() == StrategyMode.LIVE) {
+            String reason = "Promote All to Live is disabled while viewing LIVE mode.";
+            gateway.actionSkipped(action.menuLabel(), reason);
+            gateway.showMessage(reason, action.dialogTitle(), JOptionPane.WARNING_MESSAGE);
+            return;
+        }
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
             return;
@@ -332,6 +356,77 @@ final class PortfolioActionsController {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
                 return promoteAllToLiveTargets(targets);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    private void handlePositionAllSellTriggers() {
+        PortfolioActionsSupport.Scope scope = PortfolioActionsSupport.Scope.POSITION_ALL_SELL_TRIGGERS;
+        List<ManagedStrategy> targets = support.filterTargets(gateway.currentStrategies(), scope);
+        if (targets.isEmpty()) {
+            gateway.actionSkipped(scope.menuLabel(), scope.emptyMessage());
+            gateway.showMessage(scope.emptyMessage(), scope.dialogTitle(), JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        int choice = gateway.confirm(
+                support.buildConfirmationMessage(scope, targets),
+                scope.dialogTitle(),
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (choice != JOptionPane.YES_OPTION) {
+            gateway.actionCanceled(scope.menuLabel());
+            return;
+        }
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return placeSellTriggerTargets(targets);
+            }
+
+            @Override
+            protected void done() {
+                handleSellActionResult(scope, this);
+            }
+        }.execute();
+    }
+
+    private void handlePositionAllSellProfitThresholdPercentage() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.POSITION_SELL_PROFIT_THRESHOLD_PERCENTAGE;
+        List<ManagedStrategy> targets = support.filterTargets(gateway.currentStrategies(), action);
+        if (targets.isEmpty()) {
+            gateway.actionSkipped(action.menuLabel(), action.emptyMessage());
+            gateway.showMessage(action.emptyMessage(), action.dialogTitle(), JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        Optional<BigDecimal> trailingPercent = gateway.chooseSellProfitThresholdPercent(targets);
+        if (trailingPercent.isEmpty()) {
+            gateway.actionCanceled(action.menuLabel());
+            return;
+        }
+        int choice = gateway.confirm(
+                support.buildConfirmationMessage(action, targets)
+                        .replace("</body></html>",
+                                "<br><br><b>Trailing pullback:</b> "
+                                        + trailingPercent.get().toPlainString()
+                                        + "%</body></html>"),
+                action.dialogTitle(),
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+        );
+        if (choice != JOptionPane.YES_OPTION) {
+            gateway.actionCanceled(action.menuLabel());
+            return;
+        }
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return positionSellProfitThresholdTargets(targets, trailingPercent.get());
             }
 
             @Override
@@ -481,6 +576,58 @@ final class PortfolioActionsController {
             return result.success()
                     ? TargetResult.success(entry.strategy.symbol())
                     : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+        });
+    }
+
+    PortfolioActionsSupport.BatchResult placeSellTriggerTargets(List<ManagedStrategy> targets) {
+        return runTargetsInParallel(targets, entry -> {
+            StrategyService.StrategyCreationResult result = gateway.placeSellTriggerOrder(
+                    entry.strategy,
+                    StrategyService.SellExecutionSource.PORTFOLIO_ACTION
+            );
+            return result.success()
+                    ? TargetResult.success(entry.strategy.symbol())
+                    : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+        });
+    }
+
+    PortfolioActionsSupport.BatchResult positionSellProfitThresholdTargets(
+            List<ManagedStrategy> targets,
+            BigDecimal trailingPercent
+    ) {
+        return runTargetsInParallel(targets, entry -> {
+            Strategy strategy = entry.strategy;
+            StrategyService modeAwareService = modeAwareService(entry);
+            if (modeAwareService == null) {
+                return missingBrokerService(entry);
+            }
+            BigDecimal baseBuy = strategy.baseBuyLimitPrice();
+            BigDecimal sellTrigger = strategy.targetSellPrice();
+            if (baseBuy == null || baseBuy.compareTo(BigDecimal.ZERO) <= 0
+                    || sellTrigger == null || sellTrigger.compareTo(BigDecimal.ZERO) <= 0) {
+                return TargetResult.skipped(strategy.symbol() + ": missing valid base or sell trigger price");
+            }
+            BigDecimal activationAmount = sellTrigger.subtract(baseBuy);
+            if (activationAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                return TargetResult.skipped(strategy.symbol() + ": sell trigger must be above base buy to map threshold");
+            }
+
+            strategy.setProfitControlMode(ProfitControlMode.PROFIT_HOLD);
+            strategy.setAutomaticStopSellThresholdType(ThresholdType.FIXED_AMOUNT);
+            strategy.setAutomaticStopSellThreshold(activationAmount);
+            strategy.setProfitHoldEnabled(true);
+            strategy.setProfitHoldType(ProfitHoldType.PERCENT_TRAILING);
+            strategy.setProfitHoldPercent(trailingPercent);
+            strategy.setAlpacaTrailingStopEnabled(false);
+            strategy.setHighestObservedPriceAfterTarget(BigDecimal.ZERO);
+            strategy.setLastEvent("Portfolio action converted sell trigger to profit threshold with trailing "
+                    + trailingPercent.toPlainString() + "%");
+
+            Optional<Strategy> updated = gateway.updateStrategy(strategy);
+            if (updated.isEmpty()) {
+                return TargetResult.failure(strategy.symbol() + ": failed to update strategy");
+            }
+            return TargetResult.success(strategy.symbol());
         });
     }
 

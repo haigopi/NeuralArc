@@ -71,8 +71,10 @@ public class HelpDialog extends JDialog {
             "Each strategy row can show a Sell button when that strategy has an open position.\n\n" +
             "- Sell submits a manual limit sell for that strategy after confirmation.\n" +
             "- Portfolio Actions can sell profitable positions, all open positions, or losing positions after confirmation.\n" +
+            "- Position All Sell Triggers places a GTC limit sell for each open position using that strategy's configured sell trigger price.\n" +
+            "- Position all Sell Profit Threshold percentage converts active sell-trigger positions to profit-threshold mode using the trigger price as baseline and your chosen trailing pullback percent.\n" +
             "- Cancel All Pending Limit Buys cancels pending limit buy orders without closing open positions or sell orders.\n" +
-            "- Promote All to Live validates eligible paper strategies and creates live strategies using the same promotion rules as the row action.\n" +
+            "- Promote All to Live validates eligible paper strategies and creates live strategies using the same promotion rules as the row action (disabled while viewing Live mode).\n" +
             "- These actions use Alpaca and then refresh the grid and status values.\n\n" +
             "Review the confirmation dialog before submitting any sell action."
         },

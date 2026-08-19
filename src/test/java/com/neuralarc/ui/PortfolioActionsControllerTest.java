@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.Position;
 import com.neuralarc.model.SellSubmissionType;
@@ -8,6 +9,7 @@ import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
+import com.neuralarc.model.ThresholdType;
 import com.neuralarc.service.StrategyService;
 import org.junit.jupiter.api.Test;
 
@@ -15,6 +17,7 @@ import javax.swing.JMenuItem;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -53,6 +56,24 @@ class PortfolioActionsControllerTest {
 
         assertTrue(result.failures().isEmpty());
         assertTrue(gateway.maxConcurrentSells.get() >= 2, "Expected at least two sell calls in flight at once");
+    }
+
+    @Test
+    void placeSellTriggerTargetsRunInParallel() {
+        BlockingRepositionService service = new BlockingRepositionService();
+        FakeGateway gateway = new FakeGateway(service);
+        gateway.blockSell = true;
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+        List<ManagedStrategy> targets = List.of(
+                managed("AAPL"),
+                managed("MSFT")
+        );
+
+        PortfolioActionsSupport.BatchResult result = controller.placeSellTriggerTargets(targets);
+
+        assertTrue(result.failures().isEmpty());
+        assertTrue(gateway.maxConcurrentSellTriggers.get() >= 2,
+                "Expected at least two sell-trigger calls in flight at once");
     }
 
     @Test
@@ -169,6 +190,36 @@ class PortfolioActionsControllerTest {
         assertEquals(List.of("AAPL-id"), gateway.deletedPendingBaseBuyIds);
     }
 
+    @Test
+    void positionSellProfitThresholdTargetsConvertMatchingStrategies() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+        ManagedStrategy first = managedWithPosition("AAPL", 10, "9.50", "11.00");
+        first.strategy.setTargetSellEnabled(true);
+        first.strategy.setTargetSellPrice(new BigDecimal("12.00"));
+        first.strategy.setBaseBuyLimitPrice(new BigDecimal("10.00"));
+        ManagedStrategy second = managedWithPosition("MSFT", 4, "18.00", "21.00");
+        second.strategy.setTargetSellEnabled(true);
+        second.strategy.setTargetSellPrice(new BigDecimal("24.00"));
+        second.strategy.setBaseBuyLimitPrice(new BigDecimal("20.00"));
+
+        PortfolioActionsSupport.BatchResult result = controller.positionSellProfitThresholdTargets(
+                List.of(first, second),
+                new BigDecimal("3.50")
+        );
+
+        assertEquals(List.of("AAPL", "MSFT"), result.successes());
+        assertTrue(result.failures().isEmpty());
+        assertTrue(result.skipped().isEmpty());
+        assertEquals(2, gateway.updatedStrategyIds.size());
+        assertTrue(gateway.updatedStrategyIds.contains("AAPL-id"));
+        assertTrue(gateway.updatedStrategyIds.contains("MSFT-id"));
+        assertEquals(ProfitControlMode.PROFIT_HOLD, first.strategy.profitControlMode());
+        assertEquals(ThresholdType.FIXED_AMOUNT, first.strategy.automaticStopSellThresholdType());
+        assertEquals(0, new BigDecimal("2.00").compareTo(first.strategy.automaticStopSellThreshold()));
+        assertEquals(0, new BigDecimal("3.50").compareTo(first.strategy.profitHoldPercent()));
+    }
+
     private static ManagedStrategy managed(String symbol) {
         Strategy strategy = new Strategy(
                 symbol + "-id",
@@ -255,6 +306,10 @@ class PortfolioActionsControllerTest {
         private final java.util.List<String> placedPendingStrategyIds = new java.util.ArrayList<>();
         private final java.util.List<String> readjustedPendingStrategyIds = new java.util.ArrayList<>();
         private final java.util.List<String> deletedPendingBaseBuyIds = new java.util.ArrayList<>();
+        private final AtomicInteger activeSellTriggers = new AtomicInteger();
+        private final AtomicInteger maxConcurrentSellTriggers = new AtomicInteger();
+        private final CountDownLatch sellTriggersEntered = new CountDownLatch(2);
+        private final java.util.List<String> updatedStrategyIds = new java.util.ArrayList<>();
         private String marketBuyStrategyId;
         private int marketBuyQuantity;
         private String limitBuyStrategyId;
@@ -301,6 +356,26 @@ class PortfolioActionsControllerTest {
             return StrategyService.StrategyCreationResult.success(strategy.id(), "order", "alpaca", "client");
         }
         @Override
+        public StrategyService.StrategyCreationResult placeSellTriggerOrder(
+                Strategy strategy,
+                StrategyService.SellExecutionSource executionSource
+        ) {
+            if (blockSell) {
+                int current = activeSellTriggers.incrementAndGet();
+                maxConcurrentSellTriggers.accumulateAndGet(current, Math::max);
+                sellTriggersEntered.countDown();
+                try {
+                    sellTriggersEntered.await(1, TimeUnit.SECONDS);
+                    Thread.sleep(50L);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    activeSellTriggers.decrementAndGet();
+                }
+            }
+            return StrategyService.StrategyCreationResult.success(strategy.id(), "order", "alpaca", "client");
+        }
+        @Override
         public StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy) {
             placedPendingStrategyIds.add(strategy.id());
             return StrategyService.StrategyCreationResult.success(strategy.id(), "order", "alpaca", "client");
@@ -312,6 +387,13 @@ class PortfolioActionsControllerTest {
         }
         @Override public java.util.Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets) {
             return java.util.Optional.empty();
+        }
+        @Override public Optional<BigDecimal> chooseSellProfitThresholdPercent(List<ManagedStrategy> targets) {
+            return Optional.of(new BigDecimal("5.00"));
+        }
+        @Override public Optional<Strategy> updateStrategy(Strategy strategy) {
+            updatedStrategyIds.add(strategy.id());
+            return Optional.of(strategy);
         }
         @Override public StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity) {
             marketBuyStrategyId = strategy.id();

@@ -92,6 +92,48 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
+    void positionAllSellTriggersTargetsOnlyOpenPositionsWithActiveSellTrigger() {
+        ManagedStrategy eligible = managed("AAPL", StrategyStatus.ACTIVE, 10, new BigDecimal("100"), new BigDecimal("110"));
+        eligible.strategy.setTargetSellEnabled(true);
+        eligible.strategy.setTargetSellPrice(new BigDecimal("112"));
+        ManagedStrategy missingTrigger = managed("MSFT", StrategyStatus.ACTIVE, 10, new BigDecimal("100"), new BigDecimal("110"));
+        missingTrigger.strategy.setTargetSellEnabled(false);
+        ManagedStrategy noShares = managed("NVDA", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        noShares.strategy.setTargetSellEnabled(true);
+        noShares.strategy.setTargetSellPrice(new BigDecimal("120"));
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(eligible, missingTrigger, noShares),
+                PortfolioActionsSupport.Scope.POSITION_ALL_SELL_TRIGGERS
+        );
+
+        assertEquals(List.of("AAPL"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
+    void positionSellProfitThresholdPercentageTargetsRequireSellTriggerAboveBaseBuy() {
+        ManagedStrategy eligible = managed("AAPL", StrategyStatus.ACTIVE, 10, new BigDecimal("100"), new BigDecimal("110"));
+        eligible.strategy.setTargetSellEnabled(true);
+        eligible.strategy.setBaseBuyLimitPrice(new BigDecimal("100"));
+        eligible.strategy.setTargetSellPrice(new BigDecimal("112"));
+        ManagedStrategy belowBase = managed("MSFT", StrategyStatus.ACTIVE, 10, new BigDecimal("100"), new BigDecimal("110"));
+        belowBase.strategy.setTargetSellEnabled(true);
+        belowBase.strategy.setBaseBuyLimitPrice(new BigDecimal("100"));
+        belowBase.strategy.setTargetSellPrice(new BigDecimal("99"));
+        ManagedStrategy noShares = managed("NVDA", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        noShares.strategy.setTargetSellEnabled(true);
+        noShares.strategy.setBaseBuyLimitPrice(new BigDecimal("100"));
+        noShares.strategy.setTargetSellPrice(new BigDecimal("130"));
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(eligible, belowBase, noShares),
+                PortfolioActionsSupport.BulkAction.POSITION_SELL_PROFIT_THRESHOLD_PERCENTAGE
+        );
+
+        assertEquals(List.of("AAPL"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
     void lossOnlyIncludesCanceledSellPartiallyFilledOpenPositions() {
         ManagedStrategy canceledSellPartial = managed(
                 "AAPL",

@@ -93,6 +93,17 @@ public class HttpAlpacaClient implements AlpacaClient {
     }
 
     @Override
+    public AlpacaOrderData submitLimitSellOrder(
+            String symbol,
+            int quantity,
+            BigDecimal limitPrice,
+            String clientOrderId,
+            TimeInForce timeInForce
+    ) {
+        return submitLimitOrder(symbol, quantity, limitPrice, clientOrderId, "sell", timeInForce);
+    }
+
+    @Override
     public AlpacaOrderData submitMarketSellOrder(String symbol, int quantity, String clientOrderId) {
         JSONObject payload = new JSONObject()
                 .put("symbol", symbol == null ? "" : symbol.toUpperCase())

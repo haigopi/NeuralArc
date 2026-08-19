@@ -335,6 +335,32 @@ final class PortfolioActionsSupport {
                 return "Each strategy will submit a manual market sell for immediate market execution."
                         + "<br>Final fill prices can vary from quotes due to market movement and liquidity.";
             }
+        },
+        POSITION_ALL_SELL_TRIGGERS("Position All Sell Triggers") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                Position position = entry.cachedPosition();
+                return isEligibleForManualSell(entry)
+                        && position.getTotalShares() > 0
+                        && entry.strategy.targetSellEnabled()
+                        && entry.strategy.targetSellPrice().compareTo(BigDecimal.ZERO) > 0;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Place GTC sell triggers for " + count + " open position(s)?";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no open positions with active sell triggers.";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Each strategy will place a GTC manual limit sell at its configured sell trigger price."
+                        + "<br>Existing open orders for each symbol are canceled before placing the new trigger order.";
+            }
         };
 
         private final String menuLabel;
@@ -848,6 +874,43 @@ final class PortfolioActionsSupport {
             @Override
             String emptyMessage() {
                 return "There are no eligible paper strategies to promote.";
+            }
+        },
+        POSITION_SELL_PROFIT_THRESHOLD_PERCENTAGE("Position all Sell Profit Threshold percentage") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                Position position = entry.cachedPosition();
+                BigDecimal baseBuy = entry.strategy.baseBuyLimitPrice();
+                BigDecimal sellTrigger = entry.strategy.targetSellPrice();
+                return isEligibleForManualSell(entry)
+                        && position.getTotalShares() > 0
+                        && entry.strategy.targetSellEnabled()
+                        && sellTrigger != null
+                        && baseBuy != null
+                        && sellTrigger.compareTo(BigDecimal.ZERO) > 0
+                        && baseBuy.compareTo(BigDecimal.ZERO) > 0
+                        && sellTrigger.compareTo(baseBuy) > 0;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Convert sell triggers to profit threshold mode for " + count + " open position(s)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Each matching strategy keeps its sell trigger price as the profit threshold baseline."
+                        + "<br>The chosen trailing pullback percent is then applied for profit-hold exits.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no open positions with active sell triggers eligible for profit-threshold conversion.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Updated";
             }
         };
 

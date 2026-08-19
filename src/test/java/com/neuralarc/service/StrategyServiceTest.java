@@ -226,6 +226,31 @@ class StrategyServiceTest {
     }
 
     @Test
+    void placeSellTriggerOrderSubmitsGtcLimitSellAtTargetPrice() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("7"), new BigDecimal("8.00"), new BigDecimal("9.50"), "{}"));
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setTargetSellEnabled(true);
+        strategy.setTargetSellPrice(new BigDecimal("11.25"));
+        strategies.save(strategy);
+
+        StrategyService.StrategyCreationResult result = service.placeSellTriggerOrder(strategy.id());
+
+        assertTrue(result.success());
+        StrategyOrder local = orders.findLatestByStrategyStage(strategy.id(), StrategyStage.TARGET_SELL).orElseThrow();
+        assertEquals(StrategyOrderType.LIMIT, local.orderType());
+        assertEquals(new BigDecimal("11.25"), local.limitPrice());
+        assertEquals(TimeInForce.GTC, local.timeInForce());
+        assertEquals(TimeInForce.GTC, alpaca.lastSubmittedLimitSellTimeInForce);
+    }
+
+    @Test
     void buyMoreAtMarketSubmitsAndPersistsManualBuyOrderForInputQuantity() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
@@ -1940,6 +1965,7 @@ class StrategyServiceTest {
         private final List<AlpacaOrderData> submittedOrders = new ArrayList<>();
         private boolean rejectBuyOrdersWithSessionMessage;
         private TimeInForce lastSubmittedLimitBuyTimeInForce = TimeInForce.DAY;
+        private TimeInForce lastSubmittedLimitSellTimeInForce = TimeInForce.DAY;
 
         @Override
         public AlpacaOrderData submitLimitBuyOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
@@ -1987,6 +2013,23 @@ class StrategyServiceTest {
 
         @Override
         public AlpacaOrderData submitLimitSellOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
+            lastSubmittedLimitSellTimeInForce = TimeInForce.DAY;
+            counter++;
+            AlpacaOrderData order = new AlpacaOrderData("ord-" + counter, clientOrderId, symbol, "sell", "limit", limitPrice, Monetary.zero(), Monetary.zero(), "new", "{\"qty\":\"" + quantity + "\"}");
+            submittedOrders.add(order);
+            openOrders.add(order);
+            return order;
+        }
+
+        @Override
+        public AlpacaOrderData submitLimitSellOrder(
+                String symbol,
+                int quantity,
+                BigDecimal limitPrice,
+                String clientOrderId,
+                TimeInForce timeInForce
+        ) {
+            lastSubmittedLimitSellTimeInForce = timeInForce == null ? TimeInForce.DAY : timeInForce;
             counter++;
             AlpacaOrderData order = new AlpacaOrderData("ord-" + counter, clientOrderId, symbol, "sell", "limit", limitPrice, Monetary.zero(), Monetary.zero(), "new", "{\"qty\":\"" + quantity + "\"}");
             submittedOrders.add(order);
