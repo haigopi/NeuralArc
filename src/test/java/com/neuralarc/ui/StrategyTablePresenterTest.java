@@ -207,6 +207,7 @@ class StrategyTablePresenterTest {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.ACTIVE);
         strategy.setCurrentState(StrategyLifecycleState.PROFIT_HOLD_ACTIVE);
+        strategy.setProfitControlMode(ProfitControlMode.PROFIT_HOLD);
         strategy.setProfitHoldEnabled(true);
         strategy.setProfitHoldType(ProfitHoldType.PERCENT_TRAILING);
         strategy.setProfitHoldPercent(new BigDecimal("5.00"));
@@ -218,6 +219,27 @@ class StrategyTablePresenterTest {
         String label = presenter.displayStatusLabel(strategy, position, false, false, false);
 
         assertEquals("Profit Hold active by 5.00% | Current $125.00 - monitoring trailing protection", label);
+    }
+
+    @Test
+    void profitablePositionWithProfitHoldModeShowsProfitHoldInsteadOfSellTrigger() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategy.setProfitControlMode(ProfitControlMode.PROFIT_HOLD);
+        strategy.setProfitHoldEnabled(true);
+        strategy.setProfitHoldType(ProfitHoldType.PERCENT_TRAILING);
+        strategy.setProfitHoldPercent(new BigDecimal("3.50"));
+        strategy.setTargetSellEnabled(true);
+        strategy.setTargetSellPrice(new BigDecimal("120.00"));
+
+        Position position = new Position("AAPL");
+        position.applyBuy(10, new BigDecimal("100.00"));
+        position.setLastPrice(new BigDecimal("125.00"));
+
+        String label = presenter.displayStatusLabel(strategy, position, false, false, false);
+
+        assertEquals("Profit Hold active by 3.50% | Current $125.00 - monitoring trailing protection", label);
     }
 
     @Test
@@ -806,6 +828,30 @@ class StrategyTablePresenterTest {
         String label = presenter.displayStatusLabel(strategy, position, false, true, false);
 
         assertEquals("Limit Sell Placed - @ $120.00/8 (New)", label);
+    }
+
+    @Test
+    void statusShowsPendingLimitSellAndPendingLimitBuyTogetherForHeldPosition() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        Position position = new Position("AAPL");
+        position.applyBuy(8, new BigDecimal("100.00"));
+
+        String label = presenter.displayStatusLabel(
+                strategy,
+                position,
+                false,
+                false,
+                false,
+                false,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                new StrategyTablePresenter.PendingOrderSummary(new BigDecimal("98.00"), new BigDecimal("2")),
+                new StrategyTablePresenter.PendingOrderSummary(new BigDecimal("120.00"), new BigDecimal("8"))
+        );
+
+        assertEquals("Position: 8 filled — Limit Sell Pending - @ $120.00/8 + Limit Buy Pending - @ $98.00/2", label);
     }
 
 

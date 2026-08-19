@@ -25,6 +25,7 @@ final class ManagedStrategy {
     private volatile BigDecimal cachedBaseBuyExecutedPrice = Monetary.zero();
     private volatile MarketBar cachedDailyBar;
     private StrategyTablePresenter.PendingOrderSummary cachedPendingManualBuy;
+    private StrategyTablePresenter.PendingOrderSummary cachedPendingLimitSell;
     volatile long lastDisplayedPositionFetchAtMillis;
     volatile long pollIntervalMillis;
     volatile long nextPollDueAtMillis;
@@ -161,6 +162,10 @@ final class ManagedStrategy {
         return cachedPendingManualBuy;
     }
 
+    StrategyTablePresenter.PendingOrderSummary cachedPendingLimitSell() {
+        return cachedPendingLimitSell;
+    }
+
     BigDecimal cachedBaseBuyExecutedPrice() {
         return Monetary.round(cachedBaseBuyExecutedPrice);
     }
@@ -186,9 +191,19 @@ final class ManagedStrategy {
             BigDecimal realizedPnl,
             StrategyTablePresenter.PendingOrderSummary pendingManualBuy
     ) {
+        setTradeSnapshot(lastSellPrice, realizedPnl, pendingManualBuy, null);
+    }
+
+    void setTradeSnapshot(
+            BigDecimal lastSellPrice,
+            BigDecimal realizedPnl,
+            StrategyTablePresenter.PendingOrderSummary pendingManualBuy,
+            StrategyTablePresenter.PendingOrderSummary pendingLimitSell
+    ) {
         this.cachedLastSellPrice = Monetary.round(lastSellPrice);
         this.cachedRealizedPnl = Monetary.round(realizedPnl);
         this.cachedPendingManualBuy = pendingManualBuy;
+        this.cachedPendingLimitSell = pendingLimitSell;
     }
 
     boolean shouldRefreshDisplayedPosition() {

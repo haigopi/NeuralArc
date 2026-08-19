@@ -163,6 +163,32 @@ public final class StrategyTablePresenter {
             BigDecimal lastSellPrice,
             PendingOrderSummary pendingManualBuy
     ) {
+        return displayStatusLabel(
+                strategy,
+                position,
+                marketClosedSuppressed,
+                waitingForFill,
+                queueableSessionError,
+                brokerUnavailableActive,
+                realizedPnl,
+                lastSellPrice,
+                pendingManualBuy,
+                null
+        );
+    }
+
+    public String displayStatusLabel(
+            Strategy strategy,
+            Position position,
+            boolean marketClosedSuppressed,
+            boolean waitingForFill,
+            boolean queueableSessionError,
+            boolean brokerUnavailableActive,
+            BigDecimal realizedPnl,
+            BigDecimal lastSellPrice,
+            PendingOrderSummary pendingLimitBuy,
+            PendingOrderSummary pendingLimitSell
+    ) {
         if (strategy == null) {
             return "";
         }
@@ -226,11 +252,20 @@ public final class StrategyTablePresenter {
                 && waitingForFill
                 && strategy.latestOrderStatus() != null
                 && !strategy.latestOrderStatus().isBlank()
-                && (isManualBuyLatest(strategy) || pendingManualBuy != null)
+                && (isManualBuyLatest(strategy) || pendingLimitBuy != null)
                 && !isBrokerUnavailableStatus(normalizedStatus)) {
-            String pendingLabel = manualBuyPendingLabel(strategy, pendingManualBuy)
+            String pendingLabel = manualBuyPendingLabel(strategy, pendingLimitBuy)
                     + " (" + BrokerOrderStatusUtil.displayLabel(strategy.latestOrderStatus()) + ")";
             return prependHeldPosition(position, pendingLabel);
+        }
+        if (strategy.status() == StrategyStatus.ACTIVE
+                && hasOpenPosition(position)
+                && pendingLimitBuy != null
+                && pendingLimitSell != null) {
+            return prependHeldPosition(
+                    position,
+                    limitSellPendingLabel(pendingLimitSell) + " + " + limitBuyPendingLabel(pendingLimitBuy)
+            );
         }
         if (strategy.status() == StrategyStatus.ACTIVE
                 && waitingForFill
@@ -419,6 +454,14 @@ public final class StrategyTablePresenter {
         return "Manual Buy Pending Fill" + orderDetails;
     }
 
+    private String limitBuyPendingLabel(PendingOrderSummary pendingOrder) {
+        return "Limit Buy Pending" + pendingOrderDetails(pendingOrder);
+    }
+
+    private String limitSellPendingLabel(PendingOrderSummary pendingOrder) {
+        return "Limit Sell Pending" + pendingOrderDetails(pendingOrder);
+    }
+
     private String pendingOrderDetails(PendingOrderSummary pendingOrder) {
         if (pendingOrder == null) {
             return "";
@@ -447,11 +490,15 @@ public final class StrategyTablePresenter {
                 || state == StrategyLifecycleState.SELL_PARTIALLY_FILLED;
     }
 
+    private boolean hasOpenPosition(Position position) {
+        return position != null && position.getTotalShares() > 0;
+    }
+
     private String resolveActiveRuleLabel(Strategy strategy, Position position) {
         if (!isProfitablePosition(position) && (position == null || position.getTotalShares() <= 0)) {
             return configuredActiveRuleLabel(strategy);
         }
-        if (strategy.currentState() == StrategyLifecycleState.PROFIT_HOLD_ACTIVE && strategy.profitHoldEnabled()) {
+        if (strategy.profitControlMode() == ProfitControlMode.PROFIT_HOLD && strategy.profitHoldEnabled()) {
             return "Profit Hold active"
                     + profitHoldDescription(strategy)
                     + currentPriceDescription(position)

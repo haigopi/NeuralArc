@@ -218,6 +218,9 @@ class PortfolioActionsControllerTest {
         assertEquals(ThresholdType.FIXED_AMOUNT, first.strategy.automaticStopSellThresholdType());
         assertEquals(0, new BigDecimal("2.00").compareTo(first.strategy.automaticStopSellThreshold()));
         assertEquals(0, new BigDecimal("3.50").compareTo(first.strategy.profitHoldPercent()));
+        assertEquals(StrategyLifecycleState.BASE_BUY_FILLED, first.strategy.currentState());
+        assertEquals("", first.strategy.latestOrderStatus());
+        assertEquals("", first.strategy.latestAlpacaOrderId());
     }
 
     private static ManagedStrategy managed(String symbol) {

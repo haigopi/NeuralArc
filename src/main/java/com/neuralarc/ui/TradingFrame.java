@@ -5402,7 +5402,8 @@ public class TradingFrame extends JFrame {
                 !connectionOk || connectionRetryPending,
                 entry.cachedRealizedPnl(),
                 entry.cachedLastSellPrice(),
-                entry.cachedPendingManualBuy()
+                entry.cachedPendingManualBuy(),
+                entry.cachedPendingLimitSell()
         );
     }
 
@@ -5589,7 +5590,7 @@ public class TradingFrame extends JFrame {
         List<StrategyOrder> orders = strategyOrderRepository.findByStrategyId(entry.strategy.id());
         BigDecimal lastSellPrice = latestFilledSellPrice(orders);
         BigDecimal realized = realizedPnlForOrders(orders);
-        entry.setTradeSnapshot(lastSellPrice, realized, latestPendingManualBuy(orders));
+        entry.setTradeSnapshot(lastSellPrice, realized, latestPendingLimitBuy(orders), latestPendingLimitSell(orders));
         entry.setCachedBaseBuyExecutedPrice(baseBuyExecutedPrice(orders));
     }
 
@@ -5611,10 +5612,22 @@ public class TradingFrame extends JFrame {
                 .orElse(Monetary.zero());
     }
 
-    private StrategyTablePresenter.PendingOrderSummary latestPendingManualBuy(List<StrategyOrder> orders) {
+    private StrategyTablePresenter.PendingOrderSummary latestPendingLimitBuy(List<StrategyOrder> orders) {
         return orders.stream()
-                .filter(order -> order.stage() == StrategyStage.MANUAL_BUY)
+                .filter(order -> order.orderType() == StrategyOrderType.LIMIT)
                 .filter(order -> order.side() == StrategyOrderSide.BUY)
+                .filter(StrategyOrder::isPending)
+                .max(Comparator
+                        .comparing(StrategyOrder::updatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(order -> new StrategyTablePresenter.PendingOrderSummary(order.limitPrice(), order.requestedQuantity()))
+                .orElse(null);
+    }
+
+    private StrategyTablePresenter.PendingOrderSummary latestPendingLimitSell(List<StrategyOrder> orders) {
+        return orders.stream()
+                .filter(order -> order.orderType() == StrategyOrderType.LIMIT)
+                .filter(order -> order.side() == StrategyOrderSide.SELL)
                 .filter(StrategyOrder::isPending)
                 .max(Comparator
                         .comparing(StrategyOrder::updatedAt, Comparator.nullsLast(Comparator.naturalOrder()))

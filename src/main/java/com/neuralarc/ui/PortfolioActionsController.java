@@ -4,6 +4,7 @@ import com.neuralarc.model.SellSubmissionType;
 import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.Strategy;
+import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.ThresholdType;
 import com.neuralarc.service.StrategyService;
@@ -620,6 +621,10 @@ final class PortfolioActionsController {
             strategy.setProfitHoldPercent(trailingPercent);
             strategy.setAlpacaTrailingStopEnabled(false);
             strategy.setHighestObservedPriceAfterTarget(BigDecimal.ZERO);
+            strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+            strategy.setLatestOrderStatus("");
+            strategy.setLatestAlpacaOrderId("");
+            strategy.setLastTriggeredRuleType("PROFIT_HOLD");
             strategy.setLastEvent("Portfolio action converted sell trigger to profit threshold with trailing "
                     + trailingPercent.toPlainString() + "%");
 
