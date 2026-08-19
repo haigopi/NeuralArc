@@ -72,6 +72,19 @@ class PortfolioCaptureCalculatorTest {
         assertFalse(calculator.targetReached(snapshot, config(PortfolioCaptureTargetType.PROFIT_PERCENT, "25", true)));
     }
 
+    @Test
+    void keepsNegativeProgressValuesWhenPortfolioIsInLosses() {
+        ManagedStrategy gain = strategy("s1", "AAPL", StrategyStatus.ACTIVE, 10, "100", "95");
+        PortfolioCaptureSnapshot snapshot = calculator.calculate(
+                List.of(gain),
+                config(PortfolioCaptureTargetType.PROFIT_PERCENT, "5", true)
+        );
+
+        assertEquals(new BigDecimal("-5.00"), snapshot.profitLossPercent());
+        assertEquals(new BigDecimal("-100.00"), snapshot.targetProgressPercent());
+        assertFalse(calculator.targetReached(snapshot, config(PortfolioCaptureTargetType.PROFIT_PERCENT, "5", true)));
+    }
+
     private PortfolioCaptureConfig config(PortfolioCaptureTargetType targetType, String target, boolean includeLosses) {
         return new PortfolioCaptureConfig(
                 PortfolioCaptureMode.TARGET_MONITORING,

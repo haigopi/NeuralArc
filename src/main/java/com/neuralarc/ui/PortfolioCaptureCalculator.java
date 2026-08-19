@@ -103,9 +103,6 @@ final class PortfolioCaptureCalculator {
         }
         BigDecimal current = config.targetType() == PortfolioCaptureTargetType.PROFIT_PERCENT ? pnlPercent : pnl;
         BigDecimal progress = PortfolioCaptureSnapshot.percent(current, config.targetValue());
-        if (progress.compareTo(BigDecimal.ZERO) < 0) {
-            return Monetary.zero();
-        }
         return Monetary.round(progress.min(BigDecimal.valueOf(100)));
     }
 
