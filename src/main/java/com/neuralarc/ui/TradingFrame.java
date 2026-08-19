@@ -1428,7 +1428,7 @@ public class TradingFrame extends JFrame {
         // Preferred widths express the desired layout when there is room; minimums are kept
         // low so the table can shrink to fit a narrow window instead of overflowing and
         // clipping the right-hand Actions column. Symbol holds a short ticker, so it stays
-        // tight and the spare preferred width goes to Status, Polling, and Entry/Exit Source.
+        // tight and the spare preferred width goes mostly to Status.
         strategyTable.getColumnModel().getColumn(0).setPreferredWidth(72);
         strategyTable.getColumnModel().getColumn(0).setMinWidth(50);
         strategyTable.getColumnModel().getColumn(1).setPreferredWidth(92);
@@ -1439,14 +1439,14 @@ public class TradingFrame extends JFrame {
             strategyTable.getColumnModel().getColumn(priceColumn).setPreferredWidth(96);
             strategyTable.getColumnModel().getColumn(priceColumn).setMinWidth(64);
         }
-        strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.STATUS_COLUMN_INDEX).setPreferredWidth(340);
-        strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.STATUS_COLUMN_INDEX).setMinWidth(120);
+        strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.STATUS_COLUMN_INDEX).setPreferredWidth(420);
+        strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.STATUS_COLUMN_INDEX).setMinWidth(170);
         strategyTable.getColumnModel().getColumn(11).setPreferredWidth(95);
         strategyTable.getColumnModel().getColumn(11).setMinWidth(70);
-        strategyTable.getColumnModel().getColumn(12).setPreferredWidth(210);
-        strategyTable.getColumnModel().getColumn(12).setMinWidth(110);
-        strategyTable.getColumnModel().getColumn(13).setPreferredWidth(180);
-        strategyTable.getColumnModel().getColumn(13).setMinWidth(100);
+        strategyTable.getColumnModel().getColumn(12).setPreferredWidth(150);
+        strategyTable.getColumnModel().getColumn(12).setMinWidth(90);
+        strategyTable.getColumnModel().getColumn(13).setPreferredWidth(140);
+        strategyTable.getColumnModel().getColumn(13).setMinWidth(88);
         applyStrategyGridColumnLayout();
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
@@ -5620,7 +5620,11 @@ public class TradingFrame extends JFrame {
                 .max(Comparator
                         .comparing(StrategyOrder::updatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())))
-                .map(order -> new StrategyTablePresenter.PendingOrderSummary(order.limitPrice(), order.requestedQuantity()))
+                .map(order -> new StrategyTablePresenter.PendingOrderSummary(
+                        order.limitPrice(),
+                        order.requestedQuantity(),
+                        order.stage() == StrategyStage.MANUAL_BUY
+                ))
                 .orElse(null);
     }
 

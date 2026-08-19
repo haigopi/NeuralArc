@@ -264,7 +264,7 @@ public final class StrategyTablePresenter {
                 && pendingLimitSell != null) {
             return prependHeldPosition(
                     position,
-                    limitSellPendingLabel(pendingLimitSell) + " + " + limitBuyPendingLabel(pendingLimitBuy)
+                    limitSellPendingLabel(pendingLimitSell) + " + " + combinedPendingBuyLabel(pendingLimitBuy)
             );
         }
         if (strategy.status() == StrategyStatus.ACTIVE
@@ -456,6 +456,16 @@ public final class StrategyTablePresenter {
 
     private String limitBuyPendingLabel(PendingOrderSummary pendingOrder) {
         return "Limit Buy Pending" + pendingOrderDetails(pendingOrder);
+    }
+
+    private String combinedPendingBuyLabel(PendingOrderSummary pendingOrder) {
+        if (pendingOrder == null) {
+            return "";
+        }
+        if (pendingOrder.manualBuy()) {
+            return "Manual Limit Buy Pending Fill" + pendingOrderDetails(pendingOrder);
+        }
+        return limitBuyPendingLabel(pendingOrder);
     }
 
     private String limitSellPendingLabel(PendingOrderSummary pendingOrder) {
@@ -983,7 +993,11 @@ public final class StrategyTablePresenter {
         public static final DayPrices EMPTY = new DayPrices(null, null, null, null);
     }
 
-    public record PendingOrderSummary(BigDecimal limitPrice, BigDecimal quantity) {
+    public record PendingOrderSummary(BigDecimal limitPrice, BigDecimal quantity, boolean manualBuy) {
+        public PendingOrderSummary(BigDecimal limitPrice, BigDecimal quantity) {
+            this(limitPrice, quantity, false);
+        }
+
         public PendingOrderSummary {
             limitPrice = Monetary.round(limitPrice == null ? BigDecimal.ZERO : limitPrice);
             quantity = Monetary.round(quantity == null ? BigDecimal.ZERO : quantity);

@@ -831,7 +831,7 @@ class StrategyTablePresenterTest {
     }
 
     @Test
-    void statusShowsPendingLimitSellAndPendingLimitBuyTogetherForHeldPosition() {
+    void statusShowsPendingLimitSellAndManualLimitBuyTogetherForHeldPosition() {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.ACTIVE);
         strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
@@ -847,11 +847,11 @@ class StrategyTablePresenterTest {
                 false,
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,
-                new StrategyTablePresenter.PendingOrderSummary(new BigDecimal("98.00"), new BigDecimal("2")),
+                new StrategyTablePresenter.PendingOrderSummary(new BigDecimal("98.00"), new BigDecimal("2"), true),
                 new StrategyTablePresenter.PendingOrderSummary(new BigDecimal("120.00"), new BigDecimal("8"))
         );
 
-        assertEquals("Position: 8 filled — Limit Sell Pending - @ $120.00/8 + Limit Buy Pending - @ $98.00/2", label);
+        assertEquals("Position: 8 filled — Limit Sell Pending - @ $120.00/8 + Manual Limit Buy Pending Fill - @ $98.00/2", label);
     }
 
 
