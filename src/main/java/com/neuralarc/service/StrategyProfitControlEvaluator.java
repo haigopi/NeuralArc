@@ -22,6 +22,7 @@ final class StrategyProfitControlEvaluator {
     private static final Logger LOGGER = Logger.getLogger(StrategyProfitControlEvaluator.class.getName());
 
     private final StrategyRepository strategyRepository;
+    private final StrategyOrderRepository orderRepository;
     private final StrategyStateMachine stateMachine;
     private final AlpacaClient alpacaClient;
     private final SellOrderSubmitter sellOrderSubmitter;
@@ -29,12 +30,14 @@ final class StrategyProfitControlEvaluator {
 
     StrategyProfitControlEvaluator(
             StrategyRepository strategyRepository,
+            StrategyOrderRepository orderRepository,
             StrategyStateMachine stateMachine,
             AlpacaClient alpacaClient,
             SellOrderSubmitter sellOrderSubmitter,
             TrailingStopSubmitter trailingStopSubmitter
     ) {
         this.strategyRepository = strategyRepository;
+        this.orderRepository = orderRepository;
         this.stateMachine = stateMachine;
         this.alpacaClient = alpacaClient;
         this.sellOrderSubmitter = sellOrderSubmitter;
@@ -67,9 +70,28 @@ final class StrategyProfitControlEvaluator {
             logRule(strategy, "SELL_TRIGGER", "SKIPPED", "Disabled or invalid trigger price", outcomes);
             return;
         }
+        BigDecimal expectedQuantity = strategy.targetSellQuantity(position.quantity());
+        BrokerManagedExitOrderDecision decision = reconcileBrokerManagedExitOrder(strategy, orders, expectedQuantity,
+                "SELL_TRIGGER", outcomes);
+        if (decision == BrokerManagedExitOrderDecision.PRESENT) {
+            return;
+        }
+        if (decision == BrokerManagedExitOrderDecision.REPLACE_AND_SUBMIT_NOW) {
+            sellOrderSubmitter.submit(strategy, StrategyStage.TARGET_SELL, expectedQuantity, latestPrice,
+                    StrategyLifecycleState.SELL_PLACED, "Sell trigger order replaced after position update",
+                    StrategyEventType.ORDER_SUBMITTED);
+            return;
+        }
         if (hasPendingOrFilledExitOrder(orders, StrategyStage.TARGET_SELL)
                 || hasPendingOrFilledExitOrder(orders, StrategyStage.PROFIT_EXIT)) {
             logRule(strategy, "SELL_TRIGGER", "SKIPPED", "Existing pending or filled exit order already present", outcomes);
+            return;
+        }
+        if (shouldRecoverMissingBrokerManagedExitOrder(strategy)) {
+            logRule(strategy, "SELL_TRIGGER", "RECOVERED", "Missing broker sell order detected; placing replacement", outcomes);
+            sellOrderSubmitter.submit(strategy, StrategyStage.TARGET_SELL, expectedQuantity, latestPrice,
+                    StrategyLifecycleState.SELL_PLACED, "Sell trigger order restored after missing broker order",
+                    StrategyEventType.ORDER_SUBMITTED);
             return;
         }
         if (latestPrice.compareTo(strategy.targetSellPrice()) < 0) {
@@ -87,12 +109,25 @@ final class StrategyProfitControlEvaluator {
             logRule(strategy, "SELL_TRIGGER", "BLOCKED", "Duplicate sell order detected; skipping", outcomes);
             return;
         }
-        sellOrderSubmitter.submit(strategy, StrategyStage.TARGET_SELL, strategy.targetSellQuantity(position.quantity()), latestPrice,
+        sellOrderSubmitter.submit(strategy, StrategyStage.TARGET_SELL, expectedQuantity, latestPrice,
                 StrategyLifecycleState.SELL_PLACED, "Sell trigger order submitted", StrategyEventType.TARGET_TRIGGERED);
     }
 
     private void evaluateAutomaticStopSell(Strategy strategy, AlpacaPositionData position, BigDecimal latestPrice,
                                            List<StrategyOrder> orders, List<StrategyEngine.RuleOutcome> outcomes) {
+        BigDecimal expectedQuantity = strategy.targetSellQuantity(position.quantity());
+        BrokerManagedExitOrderDecision decision = reconcileBrokerManagedExitOrder(strategy, orders, expectedQuantity,
+                "AUTOMATIC_STOP_SELL", outcomes);
+        if (decision == BrokerManagedExitOrderDecision.PRESENT) {
+            return;
+        }
+        if (decision == BrokerManagedExitOrderDecision.REPLACE_AND_SUBMIT_NOW) {
+            trailingStopSubmitter.submit(strategy, expectedQuantity,
+                    StrategyLifecycleState.SELL_PLACED,
+                    "Automatic stop sell replaced after position update",
+                    StrategyEventType.ORDER_SUBMITTED);
+            return;
+        }
         BigDecimal threshold = calculateProfitActivationThreshold(strategy, position);
         if (threshold.compareTo(BigDecimal.ZERO) <= 0) {
             logRule(strategy, "AUTOMATIC_STOP_SELL", "SKIPPED", "Profit activation threshold not configured", outcomes);
@@ -101,6 +136,15 @@ final class StrategyProfitControlEvaluator {
         if (hasPendingOrFilledExitOrder(orders, StrategyStage.TARGET_SELL)
                 || hasPendingOrFilledExitOrder(orders, StrategyStage.PROFIT_EXIT)) {
             logRule(strategy, "AUTOMATIC_STOP_SELL", "SKIPPED", "Existing pending or filled exit order already present", outcomes);
+            return;
+        }
+        if (shouldRecoverMissingBrokerManagedExitOrder(strategy)) {
+            logRule(strategy, "AUTOMATIC_STOP_SELL", "RECOVERED",
+                    "Missing broker trailing stop detected; placing replacement", outcomes);
+            trailingStopSubmitter.submit(strategy, expectedQuantity,
+                    StrategyLifecycleState.SELL_PLACED,
+                    "Automatic stop sell restored after missing broker order",
+                    StrategyEventType.ORDER_SUBMITTED);
             return;
         }
         if (latestPrice.compareTo(threshold) < 0) {
@@ -118,7 +162,7 @@ final class StrategyProfitControlEvaluator {
             logRule(strategy, "AUTOMATIC_STOP_SELL", "BLOCKED", "Duplicate sell order detected; skipping", outcomes);
             return;
         }
-        trailingStopSubmitter.submit(strategy, strategy.targetSellQuantity(position.quantity()),
+        trailingStopSubmitter.submit(strategy, expectedQuantity,
                 StrategyLifecycleState.SELL_PLACED,
                 "Automatic stop sell submitted after profit threshold",
                 StrategyEventType.ORDER_SUBMITTED);
@@ -139,6 +183,48 @@ final class StrategyProfitControlEvaluator {
                             ? "Profit activation threshold is not configured"
                             : "Target sell is not active", outcomes);
             return;
+        }
+        boolean localOnlyProfitHold = strategy.profitHoldEnabled() && !strategy.alpacaTrailingStopEnabled();
+        boolean profitHoldModeDisabled = explicitProfitHoldMode && !strategy.profitHoldEnabled();
+        if (!localOnlyProfitHold && !profitHoldModeDisabled) {
+            BigDecimal expectedQuantity = strategy.targetSellQuantity(position.quantity());
+            String ruleName = strategy.alpacaTrailingStopEnabled() ? "ALPACA_TRAILING_STOP" : "TARGET_SELL";
+            BrokerManagedExitOrderDecision decision = reconcileBrokerManagedExitOrder(strategy, orders, expectedQuantity,
+                    ruleName, outcomes);
+            if (decision == BrokerManagedExitOrderDecision.PRESENT) {
+                logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Existing pending or filled exit order already present", outcomes);
+                return;
+            }
+            if (decision == BrokerManagedExitOrderDecision.REPLACE_AND_SUBMIT_NOW) {
+                if (strategy.alpacaTrailingStopEnabled()) {
+                    trailingStopSubmitter.submit(strategy, expectedQuantity,
+                            StrategyLifecycleState.SELL_PLACED,
+                            "Broker trailing stop order replaced after position update",
+                            StrategyEventType.ORDER_SUBMITTED);
+                } else {
+                    sellOrderSubmitter.submit(strategy, StrategyStage.TARGET_SELL, expectedQuantity, latestPrice,
+                            StrategyLifecycleState.SELL_PLACED,
+                            "Target sell order replaced after position update",
+                            StrategyEventType.ORDER_SUBMITTED);
+                }
+                return;
+            }
+            if (shouldRecoverMissingBrokerManagedExitOrder(strategy)) {
+                logRule(strategy, ruleName, "RECOVERED",
+                        "Missing broker-managed sell order detected; placing replacement", outcomes);
+                if (strategy.alpacaTrailingStopEnabled()) {
+                    trailingStopSubmitter.submit(strategy, expectedQuantity,
+                            StrategyLifecycleState.SELL_PLACED,
+                            "Broker trailing stop restored after missing broker order",
+                            StrategyEventType.ORDER_SUBMITTED);
+                } else {
+                    sellOrderSubmitter.submit(strategy, StrategyStage.TARGET_SELL, expectedQuantity, latestPrice,
+                            StrategyLifecycleState.SELL_PLACED,
+                            "Target sell restored after missing broker order",
+                            StrategyEventType.ORDER_SUBMITTED);
+                }
+                return;
+            }
         }
         if (hasPendingOrFilledExitOrder(orders, StrategyStage.TARGET_SELL)
                 || hasPendingOrFilledExitOrder(orders, StrategyStage.PROFIT_EXIT)) {
@@ -269,6 +355,100 @@ final class StrategyProfitControlEvaluator {
             }
         }
         return true;
+    }
+
+    private BrokerManagedExitOrderDecision reconcileBrokerManagedExitOrder(
+            Strategy strategy,
+            List<StrategyOrder> orders,
+            BigDecimal expectedQuantity,
+            String ruleName,
+            List<StrategyEngine.RuleOutcome> outcomes
+    ) {
+        StrategyOrder pendingExitOrder = latestPendingBrokerManagedExitOrder(orders).orElse(null);
+        if (pendingExitOrder == null) {
+            return BrokerManagedExitOrderDecision.NONE;
+        }
+
+        if (pendingExitOrder.requestedQuantity().compareTo(expectedQuantity) != 0) {
+            logRule(strategy, ruleName, "REPLACE_REQUIRED",
+                    "Position size changed; replacing broker sell order from qty="
+                            + pendingExitOrder.requestedQuantity().toPlainString()
+                            + " to qty=" + expectedQuantity.toPlainString(), outcomes);
+            cancelBrokerManagedExitOrders(strategy, orders);
+            return BrokerManagedExitOrderDecision.REPLACE_AND_SUBMIT_NOW;
+        }
+
+        List<AlpacaOrderData> remoteOpenOrders = alpacaClient.getOpenOrders(strategy.symbol());
+        boolean remoteOrderPresent = remoteOpenOrders.stream().anyMatch(remoteOrder ->
+                "sell".equalsIgnoreCase(remoteOrder.side())
+                        && (remoteOrder.orderId().equals(pendingExitOrder.alpacaOrderId())
+                        || remoteOrder.clientOrderId().equals(pendingExitOrder.clientOrderId())));
+        if (!remoteOrderPresent) {
+            logRule(strategy, ruleName, "REPLACE_REQUIRED",
+                    "Pending local sell order missing on broker; canceling stale local order and replacing", outcomes);
+            cancelBrokerManagedExitOrders(strategy, orders);
+            return BrokerManagedExitOrderDecision.REPLACE_AND_SUBMIT_NOW;
+        }
+
+        logRule(strategy, ruleName, "SKIPPED", "Existing pending exit order already present", outcomes);
+        return BrokerManagedExitOrderDecision.PRESENT;
+    }
+
+    private void cancelBrokerManagedExitOrders(Strategy strategy, List<StrategyOrder> orders) {
+        List<AlpacaOrderData> remoteOpenOrders = alpacaClient.getOpenOrders(strategy.symbol());
+        for (StrategyOrder order : orders) {
+            if (!order.isPending() || !isBrokerManagedExitStage(order.stage())) {
+                continue;
+            }
+            if (order.alpacaOrderId() != null && !order.alpacaOrderId().isBlank()) {
+                alpacaClient.cancelOrder(order.alpacaOrderId());
+            }
+            order.setStatus(com.neuralarc.model.StrategyOrderStatus.CANCELED);
+            orderRepository.save(order);
+        }
+        for (AlpacaOrderData order : remoteOpenOrders) {
+            if (!"sell".equalsIgnoreCase(order.side()) || !isBrokerManagedClientOrderId(order.clientOrderId())) {
+                continue;
+            }
+            alpacaClient.cancelOrder(order.orderId());
+        }
+        stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.ORDER_STATUS_UPDATED,
+                "Broker-managed profit sell order canceled for replacement", "{}");
+    }
+
+    private boolean shouldRecoverMissingBrokerManagedExitOrder(Strategy strategy) {
+        if (strategy.currentState() != StrategyLifecycleState.SELL_PLACED) {
+            return false;
+        }
+        return alpacaClient.getOpenOrders(strategy.symbol()).stream()
+                .noneMatch(order -> "sell".equalsIgnoreCase(order.side())
+                        && isBrokerManagedClientOrderId(order.clientOrderId()));
+    }
+
+    private boolean isBrokerManagedExitStage(StrategyStage stage) {
+        return stage == StrategyStage.TARGET_SELL || stage == StrategyStage.PROFIT_EXIT;
+    }
+
+    private boolean isBrokerManagedClientOrderId(String clientOrderId) {
+        if (clientOrderId == null || clientOrderId.isBlank()) {
+            return false;
+        }
+        return clientOrderId.contains("_TARGET_SELL_") || clientOrderId.contains("_PROFIT_EXIT_");
+    }
+
+    private java.util.Optional<StrategyOrder> latestPendingBrokerManagedExitOrder(List<StrategyOrder> orders) {
+        return orders.stream()
+                .filter(StrategyOrder::isPending)
+                .filter(order -> isBrokerManagedExitStage(order.stage()))
+                .max(java.util.Comparator.comparing(StrategyOrder::submittedAt,
+                                java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()))
+                        .thenComparing(StrategyOrder::id));
+    }
+
+    private enum BrokerManagedExitOrderDecision {
+        NONE,
+        PRESENT,
+        REPLACE_AND_SUBMIT_NOW
     }
 
     private boolean hasPendingOrFilledExitOrder(List<StrategyOrder> orders, StrategyStage stage) {

@@ -1830,9 +1830,9 @@ public class StrategyDialog extends JDialog {
         updateLossBuyFieldState();
         loss1PriceField.setText(values.lossBuy1Price().toPlainString());
         loss2PriceField.setText(values.lossBuy2Price().toPlainString());
-        stopLossEnabled.setSelected(true);
+        stopLossEnabled.setSelected(values.enableStopLoss());
         updateStopLossFieldState();
-        stopLossField.setText(values.stopLossPrice().toPlainString());
+        stopLossField.setText(values.enableStopLoss() ? values.stopLossPrice().toPlainString() : "0.00");
         profitControlsPanel.setSellTriggerPrice(values.sellRulePrice());
         symbolField.setText(recommendation.symbol());
         tabs.setSelectedIndex(TAB_CURRENT_STRATEGY);

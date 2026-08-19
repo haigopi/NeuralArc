@@ -109,6 +109,7 @@ public class StrategyEngine {
         this.stopLossAutoCorrector = new StopLossAutoCorrector(strategyRepository, stateMachine);
         this.profitControlEvaluator = new StrategyProfitControlEvaluator(
                 strategyRepository,
+                orderRepository,
                 stateMachine,
                 alpacaClient,
                 this::submitSellOrder,

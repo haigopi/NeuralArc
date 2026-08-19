@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class StrategyApplyServiceTest {
@@ -54,10 +55,11 @@ class StrategyApplyServiceTest {
                 .applyRecommendationToCurrentStrategy(recommendation);
 
         assertEquals(new BigDecimal("95.00"), values.buyRulePrice());
-        assertEquals(new BigDecimal("93.00"), values.lossBuy1Price());
-        assertEquals(new BigDecimal("91.00"), values.lossBuy2Price());
-        assertEquals(new BigDecimal("89.00"), values.stopLossPrice());
+        assertEquals(new BigDecimal("84.00"), values.lossBuy1Price());
+        assertEquals(new BigDecimal("74.00"), values.lossBuy2Price());
+        assertEquals(new BigDecimal("62.00"), values.stopLossPrice());
         assertEquals(new BigDecimal("106.00"), values.sellRulePrice());
+        assertTrue(values.enableStopLoss());
         assertTrue(values.enableLossBuyLevels());
     }
 
@@ -102,5 +104,55 @@ class StrategyApplyServiceTest {
                 .applyRecommendationToCurrentStrategy(recommendation);
 
         assertEquals(new BigDecimal("154.44"), values.buyRulePrice());
+        assertEquals(new BigDecimal("131.04"), values.lossBuy1Price());
+        assertEquals(new BigDecimal("115.44"), values.lossBuy2Price());
+        assertEquals(new BigDecimal("96.72"), values.stopLossPrice());
+        assertTrue(values.enableStopLoss());
+    }
+
+    @Test
+    void subTwentyPriceDisablesStopLossAndUsesDeepLossBuys() {
+        StrategyRecommendation recommendation = new StrategyRecommendation(
+                "PLTR",
+                RecommendationType.SHORT_TERM,
+                new BigDecimal("12.00"),
+                new BigDecimal("12.00"),
+                new BigDecimal("12.00"),
+                BigDecimal.ZERO,
+                new BigDecimal("12.00"),
+                new BigDecimal("11.00"),
+                new BigDecimal("13.00"),
+                BigDecimal.ZERO,
+                new BigDecimal("12.00"),
+                new BigDecimal("12.00"),
+                MarketMode.ACCUMULATION,
+                ShortTermMarketMode.RANGE_ENTRY,
+                "",
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                new BigDecimal("11.50"),
+                new BigDecimal("11.00"),
+                new BigDecimal("10.50"),
+                new BigDecimal("14.00"),
+                new BigDecimal("13.00"),
+                new BigDecimal("15.00"),
+                "Bullish",
+                "Strong",
+                new BigDecimal("2.75"),
+                90,
+                RecommendationAction.BUY,
+                "",
+                false
+        );
+
+        StrategyApplyService.AppliedStrategyValues values = new StrategyApplyService()
+                .applyRecommendationToCurrentStrategy(recommendation);
+
+        assertEquals(new BigDecimal("6.60"), values.lossBuy1Price());
+        assertEquals(new BigDecimal("3.00"), values.lossBuy2Price());
+        assertEquals(0, values.stopLossPrice().compareTo(BigDecimal.ZERO));
+        assertFalse(values.enableStopLoss());
     }
 }

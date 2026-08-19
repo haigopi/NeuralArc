@@ -203,6 +203,66 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void targetSellReplacesPendingOrderWhenPositionQuantityChanges() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        f.alpaca.latestPrice = new BigDecimal("10.00");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.00"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+
+        StrategyOrder initialOrder = f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.TARGET_SELL).orElseThrow();
+        assertEquals(0, initialOrder.requestedQuantity().compareTo(new BigDecimal("10")));
+        assertTrue(f.alpaca.orderById.containsKey(initialOrder.alpacaOrderId()));
+
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("15"), new BigDecimal("8.00"), new BigDecimal("10.20"), "{}"));
+        f.alpaca.latestPrice = new BigDecimal("10.20");
+        f.service.pollStrategy(strategy.id());
+
+        List<StrategyOrder> targetSells = f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == StrategyStage.TARGET_SELL)
+                .toList();
+        assertEquals(2, targetSells.size());
+        StrategyOrder replacedOrder = targetSells.stream()
+                .filter(order -> order.isPending())
+                .findFirst()
+                .orElseThrow();
+        assertEquals(0, replacedOrder.requestedQuantity().compareTo(new BigDecimal("15")));
+        StrategyOrder canceledInitial = f.orders.findByAlpacaOrderId(initialOrder.alpacaOrderId()).orElseThrow();
+        assertEquals(StrategyOrderStatus.CANCELED, canceledInitial.status());
+        assertFalse(f.alpaca.orderById.containsKey(initialOrder.alpacaOrderId()));
+    }
+
+    @Test
+    void targetSellRecreatesPendingOrderWhenBrokerOrderGoesMissing() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        f.alpaca.latestPrice = new BigDecimal("10.00");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.00"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+
+        StrategyOrder initialOrder = f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.TARGET_SELL).orElseThrow();
+        f.alpaca.orderById.remove(initialOrder.alpacaOrderId());
+
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("9.40"), "{}"));
+        f.alpaca.latestPrice = new BigDecimal("9.40");
+        f.service.pollStrategy(strategy.id());
+
+        List<StrategyOrder> targetSells = f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == StrategyStage.TARGET_SELL)
+                .toList();
+        assertEquals(2, targetSells.size());
+        StrategyOrder replacementOrder = targetSells.stream()
+                .filter(order -> order.isPending())
+                .findFirst()
+                .orElseThrow();
+        assertEquals(0, replacementOrder.requestedQuantity().compareTo(new BigDecimal("10")));
+        StrategyOrder canceledInitial = f.orders.findByAlpacaOrderId(initialOrder.alpacaOrderId()).orElseThrow();
+        assertEquals(StrategyOrderStatus.CANCELED, canceledInitial.status());
+    }
+
+    @Test
     void targetSellImmediateFillSendsSellExecutedEmail() throws Exception {
         Fixture f = new Fixture();
         RecordingTradeEmailNotificationService emailService = new RecordingTradeEmailNotificationService(f.settingsService);

@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SmartPicksSimulationPlacementControllerTest {
@@ -234,6 +235,27 @@ class SmartPicksSimulationPlacementControllerTest {
         assertEquals(90, saved.pollingIntervalSeconds());
         assertTrue(saved.restartAfterExitEnabled());
         assertTrue(saved.resubmitOnExpiryEnabled());
+    }
+
+    @Test
+    void lowPricedSmartPicksDisablesStopLossAndUsesDeepLossBuyLevels() {
+        InMemoryRepository repository = new InMemoryRepository();
+        SmartPicksSimulationPlacementController controller = controller(repository, true, false);
+
+        SmartPicksSimulationSelection selection = selectionWithBaseAndCurrent(
+                "SOFI",
+                10,
+                new BigDecimal("12.00"),
+                new BigDecimal("12.00")
+        );
+        SmartPicksSimulationPlacementController.PlacementResult result = controller.place(List.of(selection));
+
+        assertEquals(1, result.created());
+        Strategy saved = repository.findAll().getFirst();
+        assertFalse(saved.automatedStopLossEnabled());
+        assertEquals(new BigDecimal("6.60"), saved.buyLimit1Price());
+        assertEquals(new BigDecimal("3.00"), saved.buyLimit2Price());
+        assertEquals(0, saved.stopLossPrice().compareTo(BigDecimal.ZERO));
     }
 
     private SmartPicksSimulationPlacementController controller(InMemoryRepository repository, boolean replaceChoice, boolean allowDuplicates) {

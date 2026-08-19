@@ -4919,7 +4919,7 @@ public class TradingFrame extends JFrame {
                     selection.stock().symbol(),
                     guardedBaseBuyPrice,
                     Math.max(1, selection.buyQuantity()),
-                    true,
+                    values.enableStopLoss(),
                     values.stopLossPrice(),
                     true,
                     values.sellRulePrice(),

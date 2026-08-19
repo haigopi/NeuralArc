@@ -204,7 +204,7 @@ public class SmartPicksSimulationPlacementController {
                 selection.stock().symbol(),
                 values.buyRulePrice(),
                 Math.max(1, selection.buyQuantity()),
-                targetMode == StrategyMode.PAPER,
+                values.enableStopLoss(),
                 values.stopLossPrice(),
                 true,
                 values.sellRulePrice(),
