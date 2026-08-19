@@ -95,14 +95,18 @@ public final class SystemMetricsPresenter {
             if (osBean == null) {
                 return "CPU: -";
             }
-            double processCpuLoad = osBean.getProcessCpuLoad();
-            if (processCpuLoad < 0.0) {
-                return "CPU: -";
-            }
-            return String.format(Locale.US, "CPU: %.1f%%", processCpuLoad * 100.0d);
+            return formatCpuUsageText(osBean.getProcessCpuLoad(), osBean.getAvailableProcessors());
         } catch (Exception ex) {
             return "CPU: -";
         }
+    }
+
+    String formatCpuUsageText(double processCpuLoad, int availableProcessors) {
+        if (processCpuLoad < 0.0d) {
+            return "CPU: -";
+        }
+        double normalizedProcessPercent = processCpuLoad * 100.0d;
+        return String.format(Locale.US, "CPU: %.1f%%", normalizedProcessPercent);
     }
 
     public String formatMemoryUsageText() {

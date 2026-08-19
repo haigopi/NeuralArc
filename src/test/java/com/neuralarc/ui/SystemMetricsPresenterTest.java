@@ -94,6 +94,24 @@ class SystemMetricsPresenterTest {
         );
     }
 
+    @Test
+    void cpuUsageShowsAppShareOfTotalCpuCapacity() {
+        SystemMetricsPresenter presenter = new SystemMetricsPresenter();
+
+        String text = presenter.formatCpuUsageText(0.10d, 8);
+
+        assertEquals("CPU: 10.0%", text);
+    }
+
+    @Test
+    void cpuUsageFallsBackWhenCpuLoadIsUnavailable() {
+        SystemMetricsPresenter presenter = new SystemMetricsPresenter();
+
+        String text = presenter.formatCpuUsageText(-1.0d, 8);
+
+        assertEquals("CPU: -", text);
+    }
+
     private static ManagedStrategy managed(String symbol, StrategyStatus status, int shares, BigDecimal price) {
         return managed(symbol, StrategyMode.PAPER, status, shares, price);
     }

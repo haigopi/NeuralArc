@@ -52,12 +52,14 @@ public class GitHubReleaseUpdateService {
         JSONObject json = new JSONObject(response.body());
         String latestVersion = normalizeVersion(json.optString("tag_name", json.optString("name", "")));
         String normalizedCurrentVersion = normalizeVersion(currentVersion);
+        boolean developmentBuild = isDevelopmentVersion(currentVersion);
         String releaseName = json.optString("name", latestVersion);
         String releaseNotes = json.optString("body", "");
         String releasePageUrl = json.optString("html_url", "");
         String publishedAt = json.optString("published_at", "");
         AssetMatch asset = selectAsset(json.optJSONArray("assets"), detectPlatform());
-        boolean updateAvailable = compareVersions(latestVersion, normalizedCurrentVersion) > 0;
+        boolean updateAvailable = !developmentBuild
+                && compareVersions(latestVersion, normalizedCurrentVersion) > 0;
         boolean dataCompatibilityWarning = hasDataCompatibilityWarning(releaseNotes);
 
         return new UpdateCheckResult(
@@ -72,9 +74,11 @@ public class GitHubReleaseUpdateService {
                 asset.assetName(),
                 publishedAt.isBlank() ? null : Instant.parse(publishedAt),
                 dataCompatibilityWarning,
-                updateAvailable
+                developmentBuild
+                        ? "Development build detected; update notice is suppressed."
+                        : (updateAvailable
                         ? "Update available"
-                        : "You are already on the latest version."
+                        : "You are already on the latest version.")
         );
     }
 
@@ -137,6 +141,17 @@ public class GitHubReleaseUpdateService {
             cut++;
         }
         return cut == 0 ? trimmed : trimmed.substring(0, cut);
+    }
+
+    static boolean isDevelopmentVersion(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return true;
+        }
+        String normalized = raw.trim().toLowerCase();
+        return normalized.contains("snapshot")
+                || normalized.equals("dev")
+                || normalized.endsWith("-dev")
+                || normalized.startsWith("dev-");
     }
 
     static int compareVersions(String left, String right) {

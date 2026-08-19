@@ -22,6 +22,13 @@ class GitHubReleaseUpdateServiceTest {
     }
 
     @Test
+    void detectsDevelopmentVersionsForIdeRuns() {
+        assertEquals(true, GitHubReleaseUpdateService.isDevelopmentVersion("1.0.0-SNAPSHOT"));
+        assertEquals(true, GitHubReleaseUpdateService.isDevelopmentVersion("dev"));
+        assertEquals(false, GitHubReleaseUpdateService.isDevelopmentVersion("1.0.70"));
+    }
+
+    @Test
     void selectAssetPrefersMacInstaller() {
         JSONArray assets = new JSONArray()
                 .put(new JSONObject().put("name", "NeuralArc-1.0.1.zip").put("browser_download_url", "https://example.com/a.zip"))
