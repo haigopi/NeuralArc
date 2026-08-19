@@ -3,6 +3,8 @@ package com.neuralarc.service;
 import com.neuralarc.api.AlpacaClient;
 import com.neuralarc.api.AlpacaOrderData;
 import com.neuralarc.api.AlpacaPositionData;
+import com.neuralarc.model.StrategyOrderStatus;
+import com.neuralarc.util.BrokerOrderStatusUtil;
 import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.Strategy;
@@ -16,6 +18,7 @@ import com.neuralarc.util.Monetary;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import java.util.logging.Logger;
 
 final class StrategyProfitControlEvaluator {
@@ -384,6 +387,27 @@ final class StrategyProfitControlEvaluator {
                         && (remoteOrder.orderId().equals(pendingExitOrder.alpacaOrderId())
                         || remoteOrder.clientOrderId().equals(pendingExitOrder.clientOrderId())));
         if (!remoteOrderPresent) {
+            // Before canceling, verify the order wasn't already filled at the broker. This can
+            // happen when the batch snapshot used by refreshOrderStatuses still had the order as
+            // "open" (snapshot was built before the fill), so the fill wasn't applied to the
+            // local order yet — but the live getOpenOrders() call above already reflects the fill.
+            // Treating a filled order as "missing" would cancel the local record and place a new
+            // sell into an empty position, leaving the strategy stuck.
+            if (pendingExitOrder.alpacaOrderId() != null && !pendingExitOrder.alpacaOrderId().isBlank()) {
+                Optional<AlpacaOrderData> specificOrder = alpacaClient.getOrder(pendingExitOrder.alpacaOrderId());
+                if (specificOrder.isPresent()) {
+                    String brokerStatus = BrokerOrderStatusUtil.normalize(specificOrder.get().status());
+                    if ("filled".equals(brokerStatus) || "partially_filled".equals(brokerStatus)) {
+                        // Order is already filled — mark local order as filled and let the poll
+                        // complete the strategy lifecycle; no replacement needed.
+                        pendingExitOrder.setStatus(StrategyOrderStatus.FILLED);
+                        orderRepository.save(pendingExitOrder);
+                        logRule(strategy, ruleName, "FILL_DETECTED",
+                                "Sell order confirmed filled on broker; marking local order as filled", outcomes);
+                        return BrokerManagedExitOrderDecision.PRESENT;
+                    }
+                }
+            }
             logRule(strategy, ruleName, "REPLACE_REQUIRED",
                     "Pending local sell order missing on broker; canceling stale local order and replacing", outcomes);
             cancelBrokerManagedExitOrders(strategy, orders);
@@ -420,9 +444,11 @@ final class StrategyProfitControlEvaluator {
         if (strategy.currentState() != StrategyLifecycleState.SELL_PLACED) {
             return false;
         }
-        return alpacaClient.getOpenOrders(strategy.symbol()).stream()
-                .noneMatch(order -> "sell".equalsIgnoreCase(order.side())
+        List<AlpacaOrderData> remoteOpenOrders = alpacaClient.getOpenOrders(strategy.symbol());
+        boolean openSellExists = remoteOpenOrders.stream()
+                .anyMatch(order -> "sell".equalsIgnoreCase(order.side())
                         && isBrokerManagedClientOrderId(order.clientOrderId()));
+        return !openSellExists;
     }
 
     private boolean isBrokerManagedExitStage(StrategyStage stage) {

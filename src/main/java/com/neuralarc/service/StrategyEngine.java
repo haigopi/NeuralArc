@@ -154,6 +154,19 @@ public class StrategyEngine {
         AppSettingsService.AppSettings settings = appSettingsService.load();
         boolean sessionOpen = marketHoursService.isTradingSessionOpen(settings.extendedHoursTradingEnabled());
         refreshOrderStatuses(strategy, snapshotBatch);
+        // Re-sync in-memory strategy state from the repository in case refreshOrderStatuses
+        // transitioned it (e.g., a sell fill marking the strategy as COMPLETED). Without this
+        // the in-memory object retains stale lifecycle/status values while the DB is correct,
+        // causing subsequent evaluations (profit control, stop loss) to act on wrong state.
+        strategyRepository.findById(strategy.id()).ifPresent(latest -> {
+            strategy.setCurrentState(latest.currentState());
+            strategy.setStatus(latest.status());
+            strategy.setLatestOrderStatus(latest.latestOrderStatus());
+        });
+        if (!isAutoExecutionAllowed(strategy.id())) {
+            logPoll(strategy, "POLL", "COMPLETED", "Strategy no longer active after order-status refresh; stopping poll");
+            return outcomes;
+        }
         Optional<AlpacaPositionData> position = BrokerSnapshotResolver.resolvePosition(alpacaClient, strategy, snapshotBatch);
 
         // Use pre-fetched price when available; fall back to position market price or individual call.

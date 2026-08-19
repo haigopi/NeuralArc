@@ -400,7 +400,12 @@ public class TradingFrame extends JFrame {
             return c;
         }
     };
-    private final JTable filledOrdersTable = new JTable(filledOrdersTableModel);
+    private final JTable filledOrdersTable = new JTable(filledOrdersTableModel) {
+        @Override
+        public String getToolTipText(MouseEvent event) {
+            return tradeHistoryCellTooltip(event);
+        }
+    };
     private static final String GAP_ROCKET_WORKSPACE_CODE = "GAPROCKET";
     private static final String ORB_WORKSPACE_CODE = "ORB";
     private static final String DIP_HUNTER_WORKSPACE_CODE = "DIP";
@@ -6439,21 +6444,20 @@ public class TradingFrame extends JFrame {
     }
 
     private void configureFilledOrdersColumnWidths() {
-        // Narrow, fixed-content columns stay capped so they never sprawl...
+        // Set sensible starting widths, but leave columns resizable so operators can tune the
+        // trade-history grid for their own screen and reading preference.
         setTableColumnWidth(0, 70, 52, 90);
         setTableColumnWidth(1, 108, 78, 150);
+        setTableColumnWidth(3, 132, 96, 168);
         setTableColumnWidth(4, 64, 52, 78);
         setTableColumnWidth(5, 98, 78, 130);
         setTableColumnWidth(6, 50, 38, 62);
         setTableColumnWidth(7, 64, 52, 76);
         setTableColumnWidth(8, 64, 52, 76);
-        setTableColumnWidth(9, 110, 82, 150);
-        // ...while the free-text columns absorb the remaining viewport width. Capping every
-        // column left the table narrower than its scroll pane, which is what produced the dead
-        // strip on the right of the Trade History grid.
+        setTableColumnWidth(10, 150, 108, 185);
+        // Flexible text-heavy columns start wider and absorb remaining viewport width.
         setFlexibleTableColumnWidth(2, 190, 130);
-        setFlexibleTableColumnWidth(3, 360, 220);
-        setFlexibleTableColumnWidth(10, 280, 200);
+        setFlexibleTableColumnWidth(9, 260, 190);
     }
 
     private void setTableColumnWidth(int columnIndex, int preferredWidth, int minWidth, int maxWidth) {
@@ -6463,7 +6467,8 @@ public class TradingFrame extends JFrame {
         javax.swing.table.TableColumn column = filledOrdersTable.getColumnModel().getColumn(columnIndex);
         column.setPreferredWidth(preferredWidth);
         column.setMinWidth(minWidth);
-        column.setMaxWidth(maxWidth);
+        column.setMaxWidth(Integer.MAX_VALUE);
+        column.setResizable(true);
     }
 
     /** No max width, so the column can stretch and let the table fill its scroll pane. */
@@ -6474,6 +6479,8 @@ public class TradingFrame extends JFrame {
         javax.swing.table.TableColumn column = filledOrdersTable.getColumnModel().getColumn(columnIndex);
         column.setPreferredWidth(preferredWidth);
         column.setMinWidth(minWidth);
+        column.setMaxWidth(Integer.MAX_VALUE);
+        column.setResizable(true);
     }
 
     private void configureTradeHistorySorting() {
@@ -9088,6 +9095,34 @@ public class TradingFrame extends JFrame {
         positionMenu.add(reposition);
         popup.add(positionMenu);
         popup.show(event.getComponent(), event.getX(), event.getY());
+    }
+
+    private String tradeHistoryCellTooltip(MouseEvent event) {
+        if (event == null) {
+            return null;
+        }
+        int viewRow = filledOrdersTable.rowAtPoint(event.getPoint());
+        int viewCol = filledOrdersTable.columnAtPoint(event.getPoint());
+        if (viewRow < 0 || viewCol < 0) {
+            return null;
+        }
+        int modelRow = filledOrdersTable.convertRowIndexToModel(viewRow);
+        if (modelRow < 0 || modelRow >= filledOrderRows.size()) {
+            return null;
+        }
+        Object value = filledOrdersTable.getValueAt(viewRow, viewCol);
+        String text = value == null ? "" : String.valueOf(value).trim();
+        if (text.isBlank() || "-".equals(text)) {
+            return null;
+        }
+        if (viewCol == 9) {
+            return TooltipStyler.text(text, 420);
+        }
+        HistoryTablePresenter.HistoryRow row = filledOrderRows.get(modelRow);
+        if (row.style() == HistoryTablePresenter.HistoryRowStyle.SUBTOTAL && (viewCol == 3 || viewCol == 10)) {
+            return TooltipStyler.text(text, 420);
+        }
+        return null;
     }
 
     private String historySymbolAtViewRow(int viewRow) {
