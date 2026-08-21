@@ -235,6 +235,15 @@ final class GapAndGoCoordinator {
                         Clock.systemDefaultZone(), ui::log);
                 GapRocketAnalyzer analyzer = new GapRocketAnalyzer(Clock.systemUTC(), ui::log);
                 List<GapRocketCandidate> scanned = scanner.candidates(symbols);
+                if (scanned.isEmpty() && !symbols.isEmpty()) {
+                    // Symbols resolved but none produced a measurable gap: a data/timing problem, not
+                    // filters set too tight. Say so, otherwise every symbol reads as a market verdict.
+                    ui.log("[Gap Rocket] None of the " + symbols.size() + " scanned symbol(s) returned"
+                            + " live market data to measure a gap against. Gap Rocket needs premarket or"
+                            + " session bars, and the free Alpaca IEX feed carries very little premarket"
+                            + " activity, so a scan before 9:30 ET often has nothing to measure."
+                            + " Re-run after the open, or use a data plan that includes the SIP feed.");
+                }
                 GapRocketConfig effectiveConfig = config;
                 AiRecommendationSettings aiSettings = appSettingsService.loadAiRecommendationSettings();
                 if (config.newsCatalystRequired() && isAiProviderConfigured(aiSettings)) {

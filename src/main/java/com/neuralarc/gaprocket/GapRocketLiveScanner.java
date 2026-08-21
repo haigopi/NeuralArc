@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -20,6 +21,8 @@ import java.util.function.Consumer;
  */
 public final class GapRocketLiveScanner {
     static final long DEFAULT_REQUEST_INTERVAL_MILLIS = 750L;
+    /** Bars are dated by US market session, never by the operator's local calendar day. */
+    private static final ZoneId US_EASTERN = ZoneId.of("America/New_York");
 
     private final AlpacaMarketDataApi marketDataApi;
     private final Clock clock;
@@ -50,7 +53,7 @@ public final class GapRocketLiveScanner {
         if (symbols == null || symbols.isEmpty()) {
             return List.of();
         }
-        LocalDate today = LocalDate.now(clock);
+        LocalDate today = LocalDate.now(clock.withZone(US_EASTERN));
         boolean spyGreen = isIndexGreen("SPY", today);
         boolean qqqGreen = isIndexGreen("QQQ", today);
         List<GapRocketCandidate> candidates = new ArrayList<>();
@@ -78,6 +81,12 @@ public final class GapRocketLiveScanner {
             MarketBar prevDay = previousDailyBar(dailyBars, today);
             MarketBar latest = latestBar(intradayBars, dailyBars);
             if (prevDay == null || latest == null || prevDay.close().compareTo(BigDecimal.ZERO) <= 0) return true;
+            if (isStale(latest, prevDay)) {
+                // No bar newer than the prior session: the feed has nothing for today yet. Assume
+                // green rather than silently marking the index red off a self-comparison.
+                log.accept("[Gap Rocket] No live " + symbol + " data yet for the trend check; assuming green.");
+                return true;
+            }
             BigDecimal current = valid(latest.close()) ? latest.close() : latest.open();
             return valid(current) && current.compareTo(prevDay.close()) > 0;
         } catch (AlpacaMarketDataException ex) {
@@ -93,6 +102,17 @@ public final class GapRocketLiveScanner {
         MarketBar latestBar = latestBar(intradayBars, dailyBars);
         if (previousDaily == null || latestBar == null || previousDaily.close().compareTo(BigDecimal.ZERO) <= 0) {
             log.accept("[Gap Rocket] Skipped " + symbol + ": Alpaca did not return enough live bars.");
+            return java.util.Optional.empty();
+        }
+        if (isStale(latestBar, previousDaily)) {
+            // The newest bar the feed returned IS the previous session's bar, so there is no live
+            // price for today. Computing a gap here would compare the prior close against itself and
+            // report a fabricated 0.00% gap, which then reads as a real "gap below minimum"
+            // rejection. Report the missing data instead. Common before the open on the IEX feed,
+            // which carries almost no premarket activity.
+            log.accept("[Gap Rocket] Skipped " + symbol
+                    + ": no premarket or session data yet from the Alpaca feed (newest bar is still "
+                    + barDate(previousDaily) + "). Gap cannot be measured.");
             return java.util.Optional.empty();
         }
         BigDecimal current = valid(latestBar.close()) ? latestBar.close() : latestBar.open();
@@ -131,6 +151,14 @@ public final class GapRocketLiveScanner {
                 volume.compareTo(BigDecimal.ZERO) > 0,
                 Monetary.round(current)
         ));
+    }
+
+    /**
+     * True when the newest bar the feed returned is the previous session's own bar — i.e. nothing has
+     * printed for today yet. Any gap derived from it would compare the prior close against itself.
+     */
+    private boolean isStale(MarketBar latest, MarketBar previousDaily) {
+        return latest == previousDaily || barDate(latest).isEqual(barDate(previousDaily));
     }
 
     private MarketBar previousDailyBar(List<MarketBar> bars, LocalDate today) {
