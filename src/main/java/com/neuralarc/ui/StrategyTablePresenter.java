@@ -825,6 +825,24 @@ public final class StrategyTablePresenter {
         if (name.contains("gap_rocket")) {
             return "Gap and go strategy";
         }
+        if (name.contains("orb_engine")) {
+            return "ORB Engine strategy";
+        }
+        if (name.contains("swing_vault")) {
+            return "Swing Vault strategy";
+        }
+        if (name.contains("vwap_desk")) {
+            return "VWAP Desk strategy";
+        }
+        if (name.contains("range_rider")) {
+            return "Range Rider strategy";
+        }
+        if (name.contains("dip_hunter")) {
+            return "Dip Hunter strategy";
+        }
+        if (name.contains("profit_shield")) {
+            return "Profit Shield strategy";
+        }
         if (name.contains("earnings_hunter")) {
             return "Earnings Hunter strategy";
         }

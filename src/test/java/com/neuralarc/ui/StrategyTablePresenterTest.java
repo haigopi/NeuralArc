@@ -903,6 +903,102 @@ class StrategyTablePresenterTest {
         assertEquals("ORB Engine strategy", value);
     }
 
+    @Test
+    void orbEntrySourcePreservedAfterRepositionClearsOrderStatus() {
+        Strategy strategy = strategy();
+        strategy.setName("ORB_ENGINE: AAPL PAPER");
+        strategy.setLatestOrderStatus("new");
+        strategy.setLastEvent("Expired strategy reposition requested");
+
+        Object value = presenter.valueAt(strategy, new Position("AAPL"), BigDecimal.ZERO, BigDecimal.ZERO, 9, "");
+
+        assertEquals("ORB Engine strategy", value);
+    }
+
+    @Test
+    void swingVaultEntrySourcePreservedAfterRepositionClearsOrderStatus() {
+        Strategy strategy = strategy();
+        strategy.setName("SWING_VAULT: TSLA PAPER");
+        strategy.setLatestOrderStatus("new");
+        strategy.setLastEvent("Expired strategy reposition requested");
+
+        Object value = presenter.valueAt(strategy, new Position("TSLA"), BigDecimal.ZERO, BigDecimal.ZERO, 9, "");
+
+        assertEquals("Swing Vault strategy", value);
+    }
+
+    @Test
+    void vwapDeskEntrySourcePreservedAfterRepositionClearsOrderStatus() {
+        Strategy strategy = strategy();
+        strategy.setName("VWAP_DESK: NVDA PAPER");
+        strategy.setLatestOrderStatus("accepted");
+        strategy.setLastEvent("Expired strategy reposition requested");
+
+        Object value = presenter.valueAt(strategy, new Position("NVDA"), BigDecimal.ZERO, BigDecimal.ZERO, 9, "");
+
+        assertEquals("VWAP Desk strategy", value);
+    }
+
+    @Test
+    void rangeRiderEntrySourcePreservedAfterRepositionClearsOrderStatus() {
+        Strategy strategy = strategy();
+        strategy.setName("RANGE_RIDER: MSFT LIVE");
+        strategy.setLatestOrderStatus("accepted");
+        strategy.setLastEvent("Expired strategy reposition requested");
+
+        Object value = presenter.valueAt(strategy, new Position("MSFT"), BigDecimal.ZERO, BigDecimal.ZERO, 9, "");
+
+        assertEquals("Range Rider strategy", value);
+    }
+
+    @Test
+    void dipHunterEntrySourcePreservedAfterRepositionClearsOrderStatus() {
+        Strategy strategy = strategy();
+        strategy.setName("DIP_HUNTER: AMZN PAPER");
+        strategy.setLatestOrderStatus("new");
+        strategy.setLastEvent("Expired strategy reposition requested");
+
+        Object value = presenter.valueAt(strategy, new Position("AMZN"), BigDecimal.ZERO, BigDecimal.ZERO, 9, "");
+
+        assertEquals("Dip Hunter strategy", value);
+    }
+
+    @Test
+    void profitShieldEntrySourcePreservedAfterRepositionClearsOrderStatus() {
+        Strategy strategy = strategy();
+        strategy.setName("PROFIT_SHIELD: AAPL PAPER");
+        strategy.setLatestOrderStatus("new");
+        strategy.setLastEvent("Expired strategy reposition requested");
+
+        Object value = presenter.valueAt(strategy, new Position("AAPL"), BigDecimal.ZERO, BigDecimal.ZERO, 9, "");
+
+        assertEquals("Profit Shield strategy", value);
+    }
+
+    @Test
+    void gapRocketEntrySourcePreservedAfterRepositionClearsOrderStatus() {
+        Strategy strategy = strategy();
+        strategy.setName("GAP_ROCKET: NVDA PAPER");
+        strategy.setLatestOrderStatus("new");
+        strategy.setLastEvent("Expired strategy reposition requested");
+
+        Object value = presenter.valueAt(strategy, new Position("NVDA"), BigDecimal.ZERO, BigDecimal.ZERO, 9, "");
+
+        assertEquals("Gap and go strategy", value);
+    }
+
+    @Test
+    void earningsHunterEntrySourcePreservedAfterRepositionClearsOrderStatus() {
+        Strategy strategy = strategy();
+        strategy.setName("EARNINGS_HUNTER: AAPL PAPER");
+        strategy.setLatestOrderStatus("new");
+        strategy.setLastEvent("Expired strategy reposition requested");
+
+        Object value = presenter.valueAt(strategy, new Position("AAPL"), BigDecimal.ZERO, BigDecimal.ZERO, 9, "");
+
+        assertEquals("Earnings Hunter strategy", value);
+    }
+
     private Strategy strategy() {
         return new Strategy(
                 UUID.randomUUID().toString(),
