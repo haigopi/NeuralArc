@@ -10,6 +10,7 @@ import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.model.ThresholdType;
+import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.service.StrategyService;
 import org.junit.jupiter.api.Test;
 
@@ -211,9 +212,7 @@ class PortfolioActionsControllerTest {
         assertEquals(List.of("AAPL", "MSFT"), result.successes());
         assertTrue(result.failures().isEmpty());
         assertTrue(result.skipped().isEmpty());
-        assertEquals(2, gateway.updatedStrategyIds.size());
-        assertTrue(gateway.updatedStrategyIds.contains("AAPL-id"));
-        assertTrue(gateway.updatedStrategyIds.contains("MSFT-id"));
+        assertEquals(List.of("AAPL-id", "MSFT-id"), gateway.updatedStrategyIds.stream().sorted().toList());
         assertEquals(ProfitControlMode.PROFIT_HOLD, first.strategy.profitControlMode());
         assertEquals(ThresholdType.FIXED_AMOUNT, first.strategy.automaticStopSellThresholdType());
         assertEquals(0, new BigDecimal("2.00").compareTo(first.strategy.automaticStopSellThreshold()));
@@ -409,6 +408,20 @@ class PortfolioActionsControllerTest {
             this.limitBuyPrice = limitPrice;
             return StrategyService.StrategyCreationResult.success(strategy.id(), "order", "alpaca", "client");
         }
+        @Override
+        public ManualPortfolioImportService.ImportResult importManualStocks(List<PortfolioStockImportDialog.ImportedStockDraft> drafts) {
+            return new ManualPortfolioImportService.ImportResult(
+                    drafts.stream().map(PortfolioStockImportDialog.ImportedStockDraft::symbol).toList(),
+                    List.of()
+            );
+        }
+        @Override public AlpacaMarketDataApi marketDataApiForMode(StrategyMode mode) { return null; }
+        @Override public int defaultStrategyPollingSeconds() { return 60; }
+        @Override public boolean defaultRepeatCycleAfterProfitExitEnabled() { return true; }
+        @Override public boolean defaultResubmitOnExpiryEnabled() { return true; }
+        @Override public boolean allowDuplicateSymbols() { return false; }
+        @Override public String selectedWorkspaceForNewStrategy() { return null; }
+        @Override public String selectedModeLabel() { return selectedViewMode == StrategyMode.LIVE ? "Live" : "Paper"; }
         @Override
         public StrategyService.ArchiveResult deletePendingBaseBuyStrategy(String strategyId) {
             deletedPendingBaseBuyIds.add(strategyId);

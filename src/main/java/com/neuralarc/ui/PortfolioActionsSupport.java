@@ -455,13 +455,13 @@ final class PortfolioActionsSupport {
 
             @Override
             String confirmDetail() {
-                return "Matching scanner recommendations will submit their pending base buy limit order."
+                return "Matching pending recommendations and manual additions will submit their pending base buy limit order."
                         + "<br>If the base buy limit is above today's low, it is lowered to 10% below today's low before submission.";
             }
 
             @Override
             String emptyMessage() {
-                return "There are no pending scanner recommendations waiting to place base buy orders.";
+                return "There are no pending recommendations or manual additions waiting to place base buy orders.";
             }
 
             @Override

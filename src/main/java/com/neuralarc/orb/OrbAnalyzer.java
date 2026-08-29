@@ -44,9 +44,14 @@ public final class OrbAnalyzer {
     private OrbRecommendation toRecommendation(OpeningRangeSnapshot s, OrbCandidate c, OrbConfig cfg) {
         BigDecimal breakoutEntry = s.high().multiply(BigDecimal.ONE.add(cfg.entryBufferPercent().movePointLeft(2)));
         BigDecimal discountedOpenOrCurrent = discountedLowerOpenOrCurrent(c);
-        BigDecimal entry = discountedOpenOrCurrent == null
-                ? breakoutEntry.setScale(2, RoundingMode.HALF_UP)
-                : breakoutEntry.min(discountedOpenOrCurrent).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal candidateEntry = discountedOpenOrCurrent == null
+                ? breakoutEntry
+                : breakoutEntry.min(discountedOpenOrCurrent);
+        BigDecimal previousSessionLow = c == null ? null : c.previousSessionLow();
+        if (previousSessionLow != null && previousSessionLow.compareTo(BigDecimal.ZERO) > 0) {
+            candidateEntry = candidateEntry.min(previousSessionLow);
+        }
+        BigDecimal entry = candidateEntry.setScale(2, RoundingMode.HALF_UP);
         BigDecimal rawStop = switch (cfg.stopMode()) {
             case RANGE_LOW, ATR_ADJUSTED -> s.low();
             case MID_RANGE -> s.high().add(s.low()).divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);

@@ -6,6 +6,7 @@ public record OrbCandidate(
         String symbol,
         BigDecimal latestPrice,
         BigDecimal regularSessionOpen,
+        BigDecimal previousSessionLow,
         BigDecimal relativeVolume,
         BigDecimal averageVolume,
         BigDecimal spreadPercent,
@@ -22,7 +23,7 @@ public record OrbCandidate(
             BigDecimal spreadPercent,
             String discoverySource
     ) {
-        this(symbol, latestPrice, regularSessionOpen, relativeVolume, averageVolume, spreadPercent, discoverySource, "", 0.0d);
+        this(symbol, latestPrice, regularSessionOpen, null, relativeVolume, averageVolume, spreadPercent, discoverySource, "", 0.0d);
     }
 
     public OrbCandidate {
@@ -33,7 +34,12 @@ public record OrbCandidate(
     }
 
     public OrbCandidate withAiInsight(String summary, double confidence) {
-        return new OrbCandidate(symbol, latestPrice, regularSessionOpen, relativeVolume, averageVolume,
+        return new OrbCandidate(symbol, latestPrice, regularSessionOpen, previousSessionLow, relativeVolume, averageVolume,
                 spreadPercent, discoverySource, summary, confidence);
+    }
+
+    public OrbCandidate withPreviousSessionLow(BigDecimal low) {
+        return new OrbCandidate(symbol, latestPrice, regularSessionOpen, low, relativeVolume, averageVolume,
+                spreadPercent, discoverySource, aiSummary, aiConfidence);
     }
 }

@@ -429,7 +429,7 @@ public class TradingFrame extends JFrame {
     private final JRadioButton profitableSellsFilterButton = new JRadioButton("Profitable Sells");
     private final JRadioButton lossSellsFilterButton = new JRadioButton("Loss Sells");
     private final JRadioButton bothSellsFilterButton = new JRadioButton("Both", true);
-    private final JButton tradeHistoryGroupByButton = new JButton("Group By Menu: Symbol");
+    private final JButton tradeHistoryGroupByButton = new JButton("Group By Menu: Date");
     private final JPanel currentStrategiesSearchPanel = createGridSearchPanel("Search stocks:", currentStrategiesSearchField);
     private final JPanel tradeHistorySearchPanel = createGridSearchPanel("Search stocks:", tradeHistorySearchField);
     private final JButton gapRocketAnalyzeButton = new JButton(GapRocketPanel.ANALYZE_BUTTON_TEXT);
@@ -477,7 +477,7 @@ public class TradingFrame extends JFrame {
     private BottomStatusBars bottomStatusBars;
     private TableRowSorter<StrategyGridTableModel> strategySorter;
     private TableRowSorter<HistoryGridTableModel> filledOrdersSorter;
-    private TradeHistoryGroupBy tradeHistoryGroupBy = TradeHistoryGroupBy.SYMBOL;
+    private TradeHistoryGroupBy tradeHistoryGroupBy = TradeHistoryGroupBy.DATE;
     private StrategyMode selectedViewMode = StrategyMode.PAPER;
     private boolean updatingModeButtons;
     private boolean liveModeConfirmedThisSession;
@@ -733,6 +733,38 @@ public class TradingFrame extends JFrame {
             @Override public StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice) {
                 return TradingFrame.this.buyMoreAtLimit(strategy, quantity, limitPrice, false);
             }
+            @Override
+            public ManualPortfolioImportService.ImportResult importManualStocks(List<PortfolioStockImportDialog.ImportedStockDraft> drafts) {
+                ManualPortfolioImportService service = new ManualPortfolioImportService(new ManualPortfolioImportService.Gateway() {
+                    @Override public com.neuralarc.service.StrategyRepository repository() { return strategyRepository; }
+                    @Override public String targetWorkspaceId() { return selectedWorkspaceForNewStrategy(); }
+                    @Override public StrategyMode targetMode() { return selectedViewMode; }
+                    @Override public boolean allowDuplicateSymbols() { return settingsDialog.appliedAllowDuplicateSymbolStrategies(); }
+                    @Override public int defaultPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
+                    @Override public boolean defaultRepeatCycleAfterProfitExitEnabled() { return settingsDialog.appliedDefaultRepeatCycleAfterProfitExitEnabled(); }
+                    @Override public boolean defaultResubmitOnExpiryEnabled() { return settingsDialog.appliedDefaultResubmitOnExpiryEnabled(); }
+                    @Override public com.neuralarc.api.AlpacaMarketDataApi marketDataApi() {
+                        return connectionOk && !runtimeApiKey.isBlank()
+                                ? new HttpAlpacaMarketDataApi(runtimeApiKey, runtimeApiSecret)
+                                : null;
+                    }
+                    @Override public void assignWorkspace(Strategy strategy, String workspaceId) {
+                        NewStrategyWorkspaceAssignment.apply(strategy, workspaceId, workspaceService);
+                    }
+                });
+                return service.importDrafts(drafts);
+            }
+            @Override public com.neuralarc.api.AlpacaMarketDataApi marketDataApiForMode(StrategyMode mode) {
+                return connectionOk && !runtimeApiKey.isBlank()
+                        ? new HttpAlpacaMarketDataApi(runtimeApiKey, runtimeApiSecret)
+                        : null;
+            }
+            @Override public int defaultStrategyPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
+            @Override public boolean defaultRepeatCycleAfterProfitExitEnabled() { return settingsDialog.appliedDefaultRepeatCycleAfterProfitExitEnabled(); }
+            @Override public boolean defaultResubmitOnExpiryEnabled() { return settingsDialog.appliedDefaultResubmitOnExpiryEnabled(); }
+            @Override public boolean allowDuplicateSymbols() { return settingsDialog.appliedAllowDuplicateSymbolStrategies(); }
+            @Override public String selectedWorkspaceForNewStrategy() { return TradingFrame.this.selectedWorkspaceForNewStrategy(); }
+            @Override public String selectedModeLabel() { return TradingFrame.this.selectedModeLabel(); }
             @Override public JMenuItem createMenuItem(String text, String iconPath, Runnable action) { return TradingFrame.this.createStatusMenuItem(text, iconPath, action); }
             @Override public int confirm(Object message, String title, int optionType, int messageType) {
                 return JOptionPane.showConfirmDialog(TradingFrame.this, message, title, optionType, messageType);

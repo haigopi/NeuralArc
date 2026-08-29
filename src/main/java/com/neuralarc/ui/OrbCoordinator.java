@@ -1,11 +1,14 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.api.HttpAlpacaMarketDataApi;
+import com.neuralarc.api.AlpacaMarketDataApi;
+import com.neuralarc.api.AlpacaMarketDataException;
 import com.neuralarc.db.AppDatabase;
 import com.neuralarc.db.SqliteOrbScheduleRepository;
 import com.neuralarc.db.SqliteScanHistoryRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
 import com.neuralarc.model.AiProviderType;
+import com.neuralarc.model.MarketBar;
 import com.neuralarc.model.AiRecommendationSettings;
 import com.neuralarc.model.OrbSchedule;
 import com.neuralarc.model.ScanHistoryEntry;
@@ -29,12 +32,15 @@ import com.neuralarc.service.OrbScheduleService;
 
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Comparator;
+import java.time.format.DateTimeParseException;
 import java.util.concurrent.Executor;
 
 final class OrbCoordinator {
@@ -236,9 +242,10 @@ final class OrbCoordinator {
                     return;
                 }
                 candidates = enrichWithAi(candidates);
-                OpeningRangeCaptureService captureService = new OpeningRangeCaptureService(
-                        new HttpAlpacaMarketDataApi(ui.runtimeApiKey(), ui.runtimeApiSecret()));
+                HttpAlpacaMarketDataApi marketDataApi = new HttpAlpacaMarketDataApi(ui.runtimeApiKey(), ui.runtimeApiSecret());
+                OpeningRangeCaptureService captureService = new OpeningRangeCaptureService(marketDataApi);
                 LocalDate sessionDate = LocalDate.now(OpeningRangeCaptureService.EASTERN);
+                candidates = withPreviousSessionLows(candidates, sessionDate, marketDataApi);
                 List<OpeningRangeSnapshot> snapshots = candidates.stream()
                         .map(candidate -> capture(candidate, sessionDate, safeConfig, captureService))
                         .toList();
@@ -292,6 +299,57 @@ final class OrbCoordinator {
         OrbAiInsightService ai = new OrbAiInsightService(
                 AiRecommendationProviderFactory.create(settings), Clock.systemUTC(), ui::log);
         return SmartPicksParallelExecutor.mapPreservingOrder(candidates, "orb-ai", ai::enrich, null);
+    }
+
+    private List<OrbCandidate> withPreviousSessionLows(
+            List<OrbCandidate> candidates,
+            LocalDate sessionDate,
+            AlpacaMarketDataApi marketDataApi
+    ) {
+        return SmartPicksParallelExecutor.mapPreservingOrder(
+                candidates,
+                "orb-prev-low",
+                candidate -> withPreviousSessionLow(candidate, sessionDate, marketDataApi),
+                null
+        );
+    }
+
+    private OrbCandidate withPreviousSessionLow(
+            OrbCandidate candidate,
+            LocalDate sessionDate,
+            AlpacaMarketDataApi marketDataApi
+    ) {
+        if (candidate == null || candidate.symbol().isBlank()) {
+            return candidate;
+        }
+        try {
+            List<MarketBar> bars = marketDataApi.getDailyBars(candidate.symbol(), sessionDate.minusDays(10), sessionDate);
+            BigDecimal previousSessionLow = bars.stream()
+                    .filter(bar -> bar != null && bar.low() != null && bar.low().compareTo(BigDecimal.ZERO) > 0)
+                    .filter(bar -> isBeforeSessionDate(bar.timestamp(), sessionDate))
+                    .max(Comparator.comparing(MarketBar::timestamp, Comparator.nullsLast(String::compareTo)))
+                    .map(MarketBar::low)
+                    .orElse(null);
+            if (previousSessionLow == null || previousSessionLow.compareTo(BigDecimal.ZERO) <= 0) {
+                return candidate;
+            }
+            return candidate.withPreviousSessionLow(previousSessionLow);
+        } catch (AlpacaMarketDataException ex) {
+            ui.log("[ORB] Previous-session low unavailable for " + candidate.symbol() + ": " + ex.getMessage());
+            return candidate;
+        }
+    }
+
+    private boolean isBeforeSessionDate(String timestamp, LocalDate sessionDate) {
+        if (timestamp == null || timestamp.isBlank() || sessionDate == null) {
+            return false;
+        }
+        String datePart = timestamp.length() >= 10 ? timestamp.substring(0, 10) : timestamp;
+        try {
+            return LocalDate.parse(datePart).isBefore(sessionDate);
+        } catch (DateTimeParseException ex) {
+            return false;
+        }
     }
 
     private boolean isAiProviderConfigured(AiRecommendationSettings settings) {

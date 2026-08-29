@@ -18,7 +18,8 @@ final class StrategyRecommendationMarkers {
                 || status.startsWith("SWING_")
                 || status.startsWith("RANGE_RIDER_")
                 || status.startsWith("EARNINGS_HUNTER_")
-                || status.startsWith("PROFIT_SHIELD_");
+                || status.startsWith("PROFIT_SHIELD_")
+                || isManualImportedPendingRow(strategy, status);
     }
 
     static String sourceLabel(Strategy strategy) {
@@ -50,6 +51,17 @@ final class StrategyRecommendationMarkers {
         if (status.startsWith("PROFIT_SHIELD_")) {
             return "Profit Shield strategy";
         }
+        if (isManualImportedPendingRow(strategy, status)) {
+            return "Manual addition";
+        }
         return "";
+    }
+
+    private static boolean isManualImportedPendingRow(Strategy strategy, String normalizedStatus) {
+        if (!"PAPER_PENDING".equals(normalizedStatus) && !"LIVE_PENDING".equals(normalizedStatus)) {
+            return false;
+        }
+        String name = strategy.name();
+        return name != null && name.startsWith("MANUAL_ADDITION:");
     }
 }

@@ -19,7 +19,20 @@ final class PendingBaseBuyPlacementSupport {
                 || SwingCoordinator.isPendingOrderPlacement(strategy)
                 || RangeRiderCoordinator.isPendingOrderPlacement(strategy)
                 || EarningsHunterCoordinator.isPendingOrderPlacement(strategy)
-                || ProfitShieldCoordinator.isPendingOrderPlacement(strategy);
+                || ProfitShieldCoordinator.isPendingOrderPlacement(strategy)
+                || isManualPendingImport(strategy);
+    }
+
+    private static boolean isManualPendingImport(Strategy strategy) {
+        if (strategy == null) {
+            return false;
+        }
+        String orderStatus = strategy.latestOrderStatus();
+        if (!"PAPER_PENDING".equalsIgnoreCase(orderStatus) && !"LIVE_PENDING".equalsIgnoreCase(orderStatus)) {
+            return false;
+        }
+        String name = strategy.name();
+        return name != null && name.startsWith("MANUAL_ADDITION:");
     }
 
     static BigDecimal adjustedBaseBuyLimit(BigDecimal baseBuyLimitPrice, BigDecimal todayLow) {

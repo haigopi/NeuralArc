@@ -60,6 +60,15 @@ class PendingBaseBuyPlacementSupportTest {
                 "a monitoring row already has its order armed");
     }
 
+    @Test
+    void treatsManualImportedPendingRowsAsPendingBaseBuys() {
+        Strategy imported = strategy("MDB");
+        imported.setName("MANUAL_ADDITION: MDB Paper");
+        imported.setLatestOrderStatus("PAPER_PENDING");
+
+        assertTrue(PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(imported));
+    }
+
     private static Strategy strategy(String symbol) {
         return new Strategy(
                 UUID.randomUUID().toString(),

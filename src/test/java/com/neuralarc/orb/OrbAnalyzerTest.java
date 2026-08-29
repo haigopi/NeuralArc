@@ -56,6 +56,33 @@ class OrbAnalyzerTest {
     }
 
     @Test
+    void plannedEntryUsesPreviousSessionLowWhenItIsLowerThanComputedEntry() {
+        OrbAnalyzer analyzer = new OrbAnalyzer(Clock.fixed(Instant.parse("2026-06-15T14:00:00Z"), ZoneOffset.UTC), null);
+        OrbConfig config = OrbConfig.defaults(StrategyMode.PAPER);
+        OpeningRangeSnapshot snapshot = new OpeningRangeSnapshot("aapl", Instant.parse("2026-06-15T13:30:00Z"),
+                Instant.parse("2026-06-15T13:45:00Z"), new BigDecimal("101.00"), new BigDecimal("99.00"),
+                new BigDecimal("500000"), 15, true, "");
+
+        OrbCandidate candidate = new OrbCandidate(
+                "AAPL",
+                new BigDecimal("110.00"),
+                new BigDecimal("108.00"),
+                new BigDecimal("95.00"),
+                new BigDecimal("3.0"),
+                null,
+                new BigDecimal("0.20"),
+                "manual",
+                "",
+                0.0d
+        );
+
+        List<OrbRecommendation> recommendations = analyzer.analyze(List.of(snapshot), List.of(candidate), config);
+
+        assertEquals(1, recommendations.size());
+        assertEquals(new BigDecimal("95.00"), recommendations.getFirst().plannedEntry());
+    }
+
+    @Test
     void rejectsSnapshotsPastLatestEntryTime() {
         // Clock is 11:30 AM ET; latestEntryTimeEt defaults to 11:00 ET → should reject.
         Clock noonEt = Clock.fixed(Instant.parse("2026-06-15T15:30:00Z"), ZoneId.of("America/New_York"));

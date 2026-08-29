@@ -7,6 +7,7 @@ import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.ThresholdType;
+import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.service.StrategyService;
 
 import javax.swing.AbstractButton;
@@ -54,6 +55,14 @@ final class PortfolioActionsController {
         Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets);
         StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity);
         StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice);
+        ManualPortfolioImportService.ImportResult importManualStocks(List<PortfolioStockImportDialog.ImportedStockDraft> drafts);
+        AlpacaMarketDataApi marketDataApiForMode(StrategyMode mode);
+        int defaultStrategyPollingSeconds();
+        boolean defaultRepeatCycleAfterProfitExitEnabled();
+        boolean defaultResubmitOnExpiryEnabled();
+        boolean allowDuplicateSymbols();
+        String selectedWorkspaceForNewStrategy();
+        String selectedModeLabel();
         JMenuItem createMenuItem(String text, String iconPath, Runnable action);
         int confirm(Object message, String title, int optionType, int messageType);
         void showMessage(Object message, String title, int messageType);
@@ -101,6 +110,10 @@ final class PortfolioActionsController {
                 () -> handleSellAction(PortfolioActionsSupport.Scope.LOSS_ONLY_MARKET, SellSubmissionType.MARKET)));
         menu.add(sectionSeparator());
         menu.add(sectionHeader("Order Placement"));
+        menu.add(gateway.createMenuItem("Import Stocks", "icons/add-stock-strategy.svg",
+                this::handleImportStocks));
+        menu.add(gateway.createMenuItem("Place Limit Buy for All Manual Buy Entries", "icons/submit.svg",
+                this::handlePlacePendingBaseBuys));
         menu.add(gateway.createMenuItem("Average Down Losing Positions", "icons/submit.svg",
                 this::handleAverageLosingPositions));
         menu.add(gateway.createMenuItem("Place Limit Buy for Losing Pending Positions", "icons/submit.svg",
@@ -243,6 +256,40 @@ final class PortfolioActionsController {
 
     private void handlePlacePendingBaseBuys() {
         handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_PENDING_BASE_BUYS);
+    }
+
+    private void handleImportStocks() {
+        PortfolioStockImportDialog.ImportSelection selection = PortfolioStockImportDialog.show(null);
+        if (selection == null || selection.drafts().isEmpty()) {
+            gateway.actionCanceled("Import Stocks");
+            return;
+        }
+        gateway.actionStarted("Import Stocks");
+        new SwingWorker<ManualPortfolioImportService.ImportResult, Void>() {
+            @Override
+            protected ManualPortfolioImportService.ImportResult doInBackground() {
+                return gateway.importManualStocks(selection.drafts());
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    ManualPortfolioImportService.ImportResult result = get();
+                    refreshAfterAction();
+                    gateway.actionCompleted("Import Stocks", "Imported=" + result.importedSymbols().size()
+                            + ", skipped=" + result.skippedReasons().size() + ".");
+                    gateway.showMessage(
+                            result.summary(gateway.selectedModeLabel()),
+                            "Import Stocks",
+                            result.skippedReasons().isEmpty() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE
+                    );
+                } catch (Exception ex) {
+                    gateway.actionFailed("Import Stocks", ex.getMessage());
+                    gateway.showMessage("Failed to import stocks: " + ex.getMessage(),
+                            "Import Stocks", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        }.execute();
     }
 
     private void handleAverageLosingPositions() {
