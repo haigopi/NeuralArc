@@ -33,6 +33,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -128,7 +129,8 @@ final class PortfolioRefreshController {
             if (reconciledCount > 0) {
                 stored = strategyRepository.findAll();
             }
-            List<Strategy> invalidStrategies = findInvalidBrokerMissingStrategies(stored);
+            List<Strategy> invalidStrategies = new ArrayList<>(findInvalidBrokerMissingStrategies(stored));
+            appendOverClaimedDuplicates(invalidStrategies, stored, snapshots);
             List<Strategy> refreshedStored = stored;
             runOnEdt(() -> applySuccessfulRefresh(generation, refreshedStored, snapshots, invalidStrategies));
         } catch (Exception ex) {
@@ -297,7 +299,21 @@ final class PortfolioRefreshController {
         if (stored == null || stored.isEmpty() || gateway.brokerType() != BrokerType.ALPACA) {
             return Map.of();
         }
-        return BrokerSnapshotLoader.loadPositionSnapshots(stored, gateway::alpacaClientForMode, this::includeInRefresh);
+        return BrokerSnapshotLoader.loadPositionSnapshots(
+                stored,
+                gateway::alpacaClientForMode,
+                this::includeInRefresh,
+                null,
+                this::localShareClaim
+        );
+    }
+
+    /** Shares this strategy's own filled orders account for; the allocator splits a shared position by it. */
+    private int localShareClaim(Strategy strategy) {
+        if (strategy == null || strategy.id() == null || strategy.id().isBlank()) {
+            return 0;
+        }
+        return StrategyOrderFillSupport.netFilledShares(orderRepository.findByStrategyId(strategy.id()));
     }
 
     private boolean includeInRefresh(Strategy strategy) {
@@ -321,6 +337,62 @@ final class PortfolioRefreshController {
         invalid.addAll(findInvalidBrokerMissingStrategiesForMode(stored, StrategyMode.PAPER, ApplicationMode.PAPER));
         invalid.addAll(findInvalidBrokerMissingStrategiesForMode(stored, StrategyMode.LIVE, ApplicationMode.LIVE));
         return invalid;
+    }
+
+    /**
+     * Adds rows that claim a broker position another row already owns. The broker nets a symbol into
+     * one position, so two local rows on one position used to show the same shares twice; whatever
+     * the allocation could not cover is stale and is offered to the operator as invalid.
+     */
+    private void appendOverClaimedDuplicates(
+            List<Strategy> invalid,
+            List<Strategy> stored,
+            Map<String, Position> snapshots
+    ) {
+        if (stored == null || stored.isEmpty() || snapshots == null || snapshots.isEmpty()) {
+            return;
+        }
+        Set<String> alreadyInvalid = invalid.stream().map(Strategy::id).collect(Collectors.toSet());
+        Map<String, List<Strategy>> byModeAndSymbol = new LinkedHashMap<>();
+        for (Strategy strategy : stored) {
+            if (!includeInRefresh(strategy) || !snapshots.containsKey(strategy.id())) {
+                continue;
+            }
+            String key = strategy.mode() + ":" + strategy.symbol().toUpperCase(Locale.ROOT);
+            byModeAndSymbol.computeIfAbsent(key, ignored -> new ArrayList<>()).add(strategy);
+        }
+        List<Strategy> flagged = new ArrayList<>();
+        for (Map.Entry<String, List<Strategy>> entry : byModeAndSymbol.entrySet()) {
+            List<Strategy> group = entry.getValue();
+            if (group.size() < 2) {
+                continue;
+            }
+            Map<String, Strategy> byId = new LinkedHashMap<>();
+            List<DuplicatePositionReconciler.Row> rows = new ArrayList<>();
+            for (Strategy strategy : group) {
+                byId.put(strategy.id(), strategy);
+                rows.add(new DuplicatePositionReconciler.Row(
+                        strategy.id(),
+                        strategy.currentState(),
+                        localShareClaim(strategy),
+                        snapshots.get(strategy.id()).getTotalShares(),
+                        hasPendingOrders(orderRepository.findByStrategyId(strategy.id()))
+                ));
+            }
+            for (String strategyId : DuplicatePositionReconciler.overClaimedStrategyIds(rows)) {
+                Strategy strategy = byId.get(strategyId);
+                if (strategy != null && alreadyInvalid.add(strategyId)) {
+                    flagged.add(strategy);
+                }
+            }
+        }
+        if (flagged.isEmpty()) {
+            return;
+        }
+        gateway.log("[Portfolio Refresh] Reconciled " + flagged.size()
+                + " duplicate row(s) whose symbol has a single broker position already accounted for by another row: "
+                + flagged.stream().map(Strategy::symbol).distinct().collect(Collectors.joining(", ")) + ".");
+        invalid.addAll(flagged);
     }
 
     private int reconcileLeftoverLocalBrokerState(List<Strategy> stored, Map<String, Position> snapshots) {

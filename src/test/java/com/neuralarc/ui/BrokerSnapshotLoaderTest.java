@@ -72,7 +72,52 @@ class BrokerSnapshotLoaderTest {
         assertEquals(new BigDecimal("104.00"), snapshots.get("s1").getLastPrice());
     }
 
+    @Test
+    void oneBrokerPositionIsNotShownTwiceWhenTwoStrategiesShareTheSymbol() {
+        Strategy holder = strategy("holder", "AVGO", Instant.parse("2026-05-01T10:00:00Z"));
+        Strategy duplicate = strategy("duplicate", "AVGO", Instant.parse("2026-05-06T10:00:00Z"));
+        FakeHttpAlpacaClient client = new FakeHttpAlpacaClient();
+
+        Map<String, Position> snapshots = BrokerSnapshotLoader.loadPositionSnapshots(
+                List.of(holder, duplicate),
+                mode -> client,
+                ignored -> true,
+                (mode, ignoredClient) -> List.of(new AlpacaPositionData(
+                        "AVGO", new BigDecimal("10"), new BigDecimal("100.00"), new BigDecimal("104.00"), "{}")),
+                strategy -> strategy.id().equals("holder") ? 10 : 0
+        );
+
+        assertEquals(10, snapshots.get("holder").getTotalShares());
+        assertEquals(0, snapshots.get("duplicate").getTotalShares(),
+                "the broker holds one AVGO position, so only one row may show it");
+        assertEquals(new BigDecimal("104.00"), snapshots.get("duplicate").getLastPrice(),
+                "the emptied row still prices its symbol");
+    }
+
+    @Test
+    void partialSetsOnOneSymbolEachKeepTheirOwnShares() {
+        Strategy first = strategy("first", "AVGO", Instant.parse("2026-05-01T10:00:00Z"));
+        Strategy second = strategy("second", "AVGO", Instant.parse("2026-05-06T10:00:00Z"));
+        FakeHttpAlpacaClient client = new FakeHttpAlpacaClient();
+
+        Map<String, Position> snapshots = BrokerSnapshotLoader.loadPositionSnapshots(
+                List.of(first, second),
+                mode -> client,
+                ignored -> true,
+                (mode, ignoredClient) -> List.of(new AlpacaPositionData(
+                        "AVGO", new BigDecimal("15"), new BigDecimal("100.00"), new BigDecimal("104.00"), "{}")),
+                strategy -> strategy.id().equals("first") ? 10 : 5
+        );
+
+        assertEquals(10, snapshots.get("first").getTotalShares());
+        assertEquals(5, snapshots.get("second").getTotalShares());
+    }
+
     private static Strategy strategy(String id, String symbol) {
+        return strategy(id, symbol, Instant.now());
+    }
+
+    private static Strategy strategy(String id, String symbol, Instant createdAt) {
         return new Strategy(
                 id,
                 symbol + " Strategy",
@@ -105,8 +150,8 @@ class BrokerSnapshotLoaderTest {
                 10,
                 new BigDecimal("1000"),
                 2,
-                Instant.now(),
-                Instant.now()
+                createdAt,
+                createdAt
         );
     }
 

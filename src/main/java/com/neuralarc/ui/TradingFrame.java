@@ -4493,8 +4493,17 @@ public class TradingFrame extends JFrame {
                 stored,
                 this::alpacaClientForMode,
                 this::includeInBrokerSnapshotRefresh,
-                this::cachedBrokerPositions
+                this::cachedBrokerPositions,
+                this::localShareClaim
         );
+    }
+
+    /** Shares a strategy's own filled orders account for, used to split a shared broker position. */
+    private int localShareClaim(Strategy strategy) {
+        if (strategy == null || strategy.id() == null || strategy.id().isBlank()) {
+            return 0;
+        }
+        return StrategyOrderFillSupport.netFilledShares(strategyOrderRepository.findByStrategyId(strategy.id()));
     }
 
     private List<AlpacaPositionData> cachedBrokerPositions(ApplicationMode mode, HttpAlpacaClient client) {

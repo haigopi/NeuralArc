@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.ToIntFunction;
 
 final class BrokerSnapshotLoader {
     private BrokerSnapshotLoader() {
@@ -27,7 +28,7 @@ final class BrokerSnapshotLoader {
             Function<ApplicationMode, HttpAlpacaClient> clientResolver,
             Predicate<Strategy> includeStrategy
     ) {
-        return loadPositionSnapshots(stored, clientResolver, includeStrategy, null);
+        return loadPositionSnapshots(stored, clientResolver, includeStrategy, null, null);
     }
 
     static Map<String, Position> loadPositionSnapshots(
@@ -36,12 +37,27 @@ final class BrokerSnapshotLoader {
             Predicate<Strategy> includeStrategy,
             BiFunction<ApplicationMode, HttpAlpacaClient, List<AlpacaPositionData>> positionResolver
     ) {
+        return loadPositionSnapshots(stored, clientResolver, includeStrategy, positionResolver, null);
+    }
+
+    /**
+     * @param localShareClaim shares each strategy's own filled orders say it holds. Used to split one
+     *                        broker position across several strategies on the same symbol; when null
+     *                        the whole position lands on the oldest of them instead of on all.
+     */
+    static Map<String, Position> loadPositionSnapshots(
+            List<Strategy> stored,
+            Function<ApplicationMode, HttpAlpacaClient> clientResolver,
+            Predicate<Strategy> includeStrategy,
+            BiFunction<ApplicationMode, HttpAlpacaClient, List<AlpacaPositionData>> positionResolver,
+            ToIntFunction<Strategy> localShareClaim
+    ) {
         if (stored == null || stored.isEmpty() || clientResolver == null) {
             return Map.of();
         }
         Map<String, Position> snapshots = new LinkedHashMap<>();
-        loadPositionSnapshotsForMode(stored, StrategyMode.PAPER, ApplicationMode.PAPER, clientResolver, includeStrategy, positionResolver, snapshots);
-        loadPositionSnapshotsForMode(stored, StrategyMode.LIVE, ApplicationMode.LIVE, clientResolver, includeStrategy, positionResolver, snapshots);
+        loadPositionSnapshotsForMode(stored, StrategyMode.PAPER, ApplicationMode.PAPER, clientResolver, includeStrategy, positionResolver, localShareClaim, snapshots);
+        loadPositionSnapshotsForMode(stored, StrategyMode.LIVE, ApplicationMode.LIVE, clientResolver, includeStrategy, positionResolver, localShareClaim, snapshots);
         return snapshots;
     }
 
@@ -52,6 +68,7 @@ final class BrokerSnapshotLoader {
             Function<ApplicationMode, HttpAlpacaClient> clientResolver,
             Predicate<Strategy> includeStrategy,
             BiFunction<ApplicationMode, HttpAlpacaClient, List<AlpacaPositionData>> positionResolver,
+            ToIntFunction<Strategy> localShareClaim,
             Map<String, Position> target
     ) {
         List<Strategy> strategiesForMode = stored.stream()
@@ -85,9 +102,52 @@ final class BrokerSnapshotLoader {
                         (left, ignored) -> left,
                         LinkedHashMap::new
                 ));
+        Map<String, Integer> allocationByStrategyId =
+                allocateSharesAcrossSameSymbolStrategies(strategiesForMode, positionsBySymbol, localShareClaim);
         for (Strategy strategy : strategiesForMode) {
-            target.put(strategy.id(), buildPositionSnapshot(strategy.symbol(), positionsBySymbol.get(strategy.symbol().toUpperCase(Locale.ROOT)), latestPrices.get(strategy.symbol().toUpperCase(Locale.ROOT))));
+            String symbol = strategy.symbol().toUpperCase(Locale.ROOT);
+            target.put(strategy.id(), buildPositionSnapshot(
+                    strategy.symbol(),
+                    positionsBySymbol.get(symbol),
+                    latestPrices.get(symbol),
+                    allocationByStrategyId.get(strategy.id())
+            ));
         }
+    }
+
+    /**
+     * One broker position per symbol, several local strategies possible on that symbol: decide how
+     * many of the broker's shares each row may show so a single position is never counted twice.
+     */
+    private static Map<String, Integer> allocateSharesAcrossSameSymbolStrategies(
+            List<Strategy> strategiesForMode,
+            Map<String, AlpacaPositionData> positionsBySymbol,
+            ToIntFunction<Strategy> localShareClaim
+    ) {
+        Map<String, List<Strategy>> bySymbol = new LinkedHashMap<>();
+        for (Strategy strategy : strategiesForMode) {
+            bySymbol.computeIfAbsent(strategy.symbol().toUpperCase(Locale.ROOT), ignored -> new ArrayList<>()).add(strategy);
+        }
+        Map<String, Integer> allocation = new LinkedHashMap<>();
+        for (Map.Entry<String, List<Strategy>> entry : bySymbol.entrySet()) {
+            AlpacaPositionData position = positionsBySymbol.get(entry.getKey());
+            int brokerShares = brokerShares(position);
+            List<BrokerPositionAllocator.Claim> claims = entry.getValue().stream()
+                    .map(strategy -> new BrokerPositionAllocator.Claim(
+                            strategy.id(),
+                            localShareClaim == null ? 0 : localShareClaim.applyAsInt(strategy),
+                            strategy.createdAt()))
+                    .toList();
+            allocation.putAll(BrokerPositionAllocator.allocate(brokerShares, claims));
+        }
+        return allocation;
+    }
+
+    private static int brokerShares(AlpacaPositionData position) {
+        if (position == null || !position.exists() || position.quantity() == null) {
+            return 0;
+        }
+        return position.quantity().setScale(0, RoundingMode.DOWN).intValue();
     }
 
     private static List<String> uniqueSymbols(List<Strategy> strategies) {
@@ -102,10 +162,25 @@ final class BrokerSnapshotLoader {
     }
 
     static Position buildPositionSnapshot(String symbol, AlpacaPositionData remotePosition, BigDecimal latestPrice) {
+        return buildPositionSnapshot(symbol, remotePosition, latestPrice, null);
+    }
+
+    /**
+     * @param allocatedShares shares of the broker position this strategy may show, or null to show
+     *                        the whole position (a symbol held by a single strategy).
+     */
+    static Position buildPositionSnapshot(
+            String symbol,
+            AlpacaPositionData remotePosition,
+            BigDecimal latestPrice,
+            Integer allocatedShares
+    ) {
         Position snapshot = new Position(symbol == null ? "" : symbol);
         boolean positionMarketPriceApplied = false;
         if (remotePosition != null && remotePosition.exists()) {
-            int quantity = remotePosition.quantity().setScale(0, RoundingMode.DOWN).intValue();
+            int quantity = allocatedShares == null
+                    ? remotePosition.quantity().setScale(0, RoundingMode.DOWN).intValue()
+                    : allocatedShares;
             if (quantity > 0) {
                 snapshot.applyBuy(quantity, remotePosition.avgEntryPrice());
             }

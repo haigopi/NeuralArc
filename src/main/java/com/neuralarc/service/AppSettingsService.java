@@ -29,7 +29,7 @@ public class AppSettingsService {
   public static final int DEFAULT_STRATEGY_POLLING_SECONDS = 60;
   public static final boolean DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED = true;
   public static final boolean DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED = true;
-  public static final TimeInForce DEFAULT_MANUAL_BUY_TIME_IN_FORCE = TimeInForce.GTC;
+  public static final TimeInForce DEFAULT_MANUAL_BUY_TIME_IN_FORCE = TimeInForce.DAY;
   public static final boolean DEFAULT_VERBOSE_API_JSON_LOGGING = false;
   public static final int DEFAULT_VALIDATION_BATCH_WINDOW_SECONDS = 5;
   public static final int DEFAULT_MAX_VALIDATION_ATTEMPTS_BEFORE_PAUSE = 0;
@@ -250,7 +250,7 @@ public class AppSettingsService {
     try {
       return TimeInForce.valueOf(value.trim());
     } catch (Exception ignored) {
-      return fallback == null ? TimeInForce.GTC : fallback;
+      return fallback == null ? TimeInForce.DAY : fallback;
     }
   }
 
