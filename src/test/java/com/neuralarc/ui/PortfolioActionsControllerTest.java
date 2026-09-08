@@ -6,6 +6,7 @@ import com.neuralarc.model.Position;
 import com.neuralarc.model.SellSubmissionType;
 import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
@@ -24,6 +25,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PortfolioActionsControllerTest {
@@ -156,6 +159,25 @@ class PortfolioActionsControllerTest {
         assertEquals("AAPL-id", gateway.limitBuyStrategyId);
         assertEquals(6, gateway.limitBuyQuantity);
         assertEquals(0, new BigDecimal("7.80").compareTo(gateway.limitBuyPrice));
+    }
+
+    @Test
+    void averageLosingPositionTargetsSubmitTheSelectedTimeInForce() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.averageLosingPositionTargets(
+                List.of(managedWithPosition("AAPL", 6, "10.00", "8.00")),
+                new AverageLosingPositionsSelection(
+                        AverageLosingPositionsSelection.OrderType.LIMIT_BELOW_MARKET,
+                        AverageLosingPositionsSelection.QuantityMode.CURRENT_POSITION_QUANTITY,
+                        0,
+                        new BigDecimal("2"),
+                        TimeInForce.GTC
+                )
+        );
+
+        assertEquals(TimeInForce.GTC, gateway.limitBuyTimeInForce);
     }
 
     @Test
@@ -299,24 +321,84 @@ class PortfolioActionsControllerTest {
         }
     }
 
+    @Test
+    void everyPortfolioActionIsGroupedAndCarriesAOneLineDescription() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        List<PortfolioActionsMenu.Group> groups = controller.menuGroups();
+
+        assertFalse(groups.isEmpty());
+        List<String> labels = new java.util.ArrayList<>();
+        for (PortfolioActionsMenu.Group group : groups) {
+            assertFalse(group.title().isBlank(), "every group needs a title");
+            assertFalse(group.entries().isEmpty(), group.title() + " has no actions");
+            assertTrue(group.entries().size() <= 5,
+                    group.title() + " has " + group.entries().size() + " actions; keep groups small enough to scan");
+            for (PortfolioActionsMenu.Entry entry : group.entries()) {
+                assertFalse(entry.label().isBlank());
+                assertNotNull(entry.description(), entry.label() + " has no description");
+                assertFalse(entry.description().isBlank(), entry.label() + " has a blank description");
+                labels.add(entry.label());
+            }
+        }
+        assertEquals(labels.size(), new java.util.HashSet<>(labels).size(), "menu labels must be unique");
+    }
+
+    @Test
+    void removeAllClosedPositionsIsOfferedUnderGridCleanUp() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        PortfolioActionsMenu.Group cleanUp = controller.menuGroups().stream()
+                .filter(group -> group.title().equals("Clean Up Grids"))
+                .findFirst()
+                .orElseThrow();
+
+        PortfolioActionsMenu.Entry removeClosed = cleanUp.entries().stream()
+                .filter(entry -> entry.label().equals("Remove All Closed Positions"))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(removeClosed.description().toLowerCase(java.util.Locale.ROOT).contains("history"),
+                "the description must say history is kept");
+    }
+
+    @Test
+    void paperOnlyActionsAreDisabledWithAReasonWhileViewingLive() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        gateway.selectedViewMode = StrategyMode.LIVE;
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        List<PortfolioActionsMenu.Entry> disabled = controller.menuGroups().stream()
+                .flatMap(group -> group.entries().stream())
+                .filter(entry -> !entry.enabled())
+                .toList();
+
+        assertEquals(
+                List.of("Delete All Paper Mode Entries", "Promote All to Live"),
+                disabled.stream().map(PortfolioActionsMenu.Entry::label).toList());
+        disabled.forEach(entry -> assertFalse(entry.disabledTooltip().isBlank()));
+    }
+
     private static final class FakeGateway implements PortfolioActionsController.Gateway {
         private final StrategyService service;
         private final AtomicInteger activeSells = new AtomicInteger();
         private final AtomicInteger maxConcurrentSells = new AtomicInteger();
         private final CountDownLatch sellsEntered = new CountDownLatch(2);
-        private final java.util.List<String> deletedPaperStrategyIds = new java.util.ArrayList<>();
-        private final java.util.List<String> placedPendingStrategyIds = new java.util.ArrayList<>();
-        private final java.util.List<String> readjustedPendingStrategyIds = new java.util.ArrayList<>();
-        private final java.util.List<String> deletedPendingBaseBuyIds = new java.util.ArrayList<>();
+        private final java.util.List<String> deletedPaperStrategyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        private final java.util.List<String> placedPendingStrategyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        private final java.util.List<String> readjustedPendingStrategyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        private final java.util.List<String> deletedPendingBaseBuyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private final AtomicInteger activeSellTriggers = new AtomicInteger();
         private final AtomicInteger maxConcurrentSellTriggers = new AtomicInteger();
         private final CountDownLatch sellTriggersEntered = new CountDownLatch(2);
-        private final java.util.List<String> updatedStrategyIds = new java.util.ArrayList<>();
+        private final java.util.List<String> updatedStrategyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private String marketBuyStrategyId;
         private int marketBuyQuantity;
         private String limitBuyStrategyId;
         private int limitBuyQuantity;
         private BigDecimal limitBuyPrice;
+        private TimeInForce limitBuyTimeInForce;
         private StrategyMode selectedViewMode = StrategyMode.PAPER;
         private boolean blockSell;
 
@@ -402,10 +484,12 @@ class PortfolioActionsControllerTest {
             marketBuyQuantity = quantity;
             return StrategyService.StrategyCreationResult.success(strategy.id(), "order", "alpaca", "client");
         }
-        @Override public StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice) {
+        @Override public StrategyService.StrategyCreationResult buyMoreAtLimit(
+                Strategy strategy, int quantity, BigDecimal limitPrice, TimeInForce timeInForce) {
             limitBuyStrategyId = strategy.id();
             limitBuyQuantity = quantity;
             this.limitBuyPrice = limitPrice;
+            this.limitBuyTimeInForce = timeInForce;
             return StrategyService.StrategyCreationResult.success(strategy.id(), "order", "alpaca", "client");
         }
         @Override
@@ -428,6 +512,12 @@ class PortfolioActionsControllerTest {
             return StrategyService.ArchiveResult.success(strategyId);
         }
         @Override public JMenuItem createMenuItem(String text, String iconPath, Runnable action) { return new JMenuItem(text); }
+        @Override public JMenuItem createMenuItem(String label, String description, String iconPath, Runnable action) {
+            return new JMenuItem(label);
+        }
+        @Override public javax.swing.JMenu createSubMenu(String label, String iconPath) {
+            return new javax.swing.JMenu(label);
+        }
         @Override public int confirm(Object message, String title, int optionType, int messageType) { return 0; }
         @Override public void showMessage(Object message, String title, int messageType) { }
         @Override public void syncStrategiesFromRepository() { }

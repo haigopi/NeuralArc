@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.api.ConnectionCheck;
 import com.neuralarc.api.TradingApi;
 import com.neuralarc.model.ApplicationMode;
 import com.neuralarc.model.BrokerType;
@@ -80,6 +81,54 @@ class ConnectionLifecycleCoordinatorTest {
     }
 
     @Test
+    void rejectedCredentialsAndUnreachableBrokerGetDifferentMessages() {
+        FakeGateway gateway = new FakeGateway();
+        ConnectionLifecycleCoordinator coordinator = new ConnectionLifecycleCoordinator(gateway);
+
+        SettingsDialog.ConnectionResult rejected = coordinator.applyConnectionAttempt(
+                attempt(ConnectionCheck.invalidCredentials(401)),
+                BrokerType.ALPACA,
+                ApplicationMode.PAPER,
+                "key",
+                "secret",
+                false,
+                false
+        );
+        SettingsDialog.ConnectionResult unreachable = coordinator.applyConnectionAttempt(
+                attempt(ConnectionCheck.unreachable("timeout")),
+                BrokerType.ALPACA,
+                ApplicationMode.PAPER,
+                "key",
+                "secret",
+                false,
+                false
+        );
+
+        assertFalse(rejected.connected());
+        assertEquals("Broker rejected the saved PAPER API key", rejected.message());
+        assertEquals("Broker unreachable (PAPER) - retrying", unreachable.message());
+    }
+
+    @Test
+    void applyConnectionAttemptDoesNotProbeTheBroker() {
+        FakeGateway gateway = new FakeGateway();
+        ConnectionLifecycleCoordinator coordinator = new ConnectionLifecycleCoordinator(gateway);
+
+        coordinator.applyConnectionAttempt(
+                attempt(ConnectionCheck.accepted()),
+                BrokerType.ALPACA,
+                ApplicationMode.PAPER,
+                "key",
+                "secret",
+                false,
+                true
+        );
+
+        assertEquals(0, gateway.connectionAttempts);
+        assertTrue(gateway.appliedSuccessfulRuntimeConnection);
+    }
+
+    @Test
     void retryBrokerConnectionIfConfiguredClearsPendingWhenSettingsMissing() {
         FakeGateway gateway = new FakeGateway();
         gateway.connectionRetryPending = true;
@@ -89,6 +138,11 @@ class ConnectionLifecycleCoordinatorTest {
         coordinator.retryBrokerConnectionIfConfigured();
 
         assertFalse(gateway.connectionRetryPending);
+    }
+
+    private static TradingRuntimeSupport.ConnectionAttemptResult attempt(ConnectionCheck check) {
+        return new TradingRuntimeSupport.ConnectionAttemptResult(
+                check.connected(), null, check.detail(), false, false, check);
     }
 
     private static final class FakeGateway implements ConnectionLifecycleCoordinator.Gateway {

@@ -4,6 +4,7 @@ import com.neuralarc.model.SellSubmissionType;
 import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.Strategy;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.ThresholdType;
@@ -12,6 +13,7 @@ import com.neuralarc.service.StrategyService;
 
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
+import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPopupMenu;
@@ -54,7 +56,7 @@ final class PortfolioActionsController {
         Optional<Strategy> updateStrategy(Strategy strategy);
         Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets);
         StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity);
-        StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice);
+        StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice, TimeInForce timeInForce);
         ManualPortfolioImportService.ImportResult importManualStocks(List<PortfolioStockImportDialog.ImportedStockDraft> drafts);
         AlpacaMarketDataApi marketDataApiForMode(StrategyMode mode);
         int defaultStrategyPollingSeconds();
@@ -64,6 +66,8 @@ final class PortfolioActionsController {
         String selectedWorkspaceForNewStrategy();
         String selectedModeLabel();
         JMenuItem createMenuItem(String text, String iconPath, Runnable action);
+        JMenuItem createMenuItem(String label, String description, String iconPath, Runnable action);
+        JMenu createSubMenu(String label, String iconPath);
         int confirm(Object message, String title, int optionType, int messageType);
         void showMessage(Object message, String title, int messageType);
         void syncStrategiesFromRepository();
@@ -79,6 +83,9 @@ final class PortfolioActionsController {
         void actionFailed(String actionName, String reason);
     }
 
+    private static final Color MENU_BACKGROUND = new Color(46, 49, 60);
+    private static final Color MENU_BORDER = new Color(70, 76, 90);
+
     private final PortfolioActionsSupport support = new PortfolioActionsSupport();
     private final Gateway gateway;
 
@@ -86,112 +93,37 @@ final class PortfolioActionsController {
         this.gateway = gateway;
     }
 
+    List<PortfolioActionsMenu.Group> menuGroups() {
+        return PortfolioActionsMenuBuilder.groups(this, gateway.selectedViewMode() == StrategyMode.LIVE);
+    }
+
     void showMenu(AbstractButton anchor) {
         gateway.actionStarted("Portfolio Actions");
         JPopupMenu menu = new JPopupMenu();
-        menu.setBackground(new Color(46, 49, 60));
+        menu.setBackground(MENU_BACKGROUND);
         menu.setOpaque(true);
         menu.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(70, 76, 90), 1, true),
+                BorderFactory.createLineBorder(MENU_BORDER, 1, true),
                 new EmptyBorder(4, 4, 4, 4)
         ));
-        menu.add(sectionHeader("Sell Actions"));
-        menu.add(gateway.createMenuItem("Sell Profitable Positions", "icons/submit.svg",
-                () -> handleSellAction(PortfolioActionsSupport.Scope.PROFITABLE, SellSubmissionType.LIMIT)));
-        menu.add(gateway.createMenuItem("Sell All Open Positions", "icons/close.svg",
-                () -> handleSellAction(PortfolioActionsSupport.Scope.ALL_OPEN, SellSubmissionType.LIMIT)));
-        menu.add(gateway.createMenuItem("Sell Losing Positions", "icons/delete.svg",
-                () -> handleSellAction(PortfolioActionsSupport.Scope.LOSS_ONLY, SellSubmissionType.LIMIT)));
-        menu.add(gateway.createMenuItem("Position All Sell Triggers", "icons/submit.svg",
-                this::handlePositionAllSellTriggers));
-        menu.add(gateway.createMenuItem("Sell All Profitable Positions at Market Value", "icons/submit.svg",
-                () -> handleSellAction(PortfolioActionsSupport.Scope.PROFITABLE_MARKET, SellSubmissionType.MARKET)));
-        menu.add(gateway.createMenuItem("Sell All Losing Positions at Market Value", "icons/delete.svg",
-                () -> handleSellAction(PortfolioActionsSupport.Scope.LOSS_ONLY_MARKET, SellSubmissionType.MARKET)));
-        menu.add(sectionSeparator());
-        menu.add(sectionHeader("Order Placement"));
-        menu.add(gateway.createMenuItem("Import Stocks", "icons/add-stock-strategy.svg",
-                this::handleImportStocks));
-        menu.add(gateway.createMenuItem("Place Limit Buy for All Manual Buy Entries", "icons/submit.svg",
-                this::handlePlacePendingBaseBuys));
-        menu.add(gateway.createMenuItem("Average Down Losing Positions", "icons/submit.svg",
-                this::handleAverageLosingPositions));
-        menu.add(gateway.createMenuItem("Place Limit Buy for Losing Pending Positions", "icons/submit.svg",
-                () -> handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_AMBER_PENDING_BASE_BUYS)));
-        menu.add(gateway.createMenuItem("Readjust Losing Pending Base Buy Positions", "icons/submit.svg",
-                this::handleReadjustLosingPendingBaseBuys));
-        menu.add(gateway.createMenuItem("Position All Sell Profit Threshold percentage", "icons/submit.svg",
-                this::handlePositionAllSellProfitThresholdPercentage));
-        menu.add(gateway.createMenuItem("Place Limit Buy for Gaining Pending Positions", "icons/submit.svg",
-                () -> handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_GREEN_PENDING_BASE_BUYS)));
-        menu.add(gateway.createMenuItem("Place Limit Buy for All Pending Positions", "icons/submit.svg",
-                () -> handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_PENDING_BASE_BUYS)));
-        menu.add(gateway.createMenuItem("Reposition Expired", "icons/submit.svg",
-                this::handleRepositionExpired));
-        menu.add(sectionSeparator());
-        menu.add(sectionHeader("Order Cleanup"));
-        menu.add(gateway.createMenuItem("Clean All Pending Base Buys", "icons/delete.svg",
-                this::handleCleanPendingBaseBuys));
-        menu.add(gateway.createMenuItem("Cancel all Amber Pending Buys (Losers)", "icons/delete.svg",
-                () -> handleCancelColoredPendingBuys(PortfolioActionsSupport.BulkAction.CANCEL_AMBER_PENDING_BUYS)));
-        menu.add(gateway.createMenuItem("Cancel all Green Pending Buys (Gainer)", "icons/delete.svg",
-                () -> handleCancelColoredPendingBuys(PortfolioActionsSupport.BulkAction.CANCEL_GREEN_PENDING_BUYS)));
-        menu.add(gateway.createMenuItem("Cancel All Pending Limit Buys", "icons/close.svg",
-                this::handleCancelAllPendingLimitBuys));
-        menu.add(gateway.createMenuItem("Cancel All Pending Limit Sells", "icons/close.svg",
-                this::handleCancelAllPendingLimitSells));
-        menu.add(sectionSeparator());
-        menu.add(sectionHeader("Lifecycle"));
-        menu.add(gateway.createMenuItem("Resume All", "icons/submit.svg",
-                this::handleResumeAll));
-        menu.add(gateway.createMenuItem("Clean All Expired", "icons/delete.svg",
-                this::handleCleanAllExpired));
-        menu.add(gateway.createMenuItem("Clean Invalid Strategies", "icons/delete.svg",
-                this::handleCleanInvalidStrategies));
-        menu.add(gateway.createMenuItem("Clean Trade History", "icons/delete.svg",
-                this::handleCleanTradeHistory));
-        JMenuItem deletePaperEntries = gateway.createMenuItem("Delete All Paper Mode Entries", "icons/delete.svg",
-                this::handleDeleteAllPaperModeEntries);
-        if (gateway.selectedViewMode() == StrategyMode.LIVE) {
-            deletePaperEntries.setEnabled(false);
-            deletePaperEntries.setToolTipText("Paper cleanup is disabled while viewing LIVE mode.");
+        for (PortfolioActionsMenu.Group group : menuGroups()) {
+            JMenu submenu = gateway.createSubMenu(group.title(), group.iconPath());
+            for (PortfolioActionsMenu.Entry entry : group.entries()) {
+                JMenuItem item = gateway.createMenuItem(
+                        entry.label(), entry.description(), entry.iconPath(), entry.action());
+                if (!entry.enabled()) {
+                    item.setEnabled(false);
+                    item.setToolTipText(entry.disabledTooltip());
+                }
+                submenu.add(item);
+            }
+            menu.add(submenu);
         }
-        menu.add(deletePaperEntries);
-        menu.add(gateway.createMenuItem("Remove Inactive List", "icons/delete.svg",
-                this::handleRemoveInactiveList));
-        JMenuItem promoteAllToLive = gateway.createMenuItem("Promote All to Live", "icons/add-stock-strategy.svg",
-                this::handlePromoteAllToLive);
-        if (gateway.selectedViewMode() == StrategyMode.LIVE) {
-            promoteAllToLive.setEnabled(false);
-            promoteAllToLive.setToolTipText("Promote All to Live is unavailable while viewing LIVE mode.");
-        }
-        menu.add(promoteAllToLive);
         menu.show(anchor, 0, anchor.getHeight());
         gateway.actionCompleted("Portfolio Actions", "Menu opened.");
     }
 
-    private JMenuItem sectionHeader(String text) {
-        JMenuItem header = new JMenuItem(text);
-        header.setEnabled(false);
-        header.setFont(header.getFont().deriveFont(java.awt.Font.BOLD, 11f));
-        header.setOpaque(true);
-        header.setBackground(new Color(46, 49, 60));
-        header.setForeground(new Color(155, 165, 184));
-        header.setBorder(new EmptyBorder(6, 10, 4, 12));
-        return header;
-    }
-
-    private JMenuItem sectionSeparator() {
-        JMenuItem separator = new JMenuItem();
-        separator.setEnabled(false);
-        separator.setOpaque(true);
-        separator.setBackground(new Color(46, 49, 60));
-        separator.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(70, 76, 90)));
-        separator.setPreferredSize(new java.awt.Dimension(220, 3));
-        return separator;
-    }
-
-    private void handleCancelAllPendingLimitBuys() {
+    void handleCancelAllPendingLimitBuys() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_BUYS;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
@@ -211,7 +143,7 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handleCleanPendingBaseBuys() {
+    void handleCleanPendingBaseBuys() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CLEAN_PENDING_BASE_BUYS;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
@@ -233,7 +165,7 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handleCancelColoredPendingBuys(PortfolioActionsSupport.BulkAction action) {
+    void handleCancelColoredPendingBuys(PortfolioActionsSupport.BulkAction action) {
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
             return;
@@ -254,11 +186,11 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handlePlacePendingBaseBuys() {
+    void handlePlacePendingBaseBuys() {
         handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction.PLACE_PENDING_BASE_BUYS);
     }
 
-    private void handleImportStocks() {
+    void handleImportStocks() {
         PortfolioStockImportDialog.ImportSelection selection = PortfolioStockImportDialog.show(null);
         if (selection == null || selection.drafts().isEmpty()) {
             gateway.actionCanceled("Import Stocks");
@@ -292,7 +224,7 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handleAverageLosingPositions() {
+    void handleAverageLosingPositions() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.AVERAGE_LOSING_POSITIONS;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (targets.isEmpty()) {
@@ -324,7 +256,7 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction action) {
+    void handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction action) {
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
             return;
@@ -345,7 +277,7 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handleReadjustLosingPendingBaseBuys() {
+    void handleReadjustLosingPendingBaseBuys() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.READJUST_AMBER_PENDING_BASE_BUYS;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
@@ -367,7 +299,7 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handleCancelAllPendingLimitSells() {
+    void handleCancelAllPendingLimitSells() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_SELLS;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
@@ -387,7 +319,7 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handlePromoteAllToLive() {
+    void handlePromoteAllToLive() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.PROMOTE_ALL_TO_LIVE;
         if (gateway.selectedViewMode() == StrategyMode.LIVE) {
             String reason = "Promote All to Live is disabled while viewing LIVE mode.";
@@ -413,7 +345,7 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handlePositionAllSellTriggers() {
+    void handlePositionAllSellTriggers() {
         PortfolioActionsSupport.Scope scope = PortfolioActionsSupport.Scope.POSITION_ALL_SELL_TRIGGERS;
         List<ManagedStrategy> targets = support.filterTargets(gateway.currentStrategies(), scope);
         if (targets.isEmpty()) {
@@ -444,7 +376,7 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handlePositionAllSellProfitThresholdPercentage() {
+    void handlePositionAllSellProfitThresholdPercentage() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.POSITION_SELL_PROFIT_THRESHOLD_PERCENTAGE;
         List<ManagedStrategy> targets = support.filterTargets(gateway.currentStrategies(), action);
         if (targets.isEmpty()) {
@@ -484,7 +416,7 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handleResumeAll() {
+    void handleResumeAll() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.RESUME_ALL;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
@@ -504,7 +436,29 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handleRemoveInactiveList() {
+    void handleRemoveClosedPositions() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.REMOVE_CLOSED_POSITIONS;
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+
+        gateway.log(action.logPrefix() + " archiving " + targets.size()
+                + " closed position(s) out of the active grids; trade history is kept.");
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return archiveTargets(targets, "Archived by Remove All Closed Positions portfolio action");
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    void handleRemoveInactiveList() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.REMOVE_INACTIVE_LIST;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
@@ -524,7 +478,7 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handleCleanAllExpired() {
+    void handleCleanAllExpired() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CLEAN_ALL_EXPIRED;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
@@ -544,7 +498,7 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handleCleanInvalidStrategies() {
+    void handleCleanInvalidStrategies() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CLEAN_INVALID;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
@@ -564,7 +518,7 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handleDeleteAllPaperModeEntries() {
+    void handleDeleteAllPaperModeEntries() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.DELETE_ALL_PAPER_MODE_ENTRIES;
         if (gateway.selectedViewMode() == StrategyMode.LIVE) {
             String reason = "Paper cleanup is disabled while viewing LIVE mode.";
@@ -590,7 +544,7 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    private void handleRepositionExpired() {
+    void handleRepositionExpired() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.REPOSITION_EXPIRED;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
@@ -749,7 +703,7 @@ final class PortfolioActionsController {
                 if (limitPrice.compareTo(BigDecimal.ZERO) <= 0) {
                     return TargetResult.skipped(entry.strategy.symbol() + ": current market price is unavailable");
                 }
-                result = gateway.buyMoreAtLimit(entry.strategy, quantity, limitPrice);
+                result = gateway.buyMoreAtLimit(entry.strategy, quantity, limitPrice, selection.timeInForce());
             }
             return result.success()
                     ? TargetResult.success(entry.strategy.symbol() + " (" + quantity + ")")
@@ -871,18 +825,31 @@ final class PortfolioActionsController {
             return thread;
         });
         try {
-            List<CompletableFuture<TargetResult>> futures = targets.stream()
-                    .map(entry -> CompletableFuture.supplyAsync(() -> runTarget(entry, operation), executor))
-                    .toList();
             List<String> successes = new ArrayList<>();
             List<String> failures = new ArrayList<>();
             List<String> skipped = new ArrayList<>();
-            for (CompletableFuture<TargetResult> future : futures) {
-                TargetResult result = future.join();
-                switch (result.status()) {
-                    case SUCCESS -> successes.add(result.message());
-                    case FAILURE -> failures.add(result.message());
-                    case SKIPPED -> skipped.add(result.message());
+            // One batch is submitted, awaited, and only then is the next one queued. Hundreds of
+            // targets otherwise queue hundreds of broker calls at once, which leaves the action
+            // looking stuck and gives the broker no gap between bursts.
+            List<List<ManagedStrategy>> batches =
+                    BulkPlacementRunner.batches(targets, BulkPlacementRunner.DEFAULT_BATCH_SIZE);
+            int completed = 0;
+            for (List<ManagedStrategy> batch : batches) {
+                List<CompletableFuture<TargetResult>> futures = batch.stream()
+                        .map(entry -> CompletableFuture.supplyAsync(() -> runTarget(entry, operation), executor))
+                        .toList();
+                for (CompletableFuture<TargetResult> future : futures) {
+                    TargetResult result = future.join();
+                    switch (result.status()) {
+                        case SUCCESS -> successes.add(result.message());
+                        case FAILURE -> failures.add(result.message());
+                        case SKIPPED -> skipped.add(result.message());
+                    }
+                }
+                completed += batch.size();
+                if (completed < targets.size()) {
+                    gateway.log("[Portfolio Actions] Processed " + completed + " of " + targets.size()
+                            + " target(s); continuing with the next batch.");
                 }
             }
             return new PortfolioActionsSupport.BatchResult(successes, failures, skipped);
@@ -944,10 +911,11 @@ final class PortfolioActionsController {
     }
 
     private int parallelThreadCount(int targetCount) {
-        return Math.min(targetCount, Math.max(2, Math.min(6, Runtime.getRuntime().availableProcessors())));
+        int perBatch = Math.min(targetCount, BulkPlacementRunner.DEFAULT_BATCH_SIZE);
+        return Math.max(1, Math.min(perBatch, Math.max(2, Math.min(6, Runtime.getRuntime().availableProcessors()))));
     }
 
-    private void handleCleanTradeHistory() {
+    void handleCleanTradeHistory() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CLEAN_TRADE_HISTORY;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
@@ -1014,7 +982,7 @@ final class PortfolioActionsController {
         }
     }
 
-    private void handleSellAction(PortfolioActionsSupport.Scope scope, SellSubmissionType submissionType) {
+    void handleSellAction(PortfolioActionsSupport.Scope scope, SellSubmissionType submissionType) {
         List<ManagedStrategy> targets = support.filterTargets(gateway.currentStrategies(), scope);
         if (targets.isEmpty()) {
             gateway.actionSkipped(scope.menuLabel(), scope.emptyMessage());

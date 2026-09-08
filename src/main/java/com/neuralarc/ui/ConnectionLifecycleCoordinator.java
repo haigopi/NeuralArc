@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.api.ConnectionCheck;
 import com.neuralarc.api.TradingApi;
 import com.neuralarc.model.ApplicationMode;
 import com.neuralarc.model.BrokerType;
@@ -45,6 +46,26 @@ public final class ConnectionLifecycleCoordinator {
                 apiKey,
                 apiSecret
         );
+        return applyConnectionAttempt(connectionAttempt, brokerType, mode, apiKey, apiSecret, manualTrigger, applyRuntimeChanges);
+    }
+
+    /**
+     * Applies an attempt that was already made elsewhere (for example the startup check, which probes
+     * the broker on a background thread). This is the EDT half of {@link #runConnectionTest}: it only
+     * updates status, logs, and runtime wiring — it performs no broker I/O of its own.
+     */
+    public SettingsDialog.ConnectionResult applyConnectionAttempt(
+            TradingRuntimeSupport.ConnectionAttemptResult connectionAttempt,
+            BrokerType brokerType,
+            ApplicationMode mode,
+            String apiKey,
+            String apiSecret,
+            boolean manualTrigger,
+            boolean applyRuntimeChanges
+    ) {
+        if (connectionAttempt == null) {
+            connectionAttempt = TradingRuntimeSupport.ConnectionAttemptResult.forMissingBroker();
+        }
         if (connectionAttempt.brokerMissing()) {
             gateway.log("Connection test: FAILED (broker not set in Settings)");
             gateway.updateHeaderModeStatus(null);
@@ -76,9 +97,23 @@ public final class ConnectionLifecycleCoordinator {
         if (applyRuntimeChanges) {
             gateway.applyFailedRuntimeConnection(brokerType);
         }
-        String message = "Connection failed (" + mode.name() + ")";
+        String message = connectionFailureMessage(mode, connectionAttempt.check());
         gateway.markConnectionStatus(false, message);
         return new SettingsDialog.ConnectionResult(false, message);
+    }
+
+    /** Says why the connection failed, so a rejected key never reads the same as an offline broker. */
+    static String connectionFailureMessage(ApplicationMode mode, ConnectionCheck check) {
+        String modeName = (mode == null ? ApplicationMode.PAPER : mode).name();
+        if (check == null) {
+            return "Connection failed (" + modeName + ")";
+        }
+        return switch (check.status()) {
+            case INVALID_CREDENTIALS -> "Broker rejected the saved " + modeName + " API key";
+            case MISSING_CREDENTIALS -> modeName + " API key and secret are not configured";
+            case UNREACHABLE -> "Broker unreachable (" + modeName + ") - retrying";
+            default -> "Connection failed (" + modeName + ")";
+        };
     }
 
     public void scheduleConnectionRetry() {

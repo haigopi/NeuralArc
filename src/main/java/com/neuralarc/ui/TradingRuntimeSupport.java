@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.api.ConnectionCheck;
 import com.neuralarc.api.HttpAlpacaClient;
 import com.neuralarc.api.TradingApi;
 import com.neuralarc.api.TradingApiFactory;
@@ -171,13 +172,14 @@ public final class TradingRuntimeSupport {
         }
         TradingApi candidateApi = tradingApiCreator.create(brokerType, mode);
         candidateApi.authenticate(apiKey, apiSecret);
-        boolean connected = candidateApi.testConnection();
+        ConnectionCheck check = candidateApi.checkConnection();
         return new ConnectionAttemptResult(
-                connected,
+                check.connected(),
                 candidateApi,
-                connected ? "Connected to " + brokerType.name() + " (" + mode.name() + ")" : "Connection failed",
+                check.connected() ? "Connected to " + brokerType.name() + " (" + mode.name() + ")" : "Connection failed",
                 false,
-                false
+                false,
+                check
         );
     }
 
@@ -234,15 +236,38 @@ public final class TradingRuntimeSupport {
             TradingApi tradingApi,
             String message,
             boolean brokerMissing,
-            boolean liveDisabled
+            boolean liveDisabled,
+            ConnectionCheck check
     ) {
+        public ConnectionAttemptResult {
+            if (check == null) {
+                check = connected
+                        ? ConnectionCheck.accepted()
+                        : ConnectionCheck.unreachable(message);
+            }
+        }
+
+        /** Kept for callers (and tests) that only care about the connected/failed outcome. */
+        public ConnectionAttemptResult(
+                boolean connected,
+                TradingApi tradingApi,
+                String message,
+                boolean brokerMissing,
+                boolean liveDisabled
+        ) {
+            this(connected, tradingApi, message, brokerMissing, liveDisabled, null);
+        }
+
         public static ConnectionAttemptResult forMissingBroker() {
-            return new ConnectionAttemptResult(false, null, "Broker not configured", true, false);
+            return new ConnectionAttemptResult(false, null, "Broker not configured", true, false,
+                    ConnectionCheck.missingCredentials());
         }
 
         public static ConnectionAttemptResult forLiveDisabled() {
             return new ConnectionAttemptResult(false, null,
-                    "LIVE mode is disabled. Set trading.live.enabled=true in app.properties.", false, true);
+                    "LIVE mode is disabled. Set trading.live.enabled=true in app.properties.", false, true,
+                    new ConnectionCheck(ConnectionCheck.Status.BROKER_ERROR,
+                            "LIVE mode is disabled in application configuration."));
         }
     }
 }

@@ -105,7 +105,7 @@ public class TradeEmailNotificationService {
                 "SELL_EXECUTED",
                 strategy.symbol(),
                 automatedRecipientEmail,
-                contentBuilder.sellSubject(strategy),
+                contentBuilder.sellSubject(strategy, order, context),
                 contentBuilder.sellText(strategy, order, context),
                 contentBuilder.sellHtml(strategy, order, context)
         );

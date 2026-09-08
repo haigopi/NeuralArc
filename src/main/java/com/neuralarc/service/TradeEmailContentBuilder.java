@@ -11,34 +11,114 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 final class TradeEmailContentBuilder {
     private static final int HISTORY_LIMIT = 25;
+    /** Shared subject prefix so live NeuralArc mail sorts and filters together in an inbox. */
+    private static final String SUBJECT_PREFIX = "NeuralArc: Live - ";
+    private static final String NEUTRAL_HEADER_BACKGROUND = "#111827";
+    private static final String PROFIT_HEADER_BACKGROUND = "#047857";
+    private static final String LOSS_HEADER_BACKGROUND = "#B91C1C";
     private static final DateTimeFormatter DATE_TIME =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z").withZone(ZoneId.systemDefault());
 
     String buySubject(Strategy strategy) {
-        return "NeuralArc live buy order placed: " + strategy.symbol();
+        return SUBJECT_PREFIX + "Buy order placed: " + strategy.symbol();
     }
 
-    String sellSubject(Strategy strategy) {
-        return "NeuralArc live sell order executed: " + strategy.symbol();
+    /**
+     * Says on the subject line what the fill actually did: which exit stage closed the trade and
+     * whether it booked a profit or a loss. "sell order executed: INTC" alone left that unanswered
+     * until the mail was opened.
+     */
+    String sellSubject(Strategy strategy, StrategyOrder order, TradeEmailNotificationContext context) {
+        return SUBJECT_PREFIX + "Sell order executed: " + strategy.symbol()
+                + " - " + stageLabel(order)
+                + " - " + outcomeLabel(sellRealizedPnl(order, context));
+    }
+
+    /**
+     * What this fill booked, not the strategy's running total: an exit that took a profit must read
+     * as a profit even when earlier exits on the same strategy lost money.
+     */
+    private BigDecimal sellRealizedPnl(StrategyOrder order, TradeEmailNotificationContext context) {
+        return StrategyOrderAccounting.realizedPnlForSellOrder(safe(context, order).orderHistory(), order);
+    }
+
+    /** PROFIT above zero, LOSS below, FLAT at exactly zero. */
+    private static Outcome outcome(BigDecimal netPnl) {
+        BigDecimal rounded = Monetary.round(netPnl);
+        if (rounded.compareTo(BigDecimal.ZERO) > 0) {
+            return Outcome.PROFIT;
+        }
+        return rounded.compareTo(BigDecimal.ZERO) < 0 ? Outcome.LOSS : Outcome.FLAT;
+    }
+
+    private String outcomeLabel(BigDecimal netPnl) {
+        return switch (outcome(netPnl)) {
+            case PROFIT -> "Profit " + money(netPnl);
+            case LOSS -> "Loss " + money(netPnl);
+            case FLAT -> "Flat " + money(netPnl);
+        };
+    }
+
+    private String stageLabel(StrategyOrder order) {
+        if (order == null || order.stage() == null) {
+            return "Sell";
+        }
+        String[] parts = order.stage().name().toLowerCase(Locale.ROOT).split("_");
+        StringBuilder builder = new StringBuilder();
+        for (String part : parts) {
+            if (part.isBlank()) {
+                continue;
+            }
+            if (!builder.isEmpty()) {
+                builder.append(' ');
+            }
+            builder.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+        }
+        return builder.isEmpty() ? "Sell" : builder.toString();
+    }
+
+    private enum Outcome {
+        PROFIT,
+        LOSS,
+        FLAT
     }
 
     String buyText(Strategy strategy, StrategyOrder order, TradeEmailNotificationContext context) {
-        return text("Live buy order placed and waiting for fill.", strategy, order, context);
+        return text("Buy order placed: " + strategy.symbol() + " - waiting for fill.", strategy, order, context);
     }
 
     String sellText(Strategy strategy, StrategyOrder order, TradeEmailNotificationContext context) {
-        return text("Live sell order executed.", strategy, order, context);
+        TradeEmailNotificationContext safeContext = safe(context, order);
+        return text("Sell order executed: " + strategy.symbol() + " - " + stageLabel(order)
+                        + " - " + outcomeLabel(sellRealizedPnl(order, safeContext)) + ".",
+                strategy, order, safeContext);
     }
 
     String buyHtml(Strategy strategy, StrategyOrder order, TradeEmailNotificationContext context) {
-        return html("Live buy order placed", "The order is submitted and waiting for fill.", strategy, order, context);
+        return html("Buy order placed: " + strategy.symbol(), "Waiting for fill.",
+                NEUTRAL_HEADER_BACKGROUND, strategy, order, context);
     }
 
     String sellHtml(Strategy strategy, StrategyOrder order, TradeEmailNotificationContext context) {
-        return html("Live sell order executed", "The order filled on the live account.", strategy, order, context);
+        TradeEmailNotificationContext safeContext = safe(context, order);
+        BigDecimal netPnl = sellRealizedPnl(order, safeContext);
+        Outcome outcome = outcome(netPnl);
+        String heading = "Sell order executed: " + strategy.symbol() + " - " + stageLabel(order);
+        String subtitle = switch (outcome) {
+            case PROFIT -> "This exit booked a profit of " + money(netPnl) + ".";
+            case LOSS -> "This exit booked a loss of " + money(netPnl) + ".";
+            case FLAT -> "This exit closed flat.";
+        };
+        String background = switch (outcome) {
+            case PROFIT -> PROFIT_HEADER_BACKGROUND;
+            case LOSS -> LOSS_HEADER_BACKGROUND;
+            case FLAT -> NEUTRAL_HEADER_BACKGROUND;
+        };
+        return html(heading, subtitle, background, strategy, order, safeContext);
     }
 
     private String text(String heading, Strategy strategy, StrategyOrder order, TradeEmailNotificationContext context) {
@@ -65,6 +145,7 @@ final class TradeEmailContentBuilder {
     private String html(
             String title,
             String subtitle,
+            String headerBackground,
             Strategy strategy,
             StrategyOrder order,
             TradeEmailNotificationContext context
@@ -72,10 +153,10 @@ final class TradeEmailContentBuilder {
         TradeEmailNotificationContext safeContext = safe(context, order);
         return "<!doctype html><html><body style=\"margin:0;background:#f4f7fb;color:#172033;font-family:Arial,sans-serif;\">"
                 + "<div style=\"max-width:760px;margin:0 auto;padding:24px;\">"
-                + "<div style=\"background:#111827;color:#ffffff;border-radius:16px 16px 0 0;padding:22px 24px;\">"
-                + "<div style=\"font-size:12px;letter-spacing:1.4px;text-transform:uppercase;color:#9CA3AF;\">NeuralArc Live Order</div>"
+                + "<div style=\"background:" + headerBackground + ";color:#ffffff;border-radius:16px 16px 0 0;padding:22px 24px;\">"
+                + "<div style=\"font-size:12px;letter-spacing:1.4px;text-transform:uppercase;color:#E5E7EB;\">NeuralArc &middot; Live</div>"
                 + "<h1 style=\"margin:8px 0 4px;font-size:24px;line-height:1.25;\">" + escape(title) + "</h1>"
-                + "<div style=\"font-size:14px;color:#D1D5DB;\">" + escape(subtitle) + "</div>"
+                + "<div style=\"font-size:14px;color:#F3F4F6;\">" + escape(subtitle) + "</div>"
                 + "</div>"
                 + "<div style=\"background:#ffffff;border:1px solid #E5E7EB;border-top:0;border-radius:0 0 16px 16px;padding:22px 24px;\">"
                 + summaryCards(strategy, order, safeContext)
@@ -89,11 +170,14 @@ final class TradeEmailContentBuilder {
     }
 
     private String summaryCards(Strategy strategy, StrategyOrder order, TradeEmailNotificationContext context) {
+        boolean sell = order != null && order.side() == StrategyOrderSide.SELL;
         return "<table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"width:100%;border-collapse:collapse;margin-bottom:18px;\">"
                 + "<tr>"
                 + summaryCard("Symbol", strategy.symbol())
-                + summaryCard("Stage", String.valueOf(order.stage()))
-                + summaryCard("Strategy Net P&L", money(context.strategyNetPnl()))
+                + summaryCard("Stage", stageLabel(order))
+                + (sell
+                    ? summaryCard("This Exit P&L", money(sellRealizedPnl(order, context)))
+                    : summaryCard("Strategy Net P&L", money(context.strategyNetPnl())))
                 + summaryCard("Workspace Net P&L", money(context.workspaceNetPnl()))
                 + "</tr></table>";
     }

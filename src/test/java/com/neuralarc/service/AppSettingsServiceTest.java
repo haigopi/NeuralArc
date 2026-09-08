@@ -4,6 +4,7 @@ import com.neuralarc.model.ApplicationMode;
 import com.neuralarc.model.AiProviderType;
 import com.neuralarc.model.AiRecommendationSettings;
 import com.neuralarc.model.BrokerType;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.security.CredentialManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -53,6 +54,7 @@ class AppSettingsServiceTest {
                 75,
                 false,
                 false,
+                TimeInForce.DAY,
                 10,
                 3,
                 false,
@@ -68,6 +70,7 @@ class AppSettingsServiceTest {
         assertEquals(BrokerType.ALPACA, loaded.brokerType());
         assertEquals(ApplicationMode.PAPER, loaded.applicationMode());
         assertTrue(loaded.emailOnBuyExpected());
+        assertEquals(TimeInForce.DAY, loaded.manualBuyTimeInForce());
         assertTrue(loaded.emailOnSellExecuted());
         assertEquals(75, loaded.defaultStrategyPollingSeconds());
         assertFalse(loaded.defaultRepeatCycleAfterProfitExitEnabled());
@@ -76,6 +79,46 @@ class AppSettingsServiceTest {
         assertEquals(3, loaded.maxValidationAttemptsBeforePause());
         assertFalse(loaded.adaptivePacingEnabled());
         assertEquals(6, loaded.adaptivePacingMaxMultiplier());
+    }
+
+    @Test
+    void persistsManualBuyTimeInForce() throws Exception {
+        AppSettingsService service = new AppSettingsService(tempDir.resolve("settings-tif.db"));
+
+        service.save(withManualBuyTimeInForce(TimeInForce.DAY));
+        assertEquals(TimeInForce.DAY, service.load().manualBuyTimeInForce());
+
+        service.save(withManualBuyTimeInForce(TimeInForce.GTC));
+        assertEquals(TimeInForce.GTC, service.load().manualBuyTimeInForce());
+    }
+
+    @Test
+    void manualBuyTimeInForceFallsBackToDefaultWhenNotPersisted() throws Exception {
+        AppSettingsService service = new AppSettingsService(tempDir.resolve("settings-no-tif.db"));
+
+        assertEquals(AppSettingsService.DEFAULT_MANUAL_BUY_TIME_IN_FORCE, service.load().manualBuyTimeInForce());
+    }
+
+    private AppSettingsService.AppSettings withManualBuyTimeInForce(TimeInForce timeInForce) {
+        return new AppSettingsService.AppSettings(
+                "user@example.com",
+                true,
+                true,
+                false,
+                BrokerType.ALPACA,
+                ApplicationMode.PAPER,
+                true,
+                false,
+                false,
+                AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS,
+                AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
+                AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED,
+                timeInForce,
+                AppSettingsService.DEFAULT_VALIDATION_BATCH_WINDOW_SECONDS,
+                AppSettingsService.DEFAULT_MAX_VALIDATION_ATTEMPTS_BEFORE_PAUSE,
+                AppSettingsService.DEFAULT_ADAPTIVE_PACING_ENABLED,
+                AppSettingsService.DEFAULT_ADAPTIVE_PACING_MAX_MULTIPLIER
+        );
     }
 
     @Test

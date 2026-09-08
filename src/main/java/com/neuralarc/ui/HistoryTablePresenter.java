@@ -44,7 +44,7 @@ public final class HistoryTablePresenter {
                 continue;
             }
             rows.addAll(buildFilledRows(source, timestampFormatter, groupBy));
-            appendFallbackRowIfNeeded(rows, source, timestampFormatter);
+            appendFallbackRowIfNeeded(rows, source, timestampFormatter, groupBy);
         }
         rows = filterRowsBySellResult(rows, sellFilter);
         rows.sort(historyRowComparator(groupBy));
@@ -69,7 +69,13 @@ public final class HistoryTablePresenter {
                 String.CASE_INSENSITIVE_ORDER
         );
         if (groupBy == TradeHistoryGroupBy.DATE) {
-            groupComparator = groupComparator.reversed();
+            // A date group holds several symbols, so ordering sells above buys (the symbol-group
+            // convention) would put one symbol's sell directly above another symbol's buy and read as
+            // a pair. Inside a date the rows are a plain newest-first timeline instead.
+            return groupComparator.reversed()
+                    .thenComparing(HistoryRow::sortTime, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(HistoryRow::symbol, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER))
+                    .thenComparing(HistoryRow::sortPriority);
         }
         return groupComparator
                 .thenComparing(HistoryRow::sortPriority)
@@ -163,7 +169,12 @@ public final class HistoryTablePresenter {
         return rows;
     }
 
-    private void appendFallbackRowIfNeeded(List<HistoryRow> rows, HistorySource source, Function<Instant, String> timestampFormatter) {
+    private void appendFallbackRowIfNeeded(
+            List<HistoryRow> rows,
+            HistorySource source,
+            Function<Instant, String> timestampFormatter,
+            TradeHistoryGroupBy groupBy
+    ) {
         if (source.strategyStatusEnum() != StrategyStatus.FAILED && source.strategyStatusEnum() != StrategyStatus.COMPLETED) {
             return;
         }
@@ -173,7 +184,7 @@ public final class HistoryTablePresenter {
         }
         rows.add(new HistoryRow(
                 source.symbol(),
-                source.symbol(),
+                groupKeyFor(source, source.lastPolledAt(), groupBy),
                 source.brokerMode(),
                 source.strategyStatus(),
                 source.currentStateLabel(),

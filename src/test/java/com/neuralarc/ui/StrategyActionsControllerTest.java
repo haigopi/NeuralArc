@@ -301,6 +301,19 @@ class StrategyActionsControllerTest {
     }
 
     @Test
+    void buyMoreAtLimitSubmitsTheTimeInForceChosenInTheDialog() {
+        Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        FakeGateway gateway = new FakeGateway(strategy);
+        gateway.limitBuySelection = Optional.of(
+                new ManualLimitBuySelection(5, new BigDecimal("9.25"), false, TimeInForce.GTC));
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.buyMoreAtLimitPrice(0);
+
+        assertEquals(TimeInForce.GTC, gateway.limitBuyTimeInForceSubmitted);
+    }
+
+    @Test
     void buyMoreAtLimitIsAvailableForCompletedStrategy() {
         Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.COMPLETED);
         FakeGateway gateway = new FakeGateway(strategy);
@@ -556,6 +569,7 @@ class StrategyActionsControllerTest {
         int limitBuyQuantitySubmitted;
         BigDecimal limitBuyPriceSubmitted;
         boolean limitBuyRepositionAfterExpirySubmitted;
+        TimeInForce limitBuyTimeInForceSubmitted;
         String repositionedStrategyId;
         StrategyService strategyService;
         Strategy refreshedStrategy;
@@ -644,12 +658,14 @@ class StrategyActionsControllerTest {
                 Strategy strategy,
                 int quantity,
                 BigDecimal limitPrice,
-                boolean repositionAfterExpiry
+                boolean repositionAfterExpiry,
+                TimeInForce timeInForce
         ) {
             limitBuyStrategyId = strategy.id();
             limitBuyQuantitySubmitted = quantity;
             limitBuyPriceSubmitted = limitPrice;
             limitBuyRepositionAfterExpirySubmitted = repositionAfterExpiry;
+            limitBuyTimeInForceSubmitted = timeInForce;
             return StrategyService.StrategyCreationResult.success(strategy.id(), "ord", "alpaca", "client");
         }
         @Override

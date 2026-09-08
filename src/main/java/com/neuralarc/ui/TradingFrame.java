@@ -145,6 +145,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -549,6 +550,7 @@ public class TradingFrame extends JFrame {
     /** Wall-clock millis of the last polling tick. Used to detect system-sleep gaps. EDT-only. */
     private long lastPollingTickMillis;
     private final ConnectionLifecycleCoordinator connectionLifecycleCoordinator;
+    private final StartupCredentialCoordinator startupCredentialCoordinator;
     private AsyncLogUploadService asyncLogUploadService;
 
     public TradingFrame() {
@@ -730,8 +732,9 @@ public class TradingFrame extends JFrame {
             @Override public StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity) {
                 return TradingFrame.this.buyMoreAtMarket(strategy, quantity);
             }
-            @Override public StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice) {
-                return TradingFrame.this.buyMoreAtLimit(strategy, quantity, limitPrice, false);
+            @Override public StrategyService.StrategyCreationResult buyMoreAtLimit(
+                    Strategy strategy, int quantity, BigDecimal limitPrice, TimeInForce timeInForce) {
+                return TradingFrame.this.buyMoreAtLimit(strategy, quantity, limitPrice, false, timeInForce);
             }
             @Override
             public ManualPortfolioImportService.ImportResult importManualStocks(List<PortfolioStockImportDialog.ImportedStockDraft> drafts) {
@@ -766,6 +769,12 @@ public class TradingFrame extends JFrame {
             @Override public String selectedWorkspaceForNewStrategy() { return TradingFrame.this.selectedWorkspaceForNewStrategy(); }
             @Override public String selectedModeLabel() { return TradingFrame.this.selectedModeLabel(); }
             @Override public JMenuItem createMenuItem(String text, String iconPath, Runnable action) { return TradingFrame.this.createStatusMenuItem(text, iconPath, action); }
+            @Override public JMenuItem createMenuItem(String label, String description, String iconPath, Runnable action) {
+                return TradingFrame.this.createDescribedStatusMenuItem(label, description, iconPath, action);
+            }
+            @Override public JMenu createSubMenu(String label, String iconPath) {
+                return TradingFrame.this.createStatusSubMenu(label, iconPath);
+            }
             @Override public int confirm(Object message, String title, int optionType, int messageType) {
                 return JOptionPane.showConfirmDialog(TradingFrame.this, message, title, optionType, messageType);
             }
@@ -954,7 +963,12 @@ public class TradingFrame extends JFrame {
             }
             @Override
             public Optional<ManualLimitBuySelection> chooseLimitBuy(Strategy strategy, BigDecimal currentPrice) {
-                return ManualLimitBuyDialog.show(TradingFrame.this, strategy, currentPrice);
+                return ManualLimitBuyDialog.show(
+                        TradingFrame.this,
+                        strategy,
+                        currentPrice,
+                        settingsDialog.appliedManualBuyTimeInForce()
+                );
             }
             @Override
             public BigDecimal currentPriceForStrategy(Strategy strategy) {
@@ -970,9 +984,10 @@ public class TradingFrame extends JFrame {
                     Strategy strategy,
                     int quantity,
                     BigDecimal limitPrice,
-                    boolean repositionAfterExpiry
+                    boolean repositionAfterExpiry,
+                    TimeInForce timeInForce
             ) {
-                return TradingFrame.this.buyMoreAtLimit(strategy, quantity, limitPrice, repositionAfterExpiry);
+                return TradingFrame.this.buyMoreAtLimit(strategy, quantity, limitPrice, repositionAfterExpiry, timeInForce);
             }
             @Override public StrategyService.StrategyCreationResult repositionExpiredStrategy(
                     String strategyId,
@@ -1327,6 +1342,88 @@ public class TradingFrame extends JFrame {
                 TradingFrame.this.setStatus(message, tone);
             }
         });
+        startupCredentialCoordinator = new StartupCredentialCoordinator(
+                new StartupCredentialCoordinator.Ui() {
+                    @Override
+                    public ApplicationMode appliedApplicationMode() {
+                        return settingsDialog.appliedApplicationMode();
+                    }
+
+                    @Override
+                    public BrokerType appliedBrokerType() {
+                        return settingsDialog.appliedBrokerType();
+                    }
+
+                    @Override
+                    public String savedApiKey(ApplicationMode mode) {
+                        return settingsDialog.savedApiKey(mode);
+                    }
+
+                    @Override
+                    public String savedApiSecret(ApplicationMode mode) {
+                        return settingsDialog.savedApiSecret(mode);
+                    }
+
+                    @Override
+                    public boolean liveTradingEnabled() {
+                        return AppMetadata.liveTradingEnabled();
+                    }
+
+                    @Override
+                    public void log(String message) {
+                        TradingFrame.this.log(message);
+                    }
+
+                    @Override
+                    public void setVerifyingStatus(String message) {
+                        setStatus(message, STATUS_WARN);
+                    }
+
+                    @Override
+                    public SettingsDialog.ConnectionResult applyConnectionAttempt(
+                            TradingRuntimeSupport.ConnectionAttemptResult attempt,
+                            BrokerType brokerType,
+                            ApplicationMode mode,
+                            String apiKey,
+                            String apiSecret
+                    ) {
+                        return connectionLifecycleCoordinator.applyConnectionAttempt(
+                                attempt, brokerType, mode, apiKey, apiSecret, false, true);
+                    }
+
+                    @Override
+                    public void showCredentialProblem(String title, String headline, String summary) {
+                        JOptionPane.showMessageDialog(
+                                TradingFrame.this,
+                                "<html><body style='width:360px'><b>" + headline + "</b><br><br>"
+                                        + summary + ".<br><br>"
+                                        + "Update the credentials in Settings and verify the connection."
+                                        + "</body></html>",
+                                title,
+                                JOptionPane.WARNING_MESSAGE
+                        );
+                    }
+
+                    @Override
+                    public void openSettings() {
+                        openSettingsDialog();
+                    }
+
+                    @Override
+                    public void runInBackground(Runnable task) {
+                        Thread worker = new Thread(task, "startup-credential-check");
+                        worker.setDaemon(true);
+                        worker.start();
+                    }
+
+                    @Override
+                    public void runOnUiThread(Runnable task) {
+                        SwingUtilities.invokeLater(task);
+                    }
+                },
+                new StartupCredentialValidator((mode, apiKey, apiSecret) -> tradingRuntimeSupport.attemptConnection(
+                        settingsDialog.appliedBrokerType(), mode, apiKey, apiSecret))
+        );
         legalDisclosureAccepted = legalDisclosureController.loadAccepted();
         refreshStrategyRuntimeServices(
                 settingsDialog.savedApiKey(selectedApplicationMode()),
@@ -2469,6 +2566,33 @@ public class TradingFrame extends JFrame {
         return item;
     }
 
+    /**
+     * Menu item that prints its one-line description under the label. The action log still records the
+     * plain label, not the rendered HTML.
+     */
+    private JMenuItem createDescribedStatusMenuItem(String label, String description, String iconPath, Runnable action) {
+        JMenuItem item = createStatusMenuItem(label, iconPath, action);
+        item.setText(PortfolioActionsMenu.itemHtml(label, description));
+        return item;
+    }
+
+    private JMenu createStatusSubMenu(String label, String iconPath) {
+        JMenu submenu = new JMenu(label);
+        submenu.setIcon(SvgIconLoader.load(iconPath, 14));
+        submenu.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));
+        submenu.setForeground(new Color(225, 228, 236));
+        submenu.setBackground(new Color(46, 49, 60));
+        submenu.setOpaque(true);
+        submenu.setBorder(new EmptyBorder(8, 10, 8, 12));
+        submenu.setIconTextGap(10);
+        submenu.getPopupMenu().setBackground(new Color(46, 49, 60));
+        submenu.getPopupMenu().setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(70, 76, 90), 1, true),
+                new EmptyBorder(4, 4, 4, 4)
+        ));
+        return submenu;
+    }
+
     private JMenuItem createStatusMenuHeader(String text) {
         JMenuItem header = new JMenuItem(text);
         header.setEnabled(false);
@@ -3480,7 +3604,8 @@ public class TradingFrame extends JFrame {
                 autoAnalyzeResultStore,
                 defaultPollingSeconds,
                 defaultRepeatCycle,
-                defaultResubmit
+                defaultResubmit,
+                settingsDialog.appliedManualBuyTimeInForce()
         );
         StrategyConfig config = dialog.showDialog();
         if (config == null) {
@@ -3734,7 +3859,7 @@ public class TradingFrame extends JFrame {
     }
 
     private Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets) {
-        return AverageLosingPositionsDialog.show(this, targets);
+        return AverageLosingPositionsDialog.show(this, targets, settingsDialog.appliedManualBuyTimeInForce());
     }
 
     private Optional<BigDecimal> chooseSellProfitThresholdPercent(List<ManagedStrategy> targets) {
@@ -3763,7 +3888,8 @@ public class TradingFrame extends JFrame {
             Strategy strategy,
             int quantity,
             BigDecimal limitPrice,
-            boolean repositionAfterExpiry
+            boolean repositionAfterExpiry,
+            TimeInForce timeInForce
     ) {
         StrategyService modeAwareService = strategyServiceForMode(strategy.mode());
         if (modeAwareService == null) {
@@ -3771,7 +3897,7 @@ public class TradingFrame extends JFrame {
                     "Broker client is not configured for " + strategy.mode().name() + " mode."
             );
         }
-        return modeAwareService.buyMoreAtLimit(strategy.id(), quantity, limitPrice, repositionAfterExpiry);
+        return modeAwareService.buyMoreAtLimit(strategy.id(), quantity, limitPrice, repositionAfterExpiry, timeInForce);
     }
 
     private StrategyService strategyServiceForMode(StrategyMode mode) {
@@ -3790,9 +3916,9 @@ public class TradingFrame extends JFrame {
             openSettingsDialog();
             return;
         }
-        if (!autoInitializeConnection()) {
-            openSettingsDialog();
-        }
+        // Saved keys exist: verify paper and live off the EDT and only reopen Settings if the broker
+        // actually rejects them. A slow or unreachable broker must not read as "credentials missing".
+        startupCredentialCoordinator.verifySavedCredentials();
     }
 
     private void maybeShowFirstRunOnboarding() {
@@ -4866,7 +4992,8 @@ public class TradingFrame extends JFrame {
                 autoAnalyzeResultStore,
                 settingsDialog.appliedDefaultStrategyPollingSeconds(),
                 settingsDialog.appliedDefaultRepeatCycleAfterProfitExitEnabled(),
-                settingsDialog.appliedDefaultResubmitOnExpiryEnabled()
+                settingsDialog.appliedDefaultResubmitOnExpiryEnabled(),
+                settingsDialog.appliedManualBuyTimeInForce()
         );
         StrategyConfig config = dialog.showDialog();
         if (config == null) {
@@ -5034,7 +5161,8 @@ public class TradingFrame extends JFrame {
                     autoAnalyzeResultStore,
                     pollingSeconds,
                     repeatCycle,
-                    resubmit
+                    resubmit,
+                    settingsDialog.appliedManualBuyTimeInForce()
             );
             StrategyConfig config = strategyDialog.showDialog();
             if (config == null) {
@@ -7368,35 +7496,99 @@ public class TradingFrame extends JFrame {
                     JOptionPane.WARNING_MESSAGE);
             return;
         }
-        int submitted = 0;
-        int skipped = 0;
         List<Strategy> pending = strategyRepository.findAll().stream()
                 .filter(strategy -> strategy.mode() == selectedViewMode)
                 .filter(strategy -> selectedWorkspaceId.equals(strategy.workspaceId()))
                 .filter(this::isGapRocketPendingOrderPlacement)
                 .toList();
-        for (Strategy strategy : pending) {
-            StrategyService.StrategyCreationResult result = service.createAndActivate(strategy);
-            if (result.success()) {
-                submitted++;
-                log("[Gap Rocket] Submitted base limit buy for " + strategy.symbol()
-                        + " @ $" + strategy.baseBuyLimitPrice().toPlainString()
-                        + ", clientOrderId=" + result.clientOrderId());
-            } else {
-                skipped++;
-                log("[Gap Rocket] Failed to submit base limit buy for " + strategy.symbol() + ": " + result.error());
-            }
+        if (pending.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "No pending Gap Rocket limit buys to place.",
+                    "Gap Rocket Orders",
+                    JOptionPane.INFORMATION_MESSAGE);
+            return;
         }
-        syncStrategiesFromRepository();
-        refreshStrategyTableData();
-        applyCurrentStrategiesRowFilter();
-        refreshWorkspaceSummary();
-        updateStatusBar();
-        JOptionPane.showMessageDialog(this,
-                "Submitted " + submitted + " Gap Rocket limit buy order" + (submitted == 1 ? "" : "s") + "."
-                        + (skipped > 0 ? "\nSkipped " + skipped + " row" + (skipped == 1 ? "" : "s") + " due to validation or broker errors." : ""),
-                "Gap Rocket Orders",
-                skipped > 0 ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE);
+        placePendingLimitBuysInBatches(pending, service);
+    }
+
+    /**
+     * Submits pending limit buys a few symbols at a time on a background thread. A workspace can hold
+     * hundreds of rows, and placing them in one uninterrupted sweep on the EDT froze the window until
+     * the last order came back.
+     */
+    private void placePendingLimitBuysInBatches(List<Strategy> pending, StrategyService service) {
+        gapRocketPlaceOrdersButton.setEnabled(false);
+        log("[Gap Rocket] Placing " + pending.size() + " pending limit buy order(s) in batches of "
+                + BulkPlacementRunner.DEFAULT_BATCH_SIZE + ".");
+        new SwingWorker<BulkPlacementRunner.Progress, BulkPlacementRunner.Progress>() {
+            @Override
+            protected BulkPlacementRunner.Progress doInBackground() {
+                return new BulkPlacementRunner().run(
+                        pending,
+                        strategy -> submitGapRocketPendingLimitBuy(service, strategy),
+                        this::publish
+                );
+            }
+
+            @Override
+            protected void process(List<BulkPlacementRunner.Progress> updates) {
+                BulkPlacementRunner.Progress latest = updates.getLast();
+                setStatus("Placing Gap Rocket limit buys: " + latest.completed() + " of " + latest.total()
+                        + " submitted...", STATUS_WARN);
+                syncStrategiesFromRepository();
+                refreshStrategyTableData();
+                updateStatusBar();
+            }
+
+            @Override
+            protected void done() {
+                gapRocketPlaceOrdersButton.setEnabled(true);
+                BulkPlacementRunner.Progress progress;
+                try {
+                    progress = get();
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    return;
+                } catch (ExecutionException ex) {
+                    log("[Gap Rocket] Batch placement failed: " + ex.getCause().getMessage());
+                    JOptionPane.showMessageDialog(TradingFrame.this,
+                            "Failed to place Gap Rocket limit buys: " + ex.getCause().getMessage(),
+                            "Gap Rocket Orders",
+                            JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+                syncStrategiesFromRepository();
+                refreshStrategyTableData();
+                applyCurrentStrategiesRowFilter();
+                refreshWorkspaceSummary();
+                updateStatusBar();
+                setStatus("Gap Rocket limit buys placed: " + progress.placed() + " of " + progress.total() + ".",
+                        progress.failed() > 0 ? STATUS_WARN : STATUS_OK);
+                JOptionPane.showMessageDialog(TradingFrame.this,
+                        "Submitted " + progress.placed() + " Gap Rocket limit buy order"
+                                + (progress.placed() == 1 ? "" : "s") + "."
+                                + (progress.failed() > 0
+                                ? "\nSkipped " + progress.failed() + " row" + (progress.failed() == 1 ? "" : "s")
+                                + " due to validation or broker errors." : "")
+                                + (progress.remaining() > 0
+                                ? "\nStopped with " + progress.remaining() + " row(s) not attempted." : ""),
+                        "Gap Rocket Orders",
+                        progress.failed() > 0 ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE);
+            }
+        }.execute();
+    }
+
+    /** Places one pending Gap Rocket base limit buy. Runs on the batch worker thread. */
+    private boolean submitGapRocketPendingLimitBuy(StrategyService service, Strategy strategy) {
+        StrategyService.StrategyCreationResult result = service.createAndActivate(strategy);
+        if (result.success()) {
+            log("[Gap Rocket] Submitted base limit buy for " + strategy.symbol()
+                    + " @ $" + strategy.baseBuyLimitPrice().toPlainString()
+                    + ", clientOrderId=" + result.clientOrderId());
+            return true;
+        }
+        log("[Gap Rocket] Failed to submit base limit buy for " + strategy.symbol() + ": " + result.error());
+        return false;
     }
 
     private StrategyService.StrategyCreationResult placePendingBaseBuy(Strategy strategy) {
@@ -8659,7 +8851,8 @@ public class TradingFrame extends JFrame {
                             HISTORY_COMPLETED_FG,
                             HISTORY_SUBTOTAL_BG,
                             HISTORY_SUBTOTAL_FG
-                    )
+                    ),
+                    tradeHistoryGroupBy == TradeHistoryGroupBy.SYMBOL
             );
             setBackground(cellStyle.background());
             setForeground(cellStyle.foreground());

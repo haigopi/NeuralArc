@@ -1,5 +1,7 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.model.TimeInForce;
+
 import javax.swing.ButtonGroup;
 import javax.swing.JOptionPane;
 import javax.swing.JRadioButton;
@@ -16,7 +18,11 @@ final class AverageLosingPositionsDialog {
     private AverageLosingPositionsDialog() {
     }
 
-    static Optional<AverageLosingPositionsSelection> show(Component parent, List<ManagedStrategy> targets) {
+    static Optional<AverageLosingPositionsSelection> show(
+            Component parent,
+            List<ManagedStrategy> targets,
+            TimeInForce defaultTimeInForce
+    ) {
         JRadioButton limitOrder = new JRadioButton("Patient average-down: buy only if price pulls back", true);
         JRadioButton marketOrder = new JRadioButton("Immediate average-down: buy now at market", false);
         ButtonGroup orderType = new ButtonGroup();
@@ -30,6 +36,17 @@ final class AverageLosingPositionsDialog {
         quantityMode.add(currentQuantity);
         quantityMode.add(fixedQuantity);
         JSpinner quantitySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 1_000_000, 1));
+
+        JRadioButton dayTimeInForce = new JRadioButton("DAY - expires at session close");
+        JRadioButton gtcTimeInForce = new JRadioButton("GTC - works until filled or cancelled");
+        ButtonGroup timeInForceGroup = new ButtonGroup();
+        timeInForceGroup.add(dayTimeInForce);
+        timeInForceGroup.add(gtcTimeInForce);
+        if (defaultTimeInForce == TimeInForce.GTC) {
+            gtcTimeInForce.setSelected(true);
+        } else {
+            dayTimeInForce.setSelected(true);
+        }
 
         String message = "<html><body style='width:420px'>"
                 + "<b>Average down losing positions</b><br>"
@@ -51,12 +68,18 @@ final class AverageLosingPositionsDialog {
                         + "Double-down size mirrors each position's current share count. Controlled add uses the same quantity "
                         + "for every matched symbol, useful when you want a smaller risk increase."
         );
+        String timeInForceDescription = muted(
+                "<b>How long each limit order lives</b><br>"
+                        + "Defaults to the manual buy time in force saved in Settings. Market orders ignore it."
+        );
         Object[] content = {
                 message,
                 executionDescription,
                 limitOrder,
                 "Required pullback below market (%):", discountSpinner,
                 discountDescription,
+                "Time in force:", dayTimeInForce, gtcTimeInForce,
+                timeInForceDescription,
                 marketOrder,
                 sizingDescription,
                 currentQuantity,
@@ -86,7 +109,8 @@ final class AverageLosingPositionsDialog {
                 selectedOrderType,
                 selectedQuantityMode,
                 quantity,
-                discountPercent
+                discountPercent,
+                gtcTimeInForce.isSelected() ? TimeInForce.GTC : TimeInForce.DAY
         ));
     }
 

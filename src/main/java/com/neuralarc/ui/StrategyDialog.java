@@ -103,6 +103,7 @@ public class StrategyDialog extends JDialog {
     private final int defaultPollingSeconds;
     private final boolean defaultRepeatCycleAfterProfitExitEnabled;
     private final boolean defaultResubmitOnExpiryEnabled;
+    private final TimeInForce defaultTimeInForce;
 
     private final JTextField symbolField = new JTextField(CURRENT_STRATEGY_FIELD_COLUMNS);
     private final JCheckBox paperMode = new JCheckBox("Paper trading mode", true);
@@ -195,7 +196,8 @@ public class StrategyDialog extends JDialog {
                 null,
                 AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS,
                 AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
-                AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
+                AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED,
+                AppSettingsService.DEFAULT_MANUAL_BUY_TIME_IN_FORCE
         );
     }
 
@@ -208,7 +210,8 @@ public class StrategyDialog extends JDialog {
                 resultStore,
                 AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS,
                 AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
-                AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
+                AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED,
+                AppSettingsService.DEFAULT_MANUAL_BUY_TIME_IN_FORCE
         );
     }
 
@@ -217,7 +220,8 @@ public class StrategyDialog extends JDialog {
                           AutoAnalyzeResultStore resultStore,
                           int defaultPollingSeconds,
                           boolean defaultRepeatCycleAfterProfitExitEnabled,
-                          boolean defaultResubmitOnExpiryEnabled) {
+                          boolean defaultResubmitOnExpiryEnabled,
+                          TimeInForce defaultTimeInForce) {
         super(owner, initialConfig == null ? "Add Stock Strategy" : "Edit Stock Strategy", true);
         DialogCloseActions.bindEscapeToClose(this);
         this.marketDataApi = marketDataApi;
@@ -225,6 +229,7 @@ public class StrategyDialog extends JDialog {
         this.defaultPollingSeconds = Math.max(1, defaultPollingSeconds);
         this.defaultRepeatCycleAfterProfitExitEnabled = defaultRepeatCycleAfterProfitExitEnabled;
         this.defaultResubmitOnExpiryEnabled = defaultResubmitOnExpiryEnabled;
+        this.defaultTimeInForce = defaultTimeInForce == null ? TimeInForce.DAY : defaultTimeInForce;
         setLayout(new BorderLayout(SECTION_GAP, SECTION_GAP));
 
         applyDialogDefaults();
@@ -1011,7 +1016,7 @@ public class StrategyDialog extends JDialog {
         paperMode.setSelected(DEFAULTS.paperTrading());
         basePriceField.setText(DEFAULTS.baseBuyPrice());
         baseQtyField.setText(DEFAULTS.baseBuyQty());
-        timeInForceBox.setSelectedItem(TimeInForce.DAY);
+        timeInForceBox.setSelectedItem(defaultTimeInForce);
         stopLossEnabled.setSelected(DEFAULTS.stopLossEnabled());
         stopLossField.setText(DEFAULTS.stopLoss());
         lossBuyLevelsEnabled.setSelected(true);
@@ -1056,7 +1061,7 @@ public class StrategyDialog extends JDialog {
                 BigDecimal.ZERO,
                 defaultResubmitOnExpiryEnabled,
                 StrategyConfig.DEFAULT_BASE_BUY_REPOST_REDUCTION_PERCENT,
-                TimeInForce.DAY
+                defaultTimeInForce
         ));
         updateStopLossFieldState();
         updateLossBuyFieldState();

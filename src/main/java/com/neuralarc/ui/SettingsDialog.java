@@ -3,6 +3,7 @@ package com.neuralarc.ui;
 import com.neuralarc.model.AiRecommendationSettings;
 import com.neuralarc.model.BrokerType;
 import com.neuralarc.model.ApplicationMode;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.service.AppSettingsService;
 import com.neuralarc.util.AppMetadata;
 import com.neuralarc.util.FontLoader;
@@ -69,6 +70,7 @@ public class SettingsDialog extends JDialog {
             "Resubmit strategy on expiry",
             AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
     );
+    private final JComboBox<TimeInForce> manualBuyTimeInForceBox = new JComboBox<>(TimeInForce.values());
     private final JCheckBox emailOnBuyExpected = new JCheckBox("Buy order placed / waiting for fill", AppSettingsService.DEFAULT_EMAIL_ON_BUY_EXPECTED);
     private final JCheckBox emailOnSellExecuted = new JCheckBox("Sell order executed", AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED);
     private final JCheckBox saveCredentials = new JCheckBox("Save credentials locally", false);
@@ -104,6 +106,7 @@ public class SettingsDialog extends JDialog {
             AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS,
             AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
             AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED,
+            AppSettingsService.DEFAULT_MANUAL_BUY_TIME_IN_FORCE,
             AppSettingsService.DEFAULT_VALIDATION_BATCH_WINDOW_SECONDS,
             AppSettingsService.DEFAULT_MAX_VALIDATION_ATTEMPTS_BEFORE_PAUSE,
             AppSettingsService.DEFAULT_ADAPTIVE_PACING_ENABLED,
@@ -248,8 +251,14 @@ public class SettingsDialog extends JDialog {
         strategyDefaultsContent.add(defaultResubmitOnExpiryEnabled);
         strategyDefaultsContent.add(Box.createVerticalStrut(8));
         strategyDefaultsContent.add(strategyDefaultsDescription);
+        JLabel manualBuyTimeInForceDescription = mutedDescription(
+                "Time in force sent with manual Buy More limit orders. "
+                        + "DAY cancels the order at the session close; GTC leaves it working until it fills or you cancel it."
+        );
         addFormRow(strategyDefaultsPanel, 0, "Default polling interval seconds:", defaultStrategyPollingSecondsField, true);
         addFormRow(strategyDefaultsPanel, 1, "Default cycle behavior:", strategyDefaultsContent, false);
+        addFormRow(strategyDefaultsPanel, 2, "Manual buy time in force:", manualBuyTimeInForceBox, true);
+        addFormRow(strategyDefaultsPanel, 3, "", manualBuyTimeInForceDescription, false);
 
         GridBagConstraints marketHoursContentConstraints = new GridBagConstraints();
         marketHoursContentConstraints.gridx = 1;
@@ -367,6 +376,10 @@ public class SettingsDialog extends JDialog {
     public int defaultStrategyPollingSeconds() { return parsePollingSecondsOrDefault(defaultStrategyPollingSecondsField.getText()); }
     public boolean defaultRepeatCycleAfterProfitExitEnabled() { return defaultRepeatCycleAfterProfitExitEnabled.isSelected(); }
     public boolean defaultResubmitOnExpiryEnabled() { return defaultResubmitOnExpiryEnabled.isSelected(); }
+    public TimeInForce manualBuyTimeInForce() {
+        Object selected = manualBuyTimeInForceBox.getSelectedItem();
+        return selected instanceof TimeInForce timeInForce ? timeInForce : AppSettingsService.DEFAULT_MANUAL_BUY_TIME_IN_FORCE;
+    }
     public boolean emailOnBuyExpected() { return emailOnBuyExpected.isSelected(); }
     public boolean emailOnSellExecuted() { return emailOnSellExecuted.isSelected(); }
     public boolean saveCredentials() { return saveCredentials.isSelected(); }
@@ -383,6 +396,7 @@ public class SettingsDialog extends JDialog {
     public int appliedDefaultStrategyPollingSeconds() { return appliedSettings.defaultStrategyPollingSeconds(); }
     public boolean appliedDefaultRepeatCycleAfterProfitExitEnabled() { return appliedSettings.defaultRepeatCycleAfterProfitExitEnabled(); }
     public boolean appliedDefaultResubmitOnExpiryEnabled() { return appliedSettings.defaultResubmitOnExpiryEnabled(); }
+    public TimeInForce appliedManualBuyTimeInForce() { return appliedSettings.manualBuyTimeInForce(); }
     public String getUserEmail() { return emailField.getText().trim(); }
     public String getApiKey() { return apiKeyField.getText().trim(); }
     public String getApiSecret() { return new String(apiSecretField.getPassword()); }
@@ -476,6 +490,7 @@ public class SettingsDialog extends JDialog {
                     pollingSeconds,
                     defaultRepeatCycleAfterProfitExitEnabled(),
                     defaultResubmitOnExpiryEnabled(),
+                    manualBuyTimeInForce(),
                     validationSettingsPanel.validationBatchWindowSeconds(),
                     validationSettingsPanel.maxValidationAttemptsBeforePause(),
                     validationSettingsPanel.adaptivePacingEnabled(),
@@ -559,6 +574,7 @@ public class SettingsDialog extends JDialog {
         defaultStrategyPollingSecondsField.setText(String.valueOf(appliedSettings.defaultStrategyPollingSeconds()));
         defaultRepeatCycleAfterProfitExitEnabled.setSelected(appliedSettings.defaultRepeatCycleAfterProfitExitEnabled());
         defaultResubmitOnExpiryEnabled.setSelected(appliedSettings.defaultResubmitOnExpiryEnabled());
+        manualBuyTimeInForceBox.setSelectedItem(appliedSettings.manualBuyTimeInForce());
         emailOnBuyExpected.setSelected(appliedSettings.emailOnBuyExpected());
         emailOnSellExecuted.setSelected(appliedSettings.emailOnSellExecuted());
         aiRecommendationSettingsPanel.populate(appSettingsService.loadAiRecommendationSettings());
@@ -662,6 +678,7 @@ public class SettingsDialog extends JDialog {
             defaultStrategyPollingSecondsField.setText(String.valueOf(AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS));
             defaultRepeatCycleAfterProfitExitEnabled.setSelected(AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED);
             defaultResubmitOnExpiryEnabled.setSelected(AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED);
+            manualBuyTimeInForceBox.setSelectedItem(AppSettingsService.DEFAULT_MANUAL_BUY_TIME_IN_FORCE);
             emailOnBuyExpected.setSelected(AppSettingsService.DEFAULT_EMAIL_ON_BUY_EXPECTED);
             emailOnSellExecuted.setSelected(AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED);
             aiRecommendationSettingsPanel.populate(AiRecommendationSettings.defaults());
@@ -681,6 +698,7 @@ public class SettingsDialog extends JDialog {
                     AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS,
                     AppSettingsService.DEFAULT_REPEAT_CYCLE_AFTER_PROFIT_EXIT_ENABLED,
                     AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED,
+                    AppSettingsService.DEFAULT_MANUAL_BUY_TIME_IN_FORCE,
                     AppSettingsService.DEFAULT_VALIDATION_BATCH_WINDOW_SECONDS,
                     AppSettingsService.DEFAULT_MAX_VALIDATION_ATTEMPTS_BEFORE_PAUSE,
                     AppSettingsService.DEFAULT_ADAPTIVE_PACING_ENABLED,

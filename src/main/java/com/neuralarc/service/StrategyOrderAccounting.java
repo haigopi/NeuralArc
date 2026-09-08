@@ -46,6 +46,61 @@ final class StrategyOrderAccounting {
         return Monetary.round(realized);
     }
 
+    /**
+     * Realized P&amp;L booked by one sell fill, against the average cost held at the moment it filled.
+     *
+     * <p>Distinct from {@link #realizedPnlForOrders(List)}, which is the strategy's running total: a
+     * profitable exit on a strategy that lost money earlier still has to read as a profit.
+     */
+    static BigDecimal realizedPnlForSellOrder(List<StrategyOrder> orders, StrategyOrder sellOrder) {
+        if (sellOrder == null || sellOrder.side() != StrategyOrderSide.SELL) {
+            return Monetary.zero();
+        }
+        List<StrategyOrder> history = filledOrders(orders);
+        if (history.stream().noneMatch(order -> order.id().equals(sellOrder.id()))) {
+            history = filledOrders(concat(orders, sellOrder));
+        }
+
+        BigDecimal positionQty = BigDecimal.ZERO;
+        BigDecimal averageCost = BigDecimal.ZERO;
+
+        for (StrategyOrder order : history) {
+            BigDecimal quantity = order.filledQuantity();
+            BigDecimal fillPrice = fillPrice(order);
+
+            if (order.side() == StrategyOrderSide.BUY) {
+                BigDecimal runningCost = averageCost.multiply(positionQty).add(fillPrice.multiply(quantity));
+                positionQty = positionQty.add(quantity);
+                if (positionQty.compareTo(BigDecimal.ZERO) > 0) {
+                    averageCost = runningCost.divide(positionQty, 8, java.math.RoundingMode.HALF_UP);
+                }
+                continue;
+            }
+
+            BigDecimal sellQty = quantity.min(positionQty.max(BigDecimal.ZERO));
+            BigDecimal realized = sellQty.compareTo(BigDecimal.ZERO) > 0
+                    ? fillPrice.subtract(averageCost).multiply(sellQty)
+                    : BigDecimal.ZERO;
+            if (order.id().equals(sellOrder.id())) {
+                return Monetary.round(realized);
+            }
+            if (sellQty.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            positionQty = positionQty.subtract(sellQty);
+            if (positionQty.compareTo(BigDecimal.ZERO) == 0) {
+                averageCost = BigDecimal.ZERO;
+            }
+        }
+        return Monetary.zero();
+    }
+
+    private static List<StrategyOrder> concat(List<StrategyOrder> orders, StrategyOrder extra) {
+        List<StrategyOrder> combined = new java.util.ArrayList<>(orders == null ? List.of() : orders);
+        combined.add(extra);
+        return combined;
+    }
+
     private static List<StrategyOrder> filledOrders(List<StrategyOrder> orders) {
         if (orders == null || orders.isEmpty()) {
             return List.of();

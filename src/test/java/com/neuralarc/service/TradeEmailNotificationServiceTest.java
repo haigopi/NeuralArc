@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TradeEmailNotificationServiceTest {
@@ -50,7 +51,8 @@ class TradeEmailNotificationServiceTest {
 
         assertEquals(1, sender.messages.size());
         assertEquals("ops@example.com", sender.messages.getFirst().recipient());
-        assertTrue(sender.messages.getFirst().subject().contains("buy order placed"));
+        assertTrue(sender.messages.getFirst().subject().startsWith("NeuralArc: Live - Buy order placed: "),
+                sender.messages.getFirst().subject());
         assertEquals(1, listener.sent.size());
         assertTrue(listener.sent.getFirst().contains("BUY_EXPECTED:AAPL:ops@example.com"));
     }
@@ -103,7 +105,8 @@ class TradeEmailNotificationServiceTest {
 
         assertEquals(1, sender.messages.size());
         assertEquals("ops@example.com", sender.messages.getFirst().recipient());
-        assertTrue(sender.messages.getFirst().subject().contains("sell order executed"));
+        assertTrue(sender.messages.getFirst().subject().startsWith("NeuralArc: Live - Sell order executed: "),
+                sender.messages.getFirst().subject());
     }
 
     @Test
@@ -146,6 +149,104 @@ class TradeEmailNotificationServiceTest {
         assertTrue(message.htmlBody().contains("<table"));
         assertTrue(message.htmlBody().contains("ORB Engine"));
         assertTrue(message.htmlBody().contains("Strategy realized net P&amp;L"));
+    }
+
+    @Test
+    void profitableExitSubjectCarriesTheStageAndProfitAndPaintsTheHeadingGreen() throws Exception {
+        Message message = sellMessageFor("100.00", "120.00", StrategyStage.TARGET_SELL);
+
+        assertTrue(message.subject().startsWith("NeuralArc: Live - Sell order executed: AAPL"), message.subject());
+        assertTrue(message.subject().contains("Target Sell"), message.subject());
+        assertTrue(message.subject().contains("Profit 200.00"), message.subject());
+        assertTrue(message.htmlBody().contains("background:#047857"), "profit heading must be green");
+        assertFalse(message.htmlBody().contains("background:#B91C1C"));
+        assertTrue(message.htmlBody().contains("This exit booked a profit of 200.00"));
+        assertTrue(message.textBody().contains("Profit 200.00"));
+    }
+
+    @Test
+    void losingExitSubjectCarriesTheStageAndLossAndPaintsTheHeadingRed() throws Exception {
+        Message message = sellMessageFor("100.00", "90.00", StrategyStage.STOP_LOSS);
+
+        assertTrue(message.subject().contains("Stop Loss"), message.subject());
+        assertTrue(message.subject().contains("Loss -100.00"), message.subject());
+        assertTrue(message.htmlBody().contains("background:#B91C1C"), "loss heading must be red");
+        assertFalse(message.htmlBody().contains("background:#047857"));
+        assertTrue(message.htmlBody().contains("This exit booked a loss of -100.00"));
+    }
+
+    @Test
+    void profitableExitReadsAsProfitEvenWhenEarlierExitsLostMoney() throws Exception {
+        AppSettingsService settings = settings(false, true);
+        RecordingSender sender = new RecordingSender();
+        FileStrategyRepository strategies = new FileStrategyRepository(tempDir.resolve("strategies-mixed.json"));
+        FileStrategyOrderRepository orders = new FileStrategyOrderRepository(tempDir.resolve("orders-mixed.json"));
+        Strategy strategy = strategy();
+        strategies.save(strategy);
+        // A losing round trip first, then a winning one: the running total is still negative.
+        orders.save(order("buy-1", StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.FILLED, "100.00", "100.00"));
+        orders.save(order("sell-1", StrategyOrderSide.SELL, StrategyStage.STOP_LOSS, StrategyOrderStatus.FILLED, "50.00", "50.00"));
+        orders.save(order("buy-2", StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.FILLED, "40.00", "40.00"));
+        StrategyOrder winningExit =
+                order("sell-2", StrategyOrderSide.SELL, StrategyStage.TARGET_SELL, StrategyOrderStatus.FILLED, "60.00", "60.00");
+        orders.save(winningExit);
+        TradeEmailNotificationService service = new TradeEmailNotificationService(
+                settings, sender, Runnable::run, "ops@example.com",
+                new RepositoryTradeEmailNotificationContextProvider(strategies, orders, new InMemoryWorkspaceRepository()));
+
+        service.notifySellExecuted(strategy, winningExit);
+
+        Message message = sender.messages.getFirst();
+        assertTrue(message.subject().contains("Profit 200.00"), message.subject());
+        assertTrue(message.htmlBody().contains("background:#047857"), "this exit was profitable, so the heading is green");
+    }
+
+    @Test
+    void headingStatesTheEventOnceInsteadOfRepeatingLiveOrder() throws Exception {
+        Message message = sellMessageFor("100.00", "120.00", StrategyStage.TARGET_SELL);
+
+        String html = message.htmlBody();
+        assertTrue(html.contains("NeuralArc &middot; Live"), "the badge carries the account context");
+        assertTrue(html.contains("Sell order executed: AAPL - Target Sell"));
+        assertFalse(html.contains("NeuralArc Live Order"), "the old eyebrow repeated the title");
+        assertFalse(html.contains("Live sell order executed"), "\"live\" belongs to the badge, not the title");
+        assertFalse(html.contains("The order filled on the live account."), "the subtitle now carries the P&L instead");
+    }
+
+    @Test
+    void buyEmailKeepsTheNeutralHeading() throws Exception {
+        AppSettingsService settings = settings(true, false);
+        RecordingSender sender = new RecordingSender();
+        TradeEmailNotificationService service = new TradeEmailNotificationService(
+                settings, sender, Runnable::run, "ops@example.com");
+
+        service.notifyBuyExpected(strategy(), order(StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.FILLED));
+
+        String html = sender.messages.getFirst().htmlBody();
+        assertTrue(html.contains("background:#111827"));
+        assertFalse(html.contains("background:#047857"));
+        assertFalse(html.contains("background:#B91C1C"));
+    }
+
+    private Message sellMessageFor(String buyFill, String sellFill, StrategyStage stage) throws Exception {
+        AppSettingsService settings = settings(false, true);
+        RecordingSender sender = new RecordingSender();
+        FileStrategyRepository strategies = new FileStrategyRepository(
+                tempDir.resolve("strategies-" + stage + "-" + sellFill + ".json"));
+        FileStrategyOrderRepository orders = new FileStrategyOrderRepository(
+                tempDir.resolve("orders-" + stage + "-" + sellFill + ".json"));
+        Strategy strategy = strategy();
+        strategies.save(strategy);
+        orders.save(order("buy-1", StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.FILLED, buyFill, buyFill));
+        StrategyOrder sellOrder = order("sell-1", StrategyOrderSide.SELL, stage, StrategyOrderStatus.FILLED, sellFill, sellFill);
+        orders.save(sellOrder);
+        TradeEmailNotificationService service = new TradeEmailNotificationService(
+                settings, sender, Runnable::run, "ops@example.com",
+                new RepositoryTradeEmailNotificationContextProvider(strategies, orders, new InMemoryWorkspaceRepository()));
+
+        service.notifySellExecuted(strategy, sellOrder);
+
+        return sender.messages.getFirst();
     }
 
     @Test

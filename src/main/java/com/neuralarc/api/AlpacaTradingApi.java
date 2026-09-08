@@ -57,8 +57,13 @@ public class AlpacaTradingApi implements TradingApi {
 
     @Override
     public boolean testConnection() {
+        return checkConnection().connected();
+    }
+
+    @Override
+    public ConnectionCheck checkConnection() {
         if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
-            return false;
+            return ConnectionCheck.missingCredentials();
         }
         String endpoint = baseUrl.endsWith("/") ? baseUrl + "account" : baseUrl + "/account";
         HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint))
@@ -72,10 +77,12 @@ public class AlpacaTradingApi implements TradingApi {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             recordRequestId("testConnection", "GET", endpoint, response);
             logResponse("GET", endpoint, response.statusCode(), response.body());
-            return response.statusCode() == 200;
+            return ConnectionCheck.forHttpStatus(response.statusCode());
         } catch (Exception ex) {
             logFailure("GET", endpoint, ex);
-            return false;
+            // Transport failure: the credentials were never judged, so this must not read as "bad keys".
+            return ConnectionCheck.unreachable(ex.getClass().getSimpleName()
+                    + (ex.getMessage() == null || ex.getMessage().isBlank() ? "" : ": " + ex.getMessage()));
         }
     }
 

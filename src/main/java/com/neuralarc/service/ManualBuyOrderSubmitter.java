@@ -11,6 +11,7 @@ import com.neuralarc.model.StrategyOrderStatus;
 import com.neuralarc.model.StrategyOrderType;
 import com.neuralarc.model.StrategyStage;
 import com.neuralarc.model.StrategyStatus;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.util.BrokerOrderStatusUtil;
 
 import java.math.BigDecimal;
@@ -42,23 +43,25 @@ final class ManualBuyOrderSubmitter {
     }
 
     StrategyService.StrategyCreationResult submitMarket(String strategyId, int quantity) {
+        // Market orders execute on submission, so time in force has nothing to govern.
         return submit(strategyId, quantity, BigDecimal.ZERO, StrategyOrderType.MARKET);
     }
 
     StrategyService.StrategyCreationResult submitLimit(String strategyId, int quantity, BigDecimal limitPrice) {
-        return submitLimit(strategyId, quantity, limitPrice, false);
+        return submitLimit(strategyId, quantity, limitPrice, false, TimeInForce.DAY);
     }
 
     StrategyService.StrategyCreationResult submitLimit(
             String strategyId,
             int quantity,
             BigDecimal limitPrice,
-            boolean repositionAfterExpiry
+            boolean repositionAfterExpiry,
+            TimeInForce timeInForce
     ) {
         if (limitPrice == null || limitPrice.compareTo(BigDecimal.ZERO) <= 0) {
             return StrategyService.StrategyCreationResult.failed("Limit price must be greater than zero");
         }
-        return submit(strategyId, quantity, limitPrice, StrategyOrderType.LIMIT, repositionAfterExpiry);
+        return submit(strategyId, quantity, limitPrice, StrategyOrderType.LIMIT, repositionAfterExpiry, timeInForce);
     }
 
     private StrategyService.StrategyCreationResult submit(
@@ -67,7 +70,7 @@ final class ManualBuyOrderSubmitter {
             BigDecimal limitPrice,
             StrategyOrderType orderType
     ) {
-        return submit(strategyId, quantity, limitPrice, orderType, false);
+        return submit(strategyId, quantity, limitPrice, orderType, false, TimeInForce.DAY);
     }
 
     private StrategyService.StrategyCreationResult submit(
@@ -75,8 +78,10 @@ final class ManualBuyOrderSubmitter {
             int quantity,
             BigDecimal limitPrice,
             StrategyOrderType orderType,
-            boolean repositionAfterExpiry
+            boolean repositionAfterExpiry,
+            TimeInForce requestedTimeInForce
     ) {
+        TimeInForce timeInForce = requestedTimeInForce == null ? TimeInForce.DAY : requestedTimeInForce;
         Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
         if (maybeStrategy.isEmpty()) {
             return StrategyService.StrategyCreationResult.failed("Strategy not found");
@@ -98,7 +103,7 @@ final class ManualBuyOrderSubmitter {
         try {
             submitted = orderType == StrategyOrderType.MARKET
                     ? alpacaClient.submitMarketBuyOrder(strategy.symbol(), quantity, clientOrderId)
-                    : alpacaClient.submitLimitBuyOrder(strategy.symbol(), quantity, limitPrice, clientOrderId);
+                    : alpacaClient.submitLimitBuyOrder(strategy.symbol(), quantity, limitPrice, clientOrderId, timeInForce);
         } catch (RuntimeException ex) {
             String error = manualBuyFailureMessage(orderType, ex.getMessage());
             saveFailedManualBuy(strategy, quantity, limitPrice, orderType, clientOrderId, error);
@@ -129,7 +134,8 @@ final class ManualBuyOrderSubmitter {
                 submittedAt,
                 Instant.now(),
                 null,
-                submitted.rawJson()
+                submitted.rawJson(),
+                orderType == StrategyOrderType.LIMIT ? timeInForce : TimeInForce.DAY
         );
         orderRepository.save(order);
         strategy.setLatestOrderStatus(BrokerOrderStatusUtil.normalize(submitted.status()));

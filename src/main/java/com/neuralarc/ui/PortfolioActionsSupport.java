@@ -12,129 +12,6 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 final class PortfolioActionsSupport {
-    private static boolean hasCancelablePendingLimitBuy(ManagedStrategy entry) {
-        if (entry == null || entry.strategy == null || entry.strategy.status() != StrategyStatus.ACTIVE) {
-            return false;
-        }
-        StrategyLifecycleState state = entry.strategy.currentState();
-        return state == StrategyLifecycleState.BASE_BUY_PLACED
-                || state == StrategyLifecycleState.BASE_BUY_PARTIALLY_FILLED
-                || state == StrategyLifecycleState.BUY_LIMIT_1_PLACED
-                || state == StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED
-                || state == StrategyLifecycleState.BUY_LIMIT_2_PLACED
-                || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED;
-    }
-
-    private static boolean hasCancelablePendingLimitSell(ManagedStrategy entry) {
-        if (entry == null || entry.strategy == null || entry.strategy.status() != StrategyStatus.ACTIVE) {
-            return false;
-        }
-        StrategyLifecycleState state = entry.strategy.currentState();
-        return state == StrategyLifecycleState.SELL_PLACED
-                || state == StrategyLifecycleState.SELL_PARTIALLY_FILLED;
-    }
-
-    private static boolean isRemovableInactive(ManagedStrategy entry) {
-        if (entry == null || entry.strategy == null) {
-            return false;
-        }
-        StrategyStatus status = entry.strategy.status();
-        if (status == StrategyStatus.COMPLETED) {
-            return true;
-        }
-        if (status == StrategyStatus.PAUSED) {
-            PauseReason pauseReason = entry.strategy.pauseReason();
-            return pauseReason == PauseReason.MANUAL_LIMIT_BUY_CANCELED
-                    || pauseReason == PauseReason.USER_PAUSED;
-        }
-        return false;
-    }
-
-    private static boolean isResumeEligible(ManagedStrategy entry) {
-        if (entry == null || entry.strategy == null) {
-            return false;
-        }
-        return entry.strategy.status() == StrategyStatus.PAUSED;
-    }
-
-    private static boolean isEligibleForManualSell(ManagedStrategy entry) {
-        if (entry == null || entry.strategy == null) {
-            return false;
-        }
-        StrategyStatus status = entry.strategy.status();
-        if (status == StrategyStatus.COMPLETED
-                || status == StrategyStatus.FAILED
-                || status == StrategyStatus.STOPPED
-                || status == StrategyStatus.ARCHIVED) {
-            return false;
-        }
-        StrategyLifecycleState state = entry.strategy.currentState();
-        if (isCanceledSellState(entry)) {
-            return true;
-        }
-        return state != StrategyLifecycleState.COMPLETED
-                && state != StrategyLifecycleState.FAILED
-                && state != StrategyLifecycleState.STOPPED
-                && state != StrategyLifecycleState.SELL_PLACED
-                && state != StrategyLifecycleState.SELL_PARTIALLY_FILLED;
-    }
-
-    private static boolean isCanceledSellState(ManagedStrategy entry) {
-        if (entry == null || entry.strategy == null) {
-            return false;
-        }
-        StrategyLifecycleState state = entry.strategy.currentState();
-        if (state != StrategyLifecycleState.SELL_PLACED && state != StrategyLifecycleState.SELL_PARTIALLY_FILLED) {
-            return false;
-        }
-        String normalized = BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus());
-        return "canceled".equals(normalized) || "cancelled".equals(normalized);
-    }
-
-    private static boolean isExpired(ManagedStrategy entry) {
-        if (entry == null || entry.strategy == null) {
-            return false;
-        }
-        if (!"expired".equals(BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus()))) {
-            return false;
-        }
-        if (entry.strategy.status() == StrategyStatus.FAILED) {
-            return true;
-        }
-        return entry.strategy.status() == StrategyStatus.ACTIVE && isPendingOrderState(entry.strategy.currentState());
-    }
-
-    private static boolean isInvalidLocalRecord(ManagedStrategy entry) {
-        if (entry == null || entry.strategy == null) {
-            return false;
-        }
-        String normalized = BrokerOrderStatusUtil.normalize(entry.strategy.latestOrderStatus());
-        return entry.strategy.status() == StrategyStatus.FAILED
-                && ("invalid".equals(normalized) || "invalid_local".equals(normalized));
-    }
-
-    private static boolean isPendingOrderState(StrategyLifecycleState state) {
-        return state == StrategyLifecycleState.BASE_BUY_PLACED
-                || state == StrategyLifecycleState.BASE_BUY_PARTIALLY_FILLED
-                || state == StrategyLifecycleState.BUY_LIMIT_1_PLACED
-                || state == StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED
-                || state == StrategyLifecycleState.BUY_LIMIT_2_PLACED
-                || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED
-                || state == StrategyLifecycleState.SELL_PLACED
-                || state == StrategyLifecycleState.SELL_PARTIALLY_FILLED;
-    }
-
-    private static boolean isTradeHistoryRecord(ManagedStrategy entry) {
-        if (entry == null || entry.strategy == null) {
-            return false;
-        }
-        StrategyStatus status = entry.strategy.status();
-        return status == StrategyStatus.ARCHIVED
-                || status == StrategyStatus.COMPLETED
-                || status == StrategyStatus.FAILED
-                || status == StrategyStatus.STOPPED;
-    }
-
     List<ManagedStrategy> filterTargets(List<ManagedStrategy> strategies, Scope scope) {
         List<ManagedStrategy> targets = new ArrayList<>();
         for (ManagedStrategy entry : strategies) {
@@ -218,7 +95,7 @@ final class PortfolioActionsSupport {
             @Override
             boolean matches(ManagedStrategy entry) {
                 Position position = entry.cachedPosition();
-                return isEligibleForManualSell(entry)
+                return PortfolioActionMatchers.isEligibleForManualSell(entry)
                         && position.getTotalShares() > 0
                         && position.unrealizedPnl().compareTo(BigDecimal.ZERO) > 0;
             }
@@ -242,7 +119,7 @@ final class PortfolioActionsSupport {
         ALL_OPEN("Sell All Open Positions") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return isEligibleForManualSell(entry)
+                return PortfolioActionMatchers.isEligibleForManualSell(entry)
                         && entry.cachedPosition().getTotalShares() > 0;
             }
 
@@ -266,7 +143,7 @@ final class PortfolioActionsSupport {
             @Override
             boolean matches(ManagedStrategy entry) {
                 Position position = entry.cachedPosition();
-                return isEligibleForManualSell(entry)
+                return PortfolioActionMatchers.isEligibleForManualSell(entry)
                         && position.getTotalShares() > 0
                         && position.unrealizedPnl().compareTo(BigDecimal.ZERO) < 0;
             }
@@ -290,7 +167,7 @@ final class PortfolioActionsSupport {
             @Override
             boolean matches(ManagedStrategy entry) {
                 Position position = entry.cachedPosition();
-                return isEligibleForManualSell(entry)
+                return PortfolioActionMatchers.isEligibleForManualSell(entry)
                         && position.getTotalShares() > 0
                         && position.unrealizedPnl().compareTo(BigDecimal.ZERO) < 0;
             }
@@ -315,7 +192,7 @@ final class PortfolioActionsSupport {
             @Override
             boolean matches(ManagedStrategy entry) {
                 Position position = entry.cachedPosition();
-                return isEligibleForManualSell(entry)
+                return PortfolioActionMatchers.isEligibleForManualSell(entry)
                         && position.getTotalShares() > 0
                         && position.unrealizedPnl().compareTo(BigDecimal.ZERO) > 0;
             }
@@ -340,7 +217,7 @@ final class PortfolioActionsSupport {
             @Override
             boolean matches(ManagedStrategy entry) {
                 Position position = entry.cachedPosition();
-                return isEligibleForManualSell(entry)
+                return PortfolioActionMatchers.isEligibleForManualSell(entry)
                         && position.getTotalShares() > 0
                         && entry.strategy.targetSellEnabled()
                         && entry.strategy.targetSellPrice().compareTo(BigDecimal.ZERO) > 0;
@@ -394,7 +271,7 @@ final class PortfolioActionsSupport {
         RESUME_ALL("Resume All") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return isResumeEligible(entry);
+                return PortfolioActionMatchers.isResumeEligible(entry);
             }
 
             @Override
@@ -421,7 +298,7 @@ final class PortfolioActionsSupport {
         CANCEL_PENDING_LIMIT_BUYS("Cancel All Pending Limit Buys") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return hasCancelablePendingLimitBuy(entry);
+                return PortfolioActionMatchers.hasCancelablePendingLimitBuy(entry);
             }
 
             @Override
@@ -472,7 +349,7 @@ final class PortfolioActionsSupport {
         AVERAGE_LOSING_POSITIONS("Average Down Losing Positions") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                if (!isEligibleForManualSell(entry)) {
+                if (!PortfolioActionMatchers.isEligibleForManualSell(entry)) {
                     return false;
                 }
                 Position position = entry.cachedPosition();
@@ -668,7 +545,7 @@ final class PortfolioActionsSupport {
         CANCEL_PENDING_LIMIT_SELLS("Cancel All Pending Limit Sells") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return hasCancelablePendingLimitSell(entry);
+                return PortfolioActionMatchers.hasCancelablePendingLimitSell(entry);
             }
 
             @Override
@@ -687,10 +564,38 @@ final class PortfolioActionsSupport {
                 return "There are no strategies with cancelable pending limit sell orders.";
             }
         },
+        REMOVE_CLOSED_POSITIONS("Remove All Closed Positions") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return PortfolioActionMatchers.isClosedPosition(entry);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Remove " + count + " closed position(s) from the active grids?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Matching strategies hold no shares and have no working broker order, so their trade is finished."
+                        + "<br>They are archived: the rows leave the active grids and every fill stays in Trade History."
+                        + "<br>A closed strategy set to repeat its cycle will not re-arm once archived.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no closed positions to remove from the active grids.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Archived";
+            }
+        },
         REMOVE_INACTIVE_LIST("Remove Inactive List") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return isRemovableInactive(entry);
+                return PortfolioActionMatchers.isRemovableInactive(entry);
             }
 
             @Override
@@ -717,7 +622,7 @@ final class PortfolioActionsSupport {
         CLEAN_ALL_EXPIRED("Clean All Expired") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return isExpired(entry);
+                return PortfolioActionMatchers.isExpired(entry);
             }
 
             @Override
@@ -744,7 +649,7 @@ final class PortfolioActionsSupport {
         CLEAN_INVALID("Clean Invalid Strategies") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return isInvalidLocalRecord(entry);
+                return PortfolioActionMatchers.isInvalidLocalRecord(entry);
             }
 
             @Override
@@ -771,7 +676,7 @@ final class PortfolioActionsSupport {
         CLEAN_TRADE_HISTORY("Clean Trade History") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return isTradeHistoryRecord(entry);
+                return PortfolioActionMatchers.isTradeHistoryRecord(entry);
             }
 
             @Override
@@ -828,7 +733,7 @@ final class PortfolioActionsSupport {
         REPOSITION_EXPIRED("Reposition Expired") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return isExpired(entry);
+                return PortfolioActionMatchers.isExpired(entry);
             }
 
             @Override
@@ -882,7 +787,7 @@ final class PortfolioActionsSupport {
                 Position position = entry.cachedPosition();
                 BigDecimal baseBuy = entry.strategy.baseBuyLimitPrice();
                 BigDecimal sellTrigger = entry.strategy.targetSellPrice();
-                return isEligibleForManualSell(entry)
+                return PortfolioActionMatchers.isEligibleForManualSell(entry)
                         && position.getTotalShares() > 0
                         && entry.strategy.targetSellEnabled()
                         && sellTrigger != null

@@ -770,7 +770,17 @@ public class StrategyService {
             BigDecimal limitPrice,
             boolean repositionAfterExpiry
     ) {
-        return manualBuyOrderSubmitter.submitLimit(strategyId, quantity, limitPrice, repositionAfterExpiry);
+        return buyMoreAtLimit(strategyId, quantity, limitPrice, repositionAfterExpiry, TimeInForce.DAY);
+    }
+
+    public StrategyCreationResult buyMoreAtLimit(
+            String strategyId,
+            int quantity,
+            BigDecimal limitPrice,
+            boolean repositionAfterExpiry,
+            TimeInForce timeInForce
+    ) {
+        return manualBuyOrderSubmitter.submitLimit(strategyId, quantity, limitPrice, repositionAfterExpiry, timeInForce);
     }
 
     public StrategyCreationResult closePosition(String strategyId) {

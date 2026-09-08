@@ -9,6 +9,12 @@ import java.awt.Color;
 import java.util.List;
 
 public final class HistoryRowStyler {
+    /**
+     * @param groupedBySymbol when true, a group is one symbol, so only its first row prints the
+     *                        ticker and the rest inherit it. When the rows are grouped by date a
+     *                        group spans several symbols, so every row must print its own ticker -
+     *                        blanking them would make each row read as the symbol above it.
+     */
     public CellStyle style(
             JTable table,
             int viewRow,
@@ -16,14 +22,15 @@ public final class HistoryRowStyler {
             boolean isSelected,
             HistoryTablePresenter.HistoryRow rowData,
             List<HistoryTablePresenter.HistoryRow> rows,
-            Palette palette
+            Palette palette,
+            boolean groupedBySymbol
     ) {
         boolean subtotal = rowData.style() == HistoryTablePresenter.HistoryRowStyle.SUBTOTAL;
         boolean firstInGroup = isFirstRowOfGroup(table, viewRow, rows);
         Color background = isSelected ? palette.selectionBackground() : backgroundForRow(rowData, palette);
         Color foreground = isSelected ? palette.selectionForeground() : foregroundForRow(rowData, palette);
-        boolean blankText = column == 0 && (subtotal || !firstInGroup);
-        boolean bold = (column == 0 && !subtotal && firstInGroup) || (subtotal && column == 3);
+        boolean blankText = column == 0 && (subtotal || (groupedBySymbol && !firstInGroup));
+        boolean bold = (column == 0 && !subtotal && groupedBySymbol && firstInGroup) || (subtotal && column == 3);
         boolean italic = subtotal && column == 3;
         return new CellStyle(
                 background,

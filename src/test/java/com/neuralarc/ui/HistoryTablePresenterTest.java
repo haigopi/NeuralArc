@@ -327,6 +327,108 @@ class HistoryTablePresenterTest {
     }
 
     @Test
+    void dateGroupingKeepsRowsInPlainTimeOrderAcrossSymbols() {
+        HistoryTablePresenter.HistorySource sellsEarly = new HistoryTablePresenter.HistorySource(
+                "AAA",
+                "Paper",
+                "Completed",
+                "Completed",
+                "",
+                Instant.now(),
+                StrategyStatus.COMPLETED,
+                List.of(
+                        filledOrderAt("AAA", StrategyStage.BASE_BUY, StrategyOrderSide.BUY, "1", "100.00", "100.00", "2026-05-06T09:00:00Z"),
+                        filledOrderAt("AAA", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL, "1", "110.00", "110.00", "2026-05-06T11:00:00Z")
+                )
+        );
+        HistoryTablePresenter.HistorySource buysLate = new HistoryTablePresenter.HistorySource(
+                "ZZZ",
+                "Paper",
+                "Completed",
+                "Completed",
+                "",
+                Instant.now(),
+                StrategyStatus.COMPLETED,
+                List.of(
+                        filledOrderAt("ZZZ", StrategyStage.BASE_BUY, StrategyOrderSide.BUY, "1", "200.00", "200.00", "2026-05-06T15:00:00Z"),
+                        filledOrderAt("ZZZ", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL, "1", "210.00", "210.00", "2026-05-06T16:00:00Z")
+                )
+        );
+
+        List<HistoryTablePresenter.HistoryRow> rows = presenter.buildRows(
+                        List.of(sellsEarly, buysLate),
+                        instant -> "t",
+                        TradeHistoryGroupBy.DATE
+                ).stream()
+                .filter(row -> row.style() != HistoryTablePresenter.HistoryRowStyle.SUBTOTAL)
+                .toList();
+
+        // Newest first, regardless of side: ZZZ sell 16:00, ZZZ buy 15:00, AAA sell 11:00, AAA buy 09:00.
+        // The old ordering pushed every sell above every buy, so AAA's sell landed between ZZZ's rows.
+        assertEquals(List.of("ZZZ", "ZZZ", "AAA", "AAA"), rows.stream().map(HistoryTablePresenter.HistoryRow::symbol).toList());
+        assertEquals(List.of("SELL", "BUY", "SELL", "BUY"), rows.stream().map(HistoryTablePresenter.HistoryRow::side).toList());
+    }
+
+    @Test
+    void symbolGroupingStillListsSellsAboveBuysWithinASymbol() {
+        HistoryTablePresenter.HistorySource source = new HistoryTablePresenter.HistorySource(
+                "AAPL",
+                "Paper",
+                "Completed",
+                "Completed",
+                "",
+                Instant.now(),
+                StrategyStatus.COMPLETED,
+                List.of(
+                        filledOrderAt("AAPL", StrategyStage.BASE_BUY, StrategyOrderSide.BUY, "1", "100.00", "100.00", "2026-05-06T09:00:00Z"),
+                        filledOrderAt("AAPL", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL, "1", "110.00", "110.00", "2026-05-06T11:00:00Z")
+                )
+        );
+
+        List<HistoryTablePresenter.HistoryRow> rows = presenter.buildRows(
+                        List.of(source),
+                        instant -> "t",
+                        TradeHistoryGroupBy.SYMBOL
+                ).stream()
+                .filter(row -> row.style() != HistoryTablePresenter.HistoryRowStyle.SUBTOTAL)
+                .toList();
+
+        assertEquals(List.of("SELL", "BUY"), rows.stream().map(HistoryTablePresenter.HistoryRow::side).toList());
+    }
+
+    @Test
+    void dateGroupingPutsStatusFallbackRowsInADateGroupNotASymbolGroup() {
+        // A FAILED/COMPLETED strategy whose only fill is partial gets an extra status row. It used to
+        // carry the symbol as its group key even while the history was grouped by date, which turned
+        // that one symbol into its own group in the middle of the dated ones.
+        HistoryTablePresenter.HistorySource partiallyFilled = new HistoryTablePresenter.HistorySource(
+                "ZZZ",
+                "Paper",
+                "Failed",
+                "Failed",
+                "partially_filled",
+                Instant.parse("2026-05-06T13:00:00Z"),
+                StrategyStatus.FAILED,
+                List.of(partiallyFilledSellAt("ZZZ", "1", "110.00", "110.00", "2026-05-06T11:00:00Z"))
+        );
+
+        List<HistoryTablePresenter.HistoryRow> rows = presenter.buildRows(
+                List.of(partiallyFilled),
+                instant -> "t",
+                TradeHistoryGroupBy.DATE
+        );
+
+        HistoryTablePresenter.HistoryRow fallback = rows.stream()
+                .filter(row -> row.style() == HistoryTablePresenter.HistoryRowStyle.FAILED)
+                .findFirst()
+                .orElseThrow();
+        assertEquals("ZZZ", fallback.symbol());
+        assertEquals("2026-05-06", fallback.groupKey());
+        assertFalse(rows.stream().anyMatch(row -> "ZZZ".equals(row.groupKey())),
+                "a symbol must never become its own group while the history is grouped by date");
+    }
+
+    @Test
     void multipleSymbolSubtotalsProduceBottomTotalValueRow() {
         HistoryTablePresenter.HistorySource aapl = new HistoryTablePresenter.HistorySource(
                 "AAPL",
@@ -498,6 +600,36 @@ class HistoryTablePresenterTest {
                 now,
                 now,
                 now,
+                "{}"
+        );
+    }
+
+    private static StrategyOrder partiallyFilledSellAt(
+            String symbol,
+            String quantity,
+            String limitPrice,
+            String fillPrice,
+            String timestamp
+    ) {
+        Instant at = Instant.parse(timestamp);
+        return new StrategyOrder(
+                UUID.randomUUID().toString(),
+                "strategy-1",
+                StrategyStage.TARGET_SELL,
+                "ord-partial-" + timestamp,
+                "client-partial-" + timestamp,
+                symbol,
+                StrategyOrderSide.SELL,
+                StrategyOrderType.LIMIT,
+                new BigDecimal(limitPrice),
+                BigDecimal.ZERO,
+                new BigDecimal(quantity),
+                new BigDecimal(quantity),
+                new BigDecimal(fillPrice),
+                StrategyOrderStatus.PARTIALLY_FILLED,
+                at,
+                at,
+                at,
                 "{}"
         );
     }

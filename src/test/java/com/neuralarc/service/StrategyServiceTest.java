@@ -331,6 +331,47 @@ class StrategyServiceTest {
     }
 
     @Test
+    void buyMoreAtLimitSendsTheRequestedTimeInForceToTheBroker() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategies.save(strategy);
+
+        StrategyService.StrategyCreationResult result = service.buyMoreAtLimit(
+                strategy.id(), 7, new BigDecimal("8.25"), false, TimeInForce.GTC);
+
+        assertTrue(result.success());
+        assertEquals(TimeInForce.GTC, alpaca.lastSubmittedLimitBuyTimeInForce);
+        assertEquals(TimeInForce.GTC, orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == StrategyStage.MANUAL_BUY)
+                .findFirst()
+                .orElseThrow()
+                .timeInForce());
+    }
+
+    @Test
+    void buyMoreAtLimitDefaultsToDayWhenNoTimeInForceIsRequested() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategies.save(strategy);
+
+        service.buyMoreAtLimit(strategy.id(), 7, new BigDecimal("8.25"));
+
+        assertEquals(TimeInForce.DAY, alpaca.lastSubmittedLimitBuyTimeInForce);
+    }
+
+    @Test
     void repositionExpiredStrategyResubmitsManualLimitBuyWhenSelectedForAutoReposition() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

@@ -241,7 +241,7 @@ public final class StrategyActionsController {
                     StrategyService.StrategyCreationResult result = type == BuyMoreType.MARKET
                             ? gateway.buyMoreAtMarket(strategy, quantity)
                             : gateway.buyMoreAtLimit(strategy, quantity, selection.get().limitPrice(),
-                            selection.get().repositionAfterExpiry());
+                            selection.get().repositionAfterExpiry(), selection.get().timeInForce());
                     if (!result.success()) {
                         throw new IllegalStateException(result.error());
                     }
@@ -644,7 +644,8 @@ public final class StrategyActionsController {
                 Strategy strategy,
                 int quantity,
                 BigDecimal limitPrice,
-                boolean repositionAfterExpiry
+                boolean repositionAfterExpiry,
+                TimeInForce timeInForce
         );
         StrategyService.StrategyCreationResult sellPosition(Strategy strategy, SellSubmissionType submissionType);
         StrategyService.StrategyCreationResult repositionExpiredStrategy(

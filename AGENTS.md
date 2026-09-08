@@ -38,11 +38,20 @@
   - `src/main/java/com/neuralarc/service/StrategyPollingService.java`
   - `src/main/java/com/neuralarc/service/StrategyEngine.java`
   - `src/main/java/com/neuralarc/service/StrategyService.java`
+  - `src/main/java/com/neuralarc/service/PollingBatchScheduler.java` — batches concurrent strategy polls
+  - `src/main/java/com/neuralarc/service/AdaptivePollingPacer.java` — back-off under broker throttle
+  - `src/main/java/com/neuralarc/service/ReconciliationService.java` — syncs broker order state into strategy records
+  - `src/main/java/com/neuralarc/service/StrategyStateMachine.java` — explicit lifecycle transition logic
+  - `src/main/java/com/neuralarc/service/TradingSessionPolicy.java` — per-symbol tradability check (overnight-eligible assets use a wider session window)
 - Strategy persistence:
   - `src/main/java/com/neuralarc/db/AppDatabase.java`
   - `src/main/java/com/neuralarc/db/SqliteStrategyRepository.java`
   - `src/main/java/com/neuralarc/db/SqliteStrategyOrderRepository.java`
   - `src/main/java/com/neuralarc/db/SqliteStrategyExecutionEventRepository.java`
+  - `src/main/java/com/neuralarc/db/SqliteScanHistoryRepository.java`
+  - Strategy-type schedule repositories: `SqliteGapAndGoScheduleRepository`, `SqliteVwapScheduleRepository`,
+    `SqliteOrbScheduleRepository`, `SqliteDipHunterScheduleRepository`, `SqliteSwingScheduleRepository`,
+    `SqliteRangeRiderScheduleRepository`, `SqliteProfitShieldScheduleRepository`
   - legacy compatibility helpers still exist in:
     - `src/main/java/com/neuralarc/service/FileStrategyRepository.java`
     - `src/main/java/com/neuralarc/service/FileStrategyOrderRepository.java`
@@ -61,6 +70,66 @@
   - `src/main/java/com/neuralarc/service/AutoAnalyzeService.java`
   - `src/main/java/com/neuralarc/service/RecommendationEngine.java`
   - `src/main/java/com/neuralarc/ui/StrategyDialog.java`
+- AI recommendation providers:
+  - `src/main/java/com/neuralarc/service/AiRecommendationProvider.java` (interface)
+  - `src/main/java/com/neuralarc/service/AiRecommendationProviderFactory.java`
+  - `src/main/java/com/neuralarc/service/JetsonAiRecommendationProvider.java`
+  - `src/main/java/com/neuralarc/service/OpenAiRecommendationProvider.java`
+  - `src/main/java/com/neuralarc/service/AiRecommendationService.java`
+  - `src/main/java/com/neuralarc/ui/AiRecommendationPanel.java`
+- Strategy workspaces (tab-based grouping of strategies by desk/mode):
+  - `src/main/java/com/neuralarc/model/StrategyWorkspace.java`
+  - `src/main/java/com/neuralarc/service/WorkspaceService.java`
+  - `src/main/java/com/neuralarc/service/WorkspaceRepository.java`
+  - `src/main/java/com/neuralarc/db/SqliteWorkspaceRepository.java`
+  - `src/main/java/com/neuralarc/ui/StrategyWorkspaceTabs.java`
+- Strategy-type packages (each is a self-contained scanner/analyzer/UI unit):
+  - `src/main/java/com/neuralarc/gaprocket/` — Gap Rocket (gap-and-go momentum)
+  - `src/main/java/com/neuralarc/vwap/` — VWAP reversion
+  - `src/main/java/com/neuralarc/diphunter/` — Dip Hunter (pullback entries)
+  - `src/main/java/com/neuralarc/earningshunter/` — Earnings Hunter
+  - `src/main/java/com/neuralarc/profitshield/` — Profit Shield (defensive/exit protection)
+  - `src/main/java/com/neuralarc/rangerider/` — Range Rider
+  - `src/main/java/com/neuralarc/swing/` — Swing Vault
+  - `src/main/java/com/neuralarc/orb/` — Opening Range Breakout (ORB)
+  - Each package follows the same convention: `*Analyzer`, `*LiveScanner`, `*Panel`, `*Config`,
+    `*ConfigCodec`, `*StrategyFactory`, `*Recommendation`, `*Candidate`, `*Status`, `*AnalysisDialog`
+  - Each strategy type has a coordinator in `ui/` (e.g., `GapAndGoCoordinator`, `OrbCoordinator`,
+    `SwingCoordinator`, `VwapCoordinator`, `DipHunterCoordinator`, `ProfitShieldCoordinator`,
+    `RangeRiderCoordinator`, `EarningsHunterCoordinator`)
+  - Discovery and schedule services live in `service/` (e.g., `GapAndGoDiscoveryService`,
+    `OrbScheduleService`) with matching `Sqlite*ScheduleRepository` classes in `db/`
+- Smart Picks and trending stocks:
+  - `src/main/java/com/neuralarc/service/TrendingStocksService.java`
+  - `src/main/java/com/neuralarc/service/AlpacaScreenerClient.java`
+  - `src/main/java/com/neuralarc/service/AlpacaNewsClient.java`
+  - `src/main/java/com/neuralarc/ui/SmartPicksTrendingStocksDialog.java`
+  - `src/main/java/com/neuralarc/ui/SmartPicksParallelExecutor.java`
+- Risk and stop-loss guards:
+  - `src/main/java/com/neuralarc/service/AutoRiskAdjustmentService.java`
+  - `src/main/java/com/neuralarc/service/AutoRiskAdjustmentEngine.java`
+  - `src/main/java/com/neuralarc/service/StopLossSanityGuard.java`
+  - `src/main/java/com/neuralarc/service/BaseBuyPriceGuard.java`
+  - `src/main/java/com/neuralarc/service/PendingBuyOrderGuard.java`
+  - `src/main/java/com/neuralarc/service/StrategyApplyService.java`
+  - `src/main/java/com/neuralarc/analytics/RiskAnalytics.java`
+  - `src/main/java/com/neuralarc/ui/RiskDashboardPanel.java`
+- Domain model package (`model/`):
+  - All domain types live here: `Strategy`, `StrategyConfig`, `Position`, `MarketBar`, `StrategyWorkspace`,
+    `AiRecommendationRequest/Response`, lifecycle/status enums, schedule types, etc.
+- Security, analytics, and utilities:
+  - `src/main/java/com/neuralarc/security/CredentialManager.java` — AES-encrypted credential storage
+  - `src/main/java/com/neuralarc/security/EncryptionUtil.java`
+  - `src/main/java/com/neuralarc/analytics/` — `RiskAnalytics`, `WorkspaceAccounting`, `AnalyticsQueue`, opt-in telemetry
+  - `src/main/java/com/neuralarc/util/Monetary.java` — `BigDecimal` rounding helpers
+  - `src/main/java/com/neuralarc/util/ClientOrderId.java` — embeds workspace code in Alpaca `client_order_id`
+  - `src/main/java/com/neuralarc/util/ThemeColors.java`, `FontLoader.java`, `SvgIconLoader.java` — UI theming
+- Notification, logging, and update support:
+  - `src/main/java/com/neuralarc/service/TradeEmailNotificationService.java`
+  - `src/main/java/com/neuralarc/service/FeedbackEmailService.java` (Mailjet integration)
+  - `src/main/java/com/neuralarc/service/LogArchiveService.java` / `AsyncLogUploadService.java` / `DailyLogBundleService.java`
+  - `src/main/java/com/neuralarc/service/GitHubReleaseUpdateService.java`
+  - `src/main/java/com/neuralarc/ui/ToastNotifier.java`
 
 ## Runtime model to preserve
 - The app is snapshot-driven at the UI layer.
@@ -110,6 +179,10 @@
   - make reads backward compatible
   - provide sensible defaults for missing fields
 - Avoid reintroducing full-file parse/rewrite persistence patterns in new runtime code.
+- Strategy-type schedule repositories (e.g., `SqliteOrbScheduleRepository`, `SqliteGapAndGoScheduleRepository`) follow the same append-only migration and in-memory cache model.
+- External integrations:
+  - Email notifications use Mailjet (`com.mailjet:mailjet-client`) via `TradeEmailNotificationService` and `FeedbackEmailService`.
+  - Log upload uses AWS S3-compatible storage (`software.amazon.awssdk:s3`) via `AsyncLogUploadService`.
 
 ## Project-specific conventions
 - Monetary values use `BigDecimal`.
@@ -120,6 +193,10 @@
 - Preserve safe defaults:
   - paper mode by default
   - live mode only when explicitly enabled and configured
+- `StrategyWorkspace` is a mode-scoped grouping of strategies. Paper and Live workspaces are isolated and must never mix. Workspace deletion is rejected when the workspace owns strategies.
+- `ClientOrderId` embeds the workspace code in Alpaca `client_order_id` values for reconciliation; never generate raw Alpaca order IDs outside `ClientOrderId`.
+- Each strategy-type package (`gaprocket/`, `vwap/`, `orb/`, etc.) owns its own config serialization via a `*ConfigCodec` class. Add new persisted fields to the codec and keep reads backward compatible.
+- AI recommendation results are decision-support only; they must not automatically submit broker orders without user confirmation.
 
 ## Performance guidance
 - Prefer fewer broker calls over more threads.
@@ -141,16 +218,21 @@
 ## Testing workflow
 - Run tests with:
   - `./gradlew test`
+  - `./gradlew test --tests MarketHoursServiceTest` (single class)
+  - `./gradlew test --tests "com.neuralarc.service.*"` (package pattern)
+- Build (compile + test + jar) with:
+  - `./gradlew build`
 - Launch app with:
   - `./gradlew run`
 - Build and release automation scripts live under `scripts/` (`build-all.sh`, `release-all.sh`, `package-macos.sh`, `package-windows.ps1`).
 - When changing:
   - strategy execution logic: update the relevant strategy/service tests
-  - market-hours behavior: update `MarketHoursService` tests
+  - market-hours behavior: update `MarketHoursServiceTest`
   - recommendation logic: update recommendation/apply tests
   - persistence behavior: update repository/settings tests
   - UI state mapping: add targeted tests where practical, and verify manually if Swing behavior is involved
   - connection or stream lifecycle behavior: update `ConnectionLifecycleCoordinatorTest` and/or `TradeStreamLifecycleCoordinatorTest`
+  - a strategy-type package: update the corresponding `*AnalyzerTest`, `*LiveScannerTest`, `*ConfigCodecTest`, and `*StrategyFactoryTest`
 
 ## Privacy and integration constraints
 - Market-data and stock discovery features must use live broker/market-data integrations only. Do not ship hardcoded stock tickers, canned stock prices, or synthetic scanner candidates in runtime paths; if live data is unavailable, show an empty/credential-required state instead of demo rows.
@@ -173,3 +255,14 @@
   - check both paper and live mode behavior
   - check WebSocket/stream side effects
   - check closed-market and extended-hours behavior
+- If adding a new strategy-type package:
+  - mirror the existing package conventions: `*Analyzer`, `*LiveScanner`, `*Panel`, `*Config`, `*ConfigCodec`, `*StrategyFactory`, `*Recommendation`, `*Candidate`, `*Status`, `*AnalysisDialog`
+  - add a coordinator in `ui/` wired through `TradingRuntimeSupport`
+  - add discovery and schedule services in `service/` with a matching `Sqlite*ScheduleRepository` in `db/`
+  - add all four test classes: `*AnalyzerTest`, `*LiveScannerTest`, `*ConfigCodecTest`, `*StrategyFactoryTest`
+- If touching workspace logic:
+  - verify Paper/Live isolation is preserved
+  - verify `ClientOrderId` embeds the correct workspace code
+  - verify archived workspaces are hidden but not deleted
+- If touching AI recommendation flow:
+  - keep recommendation output as decision-support only; do not auto-submit broker orders

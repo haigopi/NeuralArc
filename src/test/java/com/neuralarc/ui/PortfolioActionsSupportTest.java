@@ -232,6 +232,47 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
+    void removeClosedPositionsMatchesFinishedTradesWithNothingLeftOpen() {
+        ManagedStrategy soldOut = managed(
+                "AAPL", StrategyStatus.COMPLETED, StrategyLifecycleState.COMPLETED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy stopped = managed(
+                "MSFT", StrategyStatus.STOPPED, StrategyLifecycleState.STOPPED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy closedButStillActiveRecord = managed(
+                "NVDA", StrategyStatus.ACTIVE, StrategyLifecycleState.COMPLETED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(soldOut, stopped, closedButStillActiveRecord),
+                PortfolioActionsSupport.BulkAction.REMOVE_CLOSED_POSITIONS
+        );
+
+        assertEquals(List.of("AAPL", "MSFT", "NVDA"),
+                targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
+    void removeClosedPositionsLeavesOpenSharesWorkingOrdersAndArchivedRowsAlone() {
+        ManagedStrategy stillHoldingShares = managed(
+                "AAPL", StrategyStatus.COMPLETED, StrategyLifecycleState.COMPLETED, 5,
+                new BigDecimal("100"), new BigDecimal("110"));
+        ManagedStrategy sellStillWorking = managed(
+                "MSFT", StrategyStatus.ACTIVE, StrategyLifecycleState.SELL_PLACED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy buyStillWorking = managed(
+                "TSLA", StrategyStatus.ACTIVE, StrategyLifecycleState.BASE_BUY_PLACED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy alreadyArchived = managed(
+                "NVDA", StrategyStatus.ARCHIVED, StrategyLifecycleState.COMPLETED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy stillRunning = managed(
+                "AMD", StrategyStatus.ACTIVE, StrategyLifecycleState.BASE_BUY_FILLED, 3,
+                new BigDecimal("10"), new BigDecimal("11"));
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(stillHoldingShares, sellStillWorking, buyStillWorking, alreadyArchived, stillRunning),
+                PortfolioActionsSupport.BulkAction.REMOVE_CLOSED_POSITIONS
+        );
+
+        assertTrue(targets.isEmpty());
+    }
+
+    @Test
     void confirmationMessageTruncatesSymbolsAfterSixEntries() {
         List<ManagedStrategy> targets = List.of(
                 managed("AAPL", StrategyStatus.ACTIVE, 1, new BigDecimal("100"), new BigDecimal("101")),

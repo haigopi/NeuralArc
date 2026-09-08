@@ -1,14 +1,19 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.Strategy;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.util.Monetary;
 
+import javax.swing.ButtonGroup;
 import javax.swing.JOptionPane;
 import javax.swing.JCheckBox;
+import javax.swing.JPanel;
+import javax.swing.JRadioButton;
 import javax.swing.JSpinner;
 import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 import java.awt.Component;
+import java.awt.FlowLayout;
 import java.math.BigDecimal;
 import java.util.Optional;
 
@@ -16,12 +21,33 @@ final class ManualLimitBuyDialog {
     private ManualLimitBuyDialog() {
     }
 
-    static Optional<ManualLimitBuySelection> show(Component parent, Strategy strategy, BigDecimal currentPrice) {
+    static Optional<ManualLimitBuySelection> show(
+            Component parent,
+            Strategy strategy,
+            BigDecimal currentPrice,
+            TimeInForce defaultTimeInForce
+    ) {
         if (strategy == null) {
             return Optional.empty();
         }
         JSpinner quantitySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 1_000_000, 1));
         JTextField limitPriceField = new JTextField(defaultLimitPrice(currentPrice), 12);
+        JRadioButton dayButton = new JRadioButton("DAY - expires at session close");
+        JRadioButton gtcButton = new JRadioButton("GTC - works until filled or cancelled");
+        dayButton.setOpaque(false);
+        gtcButton.setOpaque(false);
+        ButtonGroup timeInForceGroup = new ButtonGroup();
+        timeInForceGroup.add(dayButton);
+        timeInForceGroup.add(gtcButton);
+        if (defaultTimeInForce == TimeInForce.GTC) {
+            gtcButton.setSelected(true);
+        } else {
+            dayButton.setSelected(true);
+        }
+        JPanel timeInForcePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
+        timeInForcePanel.setOpaque(false);
+        timeInForcePanel.add(dayButton);
+        timeInForcePanel.add(gtcButton);
         JCheckBox repositionAfterExpiry = new JCheckBox("Automatically reposition this limit buy if it expires",
                 strategy.resubmitOnExpiryEnabled());
         repositionAfterExpiry.setOpaque(false);
@@ -33,10 +59,16 @@ final class ManualLimitBuyDialog {
                 + "Current price: " + currentPriceText + "<br>"
                 + "Enter the quantity and maximum limit price for the buy order."
                 + "<br><br>The strategy remains active and the order is recorded in trade history as a manual buy."
-                + "<br><br><span style='color:#667085'>If auto reposition is selected, an expired manual limit buy "
-                + "will be resubmitted automatically when polling detects broker expiry.</span>"
+                + "<br><br><span style='color:#667085'>Time in force defaults to the value saved in Settings. "
+                + "A GTC order never expires, so auto reposition only applies to a DAY order.</span>"
                 + "</body></html>";
-        Object[] content = {message, "Quantity:", quantitySpinner, "Limit price:", limitPriceField, repositionAfterExpiry};
+        Object[] content = {
+                message,
+                "Quantity:", quantitySpinner,
+                "Limit price:", limitPriceField,
+                "Time in force:", timeInForcePanel,
+                repositionAfterExpiry
+        };
 
         while (true) {
             int choice = JOptionPane.showConfirmDialog(
@@ -64,7 +96,12 @@ final class ManualLimitBuyDialog {
             if (!confirmAboveCurrentPrice(parent, strategy, limitPrice, currentPrice)) {
                 continue;
             }
-            return Optional.of(new ManualLimitBuySelection(quantity, limitPrice, repositionAfterExpiry.isSelected()));
+            return Optional.of(new ManualLimitBuySelection(
+                    quantity,
+                    limitPrice,
+                    repositionAfterExpiry.isSelected(),
+                    gtcButton.isSelected() ? TimeInForce.GTC : TimeInForce.DAY
+            ));
         }
     }
 

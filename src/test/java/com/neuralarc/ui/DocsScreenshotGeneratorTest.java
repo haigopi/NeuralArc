@@ -156,7 +156,7 @@ final class DocsScreenshotGeneratorTest {
                 TimeInForce.DAY,
                 new AutoAdjustRiskConfig(true, 5, new BigDecimal("1.25"), true, true, true)
         );
-        StrategyDialog dialog = new StrategyDialog(owner, config, null, null, 60, true, true);
+        StrategyDialog dialog = new StrategyDialog(owner, config, null, null, 60, true, true, TimeInForce.DAY);
         dialog.setSize(dialog.getPreferredSize());
         layoutRecursively(dialog.getRootPane());
         return dialog;
