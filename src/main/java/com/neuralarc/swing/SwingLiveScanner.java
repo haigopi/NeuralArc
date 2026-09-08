@@ -3,6 +3,7 @@ package com.neuralarc.swing;
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.api.AlpacaMarketDataException;
 import com.neuralarc.model.MarketBar;
+import com.neuralarc.util.IntradayVolumeSupport;
 import com.neuralarc.util.Monetary;
 
 import java.math.BigDecimal;
@@ -90,9 +91,10 @@ public final class SwingLiveScanner {
         BigDecimal ma50 = movingAverage(history, 50);
         BigDecimal ma200 = movingAverage(history, 200);
         BigDecimal avgVolume = averageVolume(history, 20);
-        BigDecimal relativeVolume = valid(avgVolume) && valid(latest.volume())
-                ? latest.volume().divide(avgVolume, 2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO;
+        // Today's bar is still forming, so compare it against the volume this name would normally have
+        // traded by this point of the session rather than against a whole average day.
+        BigDecimal relativeVolume = IntradayVolumeSupport.timeAdjustedRelativeVolume(
+                latest.volume(), avgVolume, IntradayVolumeSupport.sessionFractionElapsed(clock));
         BigDecimal supportProximity = valid(ma50)
                 ? current.subtract(ma50).multiply(BigDecimal.valueOf(100)).divide(ma50, 2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;

@@ -3,6 +3,7 @@ package com.neuralarc.diphunter;
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.api.AlpacaMarketDataException;
 import com.neuralarc.model.MarketBar;
+import com.neuralarc.util.IntradayVolumeSupport;
 import com.neuralarc.util.Monetary;
 
 import java.math.BigDecimal;
@@ -87,14 +88,15 @@ public final class DipHunterLiveScanner {
         BigDecimal ma50 = movingAverage(history, 50);
         BigDecimal avgVolume = averageVolume(history, 20);
         BigDecimal todayVolume = sumVolume(intradayBars);
-        BigDecimal relativeVolume = valid(avgVolume)
-                ? todayVolume.divide(avgVolume, 2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO;
+        // Volume so far today against what this name normally trades by this point of the session; a
+        // raw ratio against a whole average day reads below 1.0 for every stock before the close.
+        BigDecimal relativeVolume = IntradayVolumeSupport.timeAdjustedRelativeVolume(
+                todayVolume, avgVolume, IntradayVolumeSupport.sessionFractionElapsed(clock));
         BigDecimal intradayHigh = maxHigh(intradayBars, latestBar.high());
         BigDecimal intradayLow = minLow(intradayBars, latestBar.low());
         boolean intradayReversal = valid(intradayLow)
                 && current.compareTo(intradayLow.multiply(BigDecimal.ONE.add(REVERSAL_MARGIN))) >= 0;
-        BigDecimal spreadPercent = valid(current) && intradayHigh.compareTo(intradayLow) > 0
+        BigDecimal intradayRangePercent = valid(current) && intradayHigh.compareTo(intradayLow) > 0
                 ? intradayHigh.subtract(intradayLow).multiply(BigDecimal.valueOf(100)).divide(current, 2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
         return Optional.of(new DipHunterCandidate(
@@ -112,7 +114,7 @@ public final class DipHunterLiveScanner {
                 valid(ma20) && current.compareTo(ma20) > 0,
                 valid(ma50) && current.compareTo(ma50) > 0,
                 intradayReversal,
-                spreadPercent,
+                intradayRangePercent,
                 Monetary.round(current)
         ));
     }

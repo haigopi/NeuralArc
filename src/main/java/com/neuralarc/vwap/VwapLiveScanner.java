@@ -3,6 +3,7 @@ package com.neuralarc.vwap;
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.api.AlpacaMarketDataException;
 import com.neuralarc.model.MarketBar;
+import com.neuralarc.util.IntradayVolumeSupport;
 import com.neuralarc.util.Monetary;
 
 import java.math.BigDecimal;
@@ -88,12 +89,13 @@ public final class VwapLiveScanner {
         BigDecimal ma200 = movingAverage(history, 200);
         BigDecimal avgVolume = averageVolume(history, 20);
         BigDecimal todayVolume = sumVolume(intradayBars);
-        BigDecimal relativeVolume = valid(avgVolume)
-                ? todayVolume.divide(avgVolume, 2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO;
+        // Volume so far today against what this name normally trades by this point of the session; a
+        // raw ratio against a whole average day reads below 1.0 for every stock before the close.
+        BigDecimal relativeVolume = IntradayVolumeSupport.timeAdjustedRelativeVolume(
+                todayVolume, avgVolume, IntradayVolumeSupport.sessionFractionElapsed(clock));
         BigDecimal intradayHigh = maxHigh(intradayBars, latestBar.high());
         BigDecimal intradayLow = minLow(intradayBars, latestBar.low());
-        BigDecimal spreadPercent = valid(current) && intradayHigh.compareTo(intradayLow) > 0
+        BigDecimal intradayRangePercent = valid(current) && intradayHigh.compareTo(intradayLow) > 0
                 ? intradayHigh.subtract(intradayLow).multiply(BigDecimal.valueOf(100)).divide(current, 2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
         return Optional.of(new VwapCandidate(
@@ -110,7 +112,7 @@ public final class VwapLiveScanner {
                 valid(ma200) ? Monetary.round(ma200) : BigDecimal.ZERO,
                 valid(ma50) && current.compareTo(ma50) > 0,
                 valid(ma200) && current.compareTo(ma200) > 0,
-                spreadPercent
+                intradayRangePercent
         ));
     }
 

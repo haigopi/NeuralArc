@@ -24,7 +24,7 @@ class VwapDiscoveryServiceTest {
     }
 
     @Test
-    void selectsLosersFirstThenCapsToMax() throws Exception {
+    void fallsBackToTheDayLosersWhenThereAreNoActivesAndCapsToMax() throws Exception {
         JSONObject movers = new JSONObject().put("losers", new JSONArray()
                 .put(loser("AAA", "10.00"))
                 .put(loser("BBB", "20.00"))
@@ -52,7 +52,7 @@ class VwapDiscoveryServiceTest {
     }
 
     @Test
-    void fillsRemainingSlotsWithMostActivesWithoutDuplicates() throws Exception {
+    void takesActivesFirstThenTopsUpWithLosersWithoutDuplicates() throws Exception {
         JSONObject movers = new JSONObject().put("losers", new JSONArray()
                 .put(loser("NVDA", "120.00")));
         JSONObject actives = new JSONObject().put("most_actives", new JSONArray()
@@ -91,15 +91,15 @@ class VwapDiscoveryServiceTest {
     }
 
     @Test
-    void doesNotQueryMostActivesWhenLosersAlreadyFillTheLimit() throws Exception {
-        JSONObject movers = new JSONObject().put("losers", new JSONArray()
-                .put(loser("AAA", "10.00"))
-                .put(loser("BBB", "10.00")));
-        FakeScreener screener = new FakeScreener(movers, new JSONObject());
+    void doesNotQueryTheDayLosersWhenActivesAlreadyFillTheLimit() throws Exception {
+        JSONObject actives = new JSONObject().put("most_actives", new JSONArray()
+                .put(active("AAPL"))
+                .put(active("MSFT")));
+        FakeScreener screener = new FakeScreener(new JSONObject(), actives);
 
         new VwapDiscoveryService(screener).discoverCandidates(config("5", null, 10), 2);
 
-        assertFalse(screener.mostActivesQueried);
+        assertFalse(screener.marketMoversQueried);
     }
 
     @Test
@@ -131,7 +131,7 @@ class VwapDiscoveryServiceTest {
     private static final class FakeScreener implements AlpacaScreenerClient {
         private final JSONObject movers;
         private final JSONObject mostActives;
-        private boolean mostActivesQueried;
+        private boolean marketMoversQueried;
 
         private FakeScreener(JSONObject movers, JSONObject mostActives) {
             this.movers = movers;
@@ -140,12 +140,12 @@ class VwapDiscoveryServiceTest {
 
         @Override
         public JSONObject getMarketMovers(int top) {
+            marketMoversQueried = true;
             return movers;
         }
 
         @Override
         public JSONObject getMostActives(String by, int top) {
-            mostActivesQueried = true;
             return mostActives;
         }
     }

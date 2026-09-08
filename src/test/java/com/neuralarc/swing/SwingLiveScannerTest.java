@@ -38,6 +38,24 @@ class SwingLiveScannerTest {
     }
 
     @Test
+    void middaySessionVolumeIsMeasuredAgainstWhatIsNormalByThisHour() {
+        // 14:00 ET is exactly halfway through the session and today's bar carries half a normal day's
+        // volume, so this name is trading at its usual pace. The old raw ratio against a whole average
+        // day read 0.50 and was rejected as "relative volume below minimum".
+        SwingLiveScanner scanner = new SwingLiveScanner(
+                new HalfDayVolumeFakeApi(),
+                Clock.fixed(Instant.parse("2026-06-15T18:00:00Z"), ZoneOffset.UTC),
+                ignored -> { });
+
+        SwingCandidate candidate = scanner.candidates(List.of("NVDA")).getFirst();
+
+        assertTrue(candidate.relativeVolume().compareTo(new BigDecimal("0.6")) > 0,
+                "a normally-paced stock must clear the default 0.6 minimum, read " + candidate.relativeVolume());
+        assertTrue(candidate.relativeVolume().compareTo(new BigDecimal("1.2")) < 0,
+                "and it must not be inflated into a volume spike, read " + candidate.relativeVolume());
+    }
+
+    @Test
     void skipsSymbolsWithoutEnoughDailyHistory() {
         SwingLiveScanner scanner = new SwingLiveScanner(
                 new ThinHistoryFakeApi(),
@@ -64,6 +82,25 @@ class SwingLiveScannerTest {
                 bars.add(bar(symbol, date + "T20:00:00Z", "96", "110", "94", "96", "1000000"));
             }
             bars.add(bar(symbol, today + "T20:00:00Z", "99", "101", "98", "100", "1200000"));
+            return bars;
+        }
+
+        @Override
+        public List<MarketBar> getIntradayBars(String symbol, LocalDate startDate, LocalDate endDate, int intervalMinutes) {
+            return List.of();
+        }
+    }
+
+    /** 60 prior bars averaging 1,000,000 shares plus a today bar holding half of that. */
+    private static final class HalfDayVolumeFakeApi implements AlpacaMarketDataApi {
+        @Override
+        public List<MarketBar> getDailyBars(String symbol, LocalDate startDate, LocalDate endDate) {
+            List<MarketBar> bars = new ArrayList<>();
+            LocalDate today = LocalDate.parse("2026-06-15");
+            for (int i = 60; i >= 1; i--) {
+                bars.add(bar(symbol, today.minusDays(i) + "T20:00:00Z", "96", "110", "94", "96", "1000000"));
+            }
+            bars.add(bar(symbol, today + "T20:00:00Z", "99", "101", "98", "100", "500000"));
             return bars;
         }
 

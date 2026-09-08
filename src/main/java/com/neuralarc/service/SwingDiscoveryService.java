@@ -14,10 +14,10 @@ import java.util.logging.Logger;
 
 /**
  * Discovers live Swing Vault candidate symbols from Alpaca's screener so the operator no longer has to
- * type tickers by hand. Swing pullback setups surface among the day's decliners ("losers") — strong
- * names that have eased back from a recent high — padded with the most-active names for liquidity. Uses
- * only live broker/market-data endpoints — never hardcoded tickers, canned prices, or synthetic
- * candidates.
+ * type tickers by hand. The most-active names lead, because a swing pullback needs a liquid stock with
+ * months of history behind it, and the day's decliners top up the list with names that have actually
+ * eased back. Uses only live broker/market-data endpoints — never hardcoded tickers, canned prices, or
+ * synthetic candidates.
  *
  * <p>The precise daily-bar pullback/trend/relative-volume recompute and final scoring happen later in
  * {@code SwingLiveScanner} + {@code SwingAnalyzer}; this service only applies price bounds so the
@@ -33,8 +33,8 @@ public final class SwingDiscoveryService {
     }
 
     /**
-     * Discover up to {@code maxSymbols} candidate tickers: the day's decliners first (names that have
-     * pulled back), then high-volume actives to fill remaining slots.
+     * Discover up to {@code maxSymbols} candidate tickers: the most-active names first, then the day's
+     * decliners that clear the price floor to fill any remaining slots.
      *
      * @throws AlpacaScreenerException on API or network error
      */
@@ -44,28 +44,29 @@ public final class SwingDiscoveryService {
 
         LinkedHashSet<String> selected = new LinkedHashSet<>();
 
-        // Primary source: the day's decliners — these are the names that have pulled back. The scanner
-        // confirms which remain in a confirmed daily uptrend, so no gap/percent pre-filter is applied here.
-        JSONObject movers = screener.getMarketMovers(Math.max(10, limit * 2));
-        List<Loser> losers = parseLosers(movers).stream()
-                .filter(l -> !l.symbol.isBlank())
-                .filter(l -> passesPriceBoundsFilter(l, safeConfig))
-                .toList();
-        for (Loser loser : losers) {
+        // Primary source: the most active names. The day's biggest losers used to lead here, but that
+        // list is dominated by microcaps and fresh listings - the scan spent its slots on symbols with
+        // no usable history and volume far below any sane minimum, and rarely reached a real name.
+        JSONObject actives = screener.getMostActives("volume", Math.max(20, limit * 4));
+        for (String symbol : parseActiveSymbols(actives)) {
             if (selected.size() >= limit) {
                 break;
             }
-            selected.add(loser.symbol);
+            selected.add(symbol);
         }
 
-        // Secondary source: most actives by volume, to confirm liquidity and fill remaining slots.
+        // Secondary source: the day's decliners that clear the configured price floor, to top up with
+        // names that have actually pulled back.
         if (selected.size() < limit) {
-            JSONObject actives = screener.getMostActives("volume", Math.max(20, limit * 4));
-            for (String symbol : parseActiveSymbols(actives)) {
+            JSONObject movers = screener.getMarketMovers(Math.max(10, limit * 2));
+            for (Loser loser : parseLosers(movers)) {
                 if (selected.size() >= limit) {
                     break;
                 }
-                selected.add(symbol);
+                if (loser.symbol.isBlank() || !passesPriceBoundsFilter(loser, safeConfig)) {
+                    continue;
+                }
+                selected.add(loser.symbol);
             }
         }
 

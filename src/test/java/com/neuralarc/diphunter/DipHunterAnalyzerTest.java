@@ -18,11 +18,11 @@ class DipHunterAnalyzerTest {
     @Test
     void defaultsMatchDialogRequirements() {
         DipHunterConfig cfg = DipHunterConfig.defaults(StrategyMode.LIVE);
-        assertEquals(new BigDecimal("0.1"), cfg.minimumPullbackPercent());
-        assertEquals(new BigDecimal("50"), cfg.maximumPullbackPercent());
-        assertEquals(100_000L, cfg.minimumAverageVolume());
-        assertEquals(new BigDecimal("0.5"), cfg.minimumStockPrice());
-        assertEquals(new BigDecimal("0.5"), cfg.minimumRelativeVolume());
+        assertEquals(new BigDecimal("2"), cfg.minimumPullbackPercent());
+        assertEquals(new BigDecimal("12"), cfg.maximumPullbackPercent());
+        assertEquals(750_000L, cfg.minimumAverageVolume());
+        assertEquals(new BigDecimal("5"), cfg.minimumStockPrice());
+        assertEquals(new BigDecimal("0.7"), cfg.minimumRelativeVolume());
         assertNull(cfg.maximumStockPrice());
         assertEquals(DipHunterConfig.TrendFilter.DISABLED, cfg.trendFilter());
         assertEquals(DipHunterConfig.BounceConfirmation.MANUAL_REVIEW, cfg.bounceConfirmation());
@@ -34,11 +34,11 @@ class DipHunterAnalyzerTest {
         DipHunterConfig cfg = new DipHunterConfig(new BigDecimal("-1"), new BigDecimal("0"), -5L,
                 new BigDecimal("0"), new BigDecimal("-2"), null, null, null,
                 new BigDecimal("-3"), new BigDecimal("0"), -4, null, StrategyMode.PAPER);
-        assertEquals(new BigDecimal("0.1"), cfg.minimumPullbackPercent());
-        assertEquals(new BigDecimal("50"), cfg.maximumPullbackPercent());
-        assertEquals(100_000L, cfg.minimumAverageVolume());
-        assertEquals(new BigDecimal("0.5"), cfg.minimumStockPrice());
-        assertEquals(new BigDecimal("0.5"), cfg.minimumRelativeVolume());
+        assertEquals(new BigDecimal("2"), cfg.minimumPullbackPercent());
+        assertEquals(new BigDecimal("12"), cfg.maximumPullbackPercent());
+        assertEquals(750_000L, cfg.minimumAverageVolume());
+        assertEquals(new BigDecimal("5"), cfg.minimumStockPrice());
+        assertEquals(new BigDecimal("0.7"), cfg.minimumRelativeVolume());
         assertEquals(new BigDecimal("5"), cfg.stopLossPercent());
         assertEquals(new BigDecimal("10"), cfg.takeProfitPercent());
         assertEquals(10, cfg.maxStocksToAdd());
@@ -74,13 +74,38 @@ class DipHunterAnalyzerTest {
     }
 
     @Test
-    void defaultsAllowWidePullbackRangeWithoutTrendOrReversalConfirmation() {
+    void defaultsNeedNoTrendOrReversalConfirmationButKeepDipsInsideABuyableBand() {
         DipHunterAnalyzer analyzer = new DipHunterAnalyzer(FIXED, null);
         DipHunterConfig cfg = DipHunterConfig.defaults(StrategyMode.PAPER);
 
-        assertTrue(analyzer.passesFilters(candidate("SHALLOW", new BigDecimal("0.2"), new BigDecimal("0.6"), false, false, false), cfg));
-        assertTrue(analyzer.passesFilters(candidate("DEEP", new BigDecimal("45"), new BigDecimal("0.6"), false, false, false), cfg));
-        assertTrue(analyzer.passesFilters(candidate("CHEAP", new BigDecimal("5"), new BigDecimal("0.6"), false, false, false), cfg));
+        assertTrue(analyzer.passesFilters(candidate("GOOD", new BigDecimal("5"), new BigDecimal("0.9"), false, false, false), cfg));
+        assertFalse(analyzer.passesFilters(candidate("NOISE", new BigDecimal("0.2"), new BigDecimal("0.9"), false, false, false), cfg));
+        assertFalse(analyzer.passesFilters(candidate("KNIFE", new BigDecimal("45"), new BigDecimal("0.9"), false, false, false), cfg));
+    }
+
+    @Test
+    void aNormalVolatileSessionIsNoLongerRejectedAsAWideSpread() {
+        // The candidate's range field is the day's high-to-low move, not a bid/ask spread. A 5% range
+        // on a liquid large cap used to be rejected outright as "spread too wide".
+        DipHunterAnalyzer analyzer = new DipHunterAnalyzer(FIXED, null);
+        DipHunterCandidate volatileButOrderly = new DipHunterCandidate("INTC", "INTC Inc", new BigDecimal("5"),
+                new BigDecimal("-1.0"), 30_000_000L, new BigDecimal("1.0"), new BigDecimal("100"),
+                new BigDecimal("101"), new BigDecimal("105.26"), new BigDecimal("95"), new BigDecimal("90"),
+                true, true, true, new BigDecimal("5.0"), new BigDecimal("100"));
+
+        assertTrue(analyzer.passesFilters(volatileButOrderly, DipHunterConfig.defaults(StrategyMode.PAPER)));
+    }
+
+    @Test
+    void aTextbookDipClearsTheRecommendationThreshold() {
+        // The bug this guards: scoring peaked at the midpoint of the configured band, so with a
+        // 0.1-50% filter the ideal dip was a 25% collapse and ordinary dips never reached 60.
+        DipHunterAnalyzer analyzer = new DipHunterAnalyzer(FIXED, null);
+
+        int score = analyzer.score(strong("NVDA"), DipHunterConfig.defaults(StrategyMode.PAPER));
+
+        assertTrue(score >= DipHunterAnalyzer.MINIMUM_RECOMMENDATION_SCORE,
+                "a textbook dip must be recommendable, scored " + score);
     }
 
     @Test

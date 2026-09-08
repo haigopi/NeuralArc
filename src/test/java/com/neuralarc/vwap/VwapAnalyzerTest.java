@@ -18,11 +18,11 @@ class VwapAnalyzerTest {
     @Test
     void defaultsMatchDialogRequirements() {
         VwapConfig cfg = VwapConfig.defaults(StrategyMode.LIVE);
-        assertEquals(new BigDecimal("1"), cfg.minimumDiscountPercent());
-        assertEquals(new BigDecimal("8"), cfg.maximumDiscountPercent());
-        assertEquals(500_000L, cfg.minimumAverageVolume());
+        assertEquals(new BigDecimal("0.4"), cfg.minimumDiscountPercent());
+        assertEquals(new BigDecimal("4"), cfg.maximumDiscountPercent());
+        assertEquals(1_000_000L, cfg.minimumAverageVolume());
         assertEquals(new BigDecimal("5"), cfg.minimumStockPrice());
-        assertEquals(new BigDecimal("1.0"), cfg.minimumRelativeVolume());
+        assertEquals(new BigDecimal("0.8"), cfg.minimumRelativeVolume());
         assertNull(cfg.maximumStockPrice());
         assertEquals(VwapConfig.TrendFilter.ABOVE_MA_50, cfg.trendFilter());
         assertEquals(new BigDecimal("4"), cfg.stopLossPercent());
@@ -34,11 +34,11 @@ class VwapAnalyzerTest {
         VwapConfig cfg = new VwapConfig(new BigDecimal("-1"), new BigDecimal("0"), -5L,
                 new BigDecimal("0"), new BigDecimal("-2"), null, null, new BigDecimal("-3"),
                 -4, null, StrategyMode.PAPER);
-        assertEquals(new BigDecimal("1"), cfg.minimumDiscountPercent());
-        assertEquals(new BigDecimal("8"), cfg.maximumDiscountPercent());
-        assertEquals(500_000L, cfg.minimumAverageVolume());
+        assertEquals(new BigDecimal("0.4"), cfg.minimumDiscountPercent());
+        assertEquals(new BigDecimal("4"), cfg.maximumDiscountPercent());
+        assertEquals(1_000_000L, cfg.minimumAverageVolume());
         assertEquals(new BigDecimal("5"), cfg.minimumStockPrice());
-        assertEquals(new BigDecimal("1.0"), cfg.minimumRelativeVolume());
+        assertEquals(new BigDecimal("0.8"), cfg.minimumRelativeVolume());
         assertEquals(new BigDecimal("4"), cfg.stopLossPercent());
         assertEquals(10, cfg.maxStocksToAdd());
     }
@@ -62,9 +62,9 @@ class VwapAnalyzerTest {
         VwapAnalyzer analyzer = new VwapAnalyzer(FIXED, log::add);
         VwapConfig cfg = VwapConfig.defaults(StrategyMode.PAPER);
 
-        // 0.4% below VWAP — below the 1% minimum.
-        VwapCandidate shallow = candidate("SHAL", new BigDecimal("0.4"), new BigDecimal("2.0"), true, true);
-        // 12% below VWAP — above the 8% maximum (possible breakdown).
+        // 0.2% below VWAP — inside the day's noise, below the 0.4% minimum.
+        VwapCandidate shallow = candidate("SHAL", new BigDecimal("0.2"), new BigDecimal("2.0"), true, true);
+        // 12% below VWAP — far above the 4% maximum (a breakdown, not a stretch).
         VwapCandidate deep = candidate("DEEP", new BigDecimal("12"), new BigDecimal("2.0"), true, true);
 
         assertTrue(analyzer.analyze(List.of(shallow, deep), cfg).isEmpty());
@@ -90,22 +90,60 @@ class VwapAnalyzerTest {
                 VwapConfig.defaults(StrategyMode.PAPER)).getFirst();
         assertEquals(new BigDecimal("100.00"), rec.plannedEntryPrice());
         assertEquals(new BigDecimal("96.00"), rec.stopLossPrice());   // 4% stop
-        assertEquals(new BigDecimal("104.00"), rec.targetPrice());    // target = VWAP
-        assertEquals(new BigDecimal("4.00"), rec.reversionUpsidePercent());
+        assertEquals(new BigDecimal("101.20"), rec.targetPrice());    // target = VWAP
+        assertEquals(new BigDecimal("1.20"), rec.reversionUpsidePercent());
         assertEquals(VwapStatus.RECOMMENDED, rec.status());
     }
 
+    @Test
+    void aNormalVolatileSessionIsNoLongerRejectedAsAWideSpread() {
+        // The candidate's range field is the day's high-to-low move, not a bid/ask spread. A 5% range
+        // on a liquid large cap used to be rejected outright as "spread too wide".
+        VwapAnalyzer analyzer = new VwapAnalyzer(FIXED, null);
+        VwapCandidate volatileButOrderly = new VwapCandidate("INTC", "INTC Inc", new BigDecimal("100"),
+                new BigDecimal("101.2"), new BigDecimal("1.2"), new BigDecimal("101"), new BigDecimal("-1.0"),
+                30_000_000L, new BigDecimal("1.2"), new BigDecimal("95"), new BigDecimal("90"), true, true,
+                new BigDecimal("5.0"));
+
+        assertTrue(analyzer.passesFilters(volatileButOrderly, VwapConfig.defaults(StrategyMode.PAPER)));
+    }
+
+    @Test
+    void aDisorderlySessionIsStillRejected() {
+        List<String> log = new ArrayList<>();
+        VwapAnalyzer analyzer = new VwapAnalyzer(FIXED, log::add);
+        VwapCandidate disorderly = new VwapCandidate("WILD", "WILD Inc", new BigDecimal("100"),
+                new BigDecimal("101.2"), new BigDecimal("1.2"), new BigDecimal("101"), new BigDecimal("-1.0"),
+                30_000_000L, new BigDecimal("1.2"), new BigDecimal("95"), new BigDecimal("90"), true, true,
+                new BigDecimal("18"));
+
+        assertFalse(analyzer.passesFilters(disorderly, VwapConfig.defaults(StrategyMode.PAPER)));
+        assertTrue(log.stream().anyMatch(l -> l.contains("WILD") && l.contains("intraday range too wide")));
+    }
+
+    @Test
+    void anOrdinaryStretchBelowVwapClearsTheRecommendationThreshold() {
+        // The bug this guards: scoring peaked at the midpoint of the configured band, so with a 1-8%
+        // filter the ideal trade was a 4.5% collapse and ordinary reversion setups never reached 60.
+        VwapAnalyzer analyzer = new VwapAnalyzer(FIXED, null);
+
+        int score = analyzer.score(strong("NVDA"), VwapConfig.defaults(StrategyMode.PAPER));
+
+        assertTrue(score >= VwapAnalyzer.MINIMUM_RECOMMENDATION_SCORE,
+                "an ordinary VWAP stretch must be recommendable, scored " + score);
+    }
+
     private VwapCandidate strong(String symbol) {
-        // 4% below VWAP (near the ideal mid), 2x rel vol, above both MAs, tight spread → high score.
-        return new VwapCandidate(symbol, symbol + " Inc", new BigDecimal("100"), new BigDecimal("104"),
-                new BigDecimal("4"), new BigDecimal("101"), new BigDecimal("-1.0"), 3_000_000L,
-                new BigDecimal("2.0"), new BigDecimal("95"), new BigDecimal("90"), true, true, new BigDecimal("0.5"));
+        // 1.2% below VWAP (inside the reversion band), 2x rel vol, above both MAs, orderly session.
+        return new VwapCandidate(symbol, symbol + " Inc", new BigDecimal("100"), new BigDecimal("101.2"),
+                new BigDecimal("1.2"), new BigDecimal("101"), new BigDecimal("-1.0"), 3_000_000L,
+                new BigDecimal("2.0"), new BigDecimal("95"), new BigDecimal("90"), true, true, new BigDecimal("2.5"));
     }
 
     private VwapCandidate weak(String symbol) {
-        // 0.3% below VWAP (below min) → filtered before scoring.
-        return new VwapCandidate(symbol, symbol + " Inc", new BigDecimal("8"), new BigDecimal("8.024"),
-                new BigDecimal("0.3"), new BigDecimal("8.1"), new BigDecimal("-0.2"), 300_000L,
+        // 0.2% below VWAP (below min) → filtered before scoring.
+        return new VwapCandidate(symbol, symbol + " Inc", new BigDecimal("8"), new BigDecimal("8.016"),
+                new BigDecimal("0.2"), new BigDecimal("8.1"), new BigDecimal("-0.2"), 300_000L,
                 new BigDecimal("1.0"), new BigDecimal("7"), new BigDecimal("6.5"), true, true, new BigDecimal("4.0"));
     }
 

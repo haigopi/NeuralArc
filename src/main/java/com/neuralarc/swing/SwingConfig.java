@@ -38,14 +38,14 @@ public record SwingConfig(
     public static final LocalTime PRIMARY_WINDOW_END_ET = LocalTime.of(15, 45);
 
     public SwingConfig {
-        minimumPullbackPercent = posOrDefault(minimumPullbackPercent, "0.1");
-        maximumPullbackPercent = posOrDefault(maximumPullbackPercent, "50");
+        minimumPullbackPercent = posOrDefault(minimumPullbackPercent, "3");
+        maximumPullbackPercent = posOrDefault(maximumPullbackPercent, "15");
         if (maximumPullbackPercent.compareTo(minimumPullbackPercent) < 0) {
             maximumPullbackPercent = minimumPullbackPercent;
         }
-        minimumStockPrice = posOrDefault(minimumStockPrice, "0.5");
-        minimumRelativeVolume = posOrDefault(minimumRelativeVolume, "0.5");
-        minimumAverageVolume = minimumAverageVolume <= 0 ? 100_000L : minimumAverageVolume;
+        minimumStockPrice = posOrDefault(minimumStockPrice, "5");
+        minimumRelativeVolume = posOrDefault(minimumRelativeVolume, "0.6");
+        minimumAverageVolume = minimumAverageVolume <= 0 ? 750_000L : minimumAverageVolume;
         stopLossPercent = posOrDefault(stopLossPercent, "6");
         targetProfitPercent = posOrDefault(targetProfitPercent, "12");
         trendFilter = trendFilter == null ? TrendFilter.ABOVE_MA_50 : trendFilter;
@@ -66,9 +66,14 @@ public record SwingConfig(
                 maxStocksToAdd, executionFrequency, mode, List.of());
     }
 
+    /**
+     * Defaults describe an actual swing setup rather than a wide-open filter: a controlled 3-15%
+     * pullback in a liquid name above $5. The previous 0.1-50% band admitted collapsing microcaps and,
+     * because scoring keyed off the middle of that band, made a 25% breakdown the "perfect" trade.
+     */
     public static SwingConfig defaults(StrategyMode mode) {
-        return new SwingConfig(new BigDecimal("0.1"), new BigDecimal("50"), 100_000L, new BigDecimal("0.5"),
-                new BigDecimal("0.5"), null, TrendFilter.ABOVE_MA_50, new BigDecimal("6"),
+        return new SwingConfig(new BigDecimal("3"), new BigDecimal("15"), 750_000L, new BigDecimal("5"),
+                new BigDecimal("0.6"), null, TrendFilter.ABOVE_MA_50, new BigDecimal("6"),
                 new BigDecimal("12"), 10, ExecutionFrequency.MANUAL, mode, List.of());
     }
 

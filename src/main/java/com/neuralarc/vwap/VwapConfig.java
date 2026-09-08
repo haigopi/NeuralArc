@@ -34,14 +34,14 @@ public record VwapConfig(
     public static final LocalTime PRIMARY_WINDOW_END_ET = LocalTime.of(15, 30);
 
     public VwapConfig {
-        minimumDiscountPercent = posOrDefault(minimumDiscountPercent, "1");
-        maximumDiscountPercent = posOrDefault(maximumDiscountPercent, "8");
+        minimumDiscountPercent = posOrDefault(minimumDiscountPercent, "0.4");
+        maximumDiscountPercent = posOrDefault(maximumDiscountPercent, "4");
         if (maximumDiscountPercent.compareTo(minimumDiscountPercent) < 0) {
             maximumDiscountPercent = minimumDiscountPercent;
         }
         minimumStockPrice = posOrDefault(minimumStockPrice, "5");
-        minimumRelativeVolume = posOrDefault(minimumRelativeVolume, "1.0");
-        minimumAverageVolume = minimumAverageVolume <= 0 ? 500_000L : minimumAverageVolume;
+        minimumRelativeVolume = posOrDefault(minimumRelativeVolume, "0.8");
+        minimumAverageVolume = minimumAverageVolume <= 0 ? 1_000_000L : minimumAverageVolume;
         stopLossPercent = posOrDefault(stopLossPercent, "4");
         trendFilter = trendFilter == null ? TrendFilter.ABOVE_MA_50 : trendFilter;
         maxStocksToAdd = maxStocksToAdd <= 0 ? 10 : maxStocksToAdd;
@@ -61,9 +61,14 @@ public record VwapConfig(
                 executionFrequency, mode, List.of());
     }
 
+    /**
+     * Defaults sized to how far a liquid name actually strays from its own VWAP: 0.4-4%. Requiring a
+     * full 1% discount meant only names having a bad day ever qualified, and an 8% ceiling admitted
+     * outright breakdowns while placing the "ideal" reversion at a 4.5% collapse.
+     */
     public static VwapConfig defaults(StrategyMode mode) {
-        return new VwapConfig(new BigDecimal("1"), new BigDecimal("8"), 500_000L, new BigDecimal("5"),
-                new BigDecimal("1.0"), null, TrendFilter.ABOVE_MA_50, new BigDecimal("4"), 10,
+        return new VwapConfig(new BigDecimal("0.4"), new BigDecimal("4"), 1_000_000L, new BigDecimal("5"),
+                new BigDecimal("0.8"), null, TrendFilter.ABOVE_MA_50, new BigDecimal("4"), 10,
                 ExecutionFrequency.MANUAL, mode, List.of());
     }
 

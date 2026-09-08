@@ -1,5 +1,7 @@
 package com.neuralarc.swing;
 
+import com.neuralarc.util.SetupScore;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -16,8 +18,17 @@ import java.util.function.Consumer;
  */
 public final class SwingAnalyzer {
     public static final int MINIMUM_RECOMMENDATION_SCORE = 60;
-    /** A pullback that lands within this distance above the 50-day MA is treated as "at support". */
-    private static final BigDecimal IDEAL_SUPPORT_PROXIMITY_PERCENT = new BigDecimal("6");
+    /**
+     * The pullback depth a swing entry actually wants, independent of how wide the operator's filter
+     * is. Scoring used to peak at the midpoint of the configured band, so a wide filter placed the
+     * "perfect" trade at a 25% collapse and left textbook 4-8% pullbacks scoring a fifth of the points.
+     */
+    private static final BigDecimal IDEAL_PULLBACK_LOW_PERCENT = new BigDecimal("4");
+    private static final BigDecimal IDEAL_PULLBACK_HIGH_PERCENT = new BigDecimal("10");
+    /** Distance from the rising 50-day MA that counts as "at support", either side of it. */
+    private static final BigDecimal IDEAL_SUPPORT_PROXIMITY_PERCENT = new BigDecimal("3");
+    /** Beyond this distance from the 50-day MA the entry is no longer a support test. */
+    private static final BigDecimal SUPPORT_PROXIMITY_LIMIT_PERCENT = new BigDecimal("15");
 
     private final Clock clock;
     private final Consumer<String> decisionLog;
@@ -52,15 +63,15 @@ public final class SwingAnalyzer {
     }
 
     public int score(SwingCandidate c, SwingConfig cfg) {
-        // Reward a healthy mid-range pullback, a fully-stacked uptrend, an entry near rising support,
-        // and a favourable reward/risk profile back toward the recent high.
-        BigDecimal idealPullback = cfg.minimumPullbackPercent()
-                .add(cfg.maximumPullbackPercent()).divide(new BigDecimal("2"), 2, RoundingMode.HALF_UP);
-        int score = pullbackQuality(c.pullbackPercent(), cfg.minimumPullbackPercent(), idealPullback, cfg.maximumPullbackPercent())
+        // Reward a healthy pullback into the swing-entry band, a fully-stacked uptrend, an entry near
+        // rising support, and a favourable reward/risk profile back toward the recent high.
+        int score = SetupScore.bandQuality(c.pullbackPercent(),
+                        IDEAL_PULLBACK_LOW_PERCENT, IDEAL_PULLBACK_HIGH_PERCENT,
+                        cfg.minimumPullbackPercent(), cfg.maximumPullbackPercent(), 30)
                 + trendStrength(c)
                 + supportProximityPoints(c.supportProximityPercent())
                 + rewardRiskPoints(rewardRisk(c, cfg))
-                + bounded(c.relativeVolume(), cfg.minimumRelativeVolume(), new BigDecimal("2"), 10);
+                + bounded(c.relativeVolume(), cfg.minimumRelativeVolume(), new BigDecimal("1.5"), 10);
         return Math.min(100, score);
     }
 
@@ -96,17 +107,18 @@ public final class SwingAnalyzer {
     }
 
     /**
-     * Target is the recent swing high we expect price to recover toward; if that high is at or below the
-     * entry (a fresh high), fall back to the configured target-profit percentage so the plan still aims
-     * meaningfully above the entry.
+     * Target is the recent swing high we expect price to recover toward, floored at the configured
+     * target-profit percentage. Taking the high alone made shallow pullbacks plan a reward smaller
+     * than their own stop - a sub-1.0 reward/risk that could never score - even though the operator
+     * had asked for a 12% target.
      */
     private BigDecimal targetPrice(SwingCandidate c, SwingConfig cfg, BigDecimal entry) {
         BigDecimal percentTarget = entry.multiply(BigDecimal.ONE.add(cfg.targetProfitPercent().movePointLeft(2)))
                 .setScale(2, RoundingMode.HALF_UP);
-        if (c.recentHigh() == null || c.recentHigh().compareTo(entry) <= 0) {
+        if (c.recentHigh() == null) {
             return percentTarget;
         }
-        return c.recentHigh().setScale(2, RoundingMode.HALF_UP);
+        return c.recentHigh().setScale(2, RoundingMode.HALF_UP).max(percentTarget);
     }
 
     private BigDecimal rewardRisk(SwingCandidate c, SwingConfig cfg) {
@@ -140,14 +152,14 @@ public final class SwingAnalyzer {
         return 0;
     }
 
-    /** Closer to rising support (small positive distance above the 50-day MA) scores higher. */
+    /**
+     * Closer to the rising 50-day MA scores higher, measured either side of it: a pullback that dips
+     * just under the average is a support test, not a disqualification, and the trend filter already
+     * decides whether the name still counts as an uptrend.
+     */
     private int supportProximityPoints(BigDecimal proximityPercent) {
-        int points = 20;
-        if (proximityPercent == null || proximityPercent.compareTo(BigDecimal.ZERO) < 0) return 0;
-        if (proximityPercent.compareTo(IDEAL_SUPPORT_PROXIMITY_PERCENT) >= 0) return 4;
-        BigDecimal ratio = BigDecimal.ONE.subtract(
-                proximityPercent.divide(IDEAL_SUPPORT_PROXIMITY_PERCENT, 4, RoundingMode.HALF_UP));
-        return ratio.multiply(BigDecimal.valueOf(points)).setScale(0, RoundingMode.HALF_UP).intValue();
+        return SetupScore.proximityQuality(proximityPercent,
+                IDEAL_SUPPORT_PROXIMITY_PERCENT, SUPPORT_PROXIMITY_LIMIT_PERCENT, 20);
     }
 
     private int rewardRiskPoints(BigDecimal rewardRisk) {
@@ -157,18 +169,6 @@ public final class SwingAnalyzer {
         BigDecimal span = new BigDecimal("1.5"); // from 1.0 up to 2.5
         return rewardRisk.subtract(BigDecimal.ONE).multiply(BigDecimal.valueOf(15))
                 .divide(span, 0, RoundingMode.HALF_UP).intValue();
-    }
-
-    /** Triangular score: 0 at the min/max bounds, full points at the ideal mid-range pullback. */
-    private static int pullbackQuality(BigDecimal value, BigDecimal min, BigDecimal ideal, BigDecimal max) {
-        int points = 30;
-        if (value == null || value.compareTo(min) < 0 || value.compareTo(max) > 0) return 0;
-        BigDecimal span = value.compareTo(ideal) <= 0 ? ideal.subtract(min) : max.subtract(ideal);
-        if (span.compareTo(BigDecimal.ZERO) <= 0) return points;
-        BigDecimal distance = value.subtract(ideal).abs();
-        BigDecimal ratio = BigDecimal.ONE.subtract(distance.divide(span, 4, RoundingMode.HALF_UP));
-        if (ratio.compareTo(BigDecimal.ZERO) < 0) return 0;
-        return ratio.multiply(BigDecimal.valueOf(points)).setScale(0, RoundingMode.HALF_UP).intValue();
     }
 
     private boolean reject(SwingCandidate c, String reason) {

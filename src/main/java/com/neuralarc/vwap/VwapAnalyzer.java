@@ -1,5 +1,7 @@
 package com.neuralarc.vwap;
 
+import com.neuralarc.util.SetupScore;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -15,7 +17,21 @@ import java.util.function.Consumer;
  */
 public final class VwapAnalyzer {
     public static final int MINIMUM_RECOMMENDATION_SCORE = 60;
-    private static final BigDecimal MAX_SPREAD_PERCENT = new BigDecimal("3.5");
+    /**
+     * How far below VWAP a liquid name genuinely stretches before reverting. Scoring used to peak at
+     * the midpoint of the operator's band, which with a 1-8% filter called a 4.5% collapse the ideal
+     * mean-reversion trade.
+     */
+    private static final BigDecimal IDEAL_DISCOUNT_LOW_PERCENT = new BigDecimal("0.6");
+    private static final BigDecimal IDEAL_DISCOUNT_HIGH_PERCENT = new BigDecimal("2");
+    /**
+     * A day whose whole high-to-low range exceeds this is disorderly rather than a VWAP stretch. This
+     * is the day's range, not a bid/ask spread: the old 3.5% guard rejected ordinary volatile large
+     * caps (INTC among them) for a "spread" they never had.
+     */
+    private static final BigDecimal MAX_INTRADAY_RANGE_PERCENT = new BigDecimal("12");
+    /** A day's range this tight leaves nothing to revert; below it the setup is noise. */
+    private static final BigDecimal ORDERLY_RANGE_PERCENT = new BigDecimal("6");
     private final Clock clock;
     private final Consumer<String> decisionLog;
 
@@ -44,22 +60,32 @@ public final class VwapAnalyzer {
         if (lt(c.relativeVolume(), cfg.minimumRelativeVolume())) return reject(c, "relative volume below minimum");
         if (c.averageVolume() < cfg.minimumAverageVolume()) return reject(c, "average volume below minimum");
         if (!passesTrend(c, cfg.trendFilter())) return reject(c, "not in an uptrend (trend filter failed)");
-        if (c.spreadPercent() != null && c.spreadPercent().compareTo(MAX_SPREAD_PERCENT) > 0) return reject(c, "spread too wide");
+        if (c.intradayRangePercent() != null && c.intradayRangePercent().compareTo(MAX_INTRADAY_RANGE_PERCENT) > 0) {
+            return reject(c, "intraday range too wide (disorderly move, not a VWAP stretch)");
+        }
         decisionLog.accept("[VWAP Desk] Accepted " + c.symbol() + " for scoring.");
         return true;
     }
 
     public int score(VwapCandidate c, VwapConfig cfg) {
-        // Reward an ideal mid-range discount (a tradeable stretch, not a breakdown), strong relative
-        // volume, a confirmed broader uptrend, and a tight spread.
-        BigDecimal idealDiscount = cfg.minimumDiscountPercent()
-                .add(cfg.maximumDiscountPercent()).divide(new BigDecimal("2"), 2, RoundingMode.HALF_UP);
-        int score = discountQuality(c.discountPercent(), cfg.minimumDiscountPercent(), idealDiscount, cfg.maximumDiscountPercent())
-                + bounded(c.relativeVolume(), cfg.minimumRelativeVolume(), new BigDecimal("4"), 25)
+        // Reward a discount inside the reversion band (a tradeable stretch, not a breakdown), strong
+        // relative volume, a confirmed broader uptrend, and an orderly session.
+        int score = SetupScore.bandQuality(c.discountPercent(),
+                        IDEAL_DISCOUNT_LOW_PERCENT, IDEAL_DISCOUNT_HIGH_PERCENT,
+                        cfg.minimumDiscountPercent(), cfg.maximumDiscountPercent(), 35)
+                + bounded(c.relativeVolume(), cfg.minimumRelativeVolume(), new BigDecimal("2"), 25)
                 + (passesTrend(c, cfg.trendFilter()) ? 20 : 0)
                 + (c.aboveMa50() && c.aboveMa200() ? 10 : 0)
-                + (c.spreadPercent() == null || c.spreadPercent().compareTo(BigDecimal.ONE) <= 0 ? 10 : 5);
+                + orderlinessPoints(c.intradayRangePercent());
         return Math.min(100, score);
+    }
+
+    /** An orderly session reverts to VWAP; a wild one keeps trending away from it. */
+    private int orderlinessPoints(BigDecimal intradayRangePercent) {
+        if (intradayRangePercent == null || intradayRangePercent.compareTo(ORDERLY_RANGE_PERCENT) <= 0) {
+            return 10;
+        }
+        return 5;
     }
 
     private boolean passesScoreThreshold(VwapRecommendation recommendation) {
@@ -98,18 +124,6 @@ public final class VwapAnalyzer {
             case ABOVE_MA_200 -> c.aboveMa200();
             case ABOVE_MA_50_OR_200 -> c.aboveMa50() || c.aboveMa200();
         };
-    }
-
-    /** Triangular score: 0 at the min/max bounds, full points at the ideal mid-range discount. */
-    private static int discountQuality(BigDecimal value, BigDecimal min, BigDecimal ideal, BigDecimal max) {
-        int points = 35;
-        if (value == null || value.compareTo(min) < 0 || value.compareTo(max) > 0) return 0;
-        BigDecimal span = value.compareTo(ideal) <= 0 ? ideal.subtract(min) : max.subtract(ideal);
-        if (span.compareTo(BigDecimal.ZERO) <= 0) return points;
-        BigDecimal distance = value.subtract(ideal).abs();
-        BigDecimal ratio = BigDecimal.ONE.subtract(distance.divide(span, 4, RoundingMode.HALF_UP));
-        if (ratio.compareTo(BigDecimal.ZERO) < 0) return 0;
-        return ratio.multiply(BigDecimal.valueOf(points)).setScale(0, RoundingMode.HALF_UP).intValue();
     }
 
     private boolean reject(VwapCandidate c, String reason) {

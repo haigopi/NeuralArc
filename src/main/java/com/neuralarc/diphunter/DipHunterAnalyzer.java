@@ -1,5 +1,7 @@
 package com.neuralarc.diphunter;
 
+import com.neuralarc.util.SetupScore;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -15,7 +17,21 @@ import java.util.function.Consumer;
  */
 public final class DipHunterAnalyzer {
     public static final int MINIMUM_RECOMMENDATION_SCORE = 60;
-    private static final BigDecimal MAX_SPREAD_PERCENT = new BigDecimal("3.5");
+    /**
+     * The dip depth worth buying, independent of how wide the operator's filter is. Scoring used to
+     * peak at the midpoint of the configured band, so a 0.1-50% filter made a 25% collapse the ideal
+     * dip and left a textbook 3-5% pullback scoring almost nothing.
+     */
+    private static final BigDecimal IDEAL_PULLBACK_LOW_PERCENT = new BigDecimal("3");
+    private static final BigDecimal IDEAL_PULLBACK_HIGH_PERCENT = new BigDecimal("8");
+    /**
+     * A day whose whole high-to-low range exceeds this is a disorderly move, not a dip. This is the
+     * day's range, not a bid/ask spread: the old 3.5% guard rejected ordinary volatile large caps
+     * (INTC among them) for a "spread" they never had.
+     */
+    private static final BigDecimal MAX_INTRADAY_RANGE_PERCENT = new BigDecimal("12");
+    /** A dip that stays inside this range is an orderly pullback rather than a slide. */
+    private static final BigDecimal ORDERLY_RANGE_PERCENT = new BigDecimal("6");
     private final Clock clock;
     private final Consumer<String> decisionLog;
 
@@ -47,22 +63,32 @@ public final class DipHunterAnalyzer {
         if (cfg.bounceConfirmation() == DipHunterConfig.BounceConfirmation.INTRADAY_REVERSAL && !c.intradayReversal()) {
             return reject(c, "no intraday reversal yet");
         }
-        if (c.spreadPercent() != null && c.spreadPercent().compareTo(MAX_SPREAD_PERCENT) > 0) return reject(c, "spread too wide");
+        if (c.intradayRangePercent() != null && c.intradayRangePercent().compareTo(MAX_INTRADAY_RANGE_PERCENT) > 0) {
+            return reject(c, "intraday range too wide (disorderly move, not a dip)");
+        }
         decisionLog.accept("[Dip Hunter] Accepted " + c.symbol() + " for scoring.");
         return true;
     }
 
     public int score(DipHunterCandidate c, DipHunterConfig cfg) {
-        // Reward an ideal mid-range pullback (not too shallow, not too deep), strong relative volume,
-        // a confirmed uptrend, an intraday reversal, and a tight spread.
-        BigDecimal idealPullback = cfg.minimumPullbackPercent()
-                .add(cfg.maximumPullbackPercent()).divide(new BigDecimal("2"), 2, RoundingMode.HALF_UP);
-        int score = pullbackQuality(c.pullbackPercent(), cfg.minimumPullbackPercent(), idealPullback, cfg.maximumPullbackPercent())
-                + bounded(c.relativeVolume(), cfg.minimumRelativeVolume(), new BigDecimal("4"), 25)
+        // Reward a pullback inside the buyable-dip band, strong relative volume, a confirmed uptrend,
+        // an intraday reversal, and an orderly session.
+        int score = SetupScore.bandQuality(c.pullbackPercent(),
+                        IDEAL_PULLBACK_LOW_PERCENT, IDEAL_PULLBACK_HIGH_PERCENT,
+                        cfg.minimumPullbackPercent(), cfg.maximumPullbackPercent(), 30)
+                + bounded(c.relativeVolume(), cfg.minimumRelativeVolume(), new BigDecimal("2"), 25)
                 + (passesTrend(c, cfg.trendFilter()) ? 20 : 0)
                 + (c.intradayReversal() ? 15 : 0)
-                + (c.spreadPercent() == null || c.spreadPercent().compareTo(BigDecimal.ONE) <= 0 ? 10 : 5);
+                + orderlinessPoints(c.intradayRangePercent());
         return Math.min(100, score);
+    }
+
+    /** An orderly pullback bounces; a stock sliding all session keeps sliding. */
+    private int orderlinessPoints(BigDecimal intradayRangePercent) {
+        if (intradayRangePercent == null || intradayRangePercent.compareTo(ORDERLY_RANGE_PERCENT) <= 0) {
+            return 10;
+        }
+        return 5;
     }
 
     private boolean passesScoreThreshold(DipHunterRecommendation recommendation) {
@@ -98,18 +124,6 @@ public final class DipHunterAnalyzer {
             case ABOVE_MA_50 -> c.aboveMa50();
             case ABOVE_MA_20_OR_50 -> c.aboveMa20() || c.aboveMa50();
         };
-    }
-
-    /** Triangular score: 0 at the min/max bounds, full points at the ideal mid-range pullback. */
-    private static int pullbackQuality(BigDecimal value, BigDecimal min, BigDecimal ideal, BigDecimal max) {
-        int points = 30;
-        if (value == null || value.compareTo(min) < 0 || value.compareTo(max) > 0) return 0;
-        BigDecimal span = value.compareTo(ideal) <= 0 ? ideal.subtract(min) : max.subtract(ideal);
-        if (span.compareTo(BigDecimal.ZERO) <= 0) return points;
-        BigDecimal distance = value.subtract(ideal).abs();
-        BigDecimal ratio = BigDecimal.ONE.subtract(distance.divide(span, 4, RoundingMode.HALF_UP));
-        if (ratio.compareTo(BigDecimal.ZERO) < 0) return 0;
-        return ratio.multiply(BigDecimal.valueOf(points)).setScale(0, RoundingMode.HALF_UP).intValue();
     }
 
     private boolean reject(DipHunterCandidate c, String reason) {

@@ -35,14 +35,14 @@ public record DipHunterConfig(
     public static final LocalTime PRIMARY_WINDOW_END_ET = LocalTime.of(15, 30);
 
     public DipHunterConfig {
-        minimumPullbackPercent = posOrDefault(minimumPullbackPercent, "0.1");
-        maximumPullbackPercent = posOrDefault(maximumPullbackPercent, "50");
+        minimumPullbackPercent = posOrDefault(minimumPullbackPercent, "2");
+        maximumPullbackPercent = posOrDefault(maximumPullbackPercent, "12");
         if (maximumPullbackPercent.compareTo(minimumPullbackPercent) < 0) {
             maximumPullbackPercent = minimumPullbackPercent;
         }
-        minimumStockPrice = posOrDefault(minimumStockPrice, "0.5");
-        minimumRelativeVolume = posOrDefault(minimumRelativeVolume, "0.5");
-        minimumAverageVolume = minimumAverageVolume <= 0 ? 100_000L : minimumAverageVolume;
+        minimumStockPrice = posOrDefault(minimumStockPrice, "5");
+        minimumRelativeVolume = posOrDefault(minimumRelativeVolume, "0.7");
+        minimumAverageVolume = minimumAverageVolume <= 0 ? 750_000L : minimumAverageVolume;
         stopLossPercent = posOrDefault(stopLossPercent, "5");
         takeProfitPercent = posOrDefault(takeProfitPercent, "10");
         trendFilter = trendFilter == null ? TrendFilter.DISABLED : trendFilter;
@@ -64,9 +64,14 @@ public record DipHunterConfig(
                 takeProfitPercent, maxStocksToAdd, executionFrequency, mode, List.of());
     }
 
+    /**
+     * Defaults describe a buyable dip rather than a wide-open filter: a 2-12% pullback in a liquid name
+     * above $5. The previous 0.1-50% band let collapsing microcaps through and, because scoring keyed
+     * off the middle of that band, treated a 25% drop as the ideal dip.
+     */
     public static DipHunterConfig defaults(StrategyMode mode) {
-        return new DipHunterConfig(new BigDecimal("0.1"), new BigDecimal("50"), 100_000L, new BigDecimal("0.5"),
-                new BigDecimal("0.5"), null, TrendFilter.DISABLED, BounceConfirmation.MANUAL_REVIEW,
+        return new DipHunterConfig(new BigDecimal("2"), new BigDecimal("12"), 750_000L, new BigDecimal("5"),
+                new BigDecimal("0.7"), null, TrendFilter.DISABLED, BounceConfirmation.MANUAL_REVIEW,
                 new BigDecimal("5"), new BigDecimal("10"), 10, ExecutionFrequency.MANUAL, mode, List.of());
     }
 

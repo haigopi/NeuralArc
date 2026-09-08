@@ -11,5 +11,6 @@ public record VwapCandidate(
         String symbol, String companyName, BigDecimal currentPrice, BigDecimal vwap, BigDecimal discountPercent,
         BigDecimal previousClose, BigDecimal dayChangePercent, long averageVolume, BigDecimal relativeVolume,
         BigDecimal movingAverage50, BigDecimal movingAverage200, boolean aboveMa50, boolean aboveMa200,
-        BigDecimal spreadPercent
+        /** Today's high-to-low range as a percentage of price - a volatility measure, not a bid/ask spread. */
+        BigDecimal intradayRangePercent
 ) {}
