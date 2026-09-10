@@ -78,7 +78,11 @@ class PortfolioCapturePullbackEvaluatorTest {
     }
 
     private PortfolioCaptureSnapshot snapshot(String pnl, String percent) {
-        return new PortfolioCaptureSnapshot(BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal(pnl),
-                new BigDecimal(percent), BigDecimal.ZERO, 0, List.of(), Instant.now());
+        // One open row: arming requires something to sell, and the row values themselves are not read.
+        return new PortfolioCaptureSnapshot(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                new BigDecimal(pnl), new BigDecimal(percent), BigDecimal.ZERO, 1,
+                List.of(new PortfolioCaptureSnapshot.Row("s1", "AAPL", 1, BigDecimal.ONE, BigDecimal.ONE,
+                        BigDecimal.ONE, BigDecimal.ONE, new BigDecimal(pnl))),
+                Instant.now());
     }
 }

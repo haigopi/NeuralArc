@@ -33,14 +33,20 @@ final class PortfolioCapturePullbackEvaluator {
         return new Evaluation(true, peak, currentProfit.compareTo(liquidationThreshold) <= 0);
     }
 
+    /**
+     * Whether the minimum profit that arms pullback tracking has been reached. Measured on open P&L
+     * only — banked realized P&L cannot be captured again, so it must not arm a pullback exit — and a
+     * non-positive target never arms, since there would be no profit to protect.
+     */
     private boolean minimumReached(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
-        if (config.targetValue() == null) {
+        BigDecimal target = config.targetValue();
+        if (target == null || target.compareTo(BigDecimal.ZERO) <= 0 || snapshot.rows().isEmpty()) {
             return false;
         }
         BigDecimal current = config.targetType() == PortfolioCaptureTargetType.PROFIT_PERCENT
                 ? snapshot.profitLossPercent()
                 : snapshot.unrealizedPnl();
-        return current.compareTo(config.targetValue()) >= 0;
+        return current.compareTo(BigDecimal.ZERO) > 0 && current.compareTo(target) >= 0;
     }
 
     record Evaluation(boolean armed, BigDecimal peakProfit, boolean liquidate) {

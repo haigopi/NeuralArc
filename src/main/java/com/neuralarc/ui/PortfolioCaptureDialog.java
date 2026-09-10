@@ -93,6 +93,7 @@ final class PortfolioCaptureDialog extends JDialog {
     private final JLabel pnlValue = new JLabel("-");
     private final JLabel pnlPercentValue = new JLabel("-");
     private final JLabel progressValue = new JLabel("-");
+    private final JLabel realizedPnlValue = new JLabel("-");
 
     private boolean executed;
 
@@ -205,9 +206,14 @@ final class PortfolioCaptureDialog extends JDialog {
         JPanel panel = section("Portfolio Metrics");
         addMetric(panel, "Total Investment", investmentValue, 0);
         addMetric(panel, "Current Market Value", marketValue, 1);
-        addMetric(panel, "Current Unrealized Profit/Loss", pnlValue, 2);
-        addMetric(panel, "Profit/Loss Percent", pnlPercentValue, 3);
-        addMetric(panel, "Current Target Progress", progressValue, 4);
+        addMetric(panel, "Realized Profit/Loss (Banked)", realizedPnlValue, 2);
+        addMetric(panel, "Current Unrealized Profit/Loss", pnlValue, 3);
+        addMetric(panel, "Unrealized Profit/Loss Percent", pnlPercentValue, 4);
+        addMetric(panel, "Current Target Progress", progressValue, 5);
+        addDescription(panel,
+                "Targets are measured on unrealized profit only — the P&L this liquidation would "
+                        + "actually realize. Realized profit from trades already closed is shown for "
+                        + "reference and cannot trigger a liquidation.", 6);
         return panel;
     }
 
@@ -480,6 +486,7 @@ final class PortfolioCaptureDialog extends JDialog {
         PortfolioCaptureSnapshot snapshot = snapshotSupplier.apply(previewConfig());
         investmentValue.setText(money(snapshot.totalInvestment()));
         marketValue.setText(money(snapshot.marketValue()));
+        realizedPnlValue.setText(money(snapshot.realizedPnl()));
         pnlValue.setText(money(snapshot.unrealizedPnl()));
         pnlValue.setForeground(snapshot.unrealizedPnl().compareTo(BigDecimal.ZERO) < 0
                 ? new Color(183, 28, 28) : new Color(27, 94, 32));
@@ -596,6 +603,12 @@ final class PortfolioCaptureDialog extends JDialog {
         gbc.gridwidth = 2;
         panel.add(radio, gbc);
         gbc.gridy++;
+        panel.add(description(text), gbc);
+    }
+
+    private void addDescription(JPanel panel, String text, int row) {
+        GridBagConstraints gbc = baseGbc(row);
+        gbc.gridwidth = 2;
         panel.add(description(text), gbc);
     }
 

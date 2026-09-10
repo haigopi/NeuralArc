@@ -85,6 +85,22 @@ final class PortfolioCaptureController {
         return lastSnapshot;
     }
 
+    /**
+     * A snapshot for display only, evaluated over the context the monitor is actually watching and
+     * without disturbing {@link #lastSnapshot}, which the monitoring tick and an in-flight execution
+     * depend on. It is a pure in-memory calculation over cached position snapshots — no broker I/O —
+     * so the status line can be refreshed on the UI cadence and still show exactly the figures the
+     * next tick will evaluate the target against.
+     */
+    PortfolioCaptureSnapshot previewSnapshot(PortfolioCaptureConfig config) {
+        if (config == null) {
+            return PortfolioCaptureSnapshot.empty();
+        }
+        StrategyMode mode = activeMode == null ? gateway.selectedViewMode() : activeMode;
+        String workspaceId = activeMode == null ? gateway.selectedWorkspaceId() : activeWorkspaceId;
+        return calculator.calculate(strategiesForContext(mode, workspaceId), config, gateway::realizedPnlForStrategy);
+    }
+
     void restoreIfNeeded() {
         stateStore.load().ifPresent(state -> {
             if (state.enabled() && state.config().targetValue().compareTo(BigDecimal.ZERO) > 0) {
@@ -175,12 +191,18 @@ final class PortfolioCaptureController {
         return monitoringTimer != null && monitoringTimer.isRunning();
     }
 
-    PortfolioCaptureSnapshot lastSnapshot() {
-        return lastSnapshot;
-    }
-
     PortfolioCaptureConfig activeConfig() {
         return activeConfig;
+    }
+
+    /** Completed continuous liquidation/re-entry cycles, for the status line's Loops counter. */
+    int loopCount() {
+        return loopCount;
+    }
+
+    /** Pending base buy orders cancelled by cleanup, for the status line's counter. */
+    int pendingCanceledCount() {
+        return pendingCanceledCount;
     }
 
     void excludeStrategyFromActiveCapture(String strategyId) {
@@ -498,6 +520,8 @@ final class PortfolioCaptureController {
         return new PortfolioCaptureSnapshot(
                 Monetary.round(investment),
                 Monetary.round(marketValue),
+                // Realized P&L is unaffected by which open rows remain in the run.
+                snapshot.realizedPnl(),
                 Monetary.round(pnl),
                 Monetary.round(PortfolioCaptureSnapshot.percent(pnl, investment)),
                 snapshot.targetProgressPercent(),

@@ -36,13 +36,16 @@ final class PortfolioCaptureCalculator {
         List<PortfolioCaptureSnapshot.Row> rows = new ArrayList<>();
         BigDecimal investment = Monetary.zero();
         BigDecimal marketValue = Monetary.zero();
-        BigDecimal pnl = Monetary.zero();
+        // Banked and open P&L are accumulated separately: realized profit from already-closed trades
+        // is reported but is NOT capturable, so it must never contribute to the target basis.
+        BigDecimal realized = Monetary.zero();
+        BigDecimal unrealized = Monetary.zero();
 
         for (ManagedStrategy entry : strategies) {
             if (entry == null || entry.strategy == null) {
                 continue;
             }
-            pnl = pnl.add(safe(realizedPnlByStrategyId.apply(entry.strategy.id())));
+            realized = realized.add(safe(realizedPnlByStrategyId.apply(entry.strategy.id())));
             if (!eligible(entry, config)) {
                 continue;
             }
@@ -66,18 +69,20 @@ final class PortfolioCaptureCalculator {
             ));
             investment = investment.add(pnlRow.investment());
             marketValue = marketValue.add(pnlRow.marketValue());
-            pnl = pnl.add(rowPnl);
+            unrealized = unrealized.add(rowPnl);
         }
 
         investment = Monetary.round(investment);
         marketValue = Monetary.round(marketValue);
-        pnl = Monetary.round(pnl);
-        BigDecimal pnlPercent = Monetary.round(PortfolioCaptureSnapshot.percent(pnl, investment));
-        BigDecimal progress = targetProgress(pnl, pnlPercent, config);
+        realized = Monetary.round(realized);
+        unrealized = Monetary.round(unrealized);
+        BigDecimal pnlPercent = Monetary.round(PortfolioCaptureSnapshot.percent(unrealized, investment));
+        BigDecimal progress = targetProgress(unrealized, pnlPercent, config);
         return new PortfolioCaptureSnapshot(
                 investment,
                 marketValue,
-                pnl,
+                realized,
+                unrealized,
                 pnlPercent,
                 progress,
                 rows.size(),
@@ -86,14 +91,31 @@ final class PortfolioCaptureCalculator {
         );
     }
 
+    /**
+     * Whether the configured profit target is actually met by the P&L a liquidation would realize
+     * right now. Every precondition is checked explicitly because this is the gate that sells real
+     * positions: there must be a positive target, at least one row to sell, and the open P&L of those
+     * rows must itself be in profit. Banked realized P&L is deliberately excluded — it cannot be
+     * captured a second time, and counting it once allowed a losing portfolio to trip the target.
+     */
     boolean targetReached(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
-        if (snapshot == null || config == null || config.targetValue() == null) {
+        if (snapshot == null || config == null || config.mode() == PortfolioCaptureMode.CAPTURE_NOW) {
             return false;
         }
-        if (config.targetType() == PortfolioCaptureTargetType.PROFIT_PERCENT) {
-            return snapshot.profitLossPercent().compareTo(config.targetValue()) >= 0;
+        BigDecimal target = config.targetValue();
+        if (target == null || target.compareTo(BigDecimal.ZERO) <= 0) {
+            return false;
         }
-        return snapshot.unrealizedPnl().compareTo(config.targetValue()) >= 0;
+        if (snapshot.eligibleCount() <= 0 || snapshot.rows().isEmpty()) {
+            return false;
+        }
+        BigDecimal capturable = config.targetType() == PortfolioCaptureTargetType.PROFIT_PERCENT
+                ? snapshot.profitLossPercent()
+                : snapshot.unrealizedPnl();
+        if (capturable.compareTo(BigDecimal.ZERO) <= 0) {
+            return false;
+        }
+        return capturable.compareTo(target) >= 0;
     }
 
     private BigDecimal targetProgress(BigDecimal pnl, BigDecimal pnlPercent, PortfolioCaptureConfig config) {

@@ -168,6 +168,7 @@ final class DocsScreenshotGeneratorTest {
                 config -> new PortfolioCaptureSnapshot(
                         new BigDecimal("6071.12"),
                         new BigDecimal("5890.37"),
+                        new BigDecimal("412.60"),
                         new BigDecimal("-180.75"),
                         new BigDecimal("-2.98"),
                         BigDecimal.ZERO,

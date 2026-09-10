@@ -85,6 +85,97 @@ class PortfolioCaptureCalculatorTest {
         assertFalse(calculator.targetReached(snapshot, config(PortfolioCaptureTargetType.PROFIT_PERCENT, "5", true)));
     }
 
+    @Test
+    void bankedRealizedProfitIsReportedSeparatelyAndNeverSatisfiesAPercentTarget() {
+        // A losing open position, alongside a closed trade that banked $500 of realized profit.
+        ManagedStrategy open = strategy("s1", "AAPL", StrategyStatus.ACTIVE, 10, "100", "95");
+        PortfolioCaptureConfig config = config(PortfolioCaptureTargetType.PROFIT_PERCENT, "5", true);
+
+        PortfolioCaptureSnapshot snapshot = calculator.calculate(
+                List.of(open), config, id -> new BigDecimal("500.00"));
+
+        assertEquals(new BigDecimal("500.00"), snapshot.realizedPnl());
+        assertEquals(new BigDecimal("-50.00"), snapshot.unrealizedPnl());
+        assertEquals(new BigDecimal("-5.00"), snapshot.profitLossPercent());
+        assertEquals(new BigDecimal("450.00"), snapshot.totalPnl());
+        assertFalse(calculator.targetReached(snapshot, config),
+                "banked profit must not liquidate open positions that are at a loss");
+    }
+
+    @Test
+    void bankedRealizedProfitNeverSatisfiesAnAmountTarget() {
+        ManagedStrategy open = strategy("s1", "AAPL", StrategyStatus.ACTIVE, 10, "100", "95");
+        PortfolioCaptureConfig config = config(PortfolioCaptureTargetType.PROFIT_AMOUNT, "100", true);
+
+        PortfolioCaptureSnapshot snapshot = calculator.calculate(
+                List.of(open), config, id -> new BigDecimal("500.00"));
+
+        assertFalse(calculator.targetReached(snapshot, config));
+    }
+
+    @Test
+    void realizedProfitFromClosedStrategiesDoesNotInflateTheOpenPercent() {
+        // The closed strategy contributes realized P&L but no open row, so it must not enter the
+        // percent denominator's numerator either — the percent stays a pure open-position return.
+        ManagedStrategy open = strategy("s1", "AAPL", StrategyStatus.ACTIVE, 10, "100", "102");
+        ManagedStrategy closed = strategy("s2", "MSFT", StrategyStatus.ACTIVE, 0, "200", "260");
+        PortfolioCaptureConfig config = config(PortfolioCaptureTargetType.PROFIT_PERCENT, "5", true);
+
+        PortfolioCaptureSnapshot snapshot = calculator.calculate(
+                List.of(open, closed), config, id -> "s2".equals(id) ? new BigDecimal("300.00") : BigDecimal.ZERO);
+
+        assertEquals(1, snapshot.eligibleCount());
+        assertEquals(new BigDecimal("300.00"), snapshot.realizedPnl());
+        assertEquals(new BigDecimal("20.00"), snapshot.unrealizedPnl());
+        assertEquals(new BigDecimal("2.00"), snapshot.profitLossPercent());
+        assertFalse(calculator.targetReached(snapshot, config));
+    }
+
+    @Test
+    void targetIsReachedOnceOpenProfitAloneMeetsIt() {
+        ManagedStrategy open = strategy("s1", "AAPL", StrategyStatus.ACTIVE, 10, "100", "106");
+        PortfolioCaptureConfig config = config(PortfolioCaptureTargetType.PROFIT_PERCENT, "5", true);
+
+        PortfolioCaptureSnapshot snapshot = calculator.calculate(
+                List.of(open), config, id -> new BigDecimal("500.00"));
+
+        assertEquals(new BigDecimal("6.00"), snapshot.profitLossPercent());
+        assertTrue(calculator.targetReached(snapshot, config));
+    }
+
+    @Test
+    void neverTriggersWithoutAPositiveTarget() {
+        ManagedStrategy open = strategy("s1", "AAPL", StrategyStatus.ACTIVE, 10, "100", "115");
+        PortfolioCaptureSnapshot snapshot = calculator.calculate(
+                List.of(open), config(PortfolioCaptureTargetType.PROFIT_AMOUNT, "0", true));
+
+        assertFalse(calculator.targetReached(snapshot, config(PortfolioCaptureTargetType.PROFIT_AMOUNT, "0", true)));
+        assertFalse(calculator.targetReached(snapshot, config(PortfolioCaptureTargetType.PROFIT_PERCENT, "0", true)));
+        assertFalse(calculator.targetReached(snapshot, config(PortfolioCaptureTargetType.PROFIT_AMOUNT, "-5", true)));
+    }
+
+    @Test
+    void neverTriggersWhenThereIsNothingToLiquidate() {
+        PortfolioCaptureConfig config = config(PortfolioCaptureTargetType.PROFIT_AMOUNT, "100", true);
+        ManagedStrategy closed = strategy("s1", "AAPL", StrategyStatus.ACTIVE, 0, "100", "115");
+
+        PortfolioCaptureSnapshot snapshot = calculator.calculate(
+                List.of(closed), config, id -> new BigDecimal("900.00"));
+
+        assertEquals(0, snapshot.eligibleCount());
+        assertFalse(calculator.targetReached(snapshot, config));
+        assertFalse(calculator.targetReached(PortfolioCaptureSnapshot.empty(), config));
+    }
+
+    @Test
+    void captureNowConfigIsNeverTargetTriggered() {
+        ManagedStrategy open = strategy("s1", "AAPL", StrategyStatus.ACTIVE, 10, "100", "115");
+        PortfolioCaptureSnapshot snapshot = calculator.calculate(
+                List.of(open), config(PortfolioCaptureTargetType.PROFIT_AMOUNT, "100", true));
+
+        assertFalse(calculator.targetReached(snapshot, PortfolioCaptureConfig.captureNow()));
+    }
+
     private PortfolioCaptureConfig config(PortfolioCaptureTargetType targetType, String target, boolean includeLosses) {
         return new PortfolioCaptureConfig(
                 PortfolioCaptureMode.TARGET_MONITORING,

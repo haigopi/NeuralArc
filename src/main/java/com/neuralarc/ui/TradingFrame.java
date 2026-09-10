@@ -316,6 +316,14 @@ public class TradingFrame extends JFrame {
     private final JButton refreshPortfolioButton = new JButton("Refresh");
     private final JButton capturePortfolioButton = new JButton("Liquidate Portfolio");
     private final JLabel capturePortfolioIndicator = new JLabel("");
+    // Slot the indicator is laid out in. Its width is what BorderLayout leaves between the search
+    // controls and the pinned action buttons, so it is the width the status line has to fit into.
+    private JPanel capturePortfolioIndicatorPanel;
+    // Last fully-rendered status line. Cached so a window resize only re-trims the existing text
+    // instead of recomputing the workspace accounting snapshot on every resize event.
+    private String capturePortfolioIndicatorFullText = "";
+    private PortfolioCaptureAutomationState capturePortfolioAutomationState =
+            PortfolioCaptureAutomationState.STOPPED;
     private final JButton footerActionsButton = new JButton("Actions");
     private final JPopupMenu footerActionsMenu = new JPopupMenu();
     private final PortfolioRefreshController portfolioRefreshController;
@@ -816,11 +824,11 @@ public class TradingFrame extends JFrame {
                     @Override
                     public void onMonitoringChanged(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config,
                                                     StrategyMode mode, String workspaceId) {
-                        TradingFrame.this.updateCapturePortfolioUi(active, snapshot, config, mode, workspaceId);
+                        TradingFrame.this.updateCapturePortfolioUi(active, config, mode, workspaceId);
                     }
                     @Override
                     public void onSnapshotUpdated(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
-                        TradingFrame.this.updateCapturePortfolioIndicator(snapshot, config);
+                        TradingFrame.this.updateCapturePortfolioIndicator(config);
                     }
                     @Override
                     public void onAutomationStateChanged(PortfolioCaptureAutomationState state, int loopCount, int pendingCanceled) {
@@ -2851,7 +2859,7 @@ public class TradingFrame extends JFrame {
         }
     }
 
-    private void updateCapturePortfolioUi(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config,
+    private void updateCapturePortfolioUi(boolean active, PortfolioCaptureConfig config,
                                           StrategyMode mode, String workspaceId) {
         PortfolioCaptureUiStateStore.Key contextKey = capturePortfolioUiKey(mode, workspaceId);
         PortfolioCaptureUiStateStore.Key key = active
@@ -2859,22 +2867,25 @@ public class TradingFrame extends JFrame {
                 : activeCapturePortfolioUiKey == null ? contextKey : activeCapturePortfolioUiKey;
         activeCapturePortfolioUiKey = active ? key : null;
         capturePortfolioConfigForUi = active ? config : null;
+        if (!active) {
+            capturePortfolioAutomationState = PortfolioCaptureAutomationState.STOPPED;
+        }
         capturePortfolioModeForUi = active && key != null ? key.mode() : null;
         if (key != null) {
             capturePortfolioUiStates.update(key, capturePortfolioUiStates.state(key)
                     .withButton("Liquidate Portfolio", true)
-                    .withIndicator(active ? captureIndicatorText(snapshot, config) : "", active)
+                    .withIndicator(active ? captureIndicatorText(config) : "", active)
                     .withPulse(active));
         }
         applySelectedCapturePortfolioState();
-        updateCapturePortfolioIndicator(snapshot, config);
+        updateCapturePortfolioIndicator(config);
     }
 
-    private void updateCapturePortfolioIndicator(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
+    private void updateCapturePortfolioIndicator(PortfolioCaptureConfig config) {
         PortfolioCaptureUiStateStore.Key key = activeCapturePortfolioUiKey == null
                 ? selectedCapturePortfolioUiKey()
                 : activeCapturePortfolioUiKey;
-        String indicatorText = captureIndicatorText(snapshot, config);
+        String indicatorText = captureIndicatorText(config);
         if (key != null) {
             capturePortfolioUiStates.update(key, capturePortfolioUiStates.state(key)
                     .withIndicator(indicatorText, !indicatorText.isBlank()));
@@ -2885,14 +2896,39 @@ public class TradingFrame extends JFrame {
         }
     }
 
-    private String captureIndicatorText(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
-        if (snapshot == null || config == null || config.mode() != PortfolioCaptureMode.TARGET_MONITORING) {
+    /**
+     * Builds the liquidation status line from the very snapshot the monitor evaluates its target
+     * against — open (unrealized) P&L of the rows that would be sold, over the capital still at risk
+     * in them. Every figure on the line therefore shares one basis and predicts what the next tick
+     * will do. Reporting a different total here (the tab's realized-inclusive P&L) against the
+     * calculator's own progress figure is what previously produced a meaningless 100% beside a
+     * losing P&L; banked realized P&L cannot be captured again and so has no place on this line.
+     */
+    private String captureIndicatorText(PortfolioCaptureConfig config) {
+        if (config == null || config.mode() != PortfolioCaptureMode.TARGET_MONITORING) {
             return "";
         }
-        // Show the same P&L as this tab's bottom summary / the status bar (All Stocks), from the
-        // single centralized source — not the capture calculator's eligible-subset total.
-        BigDecimal contextPnl = computeWorkspaceSnapshot(selectedWorkspaceId).total();
-        return PortfolioCaptureIndicatorPresenter.targetMonitoringText(snapshot, config, contextPnl);
+        PortfolioCaptureSnapshot context = portfolioCaptureController.previewSnapshot(config);
+        return PortfolioCaptureIndicatorPresenter.targetMonitoringText(
+                config, context.unrealizedPnl(), context.totalInvestment());
+    }
+
+    private String captureIndicatorExplanation(PortfolioCaptureConfig config) {
+        if (config == null || config.mode() != PortfolioCaptureMode.TARGET_MONITORING) {
+            return "";
+        }
+        PortfolioCaptureSnapshot context = portfolioCaptureController.previewSnapshot(config);
+        return PortfolioCaptureIndicatorPresenter.targetMonitoringExplanation(
+                config, context.unrealizedPnl(), context.totalInvestment());
+    }
+
+    /** Re-trims the cached status line after the slot it lives in changes width. */
+    private void refitCapturePortfolioIndicator() {
+        if (!capturePortfolioIndicator.isVisible() || capturePortfolioIndicatorFullText.isBlank()) {
+            return;
+        }
+        capturePortfolioIndicator.setText(
+                RainbowText.toHtml(fitCaptureIndicatorText(capturePortfolioIndicatorFullText)));
     }
 
     private void refreshCapturePortfolioModeVisibility() {
@@ -2900,6 +2936,7 @@ public class TradingFrame extends JFrame {
     }
 
     private void clearCapturePortfolioIndicatorForMode() {
+        capturePortfolioIndicatorFullText = "";
         capturePortfolioIndicator.setText("");
         capturePortfolioIndicator.setVisible(false);
         capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
@@ -2933,28 +2970,27 @@ public class TradingFrame extends JFrame {
      */
     private void refreshActiveCaptureIndicator() {
         if (portfolioCaptureController.monitoringActive()) {
-            updateCapturePortfolioIndicator(
-                    portfolioCaptureController.lastSnapshot(),
-                    portfolioCaptureController.activeConfig());
+            updateCapturePortfolioIndicator(portfolioCaptureController.activeConfig());
         }
     }
 
     /**
-     * Replace the P&L amount in a stored capture-indicator string with the live centralized context
-     * total (computeWorkspaceSnapshot for the selected tab), so the displayed capture P&L always
-     * matches the top status bar / tab summary. Target/progress/automation counters are preserved.
+     * Composes the whole status line fresh: the live target/P&L figures followed by the automation
+     * counters, both read from current state at render time.
+     *
+     * <p>The counters used to be appended into the stored indicator string by
+     * {@link #updateCaptureAutomationState} and parsed back out of it here. Every monitoring tick and
+     * every status-bar refresh rewrote that stored string with the figures alone, which silently
+     * dropped the counters again — so "Liquidation Total P&L" appeared on an automation state change
+     * and vanished moments later. Composing at render time makes the counters as stable as the
+     * conditions that produce them.
      */
-    private String withLiveCapturePnl(String storedIndicatorText) {
-        if (storedIndicatorText == null || storedIndicatorText.isBlank()) {
+    private String composeCaptureIndicatorText(String storedIndicatorText) {
+        String live = captureIndicatorText(capturePortfolioConfigForUi);
+        if (live.isBlank()) {
             return storedIndicatorText == null ? "" : storedIndicatorText;
         }
-        if (!storedIndicatorText.matches(".*(?:Live )?P&L \\$-?[0-9.]+.*")) {
-            return storedIndicatorText;
-        }
-        String livePnl = Monetary.round(computeWorkspaceSnapshot(selectedWorkspaceId).total()).toPlainString();
-        return storedIndicatorText.replaceFirst(
-                "(?:Live )?P&L \\$-?[0-9.]+",
-                java.util.regex.Matcher.quoteReplacement("Live P&L $" + livePnl));
+        return live + captureAutomationCounterText();
     }
 
     private void applySelectedCapturePortfolioState() {
@@ -2964,19 +3000,33 @@ public class TradingFrame extends JFrame {
             return;
         }
         PortfolioCaptureUiStateStore.State state = capturePortfolioUiStates.state(key);
-        // The capture P&L text is shown only while monitoring is enabled for THIS strategy tab,
-        // and rendered rainbow. The P&L amount is re-derived live from the single centralized source
-        // at paint time so it stays in lock-step with the top status bar / tab summary (the stored
-        // string can be stale, e.g. computed before broker positions loaded).
+        // The capture status line is shown only while monitoring is enabled for THIS strategy tab, and
+        // rendered rainbow. The stored string is just the show/hide flag: the line itself — figures and
+        // automation counters alike — is composed from live state at paint time, so no refresh can drop
+        // part of it and the figures stay in lock-step with the tab summary / top status bar.
         boolean showIndicator = state.monitoringActive() && !state.indicatorText().isBlank();
-        String indicatorText = showIndicator ? withLiveCapturePnl(state.indicatorText()) : "";
+        String indicatorText = showIndicator ? composeCaptureIndicatorText(state.indicatorText()) : "";
+        capturePortfolioIndicatorFullText = indicatorText;
         capturePortfolioButton.setText(capturePortfolioButtonText(state, showIndicator));
         capturePortfolioButton.setEnabled(state.buttonEnabled());
         capturePortfolioIndicator.setVisible(showIndicator);
-        capturePortfolioIndicator.setText(showIndicator ? RainbowText.toHtml(indicatorText) : "");
-        capturePortfolioIndicator.setForeground(state.monitoringActive() ? CAPTURE_INDICATOR_ACTIVE_TEXT : CAPTURE_INDICATOR_IDLE_TEXT);
-        String activeTooltip = showIndicator ? indicatorText
+        // The line is trimmed to the width the layout granted it instead of overflowing its slot and
+        // vanishing on a narrow window; the untrimmed line always stays available in the tooltip.
+        capturePortfolioIndicator.setText(showIndicator
+                ? RainbowText.toHtml(fitCaptureIndicatorText(indicatorText))
+                : "");
+        boolean pausedForClosedMarket = state.monitoringActive()
+                && capturePortfolioAutomationState == PortfolioCaptureAutomationState.PAUSED_MARKET_CLOSED;
+        capturePortfolioIndicator.setForeground(state.monitoringActive() && !pausedForClosedMarket
+                ? CAPTURE_INDICATOR_ACTIVE_TEXT
+                : CAPTURE_INDICATOR_IDLE_TEXT);
+        String activeTooltip = showIndicator ? captureIndicatorTooltip(indicatorText)
                 : "Liquidate Portfolio monitoring is evaluating current portfolio P&L against the configured target.";
+        if (pausedForClosedMarket) {
+            activeTooltip = activeTooltip
+                    + "\n\nAutomation is paused because the market session is closed. It resumes "
+                    + "automatically when the configured regular or extended-hours session opens.";
+        }
         capturePortfolioIndicator.setToolTipText(state.monitoringActive() ? TooltipStyler.text(activeTooltip, 420) : null);
         capturePortfolioButton.setToolTipText(state.monitoringActive()
                 ? TooltipStyler.text(activeTooltip, 420)
@@ -2986,6 +3036,48 @@ public class TradingFrame extends JFrame {
         } else {
             stopCapturePortfolioPulse();
         }
+    }
+
+    /**
+     * Trims the liquidation status line to the width its layout slot actually has. Segments are
+     * dropped from the right (they are ordered least-important-last) rather than letting the line
+     * overflow and disappear behind the pinned action buttons on a narrow window.
+     */
+    private String fitCaptureIndicatorText(String indicatorText) {
+        return StatusLineFitter.fit(
+                indicatorText,
+                capturePortfolioIndicator.getFontMetrics(capturePortfolioIndicator.getFont()),
+                availableCaptureIndicatorWidth());
+    }
+
+    /**
+     * Pixels the status line may use. A zero-height slot means the layout has not run yet and nothing
+     * should be trimmed; once it has, BorderLayout can legitimately grant the centre slot zero (or
+     * negative) width when the search controls and the pinned buttons already fill the row, and the
+     * line then has to yield rather than overflow them.
+     */
+    private int availableCaptureIndicatorWidth() {
+        if (capturePortfolioIndicatorPanel == null || capturePortfolioIndicatorPanel.getHeight() <= 0) {
+            return StatusLineFitter.UNCONSTRAINED;
+        }
+        Insets insets = capturePortfolioIndicatorPanel.getInsets();
+        // A few pixels of slack: the label renders as per-character HTML, which can measure marginally
+        // wider than the plain string the fitter measures.
+        int available = capturePortfolioIndicatorPanel.getWidth() - insets.left - insets.right - 6;
+        return Math.max(available, 0);
+    }
+
+    /** Full (untrimmed) status line plus a plain-language explanation of how its figures relate. */
+    private String captureIndicatorTooltip(String fullIndicatorText) {
+        StringBuilder tooltip = new StringBuilder(fullIndicatorText);
+        String explanation = captureIndicatorExplanation(capturePortfolioConfigForUi);
+        if (!explanation.isBlank()) {
+            tooltip.append("\n\n").append(explanation);
+        }
+        if (!captureAutomationCounterText().isBlank()) {
+            tooltip.append("\n\n").append(captureAutomationCounterTooltip());
+        }
+        return tooltip.toString();
     }
 
     private String capturePortfolioButtonText(PortfolioCaptureUiStateStore.State state, boolean showIndicator) {
@@ -3003,57 +3095,42 @@ public class TradingFrame extends JFrame {
             if (state == PortfolioCaptureAutomationState.STOPPED && !portfolioCaptureController.monitoringActive()) {
                 return;
             }
-            if (state == PortfolioCaptureAutomationState.PAUSED_MARKET_CLOSED) {
-                stopCapturePortfolioPulse();
-                if (activeCapturePortfolioUiKey != null) {
-                    capturePortfolioUiStates.update(activeCapturePortfolioUiKey, capturePortfolioUiStates.state(activeCapturePortfolioUiKey)
-                            .withButton("Liquidate Portfolio:Auto Paused [Closed Market]", true)
-                            .withPulse(false));
-                }
-                applySelectedCapturePortfolioState();
-                capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_IDLE_TEXT);
-                capturePortfolioIndicator.setToolTipText(TooltipStyler.text(
-                        "Liquidate Portfolio automation is configured but paused because the market session is closed. "
-                                + "It resumes automatically when the configured regular or extended-hours session opens.",
-                        360
-                ));
-            } else if (portfolioCaptureController.monitoringActive()
-                    && state == PortfolioCaptureAutomationState.MONITORING) {
-                if (activeCapturePortfolioUiKey != null) {
-                    capturePortfolioUiStates.update(activeCapturePortfolioUiKey, capturePortfolioUiStates.state(activeCapturePortfolioUiKey)
-                            .withButton("Liquidate Portfolio", true)
-                            .withPulse(true));
-                }
-                applySelectedCapturePortfolioState();
-                capturePortfolioButton.setToolTipText(capturePortfolioDefaultTooltip());
-                capturePortfolioIndicator.setForeground(CAPTURE_INDICATOR_ACTIVE_TEXT);
-            }
-            String suffix = captureAutomationCounterText(loopCount, pendingCanceled);
-            String current = activeCapturePortfolioUiKey == null ? capturePortfolioIndicator.getText() : capturePortfolioUiStates.state(activeCapturePortfolioUiKey).indicatorText();
-            String nextIndicator = (current == null || current.isBlank() ? "Monitoring Active" : stripCaptureAutomationCounters(current)) + suffix;
-            if (activeCapturePortfolioUiKey != null) {
+            capturePortfolioAutomationState = state;
+            if (state == PortfolioCaptureAutomationState.PAUSED_MARKET_CLOSED && activeCapturePortfolioUiKey != null) {
                 capturePortfolioUiStates.update(activeCapturePortfolioUiKey, capturePortfolioUiStates.state(activeCapturePortfolioUiKey)
-                        .withIndicator(nextIndicator, true));
+                        .withButton("Liquidate Portfolio:Auto Paused [Closed Market]", true)
+                        .withPulse(false));
+            } else if (portfolioCaptureController.monitoringActive()
+                    && state == PortfolioCaptureAutomationState.MONITORING
+                    && activeCapturePortfolioUiKey != null) {
+                capturePortfolioUiStates.update(activeCapturePortfolioUiKey, capturePortfolioUiStates.state(activeCapturePortfolioUiKey)
+                        .withButton("Liquidate Portfolio", true)
+                        .withPulse(true));
             }
+            // Counters and the paused/active presentation are both derived inside apply..., so this is
+            // the single place the chrome is written — nothing here can be clobbered by a later pass.
             applySelectedCapturePortfolioState();
-            if (!suffix.isBlank()) {
-                capturePortfolioIndicator.setToolTipText(TooltipStyler.text(captureAutomationCounterTooltip(), 380));
-            }
         });
     }
 
-    private String captureAutomationCounterText(int loopCount, int pendingCanceled) {
+    /**
+     * The automation counters that trail the status line, read from live state. Each segment appears
+     * exactly while its condition holds — Loops only for a continuous loop, the cumulative liquidation
+     * P&L only once at least one liquidation has completed, cancelled-order counts only when pending
+     * cleanup is enabled — so a segment does not flicker in and out between refreshes.
+     */
+    private String captureAutomationCounterText() {
         PortfolioCaptureConfig config = capturePortfolioConfigForUi;
         PortfolioCaptureHistoryStore.Summary summary = portfolioCaptureController.captureHistorySummary();
         StringBuilder text = new StringBuilder();
         if (config != null && config.continuousLoop()) {
-            text.append(" | Loops ").append(loopCount);
+            text.append(" | Loops ").append(portfolioCaptureController.loopCount());
         }
         if (summary != null && summary.captureCount() > 0) {
             text.append(" | Liquidation Total P&L $").append(Monetary.round(summary.actualPnl()));
         }
         if (config != null && config.autoCleanPendingBeforeCycle()) {
-            text.append(" | Pending Buy Orders Cancelled ").append(pendingCanceled);
+            text.append(" | Pending Buy Orders Cancelled ").append(portfolioCaptureController.pendingCanceledCount());
         }
         return text.toString();
     }
@@ -3075,32 +3152,6 @@ public class TradingFrame extends JFrame {
                 + "Pending Buy Orders Cancelled is the number of pending base buy limit orders automatically cancelled "
                 + "by Liquidate Portfolio cleanup before liquidation or re-entry."
                 + history;
-    }
-
-    private String stripCaptureAutomationCounters(String text) {
-        if (text == null || text.isBlank()) {
-            return text;
-        }
-        int marker = firstMarkerIndex(
-                text,
-                " | Loops ",
-                " | Pending Buy Orders Cancelled ",
-                " | Pending Cancelled ",
-                " | Liquidation Total P&L ",
-                " | State "
-        );
-        return marker < 0 ? text : text.substring(0, marker);
-    }
-
-    private int firstMarkerIndex(String text, String... markers) {
-        int first = -1;
-        for (String marker : markers) {
-            int index = text.indexOf(marker);
-            if (index >= 0 && (first < 0 || index < first)) {
-                first = index;
-            }
-        }
-        return first;
     }
 
     private String capturePortfolioDefaultTooltip() {
@@ -5741,22 +5792,36 @@ public class TradingFrame extends JFrame {
                 .replace(">", "&gt;");
     }
 
+    /**
+     * Repaints the top status-bar P&L totals: the All Stocks aggregate (forWorkspace(null)) over the
+     * exact same per-strategy accounts the tab summary uses, so both agree by construction.
+     *
+     * <p>The realized half is the <em>trading day's</em> realized P&L — the sells filled during the
+     * current local calendar day, the same trades Trade History lists for that day. It is taken from
+     * the sell records rather than the strategy rows, so profit stays counted after a sold position
+     * is cleaned off the Current Strategies grid, and it resets on the next trading day.
+     */
     private void updateUnrealizedSummaries() {
-        // Single source of truth: the top status-bar total is the All Stocks aggregate
-        // (forWorkspace(null)) over the exact same per-strategy accounts the tab summary uses.
-        AccountingInputs inputs = buildAccountingInputs(selectedViewMode);
+        WorkspaceAccountingInputs.Result inputs = buildAccountingInputs(selectedViewMode);
         WorkspaceAccounting.Snapshot total =
                 WorkspaceAccounting.forWorkspace(null, inputs.accounts(), inputs.sells());
+        String summary = " P&L (Unrealized/Realized Today): "
+                + total.unrealized().toPlainString()
+                + " / "
+                + total.dailyRealized().toPlainString();
+        String tooltip = TooltipStyler.text(
+                "Unrealized is the open P&L of current positions. Realized Today is the profit banked by "
+                        + "sells filled today, from the same trades listed in Trade History for this day — "
+                        + "it keeps counting positions already cleaned off the Current Strategies grid, and "
+                        + "starts again at the next trading day. All-time realized P&L stays on the per-tab "
+                        + "summary below the grid.",
+                360);
         if (selectedViewMode == StrategyMode.LIVE) {
-            liveUnrealizedSummary.setText("LIVE P&L (Unrealized/Realized): "
-                    + total.unrealized().toPlainString()
-                    + " / "
-                    + total.realized().toPlainString());
+            liveUnrealizedSummary.setText("LIVE" + summary);
+            liveUnrealizedSummary.setToolTipText(tooltip);
         } else {
-            paperUnrealizedSummary.setText("Paper P&L (Unrealized/Realized): "
-                    + total.unrealized().toPlainString()
-                    + " / "
-                    + total.realized().toPlainString());
+            paperUnrealizedSummary.setText("Paper" + summary);
+            paperUnrealizedSummary.setToolTipText(tooltip);
         }
         applyHeaderTotalsVisibility();
     }
@@ -6585,6 +6650,16 @@ public class TradingFrame extends JFrame {
             indicatorPanel.setOpaque(false);
             indicatorPanel.setBorder(new EmptyBorder(0, 12, 0, 8));
             indicatorPanel.add(capturePortfolioIndicator, BorderLayout.EAST);
+            // The slot never claims width from the pinned buttons, so its preferred width may exceed
+            // what it is granted; keep the minimum at zero so it shrinks instead of pushing them out.
+            indicatorPanel.setMinimumSize(new Dimension(0, 0));
+            indicatorPanel.addComponentListener(new ComponentAdapter() {
+                @Override
+                public void componentResized(ComponentEvent event) {
+                    refitCapturePortfolioIndicator();
+                }
+            });
+            capturePortfolioIndicatorPanel = indicatorPanel;
             panel.add(indicatorPanel, BorderLayout.CENTER);
 
             // Pin buttons in EAST so BorderLayout always grants them their full preferred
@@ -8284,15 +8359,8 @@ public class TradingFrame extends JFrame {
     }
 
     private WorkspaceAccounting.Snapshot computeWorkspaceSnapshot(String workspaceId) {
-        AccountingInputs inputs = buildAccountingInputs(selectedViewMode);
+        WorkspaceAccountingInputs.Result inputs = buildAccountingInputs(selectedViewMode);
         return WorkspaceAccounting.forWorkspace(workspaceId, inputs.accounts(), inputs.sells());
-    }
-
-    /** Bundle of per-strategy accounts + realized sells for a mode — the single P&L input set. */
-    private record AccountingInputs(
-            java.util.List<WorkspaceAccounting.StrategyAccount> accounts,
-            java.util.List<WorkspaceAccounting.RealizedSell> sells
-    ) {
     }
 
     private record BrokerPositionsCacheEntry(List<AlpacaPositionData> positions, long loadedAtMillis) {
@@ -8304,33 +8372,26 @@ public class TradingFrame extends JFrame {
      * Open P&L is taken from {@link StrategyOpenPnlCalculator} (Gap-Rocket suppression + zero-cost/
      * price guards) and realized from the replayed fills, so every consumer sees identical numbers.
      */
-    private AccountingInputs buildAccountingInputs(StrategyMode mode) {
+    private WorkspaceAccountingInputs.Result buildAccountingInputs(StrategyMode mode) {
         java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.systemDefault());
-        java.util.List<WorkspaceAccounting.StrategyAccount> accounts = new java.util.ArrayList<>();
-        java.util.List<WorkspaceAccounting.RealizedSell> sells = new java.util.ArrayList<>();
+        java.util.List<WorkspaceAccountingInputs.StrategyInput> inputs = new java.util.ArrayList<>();
         for (ManagedStrategy entry : strategies) {
             if (entry == null || entry.strategy == null || entry.strategy.mode() != mode) {
                 continue;
             }
-            if (!includeInCurrentStrategiesTab(entry)) {
-                continue;
-            }
             String entryWorkspaceId = entry.strategy.workspaceId();
-            java.util.List<WorkspaceAccounting.RealizedSell> strategySells =
-                    realizedSellsForStrategy(entryWorkspaceId, strategyOrderRepository.findByStrategyId(entry.strategy.id()), today);
-            sells.addAll(strategySells);
-            BigDecimal realized = BigDecimal.ZERO;
-            for (WorkspaceAccounting.RealizedSell sell : strategySells) {
-                realized = realized.add(sell.realizedPnl());
-            }
             java.util.Optional<StrategyOpenPnlCalculator.Row> openRow = openPnlCalculator.openRow(entry);
-            int shares = openRow.map(StrategyOpenPnlCalculator.Row::shares).orElse(0);
-            BigDecimal unrealized = openRow.map(StrategyOpenPnlCalculator.Row::unrealizedPnl).orElse(BigDecimal.ZERO);
-            BigDecimal marketValue = openRow.map(StrategyOpenPnlCalculator.Row::marketValue).orElse(BigDecimal.ZERO);
-            accounts.add(new WorkspaceAccounting.StrategyAccount(
-                    entryWorkspaceId, shares, unrealized, realized, marketValue, entry.strategy.estimatedTotalCapital()));
+            inputs.add(new WorkspaceAccountingInputs.StrategyInput(
+                    entryWorkspaceId,
+                    includeInCurrentStrategiesTab(entry),
+                    realizedSellsForStrategy(
+                            entryWorkspaceId, strategyOrderRepository.findByStrategyId(entry.strategy.id()), today),
+                    openRow.map(StrategyOpenPnlCalculator.Row::shares).orElse(0),
+                    openRow.map(StrategyOpenPnlCalculator.Row::unrealizedPnl).orElse(BigDecimal.ZERO),
+                    openRow.map(StrategyOpenPnlCalculator.Row::marketValue).orElse(BigDecimal.ZERO),
+                    entry.strategy.estimatedTotalCapital()));
         }
-        return new AccountingInputs(accounts, sells);
+        return WorkspaceAccountingInputs.build(inputs);
     }
 
     // Reconstructs realized P&L per individual sell (one RealizedSell per filled sell), replaying
