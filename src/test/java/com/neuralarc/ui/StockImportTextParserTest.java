@@ -7,6 +7,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class StockImportTextParserTest {
@@ -32,6 +33,71 @@ class StockImportTextParserTest {
         assertTrue(drafts.stream().allMatch(PortfolioStockImportDialog.ImportedStockDraft::autoPriced),
                 "a ticker-only paste carries no prices, so levels must be calculated");
         assertTrue(drafts.stream().allMatch(draft -> draft.targets().isEmpty()));
+    }
+
+    @Test
+    void recoversTheListWhenTheCopyDroppedItsLineBreaks() {
+        // Copying out of some chat clients and PDFs delivers the whole list as one run of text.
+        String oneLine = "1.\u2060 \u2060Palantir ~ $PLTR 2.\u2060 \u2060Nebius ~ $NBIS"
+                + " 3.\u2060 \u2060Oracle ~ $ORCL 4.\u2060 \u2060ServiceNow ~ $NOW"
+                + " 10.\u2060 \u2060Zeta Global ~ $ZETA";
+
+        List<PortfolioStockImportDialog.ImportedStockDraft> drafts = StockImportTextParser.parse(oneLine);
+
+        assertEquals(List.of("PLTR", "NBIS", "ORCL", "NOW", "ZETA"),
+                drafts.stream().map(PortfolioStockImportDialog.ImportedStockDraft::symbol).toList());
+    }
+
+    @Test
+    void acceptsEveryLineBreakConvention() {
+        List<String> items = List.of("1. Palantir ~ $PLTR", "2. Nebius ~ $NBIS", "3. Oracle ~ $ORCL");
+        for (String separator : List.of("\n", "\r\n", "\r", "\u2028", "\u2029")) {
+            List<PortfolioStockImportDialog.ImportedStockDraft> drafts =
+                    StockImportTextParser.parse(String.join(separator, items));
+
+            assertEquals(List.of("PLTR", "NBIS", "ORCL"),
+                    drafts.stream().map(PortfolioStockImportDialog.ImportedStockDraft::symbol).toList(),
+                    "separator " + separator.codePoints().boxed().toList());
+        }
+    }
+
+    @Test
+    void alertBlocksUseCarriageReturnsToo() {
+        List<PortfolioStockImportDialog.ImportedStockDraft> drafts = StockImportTextParser.parse(
+                "Symbol: $MDB\r\nEntry: Entered @ 451\r\nStop: Below 446\r\nTargets: 466");
+
+        assertEquals(1, drafts.size());
+        assertEquals("MDB", drafts.getFirst().symbol());
+        assertEquals(new BigDecimal("451"), drafts.getFirst().recommendedEntry());
+    }
+
+    @Test
+    void oneUnreadableAlertBlockNoLongerDiscardsTheRest() {
+        List<PortfolioStockImportDialog.ImportedStockDraft> drafts = StockImportTextParser.parse("""
+                Symbol: $MDB
+                Entry: Entered @ 451
+                Stop: Below 446
+                Targets: 466
+
+                Symbol: $BROKEN
+                Entry: Entered @ 100
+
+                Symbol: $TEAM
+                Entry: Entered @ 191.60
+                Stop: Below 183
+                Targets: 204
+                """);
+
+        assertEquals(List.of("MDB", "TEAM"),
+                drafts.stream().map(PortfolioStockImportDialog.ImportedStockDraft::symbol).toList());
+    }
+
+    @Test
+    void reportsTheProblemWhenNoBlockCanBeRead() {
+        assertThrows(IllegalArgumentException.class, () -> StockImportTextParser.parse("""
+                Symbol: $BROKEN
+                Entry: Entered @ 100
+                """));
     }
 
     @Test

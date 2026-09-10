@@ -33,6 +33,17 @@ final class StockImportTextParser {
     /** A leading list marker such as "1.", "12)" or "-" that is numbering, not data. */
     private static final Pattern LIST_MARKER = Pattern.compile("^\\s*(?:\\d{1,3}\\s*[.)\\]]|[-*•>])\\s*");
     private static final Pattern ALERT_BLOCK_KEYWORD = Pattern.compile("(?im)^\\s*symbol\\s*:");
+    /**
+     * Every line break a paste can arrive with. Copying out of a chat app or PDF regularly yields a
+     * lone CR, or the Unicode line/paragraph separators, instead of a newline.
+     */
+    private static final Pattern LINE_BREAK = Pattern.compile("\\r\\n|[\\n\\r\\u2028\\u2029\\u0085]");
+    /**
+     * The gap before an enumeration marker inside an already-joined line. Some copies drop line
+     * breaks entirely and deliver "1. Palantir ~ $PLTR 2. Nebius ~ $NBIS ..." as one run of text.
+     */
+    private static final Pattern INLINE_ITEM_BREAK =
+            Pattern.compile("(?<=\\S)\\s+(?=\\d{1,3}\\s*[.)]\\s*\\S)");
     private static final Pattern ANY_NUMBER = Pattern.compile("\\d");
     private static final Pattern DECIMAL = Pattern.compile("\\d+(?:\\.\\d+)?");
     private static final BigDecimal HUNDRED = new BigDecimal("100");
@@ -57,12 +68,27 @@ final class StockImportTextParser {
                 return tickers;
             }
         }
+        return parseAlertBlocks(rawText);
+    }
+
+    /**
+     * Reads the alert-block format. A block that cannot be understood no longer discards the whole
+     * paste: whatever parsed is returned, and the first problem is reported only when nothing did.
+     */
+    private static List<PortfolioStockImportDialog.ImportedStockDraft> parseAlertBlocks(String rawText) {
         List<PortfolioStockImportDialog.ImportedStockDraft> drafts = new ArrayList<>();
-        for (String block : rawText.trim().split("(\\r?\\n){2,}")) {
-            PortfolioStockImportDialog.ImportedStockDraft draft = parseAlertBlock(block);
-            if (draft != null) {
-                drafts.add(draft);
+        IllegalArgumentException firstFailure = null;
+        for (String block : LINE_BREAK.matcher(rawText.trim()).replaceAll("\n").split("\n{2,}")) {
+            try {
+                drafts.add(parseAlertBlock(block));
+            } catch (IllegalArgumentException ex) {
+                if (firstFailure == null) {
+                    firstFailure = ex;
+                }
             }
+        }
+        if (drafts.isEmpty() && firstFailure != null) {
+            throw firstFailure;
         }
         return drafts;
     }
@@ -75,8 +101,8 @@ final class StockImportTextParser {
      */
     static List<PortfolioStockImportDialog.ImportedStockDraft> parseTickerList(String rawText) {
         Set<String> symbols = new LinkedHashSet<>();
-        for (String rawLine : rawText.split("\\r?\\n")) {
-            String line = LIST_MARKER.matcher(normalize(rawLine)).replaceFirst("");
+        for (String rawItem : splitIntoItems(rawText)) {
+            String line = LIST_MARKER.matcher(rawItem).replaceFirst("");
             if (line.isBlank()) {
                 continue;
             }
@@ -99,8 +125,7 @@ final class StockImportTextParser {
 
     private static List<PortfolioStockImportDialog.ImportedStockDraft> parseAnalystTargetList(String rawText) {
         List<PortfolioStockImportDialog.ImportedStockDraft> drafts = new ArrayList<>();
-        for (String rawLine : rawText.split("\\r?\\n")) {
-            String line = normalize(rawLine);
+        for (String line : splitIntoItems(rawText)) {
             if (line.isBlank() || !line.contains("$")) {
                 continue;
             }
@@ -124,7 +149,7 @@ final class StockImportTextParser {
         BigDecimal entry = BigDecimal.ZERO;
         BigDecimal stop = BigDecimal.ZERO;
         List<BigDecimal> targets = new ArrayList<>();
-        for (String rawLine : block.split("\\r?\\n")) {
+        for (String rawLine : LINE_BREAK.split(block)) {
             String line = rawLine == null ? "" : rawLine.trim();
             if (line.isBlank()) {
                 continue;
@@ -161,6 +186,27 @@ final class StockImportTextParser {
      * apps and messaging clients — zero-width joiners, word joiners and non-breaking spaces — which
      * otherwise sit between the list number and the ticker and defeat plain matching.
      */
+    /**
+     * Breaks a paste into one entry per line, tolerating every line-break convention and recovering
+     * the entries when the copy dropped its line breaks altogether.
+     */
+    private static List<String> splitIntoItems(String rawText) {
+        List<String> items = new ArrayList<>();
+        for (String rawLine : LINE_BREAK.split(rawText)) {
+            String line = normalize(rawLine);
+            if (line.isBlank()) {
+                continue;
+            }
+            for (String item : INLINE_ITEM_BREAK.split(line)) {
+                String trimmed = item.trim();
+                if (!trimmed.isBlank()) {
+                    items.add(trimmed);
+                }
+            }
+        }
+        return items;
+    }
+
     private static String normalize(String value) {
         if (value == null) {
             return "";

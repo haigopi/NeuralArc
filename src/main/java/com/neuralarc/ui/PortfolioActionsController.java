@@ -197,6 +197,12 @@ final class PortfolioActionsController {
             return;
         }
         gateway.actionStarted("Import Stocks");
+        // Record what the paste actually resolved to. A list that silently loses entries — a copy
+        // whose line breaks did not survive, say — is otherwise invisible after the dialog closes.
+        gateway.log("[Import Stocks] Parsed " + selection.drafts().size() + " symbol(s): "
+                + selection.drafts().stream()
+                        .map(PortfolioStockImportDialog.ImportedStockDraft::symbol)
+                        .collect(java.util.stream.Collectors.joining(", ")));
         new SwingWorker<ManualPortfolioImportService.ImportResult, Void>() {
             @Override
             protected ManualPortfolioImportService.ImportResult doInBackground() {
@@ -210,6 +216,9 @@ final class PortfolioActionsController {
                     refreshAfterAction();
                     gateway.actionCompleted("Import Stocks", "Imported=" + result.importedSymbols().size()
                             + ", skipped=" + result.skippedReasons().size() + ".");
+                    if (!result.skippedReasons().isEmpty()) {
+                        result.skippedReasons().forEach(reason -> gateway.log("[Import Stocks] Skipped " + reason));
+                    }
                     gateway.showMessage(
                             result.summary(gateway.selectedModeLabel()),
                             "Import Stocks",
