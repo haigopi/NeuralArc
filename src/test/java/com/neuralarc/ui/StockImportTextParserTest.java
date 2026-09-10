@@ -101,6 +101,40 @@ class StockImportTextParserTest {
     }
 
     @Test
+    void readsTheListWhateverStandsInForTheLineBreak() {
+        // A copy can deliver this list with the line break replaced by a zero-width character, a
+        // space, a tab, or nothing at all. Every entry must survive regardless.
+        String wordJoiner = "\u2060";
+        List<String> items = List.of(
+                "1." + wordJoiner + " " + wordJoiner + "Palantir ~ $PLTR",
+                "2." + wordJoiner + " " + wordJoiner + "Nebius ~ $NBIS",
+                "3." + wordJoiner + " " + wordJoiner + "Oracle ~ $ORCL",
+                "10." + wordJoiner + " " + wordJoiner + "Zeta Global ~ $ZETA");
+        List<String> separators = List.of(
+                "\n", "\r", "\r\n", "\u2028", "\u2029", "\u0085",
+                " ", "\u00A0", "\t", "\u000B", "\f", wordJoiner, "\u200B", "");
+
+        for (String separator : separators) {
+            List<PortfolioStockImportDialog.ImportedStockDraft> drafts =
+                    StockImportTextParser.parse(String.join(separator, items));
+
+            assertEquals(List.of("PLTR", "NBIS", "ORCL", "ZETA"),
+                    drafts.stream().map(PortfolioStockImportDialog.ImportedStockDraft::symbol).toList(),
+                    "separator codepoints " + separator.codePoints().boxed().toList());
+        }
+    }
+
+    @Test
+    void aTickerRunningStraightIntoTheNextEntryIsStillRead() {
+        // The pathological case: the separator vanished entirely, so "$PLTR" abuts "2.".
+        List<PortfolioStockImportDialog.ImportedStockDraft> drafts =
+                StockImportTextParser.parse("1. Palantir ~ $PLTR2. Nebius ~ $NBIS3. Oracle ~ $ORCL");
+
+        assertEquals(List.of("PLTR", "NBIS", "ORCL"),
+                drafts.stream().map(PortfolioStockImportDialog.ImportedStockDraft::symbol).toList());
+    }
+
+    @Test
     void acceptsTickerListVariants() {
         List<PortfolioStockImportDialog.ImportedStockDraft> drafts = StockImportTextParser.parse("""
                 Watchlist for Monday

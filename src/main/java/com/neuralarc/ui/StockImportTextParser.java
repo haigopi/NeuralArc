@@ -25,13 +25,16 @@ import java.util.regex.Pattern;
  * </ol>
  */
 final class StockImportTextParser {
-    /** A ticker after an optional {@code $}: 1-5 letters, with an optional class suffix (BRK.B). */
-    private static final Pattern TICKER = Pattern.compile("\\$([A-Za-z]{1,5}(?:\\.[A-Za-z]{1,2})?)\\b");
+    /**
+     * A ticker after a {@code $}: 1-5 letters, with an optional class suffix (BRK.B). Terminated by a
+     * "no more letters" lookahead rather than {@code \b}, because no word boundary exists between a
+     * letter and a digit — {@code $PLTR2.} would otherwise match nothing at all.
+     */
+    private static final Pattern TICKER =
+            Pattern.compile("\\$([A-Za-z]{1,5}(?:\\.[A-Za-z]{1,2})?)(?![A-Za-z])");
     private static final Pattern ANALYST_TARGET = Pattern.compile(
             "^\\$([A-Z.]+)\\s+\\$([0-9][0-9,]*(?:\\.\\d+)?)\\s*\\(\\+?([0-9]+(?:\\.\\d+)?)%\\)?",
             Pattern.CASE_INSENSITIVE);
-    /** A leading list marker such as "1.", "12)" or "-" that is numbering, not data. */
-    private static final Pattern LIST_MARKER = Pattern.compile("^\\s*(?:\\d{1,3}\\s*[.)\\]]|[-*•>])\\s*");
     private static final Pattern ALERT_BLOCK_KEYWORD = Pattern.compile("(?im)^\\s*symbol\\s*:");
     /**
      * Every line break a paste can arrive with. Copying out of a chat app or PDF regularly yields a
@@ -44,7 +47,12 @@ final class StockImportTextParser {
      */
     private static final Pattern INLINE_ITEM_BREAK =
             Pattern.compile("(?<=\\S)\\s+(?=\\d{1,3}\\s*[.)]\\s*\\S)");
-    private static final Pattern ANY_NUMBER = Pattern.compile("\\d");
+    /**
+     * A price attached to the ticker just read, as in the analyst shape {@code $NBIS $410}. Matched
+     * with horizontal whitespace only and an explicit {@code $}, so it cannot mistake the next
+     * watchlist entry's numbering ({@code $PLTR} then {@code 2. Nebius}) for a price.
+     */
+    private static final Pattern PRICED_TICKER_TAIL = Pattern.compile("\\h*\\$\\d");
     private static final Pattern DECIMAL = Pattern.compile("\\d+(?:\\.\\d+)?");
     private static final BigDecimal HUNDRED = new BigDecimal("100");
     private static final BigDecimal ANALYST_STOP_FACTOR = new BigDecimal("0.85");
@@ -95,23 +103,22 @@ final class StockImportTextParser {
 
     /**
      * Reads a plain watchlist — {@code 1. Nebius ~ $NBIS}, {@code - $PLTR}, or just {@code $ORCL}.
-     * A line only qualifies when nothing price-like remains after the list numbering is removed, so
-     * a line that does carry prices falls through to a format that can actually use them. Repeated
-     * tickers collapse to their first appearance.
+     *
+     * <p>Deliberately does NOT depend on the paste keeping its line structure. Copies out of chat
+     * clients and PDFs arrive with the line breaks replaced by invisible characters, joined into one
+     * run, or split in ways no separator list predicts, and a line-by-line reading then silently
+     * yields a single entry out of ten. Because this parser only runs once the priced formats have
+     * had their turn — the analyst list first, and any text carrying a {@code Symbol:} line is
+     * excluded outright — every ticker token left in the text is a watchlist entry, so they are swept
+     * from the whole text at once. A ticker directly followed by a price is skipped, since that is a
+     * priced row some other format should own. Repeats collapse to their first appearance.
      */
     static List<PortfolioStockImportDialog.ImportedStockDraft> parseTickerList(String rawText) {
         Set<String> symbols = new LinkedHashSet<>();
-        for (String rawItem : splitIntoItems(rawText)) {
-            String line = LIST_MARKER.matcher(rawItem).replaceFirst("");
-            if (line.isBlank()) {
-                continue;
-            }
-            Matcher ticker = TICKER.matcher(line);
-            if (!ticker.find()) {
-                continue;
-            }
-            // Anything numeric left over means this line is priced; let another parser handle it.
-            if (ANY_NUMBER.matcher(TICKER.matcher(line).replaceAll("")).find()) {
+        String text = normalize(rawText.replace('\n', ' ').replace('\r', ' '));
+        Matcher ticker = TICKER.matcher(text);
+        while (ticker.find()) {
+            if (PRICED_TICKER_TAIL.matcher(text).region(ticker.end(), text.length()).lookingAt()) {
                 continue;
             }
             symbols.add(ticker.group(1).toUpperCase());
@@ -182,11 +189,6 @@ final class StockImportTextParser {
     }
 
     /**
-     * Strips bullets and the invisible formatting characters that survive a copy/paste out of chat
-     * apps and messaging clients — zero-width joiners, word joiners and non-breaking spaces — which
-     * otherwise sit between the list number and the ticker and defeat plain matching.
-     */
-    /**
      * Breaks a paste into one entry per line, tolerating every line-break convention and recovering
      * the entries when the copy dropped its line breaks altogether.
      */
@@ -207,15 +209,22 @@ final class StockImportTextParser {
         return items;
     }
 
+    /**
+     * Neutralises bullets and the invisible characters that survive a copy/paste out of chat apps,
+     * messaging clients and PDFs — word joiners, zero-width spaces and non-breaking spaces.
+     *
+     * <p>They are replaced with a space rather than deleted. Such a character frequently stands in
+     * for the line break itself, and deleting it fuses two entries into {@code $PLTR2. Nebius}, losing
+     * the boundary between them for good; substituting a space keeps it. Inside an entry the
+     * substitution is harmless, since these characters only ever sit beside real whitespace there.
+     */
     private static String normalize(String value) {
         if (value == null) {
             return "";
         }
         return value
                 .replace('\u00A0', ' ')
-                .replaceAll("[\\p{Cf}\\u200B]", "")
-                .replace("\u2022", " ")
-                .replace("\u00B7", " ")
+                .replaceAll("[\\p{Cf}\\u200B\\u2022\\u00B7]", " ")
                 .trim();
     }
 
