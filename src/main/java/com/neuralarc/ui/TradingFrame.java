@@ -2981,9 +2981,9 @@ public class TradingFrame extends JFrame {
      * <p>The counters used to be appended into the stored indicator string by
      * {@link #updateCaptureAutomationState} and parsed back out of it here. Every monitoring tick and
      * every status-bar refresh rewrote that stored string with the figures alone, which silently
-     * dropped the counters again — so "Liquidation Total P&L" appeared on an automation state change
-     * and vanished moments later. Composing at render time makes the counters as stable as the
-     * conditions that produce them.
+     * dropped the counters again — so a counter appeared on an automation state change and vanished
+     * moments later. Composing at render time makes the counters as stable as the conditions that
+     * produce them.
      */
     private String composeCaptureIndicatorText(String storedIndicatorText) {
         String live = captureIndicatorText(capturePortfolioConfigForUi);
@@ -3115,19 +3115,19 @@ public class TradingFrame extends JFrame {
 
     /**
      * The automation counters that trail the status line, read from live state. Each segment appears
-     * exactly while its condition holds — Loops only for a continuous loop, the cumulative liquidation
-     * P&L only once at least one liquidation has completed, cancelled-order counts only when pending
-     * cleanup is enabled — so a segment does not flicker in and out between refreshes.
+     * exactly while its condition holds — Loops only for a continuous loop, cancelled-order counts only
+     * when pending cleanup is enabled — so a segment does not flicker in and out between refreshes.
+     *
+     * <p>Both counters describe the run the monitor is executing for the selected tab. Cumulative
+     * cross-run liquidation totals deliberately do NOT belong here: the capture history is a single
+     * global log with no workspace or mode scope, so showing its total beside one workspace's figures
+     * would mix in liquidations from every other workspace and from the opposite trading mode.
      */
     private String captureAutomationCounterText() {
         PortfolioCaptureConfig config = capturePortfolioConfigForUi;
-        PortfolioCaptureHistoryStore.Summary summary = portfolioCaptureController.captureHistorySummary();
         StringBuilder text = new StringBuilder();
         if (config != null && config.continuousLoop()) {
             text.append(" | Loops ").append(portfolioCaptureController.loopCount());
-        }
-        if (summary != null && summary.captureCount() > 0) {
-            text.append(" | Liquidation Total P&L $").append(Monetary.round(summary.actualPnl()));
         }
         if (config != null && config.autoCleanPendingBeforeCycle()) {
             text.append(" | Pending Buy Orders Cancelled ").append(portfolioCaptureController.pendingCanceledCount());
@@ -3136,22 +3136,9 @@ public class TradingFrame extends JFrame {
     }
 
     private String captureAutomationCounterTooltip() {
-        PortfolioCaptureHistoryStore.Summary summary = portfolioCaptureController.captureHistorySummary();
-        String history = summary == null || summary.captureCount() == 0
-                ? ""
-                : " Total liquidation P&L is cumulative across completed portfolio liquidations. Runs="
-                + summary.captureCount()
-                + ", stocks liquidated="
-                + summary.capturedStocks()
-                + ", estimated P&L=$"
-                + Monetary.round(summary.estimatedPnl())
-                + ", actual P&L=$"
-                + Monetary.round(summary.actualPnl())
-                + ".";
         return "Loops is the number of completed continuous liquidation/re-entry cycles. "
                 + "Pending Buy Orders Cancelled is the number of pending base buy limit orders automatically cancelled "
-                + "by Liquidate Portfolio cleanup before liquidation or re-entry."
-                + history;
+                + "by Liquidate Portfolio cleanup before liquidation or re-entry.";
     }
 
     private String capturePortfolioDefaultTooltip() {

@@ -111,6 +111,104 @@ class ManualPortfolioImportServiceTest {
         assertEquals(new BigDecimal("218.00"), saved.targetSellPrice());
     }
 
+    @Test
+    void autoCalculatesLongTermLevelsForTickerOnlyImports() {
+        InMemoryRepository repository = new InMemoryRepository();
+        FakeGateway gateway = new FakeGateway(repository);
+        gateway.marketDataApi = barsApi(260);
+        ManualPortfolioImportService service = new ManualPortfolioImportService(gateway);
+
+        ManualPortfolioImportService.ImportResult result = service.importDrafts(List.of(
+                PortfolioStockImportDialog.ImportedStockDraft.autoLongTerm("PLTR")));
+
+        assertEquals(List.of("PLTR"), result.importedSymbols());
+        assertTrue(result.skippedReasons().isEmpty(), result.skippedReasons().toString());
+        Strategy saved = repository.findAll().getFirst();
+        assertEquals("MANUAL_ADDITION: PLTR Paper", saved.name());
+        assertTrue(saved.baseBuyLimitPrice().signum() > 0, "an entry must be calculated");
+        assertTrue(saved.stopLossPrice().compareTo(saved.baseBuyLimitPrice()) < 0,
+                "the stop must sit below the entry");
+        assertTrue(saved.targetSellPrice().compareTo(saved.baseBuyLimitPrice()) > 0,
+                "the target must sit above the entry");
+        assertEquals("MANUAL_IMPORT_LONG_TERM", saved.lastTriggeredRuleType());
+        assertTrue(saved.lastEvent().contains("Long-term levels auto-calculated"), saved.lastEvent());
+    }
+
+    @Test
+    void skipsTickerOnlyImportsWhenMarketDataIsUnavailable() {
+        InMemoryRepository repository = new InMemoryRepository();
+        FakeGateway gateway = new FakeGateway(repository);
+        gateway.marketDataApi = null;
+        ManualPortfolioImportService service = new ManualPortfolioImportService(gateway);
+
+        ManualPortfolioImportService.ImportResult result = service.importDrafts(List.of(
+                PortfolioStockImportDialog.ImportedStockDraft.autoLongTerm("PLTR")));
+
+        assertTrue(result.importedSymbols().isEmpty(), "nothing may be imported against a guessed price");
+        assertEquals(1, result.skippedReasons().size());
+        assertTrue(result.skippedReasons().getFirst().contains("market data is unavailable"),
+                result.skippedReasons().toString());
+        assertTrue(repository.findAll().isEmpty());
+    }
+
+    @Test
+    void skipsTickerOnlyImportsWhenHistoryIsTooShortForALongTermView() {
+        InMemoryRepository repository = new InMemoryRepository();
+        FakeGateway gateway = new FakeGateway(repository);
+        gateway.marketDataApi = barsApi(4);
+        ManualPortfolioImportService service = new ManualPortfolioImportService(gateway);
+
+        ManualPortfolioImportService.ImportResult result = service.importDrafts(List.of(
+                PortfolioStockImportDialog.ImportedStockDraft.autoLongTerm("RDW")));
+
+        assertTrue(result.importedSymbols().isEmpty());
+        assertTrue(result.skippedReasons().getFirst().contains("not enough history"),
+                result.skippedReasons().toString());
+        assertTrue(repository.findAll().isEmpty());
+    }
+
+    @Test
+    void skipsTickerOnlyImportsWhenTheFeedReturnsNoBars() {
+        InMemoryRepository repository = new InMemoryRepository();
+        FakeGateway gateway = new FakeGateway(repository);
+        gateway.marketDataApi = barsApi(0);
+        ManualPortfolioImportService service = new ManualPortfolioImportService(gateway);
+
+        ManualPortfolioImportService.ImportResult result = service.importDrafts(List.of(
+                PortfolioStockImportDialog.ImportedStockDraft.autoLongTerm("SPCX")));
+
+        assertTrue(result.importedSymbols().isEmpty());
+        assertTrue(result.skippedReasons().getFirst().contains("no daily bars"),
+                result.skippedReasons().toString());
+    }
+
+    /** A steadily drifting price series — enough shape for ATR, SMA and range indicators. */
+    private static AlpacaMarketDataApi barsApi(int barCount) {
+        return new AlpacaMarketDataApi() {
+            @Override
+            public List<MarketBar> getDailyBars(String symbol, LocalDate startDate, LocalDate endDate) {
+                List<MarketBar> bars = new ArrayList<>();
+                for (int i = 0; i < barCount; i++) {
+                    BigDecimal close = new BigDecimal("100").add(new BigDecimal(i % 20));
+                    bars.add(new MarketBar(
+                            symbol,
+                            startDate.plusDays(i).toString(),
+                            close,
+                            close.add(new BigDecimal("2")),
+                            close.subtract(new BigDecimal("2")),
+                            close,
+                            new BigDecimal("1000000")));
+                }
+                return bars;
+            }
+
+            @Override
+            public List<MarketBar> getIntradayBars(String symbol, LocalDate startDate, LocalDate endDate, int intervalMinutes) {
+                return List.of();
+            }
+        };
+    }
+
     private static final class FakeGateway implements ManualPortfolioImportService.Gateway {
         private final InMemoryRepository repository;
         private AlpacaMarketDataApi marketDataApi = new AlpacaMarketDataApi() {
