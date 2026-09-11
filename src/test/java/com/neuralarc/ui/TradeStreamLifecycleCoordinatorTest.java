@@ -67,6 +67,8 @@ class TradeStreamLifecycleCoordinatorTest {
         assertEquals(1, gateway.refreshTableCalls);
         assertEquals(1, gateway.toasts.size(), "a fill should surface a toast");
         assertTrue(gateway.toasts.get(0).text().contains("AAPL"), gateway.toasts.get(0).text());
+        assertTrue(gateway.logs.stream().anyMatch(line -> line.contains("AAPL BUY filled")),
+                "fill events should be echoed into the event log");
     }
 
     @Test
@@ -147,6 +149,7 @@ class TradeStreamLifecycleCoordinatorTest {
         int syncStrategiesCalls;
         int refreshTableCalls;
         Optional<String> onTradeUpdateResult = Optional.of("strategy-1");
+        final java.util.List<String> logs = new java.util.ArrayList<>();
         final java.util.List<TradeEventToastFormatter.ToastMessage> toasts = new java.util.ArrayList<>();
         final FakeStreamClient client = new FakeStreamClient();
 
@@ -154,7 +157,7 @@ class TradeStreamLifecycleCoordinatorTest {
         @Override public String streamUrl(boolean liveMode) { return "wss://example"; }
         @Override public void updateStreamStatus(String status, Color color) { this.lastStatus = status; this.lastColor = color; }
         @Override public void onStreamError(String message) { }
-        @Override public void log(String message) { }
+        @Override public void log(String message) { logs.add(message); }
         @Override public boolean canProcessTradeUpdates() { return true; }
         @Override public Optional<String> onTradeUpdate(AlpacaTradeUpdateEvent event) { tradeUpdateForwarded = true; return onTradeUpdateResult; }
         @Override public void refreshDisplayedPositionFromStream(String strategyId) { lastRefreshedStrategyId = strategyId; }

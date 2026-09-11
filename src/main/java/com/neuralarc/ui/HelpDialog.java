@@ -92,6 +92,22 @@ public class HelpDialog extends JDialog {
             "Use these actions deliberately. Averaging down can lower average cost, but it also increases exposure to positions already moving against you."
         },
         {
+            "Application - How do I read the stock chart?",
+            "Click the chart button at the start of a row's actions, or right-click the row and choose Open Chart.\n\n" +
+            "- The top panel shows one candle per trading day, six moving averages, labelled turning points, and this strategy's own plan as dashed lines: planned buys, your average cost, the stop-loss, the target and any order working now.\n" +
+            "- Below it are RSI (how stretched buying or selling is), volume (how much conviction is behind a move), MACD (momentum) and accumulation/distribution (whether volume favours buyers or sellers).\n" +
+            "- The guide on the right explains each part in plain language and says what it shows for this stock right now. Hover over the chart to read any day's values, and use 6M, 1Y, 3Y and All to change how much history is shown.\n\n" +
+            "The chart uses live daily prices from Alpaca. Volume comes from the free IEX feed, which sees only part of all US trading, so compare the volume bars with each other rather than with other websites. The guide describes what the chart shows; it is not a recommendation to buy or sell."
+        },
+        {
+            "Application - What do the figures in the bottom bar mean?",
+            "The upper bottom bar totals the grid you are looking at: the selected workspace, or every stock on the All Stocks tab. Switch tabs and the figures follow. Hover over any figure for its explanation.\n\n" +
+            "- Market Value is what the shares held now are worth at the latest price.\n" +
+            "- Invested vs Upcoming compares what you actually paid for the shares you hold with what the buy orders still working at the broker will cost if they fill. Total adds the two: the money committed once those orders fill.\n" +
+            "- Gaining and Losing count the held positions trading above or below their average cost, with their combined unrealized profit or loss. Paused positions count too, because they still move with the market.\n" +
+            "- Pending Buy counts positions with a buy order that has not filled yet; Pending Sell counts positions with a sell order that has not filled yet, such as a target sell waiting for its price. A position with several working orders counts once."
+        },
+        {
             "Application - What are pending scanner buy actions?",
             "Pending scanner rows are recommendations that have been saved locally but have not yet submitted the base limit buy order.\n\n" +
             "- Place Limit Buy for All Pending Positions submits base limit buys for every pending recommendation in the current scope.\n" +

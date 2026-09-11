@@ -1,5 +1,7 @@
 package com.neuralarc.ui;
 
+import java.util.List;
+
 final class StrategyGridActionLayout {
     static final int ICON_BUTTON_WIDTH = 30;
     static final int BUTTON_HEIGHT = 24;
@@ -11,18 +13,28 @@ final class StrategyGridActionLayout {
     // the right-most button never sits flush against the table edge / vertical scrollbar,
     // which was clipping the Delete button.
     private static final int COLUMN_PADDING = 68;
+    /**
+     * Left to right from least to most consequential: look at the chart, edit, pause or resume,
+     * sell, promote, delete. Delete stays last, furthest from a casual click.
+     */
+    private static final List<Action> ORDER_WITH_PROMOTE =
+            List.of(Action.CHART, Action.EDIT, Action.TOGGLE, Action.SELL, Action.PROMOTE, Action.DELETE);
+    private static final List<Action> ORDER_WITHOUT_PROMOTE =
+            List.of(Action.CHART, Action.EDIT, Action.TOGGLE, Action.SELL, Action.DELETE);
 
     private StrategyGridActionLayout() {
     }
 
     static int buttonCount(boolean promoteVisible) {
-        return promoteVisible ? 5 : 4;
+        return order(promoteVisible).size();
     }
 
     static int contentWidth(boolean promoteVisible) {
-        int iconButtonsWidth = ICON_BUTTON_WIDTH * 4;
-        int promoteWidth = promoteVisible ? PROMOTE_BUTTON_WIDTH : 0;
-        return iconButtonsWidth + promoteWidth + BUTTON_GAP * (buttonCount(promoteVisible) - 1);
+        int width = 0;
+        for (Action action : order(promoteVisible)) {
+            width += buttonWidth(action);
+        }
+        return width + BUTTON_GAP * (buttonCount(promoteVisible) - 1);
     }
 
     static int columnWidth(boolean promoteVisible) {
@@ -36,45 +48,30 @@ final class StrategyGridActionLayout {
         if (x < 0 || x >= totalWidth) {
             return Action.NONE;
         }
-
         int cursor = 0;
-        if (x < cursor + ICON_BUTTON_WIDTH) {
-            return Action.EDIT;
-        }
-        cursor += ICON_BUTTON_WIDTH + BUTTON_GAP;
-        if (x < cursor) {
-            return Action.NONE;
-        }
-        if (x < cursor + ICON_BUTTON_WIDTH) {
-            return Action.TOGGLE;
-        }
-        cursor += ICON_BUTTON_WIDTH + BUTTON_GAP;
-        if (x < cursor) {
-            return Action.NONE;
-        }
-        if (x < cursor + ICON_BUTTON_WIDTH) {
-            return Action.SELL;
-        }
-        cursor += ICON_BUTTON_WIDTH + BUTTON_GAP;
-        if (x < cursor) {
-            return Action.NONE;
-        }
-        if (promoteVisible) {
-            if (x < cursor + PROMOTE_BUTTON_WIDTH) {
-                return Action.PROMOTE;
-            }
-            cursor += PROMOTE_BUTTON_WIDTH + BUTTON_GAP;
+        for (Action action : order(promoteVisible)) {
             if (x < cursor) {
-                return Action.NONE;
+                return Action.NONE; // In the gap before this button.
             }
-        }
-        if (x < cursor + ICON_BUTTON_WIDTH) {
-            return Action.DELETE;
+            int width = buttonWidth(action);
+            if (x < cursor + width) {
+                return action;
+            }
+            cursor += width + BUTTON_GAP;
         }
         return Action.NONE;
     }
 
+    private static List<Action> order(boolean promoteVisible) {
+        return promoteVisible ? ORDER_WITH_PROMOTE : ORDER_WITHOUT_PROMOTE;
+    }
+
+    private static int buttonWidth(Action action) {
+        return action == Action.PROMOTE ? PROMOTE_BUTTON_WIDTH : ICON_BUTTON_WIDTH;
+    }
+
     enum Action {
+        CHART,
         EDIT,
         TOGGLE,
         SELL,

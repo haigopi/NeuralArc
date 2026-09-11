@@ -10,6 +10,7 @@ import java.awt.Font;
 import java.lang.reflect.Method;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -41,6 +42,25 @@ class StrategyGridContextMenuTest {
         assertNull(findItem(nonHistoryMenu, "Reposition Stock"));
     }
 
+    @Test
+    void openChartOpensTheClickedRowsChart() {
+        int[] opened = {-1};
+        StrategyGridContextMenu menu = new StrategyGridContextMenu(
+                new JTable(new DefaultTableModel(new Object[][]{{"AAPL"}}, new Object[]{"Symbol"})),
+                new Font("Dialog", Font.PLAIN, 12),
+                viewRow -> "row-" + viewRow, text -> { },
+                viewRow -> { }, viewRow -> { }, viewRow -> { }, viewRow -> { }, viewRow -> { }, viewRow -> false,
+                viewRow -> { }, viewRow -> false, viewRow -> { }, viewRow -> false, viewRow -> { }, viewRow -> false,
+                () -> false, List::of, (workspaceId, viewRow) -> { },
+                viewRow -> opened[0] = viewRow);
+
+        JMenuItem item = menu.openChartItem(3);
+        item.doClick();
+
+        assertEquals("Open Chart", item.getText());
+        assertEquals(3, opened[0]);
+    }
+
     private JMenu positionMenuForRow(int row, boolean eligible) throws Exception {
         return positionMenuForRow(row, eligible, true);
     }
@@ -66,7 +86,8 @@ class StrategyGridContextMenuTest {
                 viewRow -> eligible,
                 () -> historySelected,
                 List::of,
-                (workspaceId, viewRow) -> { }
+                (workspaceId, viewRow) -> { },
+                viewRow -> { }
         );
         Method method = StrategyGridContextMenu.class.getDeclaredMethod("positionMenu", int.class);
         method.setAccessible(true);

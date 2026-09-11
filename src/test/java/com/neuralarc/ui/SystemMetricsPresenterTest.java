@@ -22,76 +22,100 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class SystemMetricsPresenterTest {
+    private final SystemMetricsPresenter presenter = new SystemMetricsPresenter();
+
     @Test
-    void marketValueExcludesCompletedStrategies() {
+    void investedAndMarketValueCountHeldSharesAndSkipCompletedStrategies() {
         ManagedStrategy active = managed("AAPL", StrategyStatus.ACTIVE, 2, new BigDecimal("100.00"));
         ManagedStrategy completed = managed("MSFT", StrategyStatus.COMPLETED, 3, new BigDecimal("200.00"));
+        ManagedStrategy waiting = managed("NVDA", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO);
 
-        String text = new SystemMetricsPresenter().formatMarketValueText(List.of(active, completed));
+        SystemMetricsPresenter.PortfolioScopeMetrics metrics = presenter.computePortfolioScopeMetrics(
+                List.of(active, completed, waiting), id -> List.of());
 
-        assertEquals("Market Value: 200.00", text);
+        assertEquals(new BigDecimal("200.00"), metrics.investedValue());
+        assertEquals(new BigDecimal("200.00"), metrics.marketValue());
     }
 
     @Test
-    void investedValueExcludesCompletedStrategies() {
-        ManagedStrategy active = managed("AAPL", StrategyStatus.ACTIVE, 2, new BigDecimal("100.00"));
-        ManagedStrategy completed = managed("MSFT", StrategyStatus.COMPLETED, 3, new BigDecimal("200.00"));
+    void upcomingBuysAreTheUnfilledPartOfEveryWorkingBuyOrder() {
+        ManagedStrategy first = managed("AAPL", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO);
+        ManagedStrategy second = managed("MSFT", StrategyStatus.ACTIVE, 4, new BigDecimal("25.00"));
+        StrategyOrder baseBuy = order(first.strategy.id(), StrategyStage.BASE_BUY, StrategyOrderSide.BUY,
+                StrategyOrderStatus.PENDING, "10.00", "5", "0");
+        StrategyOrder partlyFilled = order(second.strategy.id(), StrategyStage.BASE_BUY, StrategyOrderSide.BUY,
+                StrategyOrderStatus.PARTIALLY_FILLED, "20.00", "6", "2");
+        StrategyOrder filled = order(second.strategy.id(), StrategyStage.BASE_BUY, StrategyOrderSide.BUY,
+                StrategyOrderStatus.FILLED, "20.00", "4", "4");
+        StrategyOrder canceled = order(second.strategy.id(), StrategyStage.BASE_BUY, StrategyOrderSide.BUY,
+                StrategyOrderStatus.CANCELED, "19.00", "9", "0");
+        StrategyOrder targetSell = order(second.strategy.id(), StrategyStage.TARGET_SELL, StrategyOrderSide.SELL,
+                StrategyOrderStatus.SUBMITTED, "30.00", "4", "0");
 
-        String text = new SystemMetricsPresenter().formatInvestedValueText(List.of(active, completed));
+        SystemMetricsPresenter.PortfolioScopeMetrics metrics = presenter.computePortfolioScopeMetrics(
+                List.of(first, second),
+                id -> id.equals(first.strategy.id()) ? List.of(baseBuy) : List.of(partlyFilled, filled, canceled, targetSell));
 
-        assertEquals("Invested Value: 200.00", text);
+        assertEquals(new BigDecimal("130.00"), metrics.upcomingBuyTotal(), "5 x $10 plus the 4 unfilled of 6 x $20");
+        assertEquals(new BigDecimal("100.00"), metrics.investedValue());
+        assertEquals(2, metrics.pendingBuyPositions());
+        assertEquals(1, metrics.pendingSellPositions());
     }
 
     @Test
-    void marketAndInvestedValuesAreScopedToSelectedMode() {
-        ManagedStrategy paper = managed("AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE, 2, new BigDecimal("100.00"));
-        ManagedStrategy live = managed("MSFT", StrategyMode.LIVE, StrategyStatus.ACTIVE, 3, new BigDecimal("200.00"));
-        SystemMetricsPresenter presenter = new SystemMetricsPresenter();
+    void aMarketBuyWithoutALimitIsValuedAtTheLastPrice() {
+        ManagedStrategy held = managed("AAPL", StrategyStatus.ACTIVE, 1, new BigDecimal("12.00"));
+        StrategyOrder marketBuy = order(held.strategy.id(), StrategyStage.BASE_BUY, StrategyOrderSide.BUY,
+                StrategyOrderStatus.SUBMITTED, "0", "3", "0");
 
-        assertEquals("Market Value: 200.00", presenter.formatMarketValueText(List.of(paper, live), StrategyMode.PAPER));
-        assertEquals("Market Value: 600.00", presenter.formatMarketValueText(List.of(paper, live), StrategyMode.LIVE));
-        assertEquals("Invested Value: 200.00", presenter.formatInvestedValueText(List.of(paper, live), StrategyMode.PAPER));
-        assertEquals("Invested Value: 600.00", presenter.formatInvestedValueText(List.of(paper, live), StrategyMode.LIVE));
+        SystemMetricsPresenter.PortfolioScopeMetrics metrics = presenter.computePortfolioScopeMetrics(
+                List.of(held), id -> List.of(marketBuy));
+
+        assertEquals(new BigDecimal("36.00"), metrics.upcomingBuyTotal());
     }
 
     @Test
-    void marketAndInvestedValuesShowZeroWhenSelectedModeHasNoStocks() {
-        ManagedStrategy paper = managed("AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE, 2, new BigDecimal("100.00"));
-        SystemMetricsPresenter presenter = new SystemMetricsPresenter();
+    void aPositionWithSeveralWorkingOrdersCountsOnce() {
+        ManagedStrategy held = managed("AAPL", StrategyStatus.ACTIVE, 2, new BigDecimal("10.00"));
+        StrategyOrder firstBuy = order(held.strategy.id(), StrategyStage.BASE_BUY, StrategyOrderSide.BUY,
+                StrategyOrderStatus.PENDING, "9.00", "1", "0");
+        StrategyOrder secondBuy = order(held.strategy.id(), StrategyStage.BASE_BUY, StrategyOrderSide.BUY,
+                StrategyOrderStatus.PENDING, "8.00", "1", "0");
+        StrategyOrder firstSell = order(held.strategy.id(), StrategyStage.TARGET_SELL, StrategyOrderSide.SELL,
+                StrategyOrderStatus.PENDING, "12.00", "1", "0");
+        StrategyOrder secondSell = order(held.strategy.id(), StrategyStage.TARGET_SELL, StrategyOrderSide.SELL,
+                StrategyOrderStatus.PENDING, "13.00", "1", "0");
 
-        assertEquals("Market Value: 0.00", presenter.formatMarketValueText(List.of(paper), StrategyMode.LIVE));
-        assertEquals("Invested Value: 0.00", presenter.formatInvestedValueText(List.of(paper), StrategyMode.LIVE));
+        SystemMetricsPresenter.PortfolioScopeMetrics metrics = presenter.computePortfolioScopeMetrics(
+                List.of(held), id -> List.of(firstBuy, secondBuy, firstSell, secondSell));
+
+        assertEquals(1, metrics.pendingBuyPositions());
+        assertEquals(1, metrics.pendingSellPositions());
+        assertEquals(new BigDecimal("17.00"), metrics.upcomingBuyTotal());
     }
 
     @Test
-    void baseBuyPendingTotalIsScopedToSelectedModeAndPendingBaseBuyOrders() {
-        ManagedStrategy paper = managed("AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE, 0, BigDecimal.ZERO);
-        ManagedStrategy live = managed("MSFT", StrategyMode.LIVE, StrategyStatus.ACTIVE, 0, BigDecimal.ZERO);
-        StrategyOrder paperPending = order(paper.strategy.id(), StrategyStage.BASE_BUY, StrategyOrderStatus.PENDING,
-                new BigDecimal("10.00"), new BigDecimal("5"), BigDecimal.ZERO);
-        StrategyOrder livePending = order(live.strategy.id(), StrategyStage.BASE_BUY, StrategyOrderStatus.PARTIALLY_FILLED,
-                new BigDecimal("20.00"), new BigDecimal("6"), new BigDecimal("2"));
-        StrategyOrder liveTargetSell = order(live.strategy.id(), StrategyStage.TARGET_SELL, StrategyOrderStatus.PENDING,
-                new BigDecimal("30.00"), new BigDecimal("1"), BigDecimal.ZERO);
+    void gainingAndLosingIncludePausedPositionsAndIgnoreFlatOnes() {
+        ManagedStrategy gaining = managed("AAPL", StrategyStatus.ACTIVE, 10, new BigDecimal("10.00"), new BigDecimal("12.00"));
+        ManagedStrategy pausedLosing = managed("MSFT", StrategyStatus.PAUSED, 5, new BigDecimal("20.00"), new BigDecimal("18.00"));
+        ManagedStrategy flat = managed("NVDA", StrategyStatus.ACTIVE, 3, new BigDecimal("50.00"));
 
-        SystemMetricsPresenter presenter = new SystemMetricsPresenter();
+        SystemMetricsPresenter.PortfolioScopeMetrics metrics = presenter.computePortfolioScopeMetrics(
+                List.of(gaining, pausedLosing, flat), id -> List.of());
 
-        assertEquals(
-                "Base Buy Pending Total: 50.00",
-                presenter.formatBaseBuyPendingTotalText(
-                        List.of(paper, live),
-                        id -> id.equals(paper.strategy.id()) ? List.of(paperPending) : List.of(livePending, liveTargetSell),
-                        StrategyMode.PAPER
-                )
-        );
-        assertEquals(
-                "Base Buy Pending Total: 80.00",
-                presenter.formatBaseBuyPendingTotalText(
-                        List.of(paper, live),
-                        id -> id.equals(paper.strategy.id()) ? List.of(paperPending) : List.of(livePending, liveTargetSell),
-                        StrategyMode.LIVE
-                )
-        );
+        assertEquals(1, metrics.gainingCount());
+        assertEquals(new BigDecimal("20.00"), metrics.gainingPnl());
+        assertEquals(1, metrics.losingCount(), "a paused position still moves with the market");
+        assertEquals(new BigDecimal("-10.00"), metrics.losingPnl());
+    }
+
+    @Test
+    void noRowsGiveZeros() {
+        SystemMetricsPresenter.PortfolioScopeMetrics metrics = presenter.computePortfolioScopeMetrics(null, null);
+
+        assertEquals(BigDecimal.ZERO, metrics.investedValue());
+        assertEquals(0, metrics.pendingBuyPositions());
+        assertEquals(0, metrics.gainingCount());
     }
 
     @Test
@@ -113,22 +137,18 @@ class SystemMetricsPresenterTest {
     }
 
     private static ManagedStrategy managed(String symbol, StrategyStatus status, int shares, BigDecimal price) {
-        return managed(symbol, StrategyMode.PAPER, status, shares, price);
+        return managed(symbol, status, shares, price, price);
     }
 
-    private static ManagedStrategy managed(String symbol, StrategyMode mode, StrategyStatus status, int shares, BigDecimal price) {
-        ManagedStrategy managed = new ManagedStrategy(strategy(symbol, mode, status));
+    private static ManagedStrategy managed(String symbol, StrategyStatus status, int shares, BigDecimal cost, BigDecimal lastPrice) {
+        ManagedStrategy managed = new ManagedStrategy(strategy(symbol, StrategyMode.PAPER, status));
         Position position = new Position(symbol);
         if (shares > 0) {
-            position.applyBuy(shares, price);
-            position.setLastPrice(price);
+            position.applyBuy(shares, cost);
+            position.setLastPrice(lastPrice);
         }
         managed.setCachedPosition(position);
         return managed;
-    }
-
-    private static Strategy strategy(String symbol, StrategyStatus status) {
-        return strategy(symbol, StrategyMode.PAPER, status);
     }
 
     private static Strategy strategy(String symbol, StrategyMode mode, StrategyStatus status) {
@@ -172,10 +192,11 @@ class SystemMetricsPresenterTest {
     private static StrategyOrder order(
             String strategyId,
             StrategyStage stage,
+            StrategyOrderSide side,
             StrategyOrderStatus status,
-            BigDecimal limitPrice,
-            BigDecimal requestedQuantity,
-            BigDecimal filledQuantity
+            String limitPrice,
+            String requestedQuantity,
+            String filledQuantity
     ) {
         return new StrategyOrder(
                 UUID.randomUUID().toString(),
@@ -184,12 +205,12 @@ class SystemMetricsPresenterTest {
                 "alpaca-" + UUID.randomUUID(),
                 "client-" + UUID.randomUUID(),
                 "AAPL",
-                StrategyOrderSide.BUY,
+                side,
                 StrategyOrderType.LIMIT,
-                limitPrice,
+                new BigDecimal(limitPrice),
                 BigDecimal.ZERO,
-                requestedQuantity,
-                filledQuantity,
+                new BigDecimal(requestedQuantity),
+                new BigDecimal(filledQuantity),
                 BigDecimal.ZERO,
                 status,
                 Instant.now(),

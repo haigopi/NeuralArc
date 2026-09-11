@@ -97,7 +97,10 @@ public final class TradeStreamLifecycleCoordinator {
         gateway.log("[STREAM] Trade update received: event=" + event.eventType()
                 + " orderId=" + orderId
                 + " clientOrderId=" + clientOrderId);
-        TradeEventToastFormatter.format(event).ifPresent(gateway::showTradeEventToast);
+        TradeEventToastFormatter.format(event).ifPresent(message -> {
+            gateway.showTradeEventToast(message);
+            gateway.log("[STREAM] " + message.text());
+        });
         Optional<String> strategyId = gateway.onTradeUpdate(event);
         if (strategyId.isPresent()) {
             // Loads the updated position for the matched strategy (background HTTP) and

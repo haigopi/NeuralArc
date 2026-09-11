@@ -26,7 +26,8 @@ class StrategyGridLayoutPresenterTest {
 
     @Test
     void actionButtonCountTracksPromoteVisibility() {
-        assertEquals(5, presenter.actionButtonCount(true));
-        assertEquals(4, presenter.actionButtonCount(false));
+        // Chart, Edit, Pause/Resume, Sell, [Promote], Delete.
+        assertEquals(6, presenter.actionButtonCount(true));
+        assertEquals(5, presenter.actionButtonCount(false));
     }
 }

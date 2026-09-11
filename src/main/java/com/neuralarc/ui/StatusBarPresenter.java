@@ -3,6 +3,8 @@ package com.neuralarc.ui;
 public final class StatusBarPresenter {
     public static final String NETWORK_ICON_PATH = "icons/wifi.svg";
 
+    private final PortfolioScopePresenter portfolioScopePresenter = new PortfolioScopePresenter();
+
     public StatusBarViewModel present(StatusBarState state) {
         String pollingText = "Ready";
         Tone pollingTone = Tone.DEFAULT;
@@ -45,17 +47,12 @@ public final class StatusBarPresenter {
                 removePrefix(state.marketLabel(), "Market:"),
                 state.marketTooltip(),
                 state.marketOpenForUi() ? Tone.OK : Tone.WARN,
-                removePrefix(state.marketValueText(), "Market Value:"),
-                removePrefix(state.investedValueText(), "Invested Value:"),
                 removePrefix(state.availableFundsText(), "Funds Available:"),
-                removePrefix(state.baseBuyPendingText(), "Base Buy Pending Total:"),
                 removePrefix(state.cpuText(), "CPU:"),
                 removePrefix(state.memoryText(), "Memory:"),
                 brokerText,
                 brokerTone,
-                state.gainingPositionsText(),
-                state.losingPositionsText(),
-                state.pendingToFillText()
+                portfolioScopePresenter.present(state.scopeLabel(), state.scopeMetrics())
         );
     }
 
@@ -87,6 +84,10 @@ public final class StatusBarPresenter {
         ERR
     }
 
+    /**
+     * Everything the two bottom bars show. The portfolio figures are those of the selected grid:
+     * {@code scopeLabel} names it (a workspace, or All Stocks) and {@code scopeMetrics} totals its rows.
+     */
     public record StatusBarState(
             long runningStrategies,
             long inactiveStrategies,
@@ -100,15 +101,11 @@ public final class StatusBarPresenter {
             String marketLabel,
             String marketTooltip,
             boolean marketOpenForUi,
-            String marketValueText,
-            String investedValueText,
             String availableFundsText,
-            String baseBuyPendingText,
             String cpuText,
             String memoryText,
-            String gainingPositionsText,
-            String losingPositionsText,
-            String pendingToFillText
+            String scopeLabel,
+            SystemMetricsPresenter.PortfolioScopeMetrics scopeMetrics
     ) {
     }
 
@@ -119,17 +116,12 @@ public final class StatusBarPresenter {
             String marketText,
             String marketTooltip,
             Tone marketTone,
-            String marketValueText,
-            String investedValueText,
             String availableFundsText,
-            String baseBuyPendingText,
             String cpuText,
             String memoryText,
             String brokerText,
             Tone brokerTone,
-            String gainingPositionsText,
-            String losingPositionsText,
-            String pendingToFillText
+            PortfolioScopePresenter.PortfolioScopeView portfolioScope
     ) {
     }
 

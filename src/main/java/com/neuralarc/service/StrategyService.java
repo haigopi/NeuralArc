@@ -990,8 +990,8 @@ public class StrategyService {
         String normalized = alpacaStatus == null ? "" : alpacaStatus.trim().toLowerCase();
         return switch (normalized) {
             case "new", "accepted", "pending_new", "accepted_for_bidding" -> StrategyOrderStatus.SUBMITTED;
-            case "partially_filled" -> StrategyOrderStatus.PARTIALLY_FILLED;
-            case "filled" -> StrategyOrderStatus.FILLED;
+            case "partially_filled", "partial_fill" -> StrategyOrderStatus.PARTIALLY_FILLED;
+            case "filled", "fill" -> StrategyOrderStatus.FILLED;
             case "canceled", "expired" -> StrategyOrderStatus.CANCELED;
             case "rejected", "suspended" -> StrategyOrderStatus.REJECTED;
             case "pending_cancel", "pending_replace", "calculated" -> StrategyOrderStatus.PENDING;

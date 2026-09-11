@@ -182,10 +182,10 @@ public class TradingFrame extends JFrame {
     private final JLabel availableFundsStatus = new JLabel("-");
     private final JLabel marketValueStatus = new JLabel("-");
     private final JLabel investedValueStatus = new JLabel("-");
-    private final JLabel baseBuyPendingStatus = new JLabel("0.00");
+    private final JLabel pendingBuyStatus = new JLabel("0");
     private final JLabel gainingPositionsStatus = new JLabel("0");
     private final JLabel losingPositionsStatus = new JLabel("0");
-    private final JLabel pendingToFillStatus = new JLabel("0");
+    private final JLabel pendingSellStatus = new JLabel("0");
     private final JLabel cpuUsageStatus = new JLabel("-");
     private final JLabel memoryUsageStatus = new JLabel("-");
     private final JLabel compactStatusSummary = new JLabel("Broker Not connected   Market Unknown");
@@ -1662,6 +1662,7 @@ public class TradingFrame extends JFrame {
                 final StrategyGridActionLayout.Action capturedAction = action;
                 SwingUtilities.invokeLater(() -> {
                     switch (capturedAction) {
+                        case CHART -> openStockChart(capturedRow);
                         case EDIT -> editStrategy(capturedRow);
                         case TOGGLE -> togglePauseResume(capturedRow);
                         case SELL -> sellStrategy(capturedRow);
@@ -1867,11 +1868,11 @@ public class TradingFrame extends JFrame {
         investedValueStatus.setVerticalAlignment(SwingConstants.CENTER);
         investedValueStatus.setHorizontalAlignment(SwingConstants.LEFT);
         investedValueStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
-        baseBuyPendingStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
-        baseBuyPendingStatus.setForeground(BOTTOM_STATUS_MARKET_VALUE);
-        baseBuyPendingStatus.setVerticalAlignment(SwingConstants.CENTER);
-        baseBuyPendingStatus.setHorizontalAlignment(SwingConstants.LEFT);
-        baseBuyPendingStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
+        pendingBuyStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        pendingBuyStatus.setForeground(BOTTOM_STATUS_MARKET_VALUE);
+        pendingBuyStatus.setVerticalAlignment(SwingConstants.CENTER);
+        pendingBuyStatus.setHorizontalAlignment(SwingConstants.LEFT);
+        pendingBuyStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
         gainingPositionsStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         gainingPositionsStatus.setForeground(STATUS_TEXT_RUNNING);
         gainingPositionsStatus.setVerticalAlignment(SwingConstants.CENTER);
@@ -1882,11 +1883,11 @@ public class TradingFrame extends JFrame {
         losingPositionsStatus.setVerticalAlignment(SwingConstants.CENTER);
         losingPositionsStatus.setHorizontalAlignment(SwingConstants.LEFT);
         losingPositionsStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
-        pendingToFillStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
-        pendingToFillStatus.setForeground(BOTTOM_STATUS_ACCENT);
-        pendingToFillStatus.setVerticalAlignment(SwingConstants.CENTER);
-        pendingToFillStatus.setHorizontalAlignment(SwingConstants.LEFT);
-        pendingToFillStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
+        pendingSellStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        pendingSellStatus.setForeground(BOTTOM_STATUS_ACCENT);
+        pendingSellStatus.setVerticalAlignment(SwingConstants.CENTER);
+        pendingSellStatus.setHorizontalAlignment(SwingConstants.LEFT);
+        pendingSellStatus.setBorder(new EmptyBorder(0, 0, 0, 0));
         cpuUsageStatus.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         cpuUsageStatus.setForeground(BOTTOM_STATUS_ACCENT);
         cpuUsageStatus.setVerticalAlignment(SwingConstants.CENTER);
@@ -2012,10 +2013,10 @@ public class TradingFrame extends JFrame {
                 availableFundsStatus,
                 marketValueStatus,
                 investedValueStatus,
-                baseBuyPendingStatus,
+                pendingBuyStatus,
                 gainingPositionsStatus,
                 losingPositionsStatus,
-                pendingToFillStatus,
+                pendingSellStatus,
                 compactStatusSummary,
                 statusDetailsButton,
                 statusRight,
@@ -7224,44 +7225,16 @@ public class TradingFrame extends JFrame {
                 .filter(s -> s.strategy.status() == StrategyStatus.ACTIVE)
                 .count();
         long inactive = Math.max(0L, totalCurrentStrategies - running);
-        // Compute gaining/losing P&L totals and pending-fill count in one pass.
-        BigDecimal gainingPnl = BigDecimal.ZERO;
-        long gainingCount = 0;
-        BigDecimal losingPnl = BigDecimal.ZERO;
-        long losingCount = 0;
-        long pendingToFillCount = 0;
-        for (ManagedStrategy s : strategies) {
-            if (!includeInCurrentStrategiesTab(s)) {
-                continue;
-            }
-            if (s.strategy.status() == StrategyStatus.ACTIVE) {
-                Position p = s.cachedPosition();
-                if (p.getTotalShares() > 0 && p.getLastPrice().compareTo(BigDecimal.ZERO) > 0) {
-                    int cmp = p.getLastPrice().compareTo(p.getAverageCost());
-                    if (cmp > 0) {
-                        gainingPnl = gainingPnl.add(p.unrealizedPnl());
-                        gainingCount++;
-                    } else if (cmp < 0) {
-                        losingPnl = losingPnl.add(p.unrealizedPnl());
-                        losingCount++;
-                    }
-                }
-                if (isWaitingForFill(s.strategy)) {
-                    pendingToFillCount++;
-                }
-            }
-        }
-        String gainingText = gainingCount == 0 ? "0"
-                : "+" + Monetary.round(gainingPnl).toPlainString() + " / " + gainingCount;
-        String losingText = losingCount == 0 ? "0"
-                : Monetary.round(losingPnl).toPlainString() + " / " + losingCount;
-        String pendingText = String.valueOf(pendingToFillCount);
+        // The portfolio bar totals the grid on screen: the selected workspace, or every stock on All Stocks.
+        List<ManagedStrategy> scopedStrategies = strategies.stream()
+                .filter(this::includeInCurrentStrategiesTab)
+                .filter(entry -> matchesPortfolioActionScope(entry.strategy, selectedViewMode, selectedWorkspaceId))
+                .toList();
+        SystemMetricsPresenter.PortfolioScopeMetrics scopeMetrics = systemMetricsPresenter.computePortfolioScopeMetrics(
+                scopedStrategies, strategyOrderRepository::findByStrategyId);
         MarketStatusPresenter.MarketStatusViewModel marketStatusViewModel = currentMarketStatusViewModel();
         String cpuText = formatCpuUsageText();
         String memoryText = formatMemoryUsageText();
-        String marketValueText = formatMarketValueText();
-        String investedValueText = formatInvestedValueText();
-        String baseBuyPendingTotalText = formatBaseBuyPendingTotalText();
         StrategyPollingService.PollCycleSnapshot pollSnapshot = strategyPollingService == null
                 ? null
                 : strategyPollingService.lastPollCycleSnapshot();
@@ -7279,15 +7252,11 @@ public class TradingFrame extends JFrame {
                         marketStatusViewModel.label(),
                         marketStatusViewModel.tooltip(),
                         marketStatusViewModel.openForUi(),
-                        marketValueText,
-                        investedValueText,
                         availableFundsText,
-                        baseBuyPendingTotalText,
                         cpuText,
                         memoryText,
-                        gainingText,
-                        losingText,
-                        pendingText
+                        selectedScopeLabel(),
+                        scopeMetrics
                 )
         );
         SwingUtilities.invokeLater(() -> {
@@ -7300,12 +7269,7 @@ public class TradingFrame extends JFrame {
             marketStatus.setForeground(statusToneColor(statusBarViewModel.marketTone()));
             marketStatus.setToolTipText(TooltipStyler.text(statusBarViewModel.marketTooltip()));
             availableFundsStatus.setText(statusBarViewModel.availableFundsText());
-            marketValueStatus.setText(statusBarViewModel.marketValueText());
-            investedValueStatus.setText(statusBarViewModel.investedValueText());
-            baseBuyPendingStatus.setText(statusBarViewModel.baseBuyPendingText());
-            gainingPositionsStatus.setText(statusBarViewModel.gainingPositionsText());
-            losingPositionsStatus.setText(statusBarViewModel.losingPositionsText());
-            pendingToFillStatus.setText(statusBarViewModel.pendingToFillText());
+            bottomStatusBars.applyPortfolioScope(statusBarViewModel.portfolioScope());
             cpuUsageStatus.setText(statusBarViewModel.cpuText());
             memoryUsageStatus.setText(statusBarViewModel.memoryText());
             statusBar.setText(statusBarViewModel.brokerText());
@@ -8300,10 +8264,14 @@ public class TradingFrame extends JFrame {
             return;
         }
         WorkspaceAccounting.Snapshot snapshot = computeWorkspaceSnapshot(selectedWorkspaceId);
-        String label = selectedWorkspaceId == null
+        workspaceSummaryLabel.setText(workspaceSummaryPresenter.summaryLine(selectedScopeLabel(), snapshot));
+    }
+
+    /** The selected grid's name: a workspace, or All Stocks. */
+    private String selectedScopeLabel() {
+        return selectedWorkspaceId == null
                 ? "All Stocks"
                 : workspaceService.findById(selectedWorkspaceId).map(StrategyWorkspace::name).orElse("Workspace");
-        workspaceSummaryLabel.setText(workspaceSummaryPresenter.summaryLine(label, snapshot));
     }
 
     // Opens the read-only risk dashboard: builds strategy-level risk analytics from cached
@@ -8615,22 +8583,6 @@ public class TradingFrame extends JFrame {
         };
     }
 
-
-    private String formatMarketValueText() {
-        return systemMetricsPresenter.formatMarketValueText(strategies, selectedViewMode);
-    }
-
-    private String formatInvestedValueText() {
-        return systemMetricsPresenter.formatInvestedValueText(strategies, selectedViewMode);
-    }
-
-    private String formatBaseBuyPendingTotalText() {
-        return systemMetricsPresenter.formatBaseBuyPendingTotalText(
-                strategies,
-                strategyOrderRepository::findByStrategyId,
-                selectedViewMode
-        );
-    }
 
     private int compareNumericCells(Object left, Object right) {
         BigDecimal leftValue = sortableNumericValue(left);
@@ -9193,6 +9145,7 @@ public class TradingFrame extends JFrame {
     }
 
     private final class ActionsRenderer extends JPanel implements TableCellRenderer {
+        private final JButton chartButton = new JButton();
         private final JButton editButton = new JButton();
         private final JButton toggleButton = new JButton();
         private final JButton sellButton = new JButton();
@@ -9203,21 +9156,25 @@ public class TradingFrame extends JFrame {
             super(new FlowLayout(FlowLayout.CENTER, StrategyGridActionLayout.BUTTON_GAP, 0));
             setOpaque(true);
             setBorder(new EmptyBorder(5, 0, 0, 0));
+            applyButtonIcon(chartButton, "icons/chart.svg", 13);
             applyButtonIcon(editButton, "icons/edit.svg", 12);
             applyButtonIcon(toggleButton, "icons/pause.svg", 13);
             applyButtonIcon(sellButton, "icons/sell-position.svg", 13);
             applyButtonIcon(promoteButton, "icons/add-stock-strategy.svg", 13);
             applyButtonIcon(deleteButton, "icons/delete.svg", 13);
+            styleIconOnlyActionButton(chartButton, new Color(38, 124, 128));
             styleIconOnlyActionButton(editButton, new Color(82, 101, 132));
             styleIconOnlyActionButton(toggleButton, new Color(180, 122, 42));
             styleIconOnlyActionButton(sellButton, new Color(71, 85, 105));
             styleIconOnlyActionButton(promoteButton, new Color(37, 99, 235));
             styleIconOnlyActionButton(deleteButton, new Color(148, 62, 78));
+            add(chartButton);
             add(editButton);
             add(toggleButton);
             add(sellButton);
             add(promoteButton);
             add(deleteButton);
+            setActionButtonSize(chartButton, StrategyGridActionLayout.ICON_BUTTON_WIDTH);
             setActionButtonSize(editButton, StrategyGridActionLayout.ICON_BUTTON_WIDTH);
             setActionButtonSize(toggleButton, StrategyGridActionLayout.ICON_BUTTON_WIDTH);
             setActionButtonSize(sellButton, StrategyGridActionLayout.ICON_BUTTON_WIDTH);
@@ -9231,6 +9188,7 @@ public class TradingFrame extends JFrame {
             ManagedStrategy strategy = strategies.get(modelRow);
             StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = actionViewModelFor(strategy);
             removeAll();
+            add(chartButton);
             add(editButton);
             add(toggleButton);
             add(sellButton);
@@ -9252,6 +9210,7 @@ public class TradingFrame extends JFrame {
             promoteButton.setEnabled(actionsViewModel.promoteEnabled());
             promoteButton.setVisible(actionsViewModel.promoteVisible());
             styleIconOnlyActionButton(promoteButton, actionsViewModel.promoteColor());
+            chartButton.setToolTipText(TooltipStyler.text(CHART_ACTION_TOOLTIP));
             editButton.setToolTipText(TooltipStyler.text("Edit strategy rules, limits, and settings."));
             toggleButton.setToolTipText(actionsViewModel.toggleEnabled()
                     ? TooltipStyler.text("Run the shown action for this strategy: " + actionsViewModel.toggleText() + ".")
@@ -9300,6 +9259,7 @@ public class TradingFrame extends JFrame {
         ManagedStrategy strategy = strategies.get(modelRow);
         StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = actionViewModelFor(strategy);
         return switch (actionAtMousePoint(viewRow, mouseX)) {
+            case CHART -> TooltipStyler.text(CHART_ACTION_TOOLTIP);
             case EDIT -> TooltipStyler.text("Edit strategy rules, limits, and settings.");
             case TOGGLE -> actionsViewModel.toggleEnabled()
                     ? TooltipStyler.text("Run the shown action for this strategy: " + actionsViewModel.toggleText() + ".")
@@ -9345,6 +9305,27 @@ public class TradingFrame extends JFrame {
         return row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD;
     }
 
+    private static final String CHART_ACTION_TOOLTIP =
+            "Open the price chart: moving averages, RSI, volume, MACD and this strategy's own levels, "
+                    + "with a plain-language guide to each part.";
+
+    /** Opens the stock chart for a grid row, with that strategy's levels drawn on it. */
+    private void openStockChart(int viewRow) {
+        if (viewRow < 0 || viewRow >= strategyTable.getRowCount()) {
+            return;
+        }
+        ManagedStrategy entry = strategies.get(strategyTable.convertRowIndexToModel(viewRow));
+        String workspaceId = entry.strategy.workspaceId();
+        String workspace = workspaceId == null || workspaceId.isBlank()
+                ? "All Stocks"
+                : workspaceService.findById(workspaceId).map(StrategyWorkspace::name).orElse("All Stocks");
+        String context = workspace + "  ·  " + (entry.strategy.mode() == StrategyMode.LIVE ? "Live" : "Paper");
+        StockChartOpener.open(this, entry, context,
+                () -> connectionOk && !runtimeApiKey.isBlank()
+                        ? new HttpAlpacaMarketDataApi(runtimeApiKey, runtimeApiSecret)
+                        : null);
+    }
+
     private boolean maybeShowStrategyGridCopyPopup(MouseEvent event) {
         if (!event.isPopupTrigger() && event.getButton() != MouseEvent.BUTTON3) {
             return false;
@@ -9375,7 +9356,8 @@ public class TradingFrame extends JFrame {
                 this::rowCanRepositionFromHistory,
                 () -> strategyWorkspaceTabs != null && strategyWorkspaceTabs.isHistorySelected(),
                 () -> workspaceService.activeWorkspaces(selectedViewMode),
-                this::assignStrategyRowToWorkspace
+                this::assignStrategyRowToWorkspace,
+                this::openStockChart
         ).show(event);
         return true;
     }

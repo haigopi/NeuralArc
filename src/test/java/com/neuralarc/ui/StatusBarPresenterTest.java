@@ -2,6 +2,8 @@ package com.neuralarc.ui;
 
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class StatusBarPresenterTest {
@@ -9,52 +11,17 @@ class StatusBarPresenterTest {
 
     @Test
     void pollSummaryShowsClosedWhenSuppressed() {
-        StatusBarPresenter.StatusBarViewModel vm = presenter.present(new StatusBarPresenter.StatusBarState(
-                1,
-                0,
-                true,
-                true,
-                0,
-                0,
-                3,
-                false,
-                true,
-                "Market: Closed",
-                "tooltip",
-                false,
-                "Market Value: 0",
-                "Invested Value: 0",
-                "Funds Available: -",
-                "Base Buy Pending Total: 0",
-                "CPU: -",
-                "Memory: 1 MB",
-                "0", "0", "0"
-        ));
+        StatusBarPresenter.StatusBarViewModel vm = presenter.present(state(1, 0, true, true, 3, false, true,
+                "Market: Closed", false, "Funds Available: -", "CPU: -", "Memory: 1 MB", "All Stocks", emptyMetrics()));
+
+        assertEquals("Paused for market close", vm.pollingText());
+        assertEquals(StatusBarPresenter.Tone.MUTED, vm.pollingTone());
     }
 
     @Test
     void brokerStatusShowsRetryingWhenConnectionRetryPending() {
-        StatusBarPresenter.StatusBarViewModel vm = presenter.present(new StatusBarPresenter.StatusBarState(
-                0,
-                1,
-                false,
-                false,
-                0,
-                0,
-                4,
-                true,
-                false,
-                "Market: Open (Regular)",
-                "tooltip",
-                true,
-                "Market Value: 0",
-                "Invested Value: 0",
-                "Funds Available: -",
-                "Base Buy Pending Total: 0",
-                "CPU: -",
-                "Memory: 1 MB",
-                "0", "0", "0"
-        ));
+        StatusBarPresenter.StatusBarViewModel vm = presenter.present(state(0, 1, false, false, 4, true, false,
+                "Market: Open (Regular)", true, "Funds Available: -", "CPU: -", "Memory: 1 MB", "All Stocks", emptyMetrics()));
 
         assertEquals("<html><b>FAILED</b> Retrying...</html>", vm.brokerText());
         assertEquals(StatusBarPresenter.Tone.ERR, vm.brokerTone());
@@ -62,27 +29,8 @@ class StatusBarPresenterTest {
 
     @Test
     void brokerStatusShowsConnectedWithoutActiveStrategies() {
-        StatusBarPresenter.StatusBarViewModel vm = presenter.present(new StatusBarPresenter.StatusBarState(
-                0,
-                2,
-                false,
-                false,
-                0,
-                0,
-                5,
-                false,
-                true,
-                "Market: Open (Regular)",
-                "tooltip",
-                true,
-                "Market Value: 0",
-                "Invested Value: 0",
-                "Funds Available: -",
-                "Base Buy Pending Total: 0",
-                "CPU: -",
-                "Memory: 1 MB",
-                "0", "0", "0"
-        ));
+        StatusBarPresenter.StatusBarViewModel vm = presenter.present(state(0, 2, false, false, 5, false, true,
+                "Market: Open (Regular)", true, "Funds Available: -", "CPU: -", "Memory: 1 MB", "All Stocks", emptyMetrics()));
 
         assertEquals("Connected (No active)", vm.brokerText());
         assertEquals("Strategies 2  Active 0  Inactive 2  History 5", vm.strategyCountText());
@@ -91,38 +39,33 @@ class StatusBarPresenterTest {
 
     @Test
     void normalizesStatusBarValuesForItemLayout() {
-        StatusBarPresenter.StatusBarViewModel vm = presenter.present(new StatusBarPresenter.StatusBarState(
-                1,
-                1,
-                true,
-                false,
-                0,
-                0,
-                5,
-                false,
-                true,
-                "Market: Open (Regular)",
-                "tooltip",
-                true,
-                "Market Value: $1200",
-                "Invested Value: $900",
-                "Funds Available: $1000",
-                "Base Buy Pending Total: $500",
-                "CPU: 12%",
-                "Memory: 256 MB",
-                "+300.00 / 3", "-100.00 / 1", "2"
-        ));
+        StatusBarPresenter.StatusBarViewModel vm = presenter.present(state(1, 1, true, false, 5, false, true,
+                "Market: Open (Regular)", true, "Funds Available: $1000", "CPU: 12%", "Memory: 256 MB", "All Stocks",
+                emptyMetrics()));
 
         assertEquals("Open (Regular)", vm.marketText());
-        assertEquals("$1200", vm.marketValueText());
-        assertEquals("$900", vm.investedValueText());
         assertEquals("$1000", vm.availableFundsText());
-        assertEquals("$500", vm.baseBuyPendingText());
         assertEquals("12%", vm.cpuText());
         assertEquals("256 MB", vm.memoryText());
-        assertEquals("+300.00 / 3", vm.gainingPositionsText());
-        assertEquals("-100.00 / 1", vm.losingPositionsText());
-        assertEquals("2", vm.pendingToFillText());
+    }
+
+    @Test
+    void portfolioFiguresAreThoseOfTheSelectedGrid() {
+        SystemMetricsPresenter.PortfolioScopeMetrics metrics = new SystemMetricsPresenter.PortfolioScopeMetrics(
+                new BigDecimal("1200.00"), new BigDecimal("900.00"), new BigDecimal("500.00"),
+                new BigDecimal("300.00"), 3, new BigDecimal("-100.00"), 1, 2, 1);
+
+        PortfolioScopePresenter.PortfolioScopeView scope = presenter.present(state(1, 1, true, false, 5, false, true,
+                "Market: Open (Regular)", true, "Funds Available: $1000", "CPU: 12%", "Memory: 256 MB", "Growth",
+                metrics)).portfolioScope();
+
+        assertEquals("Growth", scope.scopeLabel());
+        assertEquals("$1,200.00", scope.marketValue().text());
+        assertEquals("$900.00 vs $500.00  (Total $1,400.00)", scope.investedVsUpcoming().text());
+        assertEquals("3 · +$300.00", scope.gaining().text());
+        assertEquals("1 · -$100.00", scope.losing().text());
+        assertEquals("2", scope.pendingBuy().text());
+        assertEquals("1", scope.pendingSell().text());
     }
 
     @Test
@@ -132,5 +75,30 @@ class StatusBarPresenterTest {
         assertEquals(StatusBarPresenter.NETWORK_ICON_PATH, vm.iconPath());
         assertEquals(StatusBarPresenter.Tone.ERR, vm.tone());
         assertEquals(true, vm.blink());
+    }
+
+    static SystemMetricsPresenter.PortfolioScopeMetrics emptyMetrics() {
+        return new SystemMetricsPresenter().computePortfolioScopeMetrics(null, null);
+    }
+
+    private static StatusBarPresenter.StatusBarState state(
+            long running,
+            long inactive,
+            boolean pollEvaluated,
+            boolean pollSuppressed,
+            long historyRows,
+            boolean retryPending,
+            boolean connectionOk,
+            String marketLabel,
+            boolean marketOpen,
+            String fundsText,
+            String cpuText,
+            String memoryText,
+            String scopeLabel,
+            SystemMetricsPresenter.PortfolioScopeMetrics metrics
+    ) {
+        return new StatusBarPresenter.StatusBarState(running, inactive, pollEvaluated, pollSuppressed, 0, 0, historyRows,
+                retryPending, connectionOk, marketLabel, "tooltip", marketOpen, fundsText, cpuText, memoryText,
+                scopeLabel, metrics);
     }
 }

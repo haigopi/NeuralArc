@@ -30,6 +30,16 @@ class StrategyServiceTest {
     }
 
     @Test
+    void mapOrderStatusTreatsStreamFillAsFilled() {
+        assertEquals(StrategyOrderStatus.FILLED, StrategyService.mapOrderStatus("fill"));
+    }
+
+    @Test
+    void mapOrderStatusTreatsStreamPartialFillAsPartiallyFilled() {
+        assertEquals(StrategyOrderStatus.PARTIALLY_FILLED, StrategyService.mapOrderStatus("partial_fill"));
+    }
+
+    @Test
     void strategyValidationFailsForEmptySymbol() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

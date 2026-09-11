@@ -1,10 +1,8 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.Position;
-import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyOrder;
 import com.neuralarc.model.StrategyOrderSide;
-import com.neuralarc.model.StrategyStage;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.util.Monetary;
 
@@ -15,77 +13,117 @@ import java.util.Locale;
 import java.util.function.Function;
 
 /**
- * Pure presenter — formats CPU, memory, and market-value display strings
- * without accessing any Swing components or broker I/O.
+ * Pure presenter — formats CPU and memory display strings and totals the portfolio figures of a
+ * grid scope, without accessing any Swing components or broker I/O.
  */
 public final class SystemMetricsPresenter {
 
-    public String formatMarketValueText(List<ManagedStrategy> strategies) {
-        return formatMarketValueText(strategies, null);
-    }
-
-    public String formatMarketValueText(List<ManagedStrategy> strategies, StrategyMode mode) {
-        BigDecimal total = BigDecimal.ZERO;
-        for (ManagedStrategy strategy : strategies) {
-            if (shouldSkipStrategy(strategy, mode)) {
-                continue;
-            }
-            total = total.add(strategy.cachedPosition().marketValue());
-        }
-        return "Market Value: " + Monetary.round(total).toPlainString();
-    }
-
-    public String formatInvestedValueText(List<ManagedStrategy> strategies) {
-        return formatInvestedValueText(strategies, null);
-    }
-
-    public String formatInvestedValueText(List<ManagedStrategy> strategies, StrategyMode mode) {
-        BigDecimal total = BigDecimal.ZERO;
-        for (ManagedStrategy strategy : strategies) {
-            if (shouldSkipStrategy(strategy, mode)) {
-                continue;
-            }
-            Position position = strategy.cachedPosition();
-            if (position.getTotalShares() <= 0) {
-                continue;
-            }
-            total = total.add(position.totalInvested());
-        }
-        return "Invested Value: " + Monetary.round(total).toPlainString();
-    }
-
-    public String formatBaseBuyPendingTotalText(
-            List<ManagedStrategy> strategies,
-            Function<String, List<StrategyOrder>> ordersByStrategyId,
-            StrategyMode mode
+    public record PortfolioScopeMetrics(
+            BigDecimal marketValue,
+            BigDecimal investedValue,
+            BigDecimal upcomingBuyTotal,
+            BigDecimal gainingPnl,
+            int gainingCount,
+            BigDecimal losingPnl,
+            int losingCount,
+            int pendingBuyPositions,
+            int pendingSellPositions
     ) {
-        BigDecimal total = BigDecimal.ZERO;
-        for (ManagedStrategy strategy : strategies) {
-            if (shouldSkipStrategy(strategy, mode)) {
+    }
+
+    /**
+     * Totals one grid scope. The caller passes only the rows of that scope (mode and workspace).
+     * Gaining and losing count every held position, running or paused, since a paused position still
+     * moves with the market. A position counts once as pending buy or pending sell however many of
+     * its orders are working; upcoming buys are valued at the limit price, or at the last price for
+     * a market order.
+     */
+    public PortfolioScopeMetrics computePortfolioScopeMetrics(
+            List<ManagedStrategy> strategies,
+            Function<String, List<StrategyOrder>> ordersByStrategyId
+    ) {
+        BigDecimal marketValue = BigDecimal.ZERO;
+        BigDecimal investedValue = BigDecimal.ZERO;
+        BigDecimal upcomingBuyTotal = BigDecimal.ZERO;
+        BigDecimal gainingPnl = BigDecimal.ZERO;
+        int gainingCount = 0;
+        BigDecimal losingPnl = BigDecimal.ZERO;
+        int losingCount = 0;
+        int pendingBuyPositions = 0;
+        int pendingSellPositions = 0;
+        if (strategies == null) {
+            return new PortfolioScopeMetrics(
+                    marketValue,
+                    investedValue,
+                    upcomingBuyTotal,
+                    gainingPnl,
+                    gainingCount,
+                    losingPnl,
+                    losingCount,
+                    pendingBuyPositions,
+                    pendingSellPositions
+            );
+        }
+        for (ManagedStrategy managed : strategies) {
+            if (managed == null || managed.strategy == null || managed.strategy.status() == StrategyStatus.COMPLETED) {
                 continue;
             }
-            List<StrategyOrder> orders = ordersByStrategyId.apply(strategy.strategy.id());
+            Position position = managed.cachedPosition();
+            marketValue = marketValue.add(position.marketValue());
+            if (position.getTotalShares() > 0) {
+                investedValue = investedValue.add(position.totalInvested());
+            }
+            if (position.getTotalShares() > 0 && position.getLastPrice().compareTo(BigDecimal.ZERO) > 0) {
+                int trend = position.getLastPrice().compareTo(position.getAverageCost());
+                if (trend > 0) {
+                    gainingPnl = gainingPnl.add(position.unrealizedPnl());
+                    gainingCount++;
+                } else if (trend < 0) {
+                    losingPnl = losingPnl.add(position.unrealizedPnl());
+                    losingCount++;
+                }
+            }
+            boolean hasPendingBuy = false;
+            boolean hasPendingSell = false;
+            List<StrategyOrder> orders = ordersByStrategyId == null
+                    ? List.of()
+                    : ordersByStrategyId.apply(managed.strategy.id());
             for (StrategyOrder order : orders) {
-                if (order.stage() != StrategyStage.BASE_BUY
-                        || order.side() != StrategyOrderSide.BUY
-                        || !order.isPending()) {
+                if (order == null || !order.isPending()) {
                     continue;
                 }
                 BigDecimal remainingQuantity = order.requestedQuantity().subtract(order.filledQuantity());
                 if (remainingQuantity.compareTo(BigDecimal.ZERO) <= 0) {
                     continue;
                 }
-                total = total.add(order.limitPrice().multiply(remainingQuantity));
+                if (order.side() == StrategyOrderSide.BUY) {
+                    hasPendingBuy = true;
+                    BigDecimal price = order.limitPrice().compareTo(BigDecimal.ZERO) > 0
+                            ? order.limitPrice()
+                            : position.getLastPrice();
+                    upcomingBuyTotal = upcomingBuyTotal.add(price.multiply(remainingQuantity));
+                } else if (order.side() == StrategyOrderSide.SELL) {
+                    hasPendingSell = true;
+                }
+            }
+            if (hasPendingBuy) {
+                pendingBuyPositions++;
+            }
+            if (hasPendingSell) {
+                pendingSellPositions++;
             }
         }
-        return "Base Buy Pending Total: " + Monetary.round(total).toPlainString();
-    }
-
-    private boolean shouldSkipStrategy(ManagedStrategy strategy, StrategyMode mode) {
-        return strategy == null
-                || strategy.strategy == null
-                || strategy.strategy.status() == StrategyStatus.COMPLETED
-                || (mode != null && strategy.strategy.mode() != mode);
+        return new PortfolioScopeMetrics(
+                Monetary.round(marketValue),
+                Monetary.round(investedValue),
+                Monetary.round(upcomingBuyTotal),
+                Monetary.round(gainingPnl),
+                gainingCount,
+                Monetary.round(losingPnl),
+                losingCount,
+                pendingBuyPositions,
+                pendingSellPositions
+        );
     }
 
     public String formatCpuUsageText() {

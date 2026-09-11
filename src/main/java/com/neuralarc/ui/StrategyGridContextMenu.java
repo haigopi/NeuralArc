@@ -36,6 +36,7 @@ final class StrategyGridContextMenu {
     private final Supplier<List<StrategyWorkspace>> workspacesProvider;
     // (workspaceId, viewRow) — workspaceId is null to move the row back to All Stocks (unassigned).
     private final ObjIntConsumer<String> assignToWorkspaceHandler;
+    private final IntConsumer openChartHandler;
 
     StrategyGridContextMenu(
             JTable table,
@@ -56,7 +57,8 @@ final class StrategyGridContextMenu {
             IntPredicate repositionFromHistoryEnabled,
             Supplier<Boolean> historyTabSelected,
             Supplier<List<StrategyWorkspace>> workspacesProvider,
-            ObjIntConsumer<String> assignToWorkspaceHandler
+            ObjIntConsumer<String> assignToWorkspaceHandler,
+            IntConsumer openChartHandler
     ) {
         this.table = table;
         this.menuFont = menuFont;
@@ -77,6 +79,7 @@ final class StrategyGridContextMenu {
         this.historyTabSelected = historyTabSelected;
         this.workspacesProvider = workspacesProvider;
         this.assignToWorkspaceHandler = assignToWorkspaceHandler;
+        this.openChartHandler = openChartHandler;
     }
 
     boolean show(MouseEvent event) {
@@ -92,6 +95,10 @@ final class StrategyGridContextMenu {
         table.setColumnSelectionInterval(viewCol, viewCol);
 
         JPopupMenu popup = new JPopupMenu();
+        if (openChartHandler != null) {
+            popup.add(openChartItem(viewRow));
+            popup.addSeparator();
+        }
         popup.add(copyMenu(viewRow, viewCol));
         popup.add(positionMenu(viewRow));
         JMenu workspaceMenu = workspaceMenu(viewRow);
@@ -181,6 +188,13 @@ final class StrategyGridContextMenu {
             position.add(cancelBuy);
         }
         return position;
+    }
+
+    /** Opens the row's stock chart, with the strategy's own levels drawn on it. */
+    JMenuItem openChartItem(int viewRow) {
+        JMenuItem open = item("Open Chart");
+        open.addActionListener(event -> openChartHandler.accept(viewRow));
+        return open;
     }
 
     private JMenuItem item(String label) {
