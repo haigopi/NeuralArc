@@ -84,7 +84,8 @@ public class HelpDialog extends JDialog {
             "- Average Down Losing Positions lists every losing open position in the current workspace scope and submits one manual buy order for each one you keep ticked.\n" +
             "- From a workspace tab, only that workspace is included. From the All tab, all visible workspaces are included and a Workspace column is shown.\n" +
             "- Untick any position to leave it out; Select all and Clear change the whole list at once. Each row previews the buy quantity and price the plan will submit.\n" +
-            "- Greyed positions cannot take a buy right now, for example while a limit sell is working; the Note column says why. Cancel the sell to make it selectable.\n" +
+            "- A position whose target sell is working can be averaged down. When the buy fills, that sell is cancelled, confirmed with the broker, and re-placed for the full new share count, repriced by the same profit margin over the new average cost.\n" +
+            "- Greyed positions cannot take a buy right now, for example while a manual or loss-exit sell is working; the Note column says why. Cancel that sell to make the position selectable.\n" +
             "- Patient average-down places limit buys below each position's cached market price by your selected pullback percent.\n" +
             "- Immediate average-down sends market buys, prioritizing execution while accepting that the final fill can move.\n" +
             "- Double-down size buys the same share count already held for each symbol; Controlled add uses one fixed quantity per symbol.\n\n" +

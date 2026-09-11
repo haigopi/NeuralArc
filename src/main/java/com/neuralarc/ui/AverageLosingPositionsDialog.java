@@ -235,7 +235,9 @@ final class AverageLosingPositionsDialog {
         scroll.setPreferredSize(new Dimension(0, table.getRowHeight() * VISIBLE_ROWS + 26));
         section.add(scroll, BorderLayout.CENTER);
         section.add(description("Every losing position in scope is listed. Untick any you want to leave out. "
-                + "Greyed rows cannot take a buy right now; the Note says why.", PROSE_WIDTH), BorderLayout.SOUTH);
+                + "Where a target sell is working, it is resized to your new share count and repriced from the "
+                + "new average once the buy fills. Greyed rows cannot take a buy right now; the Note says why.",
+                PROSE_WIDTH), BorderLayout.SOUTH);
         return section;
     }
 
@@ -462,7 +464,7 @@ final class AverageLosingPositionsDialog {
                     setForeground(table.getForeground());
                 }
             }
-            setToolTipText("Note".equals(name) && !candidate.lockReason().isEmpty() ? candidate.lockReason() : null);
+            setToolTipText("Note".equals(name) && !candidate.note().isEmpty() ? candidate.note() : null);
             return this;
         }
     }

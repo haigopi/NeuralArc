@@ -172,7 +172,7 @@ final class AverageDownTableModel extends AbstractTableModel {
             case "P&L" -> signedMoney(row.unrealizedPnl()) + " (" + row.pnlPercent().toPlainString() + "%)";
             case "Buy Qty" -> row.selectable() ? String.valueOf(plan.quantityFor(row.position())) : "–";
             case "Buy At" -> row.selectable() ? buyAt(row) : "–";
-            case "Note" -> row.lockReason();
+            case "Note" -> row.note();
             default -> "";
         };
     }

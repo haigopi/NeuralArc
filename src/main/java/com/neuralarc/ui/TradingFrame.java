@@ -5899,7 +5899,11 @@ public class TradingFrame extends JFrame {
                 .max(Comparator
                         .comparing(StrategyOrder::updatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())))
-                .map(order -> new StrategyTablePresenter.PendingOrderSummary(order.limitPrice(), order.requestedQuantity()))
+                .map(order -> new StrategyTablePresenter.PendingOrderSummary(
+                        order.limitPrice(),
+                        order.requestedQuantity(),
+                        false,
+                        order.stage() == com.neuralarc.model.StrategyStage.TARGET_SELL))
                 .orElse(null);
     }
 

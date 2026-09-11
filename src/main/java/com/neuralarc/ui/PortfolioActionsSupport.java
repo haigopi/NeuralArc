@@ -349,7 +349,8 @@ final class PortfolioActionsSupport {
         AVERAGE_LOSING_POSITIONS("Average Down Losing Positions") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                if (!PortfolioActionMatchers.isEligibleForManualSell(entry)) {
+                if (!PortfolioActionMatchers.isEligibleForManualSell(entry)
+                        && !PortfolioActionMatchers.isAverageDownIntoTargetSell(entry)) {
                     return false;
                 }
                 Position position = entry.cachedPosition();

@@ -35,6 +35,16 @@ final class AverageDownCandidates {
             return lockReason.isEmpty();
         }
 
+        /** Why a row is locked, or what will happen to a selectable row's working target sell. */
+        String note() {
+            if (!selectable()) {
+                return lockReason;
+            }
+            return PortfolioActionMatchers.isAverageDownIntoTargetSell(entry)
+                    ? "Target sell resizes and reprices after the buy fills"
+                    : "";
+        }
+
         String strategyId() {
             return entry.strategy.id();
         }
@@ -115,7 +125,7 @@ final class AverageDownCandidates {
     static String lockReason(ManagedStrategy entry) {
         StrategyLifecycleState state = entry.strategy.currentState();
         if (state == StrategyLifecycleState.SELL_PLACED) {
-            return "Limit sell working – cancel it to average down";
+            return "Exit sell working – cancel it to average down";
         }
         if (state == StrategyLifecycleState.SELL_PARTIALLY_FILLED) {
             return "Exit in progress – sell partially filled";

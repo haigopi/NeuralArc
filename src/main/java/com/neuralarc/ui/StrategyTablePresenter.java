@@ -1011,9 +1011,17 @@ public final class StrategyTablePresenter {
         public static final DayPrices EMPTY = new DayPrices(null, null, null, null);
     }
 
-    public record PendingOrderSummary(BigDecimal limitPrice, BigDecimal quantity, boolean manualBuy) {
+    /**
+     * @param targetSell whether this pending sell is the strategy's own profit target. Averaging down is
+     *                   allowed while one works, because the engine resizes and reprices it afterwards.
+     */
+    public record PendingOrderSummary(BigDecimal limitPrice, BigDecimal quantity, boolean manualBuy, boolean targetSell) {
         public PendingOrderSummary(BigDecimal limitPrice, BigDecimal quantity) {
-            this(limitPrice, quantity, false);
+            this(limitPrice, quantity, false, false);
+        }
+
+        public PendingOrderSummary(BigDecimal limitPrice, BigDecimal quantity, boolean manualBuy) {
+            this(limitPrice, quantity, manualBuy, false);
         }
 
         public PendingOrderSummary {

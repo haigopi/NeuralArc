@@ -103,6 +103,27 @@ final class PortfolioActionMatchers {
                 && state != StrategyLifecycleState.SELL_PARTIALLY_FILLED;
     }
 
+    /**
+     * A position whose working exit is the strategy's own target sell. Buying into it is safe: once
+     * the buy fills, the engine resizes that sell to the new share count and reprices it from the new
+     * average cost. Any other working exit — a manual, loss or close-position sell — is a deliberate
+     * exit in progress and still blocks a buy.
+     */
+    static boolean isAverageDownIntoTargetSell(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return false;
+        }
+        StrategyStatus status = entry.strategy.status();
+        if (status != StrategyStatus.ACTIVE && status != StrategyStatus.PAUSED) {
+            return false;
+        }
+        if (entry.strategy.currentState() != StrategyLifecycleState.SELL_PLACED) {
+            return false;
+        }
+        StrategyTablePresenter.PendingOrderSummary sell = entry.cachedPendingLimitSell();
+        return sell != null && sell.targetSell();
+    }
+
     static boolean isCanceledSellState(ManagedStrategy entry) {
         if (entry == null || entry.strategy == null) {
             return false;

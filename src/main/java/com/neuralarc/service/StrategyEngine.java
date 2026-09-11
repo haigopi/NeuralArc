@@ -1,6 +1,7 @@
 package com.neuralarc.service;
 
 import com.neuralarc.api.AlpacaClient;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.api.AlpacaOrderData;
 import com.neuralarc.api.AlpacaPositionData;
 import com.neuralarc.model.*;
@@ -715,6 +716,7 @@ public class StrategyEngine {
             StrategyStage stage,
             BigDecimal quantity,
             BigDecimal limitPrice,
+            TimeInForce timeInForce,
             StrategyLifecycleState lifecycleState,
             String message,
             StrategyEventType eventType
@@ -727,7 +729,9 @@ public class StrategyEngine {
             return null;
         }
         String clientOrderId = StrategyService.buildClientOrderId(strategy, stage, workspaceCodeResolver);
-        AlpacaOrderData submitted = alpacaClient.submitLimitSellOrder(strategy.symbol(), requestedQuantity, limitPrice, clientOrderId);
+        TimeInForce effectiveTimeInForce = timeInForce == null ? TimeInForce.DAY : timeInForce;
+        AlpacaOrderData submitted = alpacaClient.submitLimitSellOrder(
+                strategy.symbol(), requestedQuantity, limitPrice, clientOrderId, effectiveTimeInForce);
         Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
         StrategyOrder order = new StrategyOrder(
                 UUID.randomUUID().toString(),
@@ -747,7 +751,8 @@ public class StrategyEngine {
                 submittedAt,
                 Instant.now(),
                 null,
-                submitted.rawJson()
+                submitted.rawJson(),
+                effectiveTimeInForce
         );
         if (order.status() == StrategyOrderStatus.REJECTED || order.status() == StrategyOrderStatus.FAILED) {
             orderRepository.save(order);
