@@ -13,6 +13,7 @@ import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyOrder;
 import com.neuralarc.model.StrategyStage;
 import com.neuralarc.model.ThresholdType;
+import com.neuralarc.model.TimeInForce;
 import com.neuralarc.model.TrailingType;
 import com.neuralarc.util.Monetary;
 
@@ -30,6 +31,7 @@ final class StrategyProfitControlEvaluator {
     private final AlpacaClient alpacaClient;
     private final SellOrderSubmitter sellOrderSubmitter;
     private final TrailingStopSubmitter trailingStopSubmitter;
+    private final ExitOrderCanceller exitOrderCanceller;
 
     StrategyProfitControlEvaluator(
             StrategyRepository strategyRepository,
@@ -45,6 +47,7 @@ final class StrategyProfitControlEvaluator {
         this.alpacaClient = alpacaClient;
         this.sellOrderSubmitter = sellOrderSubmitter;
         this.trailingStopSubmitter = trailingStopSubmitter;
+        this.exitOrderCanceller = new ExitOrderCanceller(alpacaClient, orderRepository);
     }
 
     void evaluate(Strategy strategy, AlpacaPositionData position, BigDecimal latestPrice, List<StrategyOrder> orders,
@@ -80,9 +83,8 @@ final class StrategyProfitControlEvaluator {
             return;
         }
         if (decision == BrokerManagedExitOrderDecision.REPLACE_AND_SUBMIT_NOW) {
-            sellOrderSubmitter.submit(strategy, StrategyStage.TARGET_SELL, expectedQuantity, latestPrice,
-                    StrategyLifecycleState.SELL_PLACED, "Sell trigger order replaced after position update",
-                    StrategyEventType.ORDER_SUBMITTED);
+            submitReplacementTargetSell(strategy, position, orders, expectedQuantity,
+                    "Sell trigger order replaced after position update", outcomes);
             return;
         }
         if (hasPendingOrFilledExitOrder(orders, StrategyStage.TARGET_SELL)
@@ -92,9 +94,8 @@ final class StrategyProfitControlEvaluator {
         }
         if (shouldRecoverMissingBrokerManagedExitOrder(strategy)) {
             logRule(strategy, "SELL_TRIGGER", "RECOVERED", "Missing broker sell order detected; placing replacement", outcomes);
-            sellOrderSubmitter.submit(strategy, StrategyStage.TARGET_SELL, expectedQuantity, latestPrice,
-                    StrategyLifecycleState.SELL_PLACED, "Sell trigger order restored after missing broker order",
-                    StrategyEventType.ORDER_SUBMITTED);
+            submitReplacementTargetSell(strategy, position, orders, expectedQuantity,
+                    "Sell trigger order restored after missing broker order", outcomes);
             return;
         }
         if (latestPrice.compareTo(strategy.targetSellPrice()) < 0) {
@@ -205,10 +206,8 @@ final class StrategyProfitControlEvaluator {
                             "Broker trailing stop order replaced after position update",
                             StrategyEventType.ORDER_SUBMITTED);
                 } else {
-                    sellOrderSubmitter.submit(strategy, StrategyStage.TARGET_SELL, expectedQuantity, latestPrice,
-                            StrategyLifecycleState.SELL_PLACED,
-                            "Target sell order replaced after position update",
-                            StrategyEventType.ORDER_SUBMITTED);
+                    submitReplacementTargetSell(strategy, position, orders, expectedQuantity,
+                            "Target sell order replaced after position update", outcomes);
                 }
                 return;
             }
@@ -221,10 +220,8 @@ final class StrategyProfitControlEvaluator {
                             "Broker trailing stop restored after missing broker order",
                             StrategyEventType.ORDER_SUBMITTED);
                 } else {
-                    sellOrderSubmitter.submit(strategy, StrategyStage.TARGET_SELL, expectedQuantity, latestPrice,
-                            StrategyLifecycleState.SELL_PLACED,
-                            "Target sell restored after missing broker order",
-                            StrategyEventType.ORDER_SUBMITTED);
+                    submitReplacementTargetSell(strategy, position, orders, expectedQuantity,
+                            "Target sell restored after missing broker order", outcomes);
                 }
                 return;
             }
@@ -377,7 +374,17 @@ final class StrategyProfitControlEvaluator {
                     "Position size changed; replacing broker sell order from qty="
                             + pendingExitOrder.requestedQuantity().toPlainString()
                             + " to qty=" + expectedQuantity.toPlainString(), outcomes);
-            cancelBrokerManagedExitOrders(strategy, orders);
+            ExitOrderCanceller.Outcome outcome = cancelForReplacement(strategy, orders);
+            if (outcome == ExitOrderCanceller.Outcome.FILLED) {
+                logRule(strategy, ruleName, "FILL_DETECTED",
+                        "Sell filled before the cancel took effect; recording the fill instead of replacing it", outcomes);
+                return BrokerManagedExitOrderDecision.PRESENT;
+            }
+            if (outcome == ExitOrderCanceller.Outcome.STILL_WORKING) {
+                logRule(strategy, ruleName, "REPLACE_DEFERRED",
+                        "Broker has not confirmed the cancel yet; replacing on a later poll", outcomes);
+                return BrokerManagedExitOrderDecision.PRESENT;
+            }
             return BrokerManagedExitOrderDecision.REPLACE_AND_SUBMIT_NOW;
         }
 
@@ -416,6 +423,69 @@ final class StrategyProfitControlEvaluator {
 
         logRule(strategy, ruleName, "SKIPPED", "Existing pending exit order already present", outcomes);
         return BrokerManagedExitOrderDecision.PRESENT;
+    }
+
+    /**
+     * Cancels the working exit orders ahead of a replacement and reports what the broker confirmed.
+     * A replacement is only safe once every one of them is confirmed gone: if one filled during the
+     * cancel, that fill is recorded instead; if one has not settled, the replacement waits a poll.
+     */
+    private ExitOrderCanceller.Outcome cancelForReplacement(Strategy strategy, List<StrategyOrder> orders) {
+        boolean filled = false;
+        boolean stillWorking = false;
+        for (StrategyOrder order : orders) {
+            if (!order.isPending() || !isBrokerManagedExitStage(order.stage())) {
+                continue;
+            }
+            ExitOrderCanceller.Outcome outcome = exitOrderCanceller.cancelAndConfirm(order);
+            filled |= outcome == ExitOrderCanceller.Outcome.FILLED;
+            stillWorking |= outcome == ExitOrderCanceller.Outcome.STILL_WORKING;
+        }
+        if (filled) {
+            return ExitOrderCanceller.Outcome.FILLED;
+        }
+        if (stillWorking) {
+            return ExitOrderCanceller.Outcome.STILL_WORKING;
+        }
+        // Broker-managed sells the local records do not know about would reserve the same shares.
+        for (AlpacaOrderData remote : alpacaClient.getOpenOrders(strategy.symbol())) {
+            if ("sell".equalsIgnoreCase(remote.side()) && isBrokerManagedClientOrderId(remote.clientOrderId())) {
+                alpacaClient.cancelOrder(remote.orderId());
+            }
+        }
+        stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.ORDER_STATUS_UPDATED,
+                "Broker-managed profit sell order canceled for replacement", "{}");
+        return ExitOrderCanceller.Outcome.CANCELED;
+    }
+
+    /**
+     * Places a target sell that replaces or restores an earlier one, priced by {@link TargetSellPricing}
+     * rather than at the market. When an average-down explains the new share count, the strategy's own
+     * target moves by the same factor so the grid and the working order agree.
+     */
+    private void submitReplacementTargetSell(
+            Strategy strategy,
+            AlpacaPositionData position,
+            List<StrategyOrder> orders,
+            BigDecimal quantity,
+            String message,
+            List<StrategyEngine.RuleOutcome> outcomes
+    ) {
+        StrategyOrder previous = TargetSellPricing.latestUnfilledTargetSell(orders);
+        TargetSellPricing.Replacement replacement = TargetSellPricing.forReplacement(strategy, previous, position, orders);
+        String detail = message + " at $" + replacement.limitPrice().toPlainString()
+                + " (" + replacement.timeInForce().name() + ")";
+        if (replacement.repriced()) {
+            BigDecimal previousTarget = strategy.targetSellPrice();
+            BigDecimal newTarget = Monetary.round(previousTarget.multiply(replacement.rescaleFactor()));
+            strategy.setTargetSellPrice(newTarget);
+            strategyRepository.save(strategy);
+            detail += "; target repriced from $" + previousTarget.toPlainString()
+                    + " to $" + newTarget.toPlainString() + " for the new average cost";
+        }
+        logRule(strategy, "TARGET_SELL", "REPLACED", detail, outcomes);
+        sellOrderSubmitter.submit(strategy, StrategyStage.TARGET_SELL, quantity, replacement.limitPrice(),
+                replacement.timeInForce(), StrategyLifecycleState.SELL_PLACED, detail, StrategyEventType.ORDER_SUBMITTED);
     }
 
     private void cancelBrokerManagedExitOrders(Strategy strategy, List<StrategyOrder> orders) {
@@ -493,7 +563,13 @@ final class StrategyProfitControlEvaluator {
     @FunctionalInterface
     interface SellOrderSubmitter {
         StrategyOrder submit(Strategy strategy, StrategyStage stage, BigDecimal quantity, BigDecimal limitPrice,
-                             StrategyLifecycleState lifecycleState, String message, StrategyEventType eventType);
+                             TimeInForce timeInForce, StrategyLifecycleState lifecycleState, String message,
+                             StrategyEventType eventType);
+
+        default StrategyOrder submit(Strategy strategy, StrategyStage stage, BigDecimal quantity, BigDecimal limitPrice,
+                                     StrategyLifecycleState lifecycleState, String message, StrategyEventType eventType) {
+            return submit(strategy, stage, quantity, limitPrice, TimeInForce.DAY, lifecycleState, message, eventType);
+        }
     }
 
     @FunctionalInterface

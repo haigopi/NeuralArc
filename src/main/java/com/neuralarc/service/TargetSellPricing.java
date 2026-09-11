@@ -72,16 +72,18 @@ final class TargetSellPricing {
     }
 
     /**
-     * The target or profit exit to price a restored sell from: the most recent one that went away
-     * without filling. Null when there is none, in which case the strategy's target is used.
+     * The target sell to price a replacement from: the most recent one that did not fill — the one
+     * just cancelled for a resize, or the one lost at the broker. Profit exits are excluded: they are
+     * placed near the market on a pullback, and reusing that price for a target would sell low. Null
+     * when there is none, in which case the strategy's target is used.
      */
-    static StrategyOrder latestUnfilledBrokerManagedExit(List<StrategyOrder> orders) {
+    static StrategyOrder latestUnfilledTargetSell(List<StrategyOrder> orders) {
         if (orders == null) {
             return null;
         }
         return orders.stream()
                 .filter(order -> order.side() == StrategyOrderSide.SELL)
-                .filter(order -> order.stage() == StrategyStage.TARGET_SELL || order.stage() == StrategyStage.PROFIT_EXIT)
+                .filter(order -> order.stage() == StrategyStage.TARGET_SELL)
                 .filter(order -> order.status() != StrategyOrderStatus.FILLED
                         && order.status() != StrategyOrderStatus.PARTIALLY_FILLED)
                 .max(Comparator.comparing(StrategyOrder::submittedAt, Comparator.nullsFirst(Comparator.naturalOrder()))

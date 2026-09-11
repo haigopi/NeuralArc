@@ -40,6 +40,14 @@ final class AverageDownTestEntries {
         return entry;
     }
 
+    /** A position whose working exit is the strategy's own target sell, as the grid snapshot records it. */
+    static ManagedStrategy withWorkingTargetSell(ManagedStrategy entry) {
+        withWorkingSell(entry);
+        entry.setTradeSnapshot(BigDecimal.ZERO, BigDecimal.ZERO, null,
+                new StrategyTablePresenter.PendingOrderSummary(new BigDecimal("12.00"), BigDecimal.ONE, false, true));
+        return entry;
+    }
+
     static ManagedStrategy inWorkspace(ManagedStrategy entry, String workspaceId) {
         entry.strategy.setWorkspaceId(workspaceId);
         return entry;

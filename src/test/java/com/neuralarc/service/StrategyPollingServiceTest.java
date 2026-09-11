@@ -6,6 +6,13 @@ import com.neuralarc.api.AlpacaPositionData;
 import com.neuralarc.api.AlpacaTradeUpdateEvent;
 import com.neuralarc.model.*;
 import com.neuralarc.util.Monetary;
+import com.neuralarc.model.TimeInForce;
+import com.neuralarc.model.StrategyOrderSide;
+import com.neuralarc.model.StrategyOrderType;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
+import com.neuralarc.model.StrategyLifecycleState;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -231,6 +238,138 @@ class StrategyPollingServiceTest {
         StrategyOrder canceledInitial = f.orders.findByAlpacaOrderId(initialOrder.alpacaOrderId()).orElseThrow();
         assertEquals(StrategyOrderStatus.CANCELED, canceledInitial.status());
         assertFalse(f.alpaca.orderById.containsKey(initialOrder.alpacaOrderId()));
+    }
+
+    @Test
+    void averageDownRepricesTheTargetSellFromTheNewAverageNotTheMarket() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        f.alpaca.latestPrice = new BigDecimal("10.00");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.00"), "{}"));
+        f.service.pollStrategy(strategy.id());
+        StrategyOrder initial = f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.TARGET_SELL).orElseThrow();
+        assertEquals(0, new BigDecimal("10.00").compareTo(initial.limitPrice()));
+
+        // Average down: 10 more bought at $6.00 after the target was placed; the broker now holds 20 @ $7.00.
+        // The market ($7.50) is below both targets: a sell priced at the market would lose money.
+        f.orders.save(filledBuy(strategy.id(), "10", "6.00", initial.submittedAt().plusSeconds(60)));
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("20"), new BigDecimal("7.00"), new BigDecimal("7.50"), "{}"));
+        f.alpaca.latestPrice = new BigDecimal("7.50");
+        f.service.pollStrategy(strategy.id());
+
+        StrategyOrder replacement = pendingTargetSell(f, strategy);
+        assertEquals(0, replacement.requestedQuantity().compareTo(new BigDecimal("20")), "covers the whole new position");
+        assertEquals(0, new BigDecimal("8.75").compareTo(replacement.limitPrice()),
+                "same 25% margin over the new $7.00 average (10.00 x 7/8), not the $7.50 market");
+        assertEquals(0, new BigDecimal("8.75").compareTo(f.strategies.findById(strategy.id()).orElseThrow().targetSellPrice()),
+                "the strategy's own target moves with it");
+        assertEquals(StrategyOrderStatus.CANCELED, f.orders.findByAlpacaOrderId(initial.alpacaOrderId()).orElseThrow().status());
+    }
+
+    @Test
+    void aRestoredTargetSellKeepsItsPriceInsteadOfSellingAtTheMarket() {
+        // The reported losses: a target sell lost at the broker was re-placed at the opening price,
+        // below the position's cost, and filled at once.
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        f.alpaca.latestPrice = new BigDecimal("10.00");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.00"), "{}"));
+        f.service.pollStrategy(strategy.id());
+        StrategyOrder initial = f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.TARGET_SELL).orElseThrow();
+
+        f.alpaca.orderById.remove(initial.alpacaOrderId());
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("7.60"), "{}"));
+        f.alpaca.latestPrice = new BigDecimal("7.60");
+        f.service.pollStrategy(strategy.id());
+
+        StrategyOrder restored = pendingTargetSell(f, strategy);
+        assertEquals(0, new BigDecimal("10.00").compareTo(restored.limitPrice()), "not the $7.60 market");
+        assertEquals(0, restored.requestedQuantity().compareTo(new BigDecimal("10")));
+    }
+
+    @Test
+    void aReplacementKeepsTheEarlierOrdersTimeInForce() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        f.strategies.save(strategy);
+        f.alpaca.latestPrice = new BigDecimal("9.00");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("9.00"), "{}"));
+        // A GTC target already working, as the Place Sell Trigger action creates one.
+        String clientOrderId = "AAPL_TARGET_SELL_gtc";
+        f.alpaca.orderById.put("ord-gtc", new AlpacaOrderData("ord-gtc", clientOrderId, "AAPL", "sell", "limit",
+                new BigDecimal("10.00"), Monetary.zero(), Monetary.zero(), "new", "{}"));
+        Instant placedAt = Instant.now().minusSeconds(120);
+        f.orders.save(new StrategyOrder(UUID.randomUUID().toString(), strategy.id(), StrategyStage.TARGET_SELL, "ord-gtc",
+                clientOrderId, "AAPL", StrategyOrderSide.SELL, StrategyOrderType.LIMIT, new BigDecimal("10.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.SUBMITTED, placedAt, placedAt,
+                null, "{}", TimeInForce.GTC));
+
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("15"), new BigDecimal("8.00"), new BigDecimal("9.00"), "{}"));
+        f.service.pollStrategy(strategy.id());
+
+        StrategyOrder replacement = pendingTargetSell(f, strategy);
+        assertEquals(0, replacement.requestedQuantity().compareTo(new BigDecimal("15")));
+        assertEquals(TimeInForce.GTC, replacement.timeInForce(), "a GTC target must not lapse into a DAY order");
+        assertEquals(TimeInForce.GTC, f.alpaca.lastLimitSellTimeInForce);
+        assertEquals(0, new BigDecimal("10.00").compareTo(replacement.limitPrice()),
+                "no average-down explains the change, so the limit is left alone");
+    }
+
+    @Test
+    void aSellThatFillsDuringItsCancelIsRecordedNotReplaced() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        f.alpaca.latestPrice = new BigDecimal("10.00");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.00"), "{}"));
+        f.service.pollStrategy(strategy.id());
+        StrategyOrder initial = f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.TARGET_SELL).orElseThrow();
+
+        f.alpaca.fillOnCancel.add(initial.alpacaOrderId());
+        f.orders.save(filledBuy(strategy.id(), "10", "6.00", initial.submittedAt().plusSeconds(60)));
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("20"), new BigDecimal("7.00"), new BigDecimal("7.50"), "{}"));
+        f.alpaca.latestPrice = new BigDecimal("7.50");
+        f.service.pollStrategy(strategy.id());
+
+        List<StrategyOrder> targetSells = f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == StrategyStage.TARGET_SELL)
+                .toList();
+        assertEquals(1, targetSells.size(), "no second sell is stacked on the one that filled");
+        assertEquals(StrategyOrderStatus.FILLED, targetSells.getFirst().status(), "the fill is recorded, not written off as a cancel");
+    }
+
+    @Test
+    void anUnconfirmedCancelIsRetriedLaterRatherThanStacked() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        f.alpaca.latestPrice = new BigDecimal("10.00");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.00"), "{}"));
+        f.service.pollStrategy(strategy.id());
+        StrategyOrder initial = f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.TARGET_SELL).orElseThrow();
+
+        f.alpaca.leaveCancelPending.add(initial.alpacaOrderId());
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("15"), new BigDecimal("8.00"), new BigDecimal("10.00"), "{}"));
+        f.service.pollStrategy(strategy.id());
+
+        List<StrategyOrder> targetSells = f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == StrategyStage.TARGET_SELL)
+                .toList();
+        assertEquals(1, targetSells.size(), "the shares are still reserved by the old order, so nothing new is placed yet");
+        assertTrue(targetSells.getFirst().isPending(), "the old order is not written off until the broker confirms");
+    }
+
+    private static StrategyOrder pendingTargetSell(Fixture f, Strategy strategy) {
+        return f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == StrategyStage.TARGET_SELL && order.isPending())
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static StrategyOrder filledBuy(String strategyId, String quantity, String price, Instant filledAt) {
+        return new StrategyOrder(UUID.randomUUID().toString(), strategyId, StrategyStage.MANUAL_BUY, "ord-avg-" + UUID.randomUUID(),
+                "AAPL_MANUAL_BUY_x", "AAPL", StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal(price), BigDecimal.ZERO,
+                new BigDecimal(quantity), new BigDecimal(quantity), new BigDecimal(price), StrategyOrderStatus.FILLED,
+                filledAt, filledAt, filledAt, "{}", TimeInForce.DAY);
     }
 
     @Test
@@ -1598,6 +1737,11 @@ class StrategyPollingServiceTest {
         BigDecimal lastTrailPercent = BigDecimal.ZERO;
         BigDecimal lastTrailPrice = BigDecimal.ZERO;
         String nextLimitSellStatus = "new";
+        /** Orders whose cancel arrives too late: the broker reports them filled instead. */
+        final Set<String> fillOnCancel = new HashSet<>();
+        /** Orders whose cancel the broker accepts but has not settled (pending_cancel). */
+        final Set<String> leaveCancelPending = new HashSet<>();
+        TimeInForce lastLimitSellTimeInForce;
         BigDecimal nextLimitSellFilledQuantity = Monetary.zero();
         BigDecimal nextLimitSellFilledAveragePrice = Monetary.zero();
         private volatile CountDownLatch openOrdersEnteredLatch;
@@ -1614,6 +1758,13 @@ class StrategyPollingServiceTest {
 
         @Override
         public AlpacaOrderData submitLimitSellOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId) {
+            return submitSell(symbol, quantity, limitPrice, clientOrderId);
+        }
+
+        @Override
+        public AlpacaOrderData submitLimitSellOrder(String symbol, int quantity, BigDecimal limitPrice, String clientOrderId,
+                                                    TimeInForce timeInForce) {
+            lastLimitSellTimeInForce = timeInForce;
             return submitSell(symbol, quantity, limitPrice, clientOrderId);
         }
 
@@ -1709,7 +1860,21 @@ class StrategyPollingServiceTest {
 
         @Override
         public boolean cancelOrder(String orderId) {
+            AlpacaOrderData existing = orderById.get(orderId);
+            if (existing != null && fillOnCancel.contains(orderId)) {
+                orderById.put(orderId, withStatus(existing, "filled", new BigDecimal("10"), existing.limitPrice()));
+                return false;
+            }
+            if (existing != null && leaveCancelPending.contains(orderId)) {
+                orderById.put(orderId, withStatus(existing, "pending_cancel", Monetary.zero(), Monetary.zero()));
+                return true;
+            }
             return orderById.remove(orderId) != null;
+        }
+
+        private AlpacaOrderData withStatus(AlpacaOrderData order, String status, BigDecimal filledQuantity, BigDecimal filledPrice) {
+            return new AlpacaOrderData(order.orderId(), order.clientOrderId(), order.symbol(), order.side(), order.type(),
+                    order.limitPrice(), filledPrice, filledQuantity, status, "{}");
         }
 
         @Override

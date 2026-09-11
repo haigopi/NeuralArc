@@ -443,7 +443,8 @@ public class StrategyEngine {
                 : decision.detail();
         logRule(strategy, "STOP_LOSS", decision.action().logStatus(), detail, outcomes);
         if (decision.action() == ManagedStopLossEvaluator.Action.SELL) {
-            submitSellOrder(strategy, StrategyStage.STOP_LOSS, position.quantity(), latestPrice,
+            // A stop-loss exits near the market by design, so it is priced at the latest price.
+            submitSellOrder(strategy, StrategyStage.STOP_LOSS, position.quantity(), latestPrice, TimeInForce.DAY,
                     StrategyLifecycleState.SELL_PLACED, "Stop loss sell submitted", StrategyEventType.STOP_LOSS_TRIGGERED);
         }
     }

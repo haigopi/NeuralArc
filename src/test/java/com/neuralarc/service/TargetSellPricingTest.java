@@ -89,11 +89,11 @@ class TargetSellPricingTest {
     @Test
     void findsTheMostRecentExitThatWentAwayWithoutFilling() {
         StrategyOrder filledEarlier = sell(StrategyStage.TARGET_SELL, "5", "9.00", TimeInForce.DAY, StrategyOrderStatus.FILLED, PLACED.minusSeconds(900));
-        StrategyOrder expired = sell(StrategyStage.TARGET_SELL, "10", "10.00", TimeInForce.DAY, StrategyOrderStatus.EXPIRED, PLACED);
+        StrategyOrder lost = sell(StrategyStage.TARGET_SELL, "10", "10.00", TimeInForce.DAY, StrategyOrderStatus.CANCELED, PLACED);
         StrategyOrder filledLater = sell(StrategyStage.TARGET_SELL, "1", "11.00", TimeInForce.DAY, StrategyOrderStatus.FILLED, PLACED.plusSeconds(900));
 
-        assertEquals(expired, TargetSellPricing.latestUnfilledBrokerManagedExit(List.of(filledEarlier, expired, filledLater)));
-        assertNull(TargetSellPricing.latestUnfilledBrokerManagedExit(List.of(filledEarlier)));
+        assertEquals(lost, TargetSellPricing.latestUnfilledTargetSell(List.of(filledEarlier, lost, filledLater)));
+        assertNull(TargetSellPricing.latestUnfilledTargetSell(List.of(filledEarlier)));
     }
 
     private static Strategy strategy(String targetPrice) {

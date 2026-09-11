@@ -11,6 +11,7 @@ import static com.neuralarc.ui.AverageDownTestEntries.inWorkspace;
 import static com.neuralarc.ui.AverageDownTestEntries.position;
 import static com.neuralarc.ui.AverageDownTestEntries.withState;
 import static com.neuralarc.ui.AverageDownTestEntries.withWorkingSell;
+import static com.neuralarc.ui.AverageDownTestEntries.withWorkingTargetSell;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -36,7 +37,7 @@ class AverageDownCandidatesTest {
                 "every loser is listed; the winner and the empty row are not");
         AverageDownCandidates.Candidate locked = candidates.getLast();
         assertFalse(locked.selectable());
-        assertTrue(locked.lockReason().contains("Limit sell working"), locked.lockReason());
+        assertTrue(locked.lockReason().contains("Exit sell working"), locked.lockReason());
         assertEquals(2, candidates.stream().filter(AverageDownCandidates.Candidate::selectable).count());
     }
 
@@ -50,6 +51,28 @@ class AverageDownCandidatesTest {
         for (AverageDownCandidates.Candidate candidate : AverageDownCandidates.collect(scope, ELIGIBLE, id -> "")) {
             assertEquals(ELIGIBLE.test(candidate.entry()), candidate.selectable(), candidate.symbol());
         }
+    }
+
+    @Test
+    void aWorkingTargetSellNoLongerLocksThePosition() {
+        // The engine resizes and reprices a target sell once the buy fills, so the position can be bought.
+        ManagedStrategy withTarget = withWorkingTargetSell(position("RKTO", 1, "0.85", "0.69"));
+
+        AverageDownCandidates.Candidate candidate =
+                AverageDownCandidates.collect(List.of(withTarget), ELIGIBLE, id -> "").getFirst();
+
+        assertTrue(candidate.selectable());
+        assertTrue(candidate.note().contains("resizes and reprices"), candidate.note());
+        assertTrue(ELIGIBLE.test(withTarget), "the bulk action submits it too");
+    }
+
+    @Test
+    void anyOtherWorkingExitStillLocksThePosition() {
+        // A working sell that is not the strategy's target (a manual or loss exit) is a deliberate exit.
+        ManagedStrategy manualExit = withWorkingSell(position("AMA", 1, "34.12", "21.33"));
+
+        assertFalse(ELIGIBLE.test(manualExit));
+        assertFalse(AverageDownCandidates.collect(List.of(manualExit), ELIGIBLE, id -> "").getFirst().selectable());
     }
 
     @Test
