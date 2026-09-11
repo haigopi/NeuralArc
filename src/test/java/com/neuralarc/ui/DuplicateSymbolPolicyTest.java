@@ -216,6 +216,75 @@ class DuplicateSymbolPolicyTest {
 
     // ---- helpers ----
 
+    @Test
+    void pendingImportOccupiesItsSymbolInsideTheWorkspace() {
+        // The reported bug: importing a symbol a second time into the same workspace produced a
+        // second row that displayed the first row's broker position.
+        Strategy pending = strategy("ZETA", StrategyMode.LIVE, StrategyStatus.CREATED);
+        pending.setWorkspaceId("2030-stocks");
+
+        assertTrue(DuplicateSymbolPolicy.wouldBeDuplicate(
+                "ZETA", StrategyMode.LIVE, List.of(pending), false, "2030-stocks", ""));
+        assertTrue(DuplicateSymbolPolicy.wouldBeDuplicate(
+                "ZETA", StrategyMode.LIVE, List.of(pending), true, "2030-stocks", ""),
+                "workspace uniqueness holds even when duplicate symbols are allowed");
+    }
+
+    @Test
+    void aWorkspaceHoldsOneLiveRowPerSymbolWhateverItsStatus() {
+        for (StrategyStatus status : List.of(StrategyStatus.CREATED, StrategyStatus.ACTIVE, StrategyStatus.PAUSED)) {
+            Strategy existing = strategy("AAPL", StrategyMode.PAPER, status);
+            existing.setPauseReason(PauseReason.USER_PAUSED);
+            existing.setWorkspaceId("desk-a");
+
+            assertTrue(DuplicateSymbolPolicy.wouldBeDuplicate(
+                    "AAPL", StrategyMode.PAPER, List.of(existing), true, "desk-a", ""),
+                    status + " already owns the symbol in that workspace");
+        }
+    }
+
+    @Test
+    void finishedRowsNeverReserveTheSymbolInAWorkspace() {
+        for (StrategyStatus status : List.of(StrategyStatus.COMPLETED, StrategyStatus.STOPPED,
+                StrategyStatus.FAILED, StrategyStatus.ARCHIVED)) {
+            Strategy history = strategy("AAPL", StrategyMode.PAPER, status);
+            history.setWorkspaceId("desk-a");
+
+            assertFalse(DuplicateSymbolPolicy.wouldBeDuplicate(
+                    "AAPL", StrategyMode.PAPER, List.of(history), true, "desk-a", ""),
+                    status + " is history and must not block the symbol");
+        }
+    }
+
+    @Test
+    void allowingDuplicatesOpensTheSymbolUpInADifferentWorkspaceOnly() {
+        Strategy active = strategy("AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        active.setWorkspaceId("desk-a");
+
+        assertFalse(DuplicateSymbolPolicy.wouldBeDuplicate(
+                "AAPL", StrategyMode.PAPER, List.of(active), true, "desk-b", ""));
+        assertTrue(DuplicateSymbolPolicy.wouldBeDuplicate(
+                "AAPL", StrategyMode.PAPER, List.of(active), false, "desk-b", ""),
+                "with duplicates off the symbol is reserved across the whole mode");
+    }
+
+    @Test
+    void unassignedRowsAreUniqueAmongThemselves() {
+        Strategy unassigned = strategy("AAPL", StrategyMode.PAPER, StrategyStatus.CREATED);
+
+        assertTrue(DuplicateSymbolPolicy.wouldBeDuplicate(
+                "AAPL", StrategyMode.PAPER, List.of(unassigned), true, null, ""));
+    }
+
+    @Test
+    void editingARowDoesNotCollideWithItself() {
+        Strategy pending = strategy("ZETA", StrategyMode.LIVE, StrategyStatus.CREATED);
+        pending.setWorkspaceId("2030-stocks");
+
+        assertFalse(DuplicateSymbolPolicy.wouldBeDuplicate(
+                "ZETA", StrategyMode.LIVE, List.of(pending), true, "2030-stocks", pending.id()));
+    }
+
     private static Strategy strategy(String symbol, StrategyMode mode, StrategyStatus status) {
         Strategy s = new Strategy(
                 UUID.randomUUID().toString(),

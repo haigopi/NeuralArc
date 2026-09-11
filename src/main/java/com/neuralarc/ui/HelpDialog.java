@@ -81,8 +81,10 @@ public class HelpDialog extends JDialog {
         {
             "Application - How do Portfolio buy actions work?",
             "Portfolio buy actions are bulk order tools for reducing repeated row-by-row work.\n\n" +
-            "- Average Down Losing Positions submits one manual buy order for each losing open position in the current workspace scope.\n" +
-            "- From a workspace tab, only that workspace is included. From the All tab, all visible workspaces are included.\n" +
+            "- Average Down Losing Positions lists every losing open position in the current workspace scope and submits one manual buy order for each one you keep ticked.\n" +
+            "- From a workspace tab, only that workspace is included. From the All tab, all visible workspaces are included and a Workspace column is shown.\n" +
+            "- Untick any position to leave it out; Select all and Clear change the whole list at once. Each row previews the buy quantity and price the plan will submit.\n" +
+            "- Greyed positions cannot take a buy right now, for example while a limit sell is working; the Note column says why. Cancel the sell to make it selectable.\n" +
             "- Patient average-down places limit buys below each position's cached market price by your selected pullback percent.\n" +
             "- Immediate average-down sends market buys, prioritizing execution while accepting that the final fill can move.\n" +
             "- Double-down size buys the same share count already held for each symbol; Controlled add uses one fixed quantity per symbol.\n\n" +

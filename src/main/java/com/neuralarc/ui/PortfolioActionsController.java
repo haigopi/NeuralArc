@@ -235,17 +235,20 @@ final class PortfolioActionsController {
 
     void handleAverageLosingPositions() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.AVERAGE_LOSING_POSITIONS;
-        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
-        if (targets.isEmpty()) {
+        // The dialog reviews every losing position in scope, including ones locked by a working sell,
+        // so it receives the whole scope; only the ticked, still-eligible rows are submitted.
+        List<ManagedStrategy> scope = strategiesFor(action);
+        if (!AverageDownCandidates.anyLosingOpenPosition(scope)) {
             gateway.actionSkipped(action.menuLabel(), action.emptyMessage());
             gateway.showMessage(action.emptyMessage(), action.dialogTitle(), JOptionPane.INFORMATION_MESSAGE);
             return;
         }
-        Optional<AverageLosingPositionsSelection> selection = gateway.chooseAverageLosingPositions(targets);
+        Optional<AverageLosingPositionsSelection> selection = gateway.chooseAverageLosingPositions(scope);
         if (selection.isEmpty()) {
             gateway.actionCanceled(action.menuLabel());
             return;
         }
+        List<ManagedStrategy> targets = selection.get().selectedFrom(scope, action::matches);
         if (!confirmBulkAction(action, targets)) {
             return;
         }
@@ -700,7 +703,7 @@ final class PortfolioActionsController {
             AverageLosingPositionsSelection selection
     ) {
         return runTargetsInParallel(targets, entry -> {
-            int quantity = averageBuyQuantity(entry, selection);
+            int quantity = selection.quantityFor(entry.cachedPosition());
             if (quantity <= 0) {
                 return TargetResult.skipped(entry.strategy.symbol() + ": quantity must be greater than zero");
             }
@@ -708,7 +711,7 @@ final class PortfolioActionsController {
             if (selection.orderType() == AverageLosingPositionsSelection.OrderType.MARKET) {
                 result = gateway.buyMoreAtMarket(entry.strategy, quantity);
             } else {
-                BigDecimal limitPrice = averageLimitPrice(entry, selection.limitDiscountPercent());
+                BigDecimal limitPrice = selection.limitPriceFor(entry.cachedPosition());
                 if (limitPrice.compareTo(BigDecimal.ZERO) <= 0) {
                     return TargetResult.skipped(entry.strategy.symbol() + ": current market price is unavailable");
                 }
@@ -895,23 +898,6 @@ final class PortfolioActionsController {
 
     private StrategyService modeAwareService(ManagedStrategy entry) {
         return gateway.strategyServiceForMode(entry.strategy.mode());
-    }
-
-    private int averageBuyQuantity(ManagedStrategy entry, AverageLosingPositionsSelection selection) {
-        if (selection.quantityMode() == AverageLosingPositionsSelection.QuantityMode.FIXED_INPUT_QUANTITY) {
-            return selection.quantity();
-        }
-        return entry.cachedPosition().getTotalShares();
-    }
-
-    private BigDecimal averageLimitPrice(ManagedStrategy entry, BigDecimal discountPercent) {
-        BigDecimal currentPrice = entry.cachedPosition().getLastPrice();
-        if (currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
-        }
-        BigDecimal discount = discountPercent == null ? BigDecimal.ZERO : discountPercent;
-        BigDecimal multiplier = BigDecimal.ONE.subtract(discount.divide(new BigDecimal("100"), 8, java.math.RoundingMode.HALF_UP));
-        return com.neuralarc.util.Monetary.round(currentPrice.multiply(multiplier));
     }
 
     private TargetResult missingBrokerService(ManagedStrategy entry) {

@@ -60,7 +60,7 @@ public class SettingsDialog extends JDialog {
     private final JCheckBox verboseApiJsonLogging = new JCheckBox("Pretty-print broker API JSON in logs", AppSettingsService.DEFAULT_VERBOSE_API_JSON_LOGGING);
     private final JCheckBox autoPausePollingWhenMarketClosed = new JCheckBox("Auto pause polling when market is closed", AppSettingsService.DEFAULT_AUTO_PAUSE_POLLING_WHEN_MARKET_CLOSED);
     private final JCheckBox extendedHoursTradingEnabled = new JCheckBox("Enable extended-hours trading", AppSettingsService.DEFAULT_EXTENDED_HOURS_TRADING_ENABLED);
-    private final JCheckBox allowDuplicateSymbolStrategies = new JCheckBox("Allow multiple strategies for the same symbol", AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES);
+    private final JCheckBox allowDuplicateSymbolStrategies = new JCheckBox("Allow the same symbol in different workspaces", AppSettingsService.DEFAULT_ALLOW_DUPLICATE_SYMBOL_STRATEGIES);
     private final JTextField defaultStrategyPollingSecondsField = new JTextField(String.valueOf(AppSettingsService.DEFAULT_STRATEGY_POLLING_SECONDS), 25);
     private final JCheckBox defaultRepeatCycleAfterProfitExitEnabled = new JCheckBox(
             "Repeat cycle after profitable exit",
@@ -207,8 +207,15 @@ public class SettingsDialog extends JDialog {
         );
 
         JLabel allowDuplicateSymbolsDescription = mutedDescription(
-                "Allows multiple strategies for the same symbol across different workspaces. "
-                        + "The same symbol is still blocked inside the same workspace."
+                "<html>Lets one symbol be worked from several workspaces at once in the same mode. "
+                        + "Off, a symbol may have only one live strategy per mode.<br>"
+                        + "A workspace always holds at most one live row per symbol, whichever way this "
+                        + "is set: the broker nets a symbol into a single position, so a second row in "
+                        + "the same workspace would repeat the first one's entry price and P&amp;L. "
+                        + "Created, active and paused rows count as live; completed, stopped, failed and "
+                        + "archived rows are history and never block the symbol. All Stocks shows every "
+                        + "workspace at once, so a symbol worked in two workspaces appears there twice."
+                        + "</html>"
         );
 
         JPanel marketHoursContent = new JPanel();

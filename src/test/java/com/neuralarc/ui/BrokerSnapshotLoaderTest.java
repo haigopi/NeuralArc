@@ -113,6 +113,75 @@ class BrokerSnapshotLoaderTest {
         assertEquals(5, snapshots.get("second").getTotalShares());
     }
 
+    @Test
+    void aRowRefreshedAloneDoesNotAdoptTheHoldersPosition() {
+        // The reported bug. Only the newly added row is due a refresh this tick; the row that really
+        // owns the AVGO position is not in the batch. Judged against the batch alone the new row is
+        // the symbol's only claimant and takes the whole position, showing the holder's entry and P&L.
+        Strategy holder = strategy("holder", "AVGO", Instant.parse("2026-05-01T10:00:00Z"));
+        Strategy justAdded = strategy("just-added", "AVGO", Instant.parse("2026-09-09T10:00:00Z"));
+        FakeHttpAlpacaClient client = new FakeHttpAlpacaClient();
+
+        Map<String, Position> snapshots = BrokerSnapshotLoader.loadPositionSnapshots(
+                List.of(justAdded),
+                List.of(holder, justAdded),
+                mode -> client,
+                ignored -> true,
+                (mode, ignoredClient) -> List.of(new AlpacaPositionData(
+                        "AVGO", new BigDecimal("10"), new BigDecimal("100.00"), new BigDecimal("104.00"), "{}")),
+                strategy -> strategy.id().equals("holder") ? 10 : 0
+        );
+
+        Position justAddedSnapshot = snapshots.get("just-added");
+        assertEquals(0, justAddedSnapshot.getTotalShares(), "the position belongs to the holder");
+        assertEquals(new BigDecimal("0.00"), justAddedSnapshot.getAverageCost(),
+                "a row that has bought nothing must not show an entry price");
+        assertEquals(new BigDecimal("0.00"), justAddedSnapshot.unrealizedPnl(),
+                "and must not show the holder's P&L");
+        assertEquals(new BigDecimal("104.00"), justAddedSnapshot.getLastPrice(),
+                "it still prices its symbol");
+        assertEquals(1, snapshots.size(), "only the refreshed row gets a snapshot");
+    }
+
+    @Test
+    void aGenuinelySoleStrategyStillShowsTheWholePosition() {
+        // The counterpart: with no other local row on the symbol, an imported position whose orders
+        // were never recorded locally must still appear, or a real holding would vanish from the grid.
+        Strategy sole = strategy("sole", "AVGO", Instant.parse("2026-05-01T10:00:00Z"));
+        FakeHttpAlpacaClient client = new FakeHttpAlpacaClient();
+
+        Map<String, Position> snapshots = BrokerSnapshotLoader.loadPositionSnapshots(
+                List.of(sole),
+                List.of(sole),
+                mode -> client,
+                ignored -> true,
+                (mode, ignoredClient) -> List.of(new AlpacaPositionData(
+                        "AVGO", new BigDecimal("10"), new BigDecimal("100.00"), new BigDecimal("104.00"), "{}")),
+                strategy -> 0
+        );
+
+        assertEquals(10, snapshots.get("sole").getTotalShares());
+        assertEquals(new BigDecimal("100.00"), snapshots.get("sole").getAverageCost());
+    }
+
+    @Test
+    void anAbsentAllocationPopulationFallsBackToTheRefreshedRows() {
+        Strategy holder = strategy("holder", "AVGO", Instant.parse("2026-05-01T10:00:00Z"));
+        FakeHttpAlpacaClient client = new FakeHttpAlpacaClient();
+
+        Map<String, Position> snapshots = BrokerSnapshotLoader.loadPositionSnapshots(
+                List.of(holder),
+                List.of(),
+                mode -> client,
+                ignored -> true,
+                (mode, ignoredClient) -> List.of(new AlpacaPositionData(
+                        "AVGO", new BigDecimal("10"), new BigDecimal("100.00"), new BigDecimal("104.00"), "{}")),
+                strategy -> 10
+        );
+
+        assertEquals(10, snapshots.get("holder").getTotalShares());
+    }
+
     private static Strategy strategy(String id, String symbol) {
         return strategy(id, symbol, Instant.now());
     }

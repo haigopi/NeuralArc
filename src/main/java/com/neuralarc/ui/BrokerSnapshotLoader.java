@@ -52,17 +52,42 @@ final class BrokerSnapshotLoader {
             BiFunction<ApplicationMode, HttpAlpacaClient, List<AlpacaPositionData>> positionResolver,
             ToIntFunction<Strategy> localShareClaim
     ) {
+        return loadPositionSnapshots(stored, stored, clientResolver, includeStrategy, positionResolver, localShareClaim);
+    }
+
+    /**
+     * @param stored             the strategies to produce snapshots for — typically only those due a
+     *                           refresh this tick.
+     * @param allocationPopulation every strategy that could own part of a broker position, whether or
+     *                           not it is being refreshed now. Splitting a position must consider all
+     *                           of them: judged against the refresh batch alone, a newly added row can
+     *                           be the only claimant on its symbol and take the whole position — which
+     *                           is how a freshly imported row came to display an existing holding's
+     *                           entry price and P&amp;L.
+     */
+    static Map<String, Position> loadPositionSnapshots(
+            List<Strategy> stored,
+            List<Strategy> allocationPopulation,
+            Function<ApplicationMode, HttpAlpacaClient> clientResolver,
+            Predicate<Strategy> includeStrategy,
+            BiFunction<ApplicationMode, HttpAlpacaClient, List<AlpacaPositionData>> positionResolver,
+            ToIntFunction<Strategy> localShareClaim
+    ) {
         if (stored == null || stored.isEmpty() || clientResolver == null) {
             return Map.of();
         }
+        List<Strategy> population = allocationPopulation == null || allocationPopulation.isEmpty()
+                ? stored
+                : allocationPopulation;
         Map<String, Position> snapshots = new LinkedHashMap<>();
-        loadPositionSnapshotsForMode(stored, StrategyMode.PAPER, ApplicationMode.PAPER, clientResolver, includeStrategy, positionResolver, localShareClaim, snapshots);
-        loadPositionSnapshotsForMode(stored, StrategyMode.LIVE, ApplicationMode.LIVE, clientResolver, includeStrategy, positionResolver, localShareClaim, snapshots);
+        loadPositionSnapshotsForMode(stored, population, StrategyMode.PAPER, ApplicationMode.PAPER, clientResolver, includeStrategy, positionResolver, localShareClaim, snapshots);
+        loadPositionSnapshotsForMode(stored, population, StrategyMode.LIVE, ApplicationMode.LIVE, clientResolver, includeStrategy, positionResolver, localShareClaim, snapshots);
         return snapshots;
     }
 
     private static void loadPositionSnapshotsForMode(
             List<Strategy> stored,
+            List<Strategy> allocationPopulation,
             StrategyMode mode,
             ApplicationMode applicationMode,
             Function<ApplicationMode, HttpAlpacaClient> clientResolver,
@@ -71,14 +96,11 @@ final class BrokerSnapshotLoader {
             ToIntFunction<Strategy> localShareClaim,
             Map<String, Position> target
     ) {
-        List<Strategy> strategiesForMode = stored.stream()
-                .filter(strategy -> strategy.mode() == mode)
-                .filter(strategy -> includeStrategy == null || includeStrategy.test(strategy))
-                .filter(strategy -> strategy.symbol() != null && !strategy.symbol().isBlank())
-                .toList();
+        List<Strategy> strategiesForMode = eligible(stored, mode, includeStrategy);
         if (strategiesForMode.isEmpty()) {
             return;
         }
+        List<Strategy> populationForMode = eligible(allocationPopulation, mode, includeStrategy);
         HttpAlpacaClient client = clientResolver.apply(applicationMode);
         if (client == null) {
             return;
@@ -103,7 +125,7 @@ final class BrokerSnapshotLoader {
                         LinkedHashMap::new
                 ));
         Map<String, Integer> allocationByStrategyId =
-                allocateSharesAcrossSameSymbolStrategies(strategiesForMode, positionsBySymbol, localShareClaim);
+                allocateSharesAcrossSameSymbolStrategies(populationForMode, positionsBySymbol, localShareClaim);
         for (Strategy strategy : strategiesForMode) {
             String symbol = strategy.symbol().toUpperCase(Locale.ROOT);
             target.put(strategy.id(), buildPositionSnapshot(
@@ -113,6 +135,14 @@ final class BrokerSnapshotLoader {
                     allocationByStrategyId.get(strategy.id())
             ));
         }
+    }
+
+    private static List<Strategy> eligible(List<Strategy> strategies, StrategyMode mode, Predicate<Strategy> includeStrategy) {
+        return strategies.stream()
+                .filter(strategy -> strategy != null && strategy.mode() == mode)
+                .filter(strategy -> includeStrategy == null || includeStrategy.test(strategy))
+                .filter(strategy -> strategy.symbol() != null && !strategy.symbol().isBlank())
+                .toList();
     }
 
     /**

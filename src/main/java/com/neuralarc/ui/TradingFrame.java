@@ -3896,8 +3896,18 @@ public class TradingFrame extends JFrame {
         return Optional.empty();
     }
 
-    private Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets) {
-        return AverageLosingPositionsDialog.show(this, targets, settingsDialog.appliedManualBuyTimeInForce());
+    private Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> scope) {
+        String scopeLabel = (selectedWorkspaceId == null
+                ? "All Stocks"
+                : workspaceService.findById(selectedWorkspaceId).map(StrategyWorkspace::name).orElse("This Tab"))
+                + " · " + selectedModeLabel();
+        List<AverageDownCandidates.Candidate> candidates = AverageDownCandidates.collect(
+                scope,
+                PortfolioActionsSupport.BulkAction.AVERAGE_LOSING_POSITIONS::matches,
+                workspaceId -> workspaceId == null || workspaceId.isBlank()
+                        ? "Unassigned"
+                        : workspaceService.findById(workspaceId).map(StrategyWorkspace::name).orElse("Unassigned"));
+        return AverageLosingPositionsDialog.show(this, candidates, scopeLabel, settingsDialog.appliedManualBuyTimeInForce());
     }
 
     private Optional<BigDecimal> chooseSellProfitThresholdPercent(List<ManagedStrategy> targets) {
@@ -4282,7 +4292,7 @@ public class TradingFrame extends JFrame {
                 List<Strategy> snapshotRefreshStrategies = strategiesForBrokerSnapshotRefresh(stored, brokerSnapshotStrategyIds);
                 Map<String, Boolean> overnightEligibility = loadOvernightEligibilityForStrategies(stored);
                 Map<String, Position> positionSnapshots = !snapshotRefreshStrategies.isEmpty()
-                        ? loadPositionSnapshotsForStrategies(snapshotRefreshStrategies)
+                        ? loadPositionSnapshotsForStrategies(snapshotRefreshStrategies, stored)
                         : Map.of();
                 Map<String, MarketBar> dailyBars = loadDailyBarSnapshots(stored);
                 SwingUtilities.invokeLater(() -> {
@@ -4524,11 +4534,24 @@ public class TradingFrame extends JFrame {
     }
 
     private Map<String, Position> loadPositionSnapshotsForStrategies(List<Strategy> stored) {
+        return loadPositionSnapshotsForStrategies(stored, stored);
+    }
+
+    /**
+     * @param stored               strategies whose displayed position is being refreshed this tick.
+     * @param allocationPopulation every strategy that could own part of a broker position. A symbol's
+     *                             single netted position is split across the local rows that hold it,
+     *                             so that split has to see all of them — not just the refresh batch,
+     *                             in which a newly added row can look like the symbol's only owner.
+     */
+    private Map<String, Position> loadPositionSnapshotsForStrategies(
+            List<Strategy> stored, List<Strategy> allocationPopulation) {
         if (stored == null || stored.isEmpty() || currentBrokerType != BrokerType.ALPACA) {
             return Map.of();
         }
         return BrokerSnapshotLoader.loadPositionSnapshots(
                 stored,
+                allocationPopulation,
                 this::alpacaClientForMode,
                 this::includeInBrokerSnapshotRefresh,
                 this::cachedBrokerPositions,
@@ -8736,7 +8759,9 @@ public class TradingFrame extends JFrame {
         if (isGapRocketWorkspaceStrategy(strategy) && !hasFilledBuyOrder(strategy.id())) {
             return new Position(strategy.symbol());
         }
-        return loadPositionSnapshotsForStrategies(List.of(strategy))
+        // Allocate against every stored strategy: on its own this row would look like the symbol's
+        // only owner and take the whole broker position.
+        return loadPositionSnapshotsForStrategies(List.of(strategy), strategyRepository.findAll())
                 .getOrDefault(strategy.id(), new Position(strategy.symbol()));
     }
 
