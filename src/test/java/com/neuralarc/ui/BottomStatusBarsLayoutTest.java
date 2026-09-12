@@ -80,8 +80,9 @@ class BottomStatusBarsLayoutTest {
     void compactSummaryUsesSpacingWithoutOldSeparators() {
         BottomStatusBarsFixture fixture = new BottomStatusBarsFixture();
         StatusBarPresenter presenter = new StatusBarPresenter();
-        StatusBarPresenter.StatusBarViewModel vm = presenter.present(state(metrics()));
+        StatusBarPresenter.StatusBarViewModel vm = presenter.present(state());
 
+        fixture.bars().applyPortfolioScope(scope());
         fixture.bars().updateCompactSummaryAndDetails(vm, "Funds Available: $500");
 
         assertTrue(fixture.compactStatusSummary.getText().contains("   "));
@@ -92,12 +93,11 @@ class BottomStatusBarsLayoutTest {
     }
 
     @Test
-    void portfolioBarShowsTheSelectedGridsFiguresWithTheirExplanations() {
+    void portfolioBarShowsItsFiguresWithTheirExplanations() {
         BottomStatusBarsFixture fixture = new BottomStatusBarsFixture();
         BottomStatusBars bars = fixture.bars();
-        StatusBarPresenter.StatusBarViewModel vm = new StatusBarPresenter().present(state(metrics()));
 
-        bars.applyPortfolioScope(vm.portfolioScope());
+        bars.applyPortfolioScope(scope());
 
         for (String caption : new String[]{"Invested vs Upcoming", "Gaining", "Losing", "Pending Buy", "Pending Sell"}) {
             assertEquals(1L, countLabelsWithText(bars.portfolioBarPanel(), caption), caption);
@@ -151,15 +151,16 @@ class BottomStatusBarsLayoutTest {
     }
 
     @Test
-    void detailsPopupNamesTheGridItTotals() {
+    void detailsPopupTotalsEveryWorkspaceAndFollowsTheLatestFigures() {
         BottomStatusBarsFixture fixture = new BottomStatusBarsFixture();
-        StatusBarPresenter.StatusBarViewModel vm = new StatusBarPresenter().present(state(metrics()));
+        fixture.bars().updateCompactSummaryAndDetails(new StatusBarPresenter().present(state()), "Funds Available: $500");
 
-        fixture.bars().updateCompactSummaryAndDetails(vm, "Funds Available: $500");
+        fixture.bars().applyPortfolioScope(scope());
 
         String details = fixture.compactStatusSummary.getToolTipText();
-        assertTrue(details.contains("Totals for</b>: Growth"), details);
+        assertTrue(details.contains("Totals for</b>: All workspaces"), details);
         assertTrue(details.contains("Pending Sell</b>: 3"), details);
+        assertTrue(fixture.compactStatusSummary.getText().endsWith("Upcoming $20.00"));
     }
 
     private static SystemMetricsPresenter.PortfolioScopeMetrics metrics() {
@@ -168,10 +169,13 @@ class BottomStatusBarsLayoutTest {
                 new java.math.BigDecimal("15.00"), 2, new java.math.BigDecimal("-5.00"), 1, 1, 3);
     }
 
-    private static StatusBarPresenter.StatusBarState state(SystemMetricsPresenter.PortfolioScopeMetrics metrics) {
+    private static PortfolioScopePresenter.PortfolioScopeView scope() {
+        return new PortfolioScopePresenter().present(PortfolioScopePresenter.ALL_WORKSPACES, metrics());
+    }
+
+    private static StatusBarPresenter.StatusBarState state() {
         return new StatusBarPresenter.StatusBarState(1, 0, true, false, 1, 0, 5, false, true,
-                "Market: Open", "tooltip", true, "Funds Available: $500", "CPU: 10%", "Memory: 120 MB",
-                "Growth", metrics);
+                "Market: Open", "tooltip", true, "Funds Available: $500", "CPU: 10%", "Memory: 120 MB");
     }
 
     private JLabel captionOf(Container root, String text) {

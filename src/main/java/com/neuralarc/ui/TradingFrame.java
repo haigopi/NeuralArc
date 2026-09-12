@@ -312,6 +312,7 @@ public class TradingFrame extends JFrame {
     private final StrategyTablePresenter strategyTablePresenter = new StrategyTablePresenter();
     private final StrategyOpenPnlCalculator openPnlCalculator = new StrategyOpenPnlCalculator();
     private final SystemMetricsPresenter systemMetricsPresenter = new SystemMetricsPresenter();
+    private final PortfolioScopePresenter portfolioScopePresenter = new PortfolioScopePresenter();
     private final KillSwitchController killSwitchController;
     private final JButton refreshPortfolioButton = new JButton("Refresh");
     private final JButton capturePortfolioButton = new JButton("Liquidate Portfolio");
@@ -514,7 +515,7 @@ public class TradingFrame extends JFrame {
     private StrategyWorkspaceTabs strategyWorkspaceTabs;
     private String selectedWorkspaceId;
     private final WorkspaceSummaryPresenter workspaceSummaryPresenter = new WorkspaceSummaryPresenter();
-    private final JLabel workspaceSummaryLabel = new JLabel(" ");
+    private final WorkspaceGridAnalyticsBar workspaceGridAnalyticsBar = new WorkspaceGridAnalyticsBar(BASE_FONT);
     private boolean connectionOk;
     private boolean connectionRetryPending;
     private boolean appLaunchedPublished;
@@ -1806,11 +1807,8 @@ public class TradingFrame extends JFrame {
         // The coordinator owns the two base tabs (All Stocks + Trade History) and inserts a
         // dynamic tab per active strategy workspace between them, re-parenting the shared grid.
         JComponent strategiesGridWrapper = wrapGridWithSearch(currentStrategiesSearchPanel, createStrategiesGridCenter(strategyGrid));
-        // Per-tab P&L summary row, pinned below the grid. The wrapper is re-parented into the
-        // selected workspace tab, so this summary follows whichever workspace is being viewed.
-        workspaceSummaryLabel.setFont(BASE_FONT.deriveFont(Font.PLAIN, 11f));
-        workspaceSummaryLabel.setForeground(DARK_BTN_FG);
-        workspaceSummaryLabel.setBorder(new EmptyBorder(6, 14, 4, 14));
+        // Per-tab figures row, pinned below the grid. The wrapper is re-parented into the
+        // selected workspace tab, so these figures follow whichever workspace is being viewed.
         if (strategiesGridWrapper instanceof JPanel strategiesPanel) {
             strategiesPanel.add(createStrategiesBottomPanel(), BorderLayout.SOUTH);
         }
@@ -6107,6 +6105,7 @@ public class TradingFrame extends JFrame {
             strategyTable.clearSelection();
             selectedStrategyId = null;
             refreshStrategyWorkspaceEmptyState();
+            refreshPortfolioAnalytics();
             return;
         }
         // Row count can change between polls; full refresh keeps sorter/model indexes consistent.
@@ -6118,6 +6117,7 @@ public class TradingFrame extends JFrame {
         refreshGridSearchVisibility();
         refreshStrategyWorkspaceEmptyState();
         preservingSelection = false;
+        refreshPortfolioAnalytics();
         SwingUtilities.invokeLater(() -> {
             restoreSelectedRow();
             strategyTable.repaint();
@@ -6850,7 +6850,7 @@ public class TradingFrame extends JFrame {
     private JPanel createStrategiesBottomPanel() {
         JPanel bottom = new JPanel(new BorderLayout());
         bottom.setOpaque(false);
-        bottom.add(workspaceSummaryLabel, BorderLayout.CENTER);
+        bottom.add(workspaceGridAnalyticsBar, BorderLayout.CENTER);
         gapRocketAnalyzeButton.setVisible(false);
         gapRocketAnalyzeButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
         gapRocketAnalyzeButton.setFocusPainted(false);
@@ -7225,13 +7225,6 @@ public class TradingFrame extends JFrame {
                 .filter(s -> s.strategy.status() == StrategyStatus.ACTIVE)
                 .count();
         long inactive = Math.max(0L, totalCurrentStrategies - running);
-        // The portfolio bar totals the grid on screen: the selected workspace, or every stock on All Stocks.
-        List<ManagedStrategy> scopedStrategies = strategies.stream()
-                .filter(this::includeInCurrentStrategiesTab)
-                .filter(entry -> matchesPortfolioActionScope(entry.strategy, selectedViewMode, selectedWorkspaceId))
-                .toList();
-        SystemMetricsPresenter.PortfolioScopeMetrics scopeMetrics = systemMetricsPresenter.computePortfolioScopeMetrics(
-                scopedStrategies, strategyOrderRepository::findByStrategyId);
         MarketStatusPresenter.MarketStatusViewModel marketStatusViewModel = currentMarketStatusViewModel();
         String cpuText = formatCpuUsageText();
         String memoryText = formatMemoryUsageText();
@@ -7254,14 +7247,11 @@ public class TradingFrame extends JFrame {
                         marketStatusViewModel.openForUi(),
                         availableFundsText,
                         cpuText,
-                        memoryText,
-                        selectedScopeLabel(),
-                        scopeMetrics
+                        memoryText
                 )
         );
         SwingUtilities.invokeLater(() -> {
             refreshCurrentStrategiesHeading();
-            refreshWorkspaceSummary();
             statusStrategyCount.setText(statusBarViewModel.strategyCountText());
             pollingSummary.setText(statusBarViewModel.pollingText());
             pollingSummary.setForeground(statusToneColor(statusBarViewModel.pollingTone()));
@@ -7269,7 +7259,7 @@ public class TradingFrame extends JFrame {
             marketStatus.setForeground(statusToneColor(statusBarViewModel.marketTone()));
             marketStatus.setToolTipText(TooltipStyler.text(statusBarViewModel.marketTooltip()));
             availableFundsStatus.setText(statusBarViewModel.availableFundsText());
-            bottomStatusBars.applyPortfolioScope(statusBarViewModel.portfolioScope());
+            refreshPortfolioAnalytics();
             cpuUsageStatus.setText(statusBarViewModel.cpuText());
             memoryUsageStatus.setText(statusBarViewModel.memoryText());
             statusBar.setText(statusBarViewModel.brokerText());
@@ -8259,12 +8249,17 @@ public class TradingFrame extends JFrame {
 
     // Builds the per-tab P&L summary for the selected workspace (or All Stocks) from cached
     // snapshots — no broker calls — and renders it in the summary row below the grid.
+    /**
+     * Refreshes the footer under the grid for the selected tab: its P&L and its portfolio figures in
+     * one row. Runs on every tab switch, so a new tab shows its own figures at once.
+     */
     private void refreshWorkspaceSummary() {
-        if (workspaceSummaryLabel == null) {
-            return;
-        }
+        String label = selectedScopeLabel();
         WorkspaceAccounting.Snapshot snapshot = computeWorkspaceSnapshot(selectedWorkspaceId);
-        workspaceSummaryLabel.setText(workspaceSummaryPresenter.summaryLine(selectedScopeLabel(), snapshot));
+        java.util.List<PortfolioScopePresenter.Figure> figures =
+                new java.util.ArrayList<>(workspaceSummaryPresenter.figures(label, snapshot));
+        figures.addAll(portfolioScopePresenter.present(label, portfolioMetrics(selectedWorkspaceId)).gridFigures());
+        workspaceGridAnalyticsBar.apply(label, workspaceSummaryPresenter.titleTooltip(label, snapshot), figures);
     }
 
     /** The selected grid's name: a workspace, or All Stocks. */
@@ -8272,6 +8267,28 @@ public class TradingFrame extends JFrame {
         return selectedWorkspaceId == null
                 ? "All Stocks"
                 : workspaceService.findById(selectedWorkspaceId).map(StrategyWorkspace::name).orElse("Workspace");
+    }
+
+    /**
+     * Recalculates the figures from the rows as they are now: every workspace for the bottom status
+     * bar, and the selected tab for the footer under its grid. Runs with every status-bar update and
+     * every grid refresh, so fills, orders and price moves reach both at once.
+     */
+    private void refreshPortfolioAnalytics() {
+        if (bottomStatusBars != null) {
+            bottomStatusBars.applyPortfolioScope(
+                    portfolioScopePresenter.present(PortfolioScopePresenter.ALL_WORKSPACES, portfolioMetrics(null)));
+        }
+        refreshWorkspaceSummary();
+    }
+
+    /** Totals the current-mode grid rows of one workspace, or of every workspace when the id is null. */
+    private SystemMetricsPresenter.PortfolioScopeMetrics portfolioMetrics(String workspaceId) {
+        List<ManagedStrategy> rows = strategies.stream()
+                .filter(this::includeInCurrentStrategiesTab)
+                .filter(entry -> matchesPortfolioActionScope(entry.strategy, selectedViewMode, workspaceId))
+                .toList();
+        return systemMetricsPresenter.computePortfolioScopeMetrics(rows, strategyOrderRepository::findByStrategyId);
     }
 
     // Opens the read-only risk dashboard: builds strategy-level risk analytics from cached

@@ -100,9 +100,9 @@ public class HelpDialog extends JDialog {
             "The chart uses live daily prices from Alpaca. Volume comes from the free IEX feed, which sees only part of all US trading, so compare the volume bars with each other rather than with other websites. The guide describes what the chart shows; it is not a recommendation to buy or sell."
         },
         {
-            "Application - What do the figures in the bottom bar mean?",
-            "The upper bottom bar totals the grid you are looking at: the selected workspace, or every stock on the All Stocks tab. Switch tabs and the figures follow. Hover over any figure for its explanation.\n\n" +
-            "- Market Value is what the shares held now are worth at the latest price.\n" +
+            "Application - What do the portfolio figures under the grid and in the bottom bar mean?",
+            "Two places show these figures. The row under each workspace's grid covers that tab only, with its P&L (Realized, Total, Today, Win) followed by the figures below, and the tab name's tooltip adds unrealized P&L, open positions and the planned budget; it switches the moment you pick another tab. The upper bottom bar of the window totals every workspace. Both recalculate whenever the grid refreshes, so fills, new orders and price moves appear in both at once. Hover over any figure for its explanation.\n\n" +
+            "- Market Value (bottom bar) is what the shares held now are worth at the latest price.\n" +
             "- Invested vs Upcoming compares what you actually paid for the shares you hold with what the buy orders still working at the broker will cost if they fill. Total adds the two: the money committed once those orders fill.\n" +
             "- Gaining and Losing count the held positions trading above or below their average cost, with their combined unrealized profit or loss. Paused positions count too, because they still move with the market.\n" +
             "- Pending Buy counts positions with a buy order that has not filled yet; Pending Sell counts positions with a sell order that has not filled yet, such as a target sell waiting for its price. A position with several working orders counts once."

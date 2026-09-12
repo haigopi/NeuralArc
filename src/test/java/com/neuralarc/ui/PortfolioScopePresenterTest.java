@@ -3,6 +3,7 @@ package com.neuralarc.ui;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -65,6 +66,27 @@ class PortfolioScopePresenterTest {
         assertEquals("R&D <tech>", view.scopeLabel());
         assertTrue(view.marketValue().tooltipHtml().startsWith("<b>R&amp;D &lt;tech&gt;</b>"));
         assertFalse(view.marketValue().tooltipHtml().contains("<tech>"));
+    }
+
+    @Test
+    void gridFiguresComeInDisplayOrderWithTheirTones() {
+        PortfolioScopePresenter.PortfolioScopeView view = presenter.present("Growth",
+                metrics("15000", "12340", "4500", "250", 4, "-80.1", 2, 3, 1));
+
+        List<PortfolioScopePresenter.Figure> figures = view.gridFigures();
+
+        assertEquals(List.of("Invested vs Upcoming", "Gaining", "Losing", "Pending Buy", "Pending Sell"),
+                figures.stream().map(PortfolioScopePresenter.Figure::caption).toList());
+        assertEquals(PortfolioScopePresenter.Tone.POSITIVE, figures.get(1).tone());
+        assertEquals(PortfolioScopePresenter.Tone.NEGATIVE, figures.get(2).tone());
+        assertEquals(view.pendingSell().text(), figures.get(4).text());
+    }
+
+    @Test
+    void toneFollowsTheSignOfTheAmount() {
+        assertEquals(PortfolioScopePresenter.Tone.POSITIVE, PortfolioScopePresenter.toneOf(new BigDecimal("0.01")));
+        assertEquals(PortfolioScopePresenter.Tone.NEGATIVE, PortfolioScopePresenter.toneOf(new BigDecimal("-3")));
+        assertEquals(PortfolioScopePresenter.Tone.NEUTRAL, PortfolioScopePresenter.toneOf(null));
     }
 
     @Test

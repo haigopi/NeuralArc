@@ -3,8 +3,6 @@ package com.neuralarc.ui;
 public final class StatusBarPresenter {
     public static final String NETWORK_ICON_PATH = "icons/wifi.svg";
 
-    private final PortfolioScopePresenter portfolioScopePresenter = new PortfolioScopePresenter();
-
     public StatusBarViewModel present(StatusBarState state) {
         String pollingText = "Ready";
         Tone pollingTone = Tone.DEFAULT;
@@ -51,8 +49,7 @@ public final class StatusBarPresenter {
                 removePrefix(state.cpuText(), "CPU:"),
                 removePrefix(state.memoryText(), "Memory:"),
                 brokerText,
-                brokerTone,
-                portfolioScopePresenter.present(state.scopeLabel(), state.scopeMetrics())
+                brokerTone
         );
     }
 
@@ -84,10 +81,7 @@ public final class StatusBarPresenter {
         ERR
     }
 
-    /**
-     * Everything the two bottom bars show. The portfolio figures are those of the selected grid:
-     * {@code scopeLabel} names it (a workspace, or All Stocks) and {@code scopeMetrics} totals its rows.
-     */
+    /** Broker, market and system state for the bottom bars; portfolio figures are applied separately. */
     public record StatusBarState(
             long runningStrategies,
             long inactiveStrategies,
@@ -103,9 +97,7 @@ public final class StatusBarPresenter {
             boolean marketOpenForUi,
             String availableFundsText,
             String cpuText,
-            String memoryText,
-            String scopeLabel,
-            SystemMetricsPresenter.PortfolioScopeMetrics scopeMetrics
+            String memoryText
     ) {
     }
 
@@ -120,8 +112,7 @@ public final class StatusBarPresenter {
             String cpuText,
             String memoryText,
             String brokerText,
-            Tone brokerTone,
-            PortfolioScopePresenter.PortfolioScopeView portfolioScope
+            Tone brokerTone
     ) {
     }
 

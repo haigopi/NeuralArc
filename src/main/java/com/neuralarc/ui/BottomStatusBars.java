@@ -53,6 +53,9 @@ final class BottomStatusBars {
     private final JPanel portfolioRows = new JPanel();
     private boolean portfolioTwoRows;
     private final JPanel networkStatusRight;
+    // The latest broker state and portfolio figures, so the compact summary and details always agree.
+    private StatusBarPresenter.StatusBarViewModel lastModel;
+    private PortfolioScopePresenter.PortfolioScopeView lastScope;
 
     private final Font baseFont;
     private final Color accentColor;
@@ -210,14 +213,23 @@ final class BottomStatusBars {
     }
 
     void updateCompactSummaryAndDetails(StatusBarPresenter.StatusBarViewModel model, String availableFundsText) {
-        compactStatusSummary.setText(compactStatusSummaryText(model, availableFundsText));
-        String detailsTooltip = TooltipStyler.html(statusBarDetailsHtml(model), 520);
+        lastModel = model;
+        renderSummaryAndDetails();
+    }
+
+    private void renderSummaryAndDetails() {
+        if (lastModel == null) {
+            return;
+        }
+        compactStatusSummary.setText(compactStatusSummaryText(lastModel));
+        String detailsTooltip = TooltipStyler.html(statusBarDetailsHtml(lastModel), 520);
         compactStatusSummary.setToolTipText(detailsTooltip);
         statusDetailsButton.setToolTipText(detailsTooltip);
     }
 
-    /** Shows the selected grid's portfolio figures; hovering a figure or its caption explains it. */
+    /** Shows the portfolio figures of every workspace; hovering a figure or its caption explains it. */
     void applyPortfolioScope(PortfolioScopePresenter.PortfolioScopeView view) {
+        lastScope = view;
         applyItem(marketValueStatus, view.marketValue());
         applyItem(investedValueStatus, view.investedVsUpcoming());
         applyItem(gainingPositionsStatus, view.gaining());
@@ -225,6 +237,7 @@ final class BottomStatusBars {
         applyItem(pendingBuyStatus, view.pendingBuy());
         applyItem(pendingSellStatus, view.pendingSell());
         updatePortfolioLayout();
+        renderSummaryAndDetails();
     }
 
     private void applyItem(JLabel valueLabel, PortfolioScopePresenter.Item item) {
@@ -415,33 +428,39 @@ final class BottomStatusBars {
         marketTimeStatus.setText(ZonedDateTime.now(MARKET_TIME_ZONE).format(MARKET_TIME_FORMATTER));
     }
 
-    private String compactStatusSummaryText(StatusBarPresenter.StatusBarViewModel model, String availableFundsText) {
+    private String compactStatusSummaryText(StatusBarPresenter.StatusBarViewModel model) {
         String broker = stripHtmlTags(model.brokerText());
         String market = model.marketText();
         String funds = model.availableFundsText() == null || model.availableFundsText().isBlank()
                 ? "-"
                 : model.availableFundsText();
         return "Broker " + broker + COMPACT_SEPARATOR + "Market " + market + COMPACT_SEPARATOR + "Funds " + funds
-                + COMPACT_SEPARATOR + "Upcoming " + model.portfolioScope().upcomingText();
+                + (lastScope == null ? "" : COMPACT_SEPARATOR + "Upcoming " + lastScope.upcomingText());
     }
 
     private String statusBarDetailsHtml(StatusBarPresenter.StatusBarViewModel model) {
-        PortfolioScopePresenter.PortfolioScopeView scope = model.portfolioScope();
         return "<b>Broker</b>: " + escapeHtml(stripHtmlTags(model.brokerText()))
                 + "<br><b>Market</b>: " + escapeHtml(model.marketText())
                 + "<br><b>Records</b>: " + escapeHtml(model.strategyCountText())
                 + "<br><b>Polling</b>: " + escapeHtml(model.pollingText())
                 + "<br><b>Trade Stream</b>: " + escapeHtml(stripHtmlTags(streamStatus.getText()))
                 + "<br><b>Funds</b>: " + escapeHtml(model.availableFundsText())
-                + "<br><b>Totals for</b>: " + escapeHtml(scope.scopeLabel())
-                + "<br><b>Market Value</b>: " + escapeHtml(scope.marketValue().text())
-                + "<br><b>Invested vs Upcoming</b>: " + escapeHtml(scope.investedVsUpcoming().text())
-                + "<br><b>Gaining</b>: " + escapeHtml(scope.gaining().text())
-                + "<br><b>Losing</b>: " + escapeHtml(scope.losing().text())
-                + "<br><b>Pending Buy</b>: " + escapeHtml(scope.pendingBuy().text())
-                + "<br><b>Pending Sell</b>: " + escapeHtml(scope.pendingSell().text())
+                + scopeDetailsHtml()
                 + "<br><b>CPU</b>: " + escapeHtml(model.cpuText())
                 + "<br><b>Memory</b>: " + escapeHtml(model.memoryText());
+    }
+
+    private String scopeDetailsHtml() {
+        if (lastScope == null) {
+            return "";
+        }
+        return "<br><b>Totals for</b>: " + escapeHtml(lastScope.scopeLabel())
+                + "<br><b>Market Value</b>: " + escapeHtml(lastScope.marketValue().text())
+                + "<br><b>Invested vs Upcoming</b>: " + escapeHtml(lastScope.investedVsUpcoming().text())
+                + "<br><b>Gaining</b>: " + escapeHtml(lastScope.gaining().text())
+                + "<br><b>Losing</b>: " + escapeHtml(lastScope.losing().text())
+                + "<br><b>Pending Buy</b>: " + escapeHtml(lastScope.pendingBuy().text())
+                + "<br><b>Pending Sell</b>: " + escapeHtml(lastScope.pendingSell().text());
     }
 
     private String stripHtmlTags(String text) {

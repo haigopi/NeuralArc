@@ -3,6 +3,7 @@ package com.neuralarc.ui;
 import com.neuralarc.util.Monetary;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -12,6 +13,18 @@ import java.util.Locale;
  * Tooltips are HTML fragments written for a reader who is not a trader; this class touches no Swing.
  */
 final class PortfolioScopePresenter {
+    /** The scope of the window's bottom status bar, which totals every workspace. */
+    static final String ALL_WORKSPACES = "All workspaces";
+
+    enum Tone {
+        NEUTRAL,
+        POSITIVE,
+        NEGATIVE
+    }
+
+    /** One captioned figure in the footer under a workspace grid. */
+    record Figure(String caption, String text, String tooltipHtml, Tone tone) {
+    }
 
     /** One bar value and the plain-language explanation shown when hovering it. */
     record Item(String text, String tooltipHtml) {
@@ -27,6 +40,15 @@ final class PortfolioScopePresenter {
             Item pendingSell,
             String upcomingText
     ) {
+        /** The portfolio figures shown under the workspace grid, in display order. */
+        List<Figure> gridFigures() {
+            return List.of(
+                    new Figure("Invested vs Upcoming", investedVsUpcoming.text(), investedVsUpcoming.tooltipHtml(), Tone.NEUTRAL),
+                    new Figure("Gaining", gaining.text(), gaining.tooltipHtml(), Tone.POSITIVE),
+                    new Figure("Losing", losing.text(), losing.tooltipHtml(), Tone.NEGATIVE),
+                    new Figure("Pending Buy", pendingBuy.text(), pendingBuy.tooltipHtml(), Tone.NEUTRAL),
+                    new Figure("Pending Sell", pendingSell.text(), pendingSell.tooltipHtml(), Tone.NEUTRAL));
+        }
     }
 
     PortfolioScopeView present(String scopeLabel, SystemMetricsPresenter.PortfolioScopeMetrics metrics) {
@@ -68,6 +90,17 @@ final class PortfolioScopePresenter {
                         + " for example a target sell waiting for its price.");
         return new PortfolioScopeView(scope, marketValue, investedVsUpcoming, gaining, losing, pendingBuy, pendingSell,
                 money(upcoming));
+    }
+
+    /** The scope's name in bold, escaped for a tooltip. */
+    static String scopeHtml(String label) {
+        String scope = label == null || label.isBlank() ? "All Stocks" : label.trim();
+        return "<b>" + escape(scope) + "</b>";
+    }
+
+    static Tone toneOf(BigDecimal value) {
+        int sign = Monetary.round(nonNull(value)).signum();
+        return sign > 0 ? Tone.POSITIVE : sign < 0 ? Tone.NEGATIVE : Tone.NEUTRAL;
     }
 
     /** "$12,340.00", or "-$80.10" for a negative amount. */
