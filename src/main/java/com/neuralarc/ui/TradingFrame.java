@@ -70,6 +70,8 @@ import com.neuralarc.service.WeekendReboundScoreService;
 import com.neuralarc.service.RotatingLogWriter;
 import com.neuralarc.service.SpacesLogUploader;
 import com.neuralarc.service.TradeEmailNotificationService;
+import com.neuralarc.service.PortfolioEmailScheduleService;
+import com.neuralarc.service.PortfolioSnapshotEmailService;
 import com.neuralarc.service.UserIdentityService;
 import com.neuralarc.util.AppMetadata;
 import com.neuralarc.util.BrokerOrderStatusUtil;
@@ -278,6 +280,11 @@ public class TradingFrame extends JFrame {
     private final ExecutorService uiPollingExecutor;
     private final AppSettingsService appSettingsService = new AppSettingsService();
     private final MarketHoursService marketHoursService = new MarketHoursService();
+    private final PortfolioSnapshotEmailService portfolioSnapshotEmailService = new PortfolioSnapshotEmailService(appSettingsService);
+    private final PortfolioEmailScheduleService portfolioEmailScheduler = new PortfolioEmailScheduleService(
+            marketHoursService, java.time.Clock.systemUTC(),
+            (settings, slot) -> SwingUtilities.invokeLater(() -> emailPortfolioSnapshot(slot.label(), settings.recipient())),
+            message -> SwingUtilities.invokeLater(() -> log(message)));
     private final RotatingLogWriter rotatingLogWriter = new RotatingLogWriter(AppMetadata.appDataDirectory().resolve("logs"));
     private final LegalDisclosureController legalDisclosureController = new LegalDisclosureController();
     private boolean legalDisclosureAccepted;
@@ -1442,6 +1449,8 @@ public class TradingFrame extends JFrame {
         settingsDialog.setStrategyExportHandler(this::exportStrategiesToFile);
         settingsDialog.setStrategyImportHandler(this::importStrategiesFromFile);
         settingsDialog.setAlpacaAccountChangedHandler(this::resetLocalTradingDataForAlpacaAccountChange);
+        settingsDialog.setPortfolioSnapshotSender(settings -> emailPortfolioSnapshot("On request", settings.recipient()));
+        portfolioSnapshotEmailService.setLog(message -> SwingUtilities.invokeLater(() -> log(message)));
         strategyPollingTimer = new Timer(1000, e -> {
             triggerPollingCycle();
         });
@@ -3984,6 +3993,7 @@ public class TradingFrame extends JFrame {
         settingsDialog.prepareForOpen();
         settingsDialog.setVisible(true);
         if (settingsDialog.wasSavedDuringOpen()) {
+            portfolioEmailScheduler.setSettings(settingsDialog.portfolioEmailSettings());
             connectionOk = false;
             setStatus("Not connected — verify connection in Settings after changes.", STATUS_WARN);
             updateHeaderModeStatus(currentBrokerType);
@@ -7888,6 +7898,8 @@ public class TradingFrame extends JFrame {
         rangeRiderCoordinator.start();
         profitShieldCoordinator.start();
         autoRiskAdjustmentService.start();
+        portfolioEmailScheduler.setSettings(appSettingsService.loadPortfolioEmailSettings());
+        portfolioEmailScheduler.start();
     }
 
     /**
@@ -8293,7 +8305,19 @@ public class TradingFrame extends JFrame {
 
     // Opens the read-only risk dashboard: builds strategy-level risk analytics from cached
     // snapshots on the EDT, fetches Alpaca positions off-EDT for reconciliation, then renders.
-    private void openRiskDashboard() {
+    /**
+     * Emails the portfolio snapshot for the viewed mode: every workspace's totals, each workspace, and
+     * the Risk Dashboard's analysis. Built on the EDT from the cached rows, then sent in the background.
+     */
+    private void emailPortfolioSnapshot(String occasion, String preferredRecipient) {
+        portfolioSnapshotEmailService.send(PortfolioSnapshotAssembler.assemble(
+                occasion, java.time.ZonedDateTime.now(java.time.ZoneId.of("America/New_York")), selectedModeLabel(),
+                availableFundsText, workspaceService.activeWorkspaces(selectedViewMode),
+                this::portfolioMetrics, this::computeWorkspaceSnapshot, riskInputs()), preferredRecipient);
+    }
+
+    /** The Risk Dashboard's inputs for the viewed mode; the portfolio snapshot email uses the same. */
+    private PortfolioSnapshotAssembler.RiskInputs riskInputs() {
         java.util.List<com.neuralarc.analytics.RiskAnalytics.Holding> holdings = new java.util.ArrayList<>();
         java.util.List<com.neuralarc.analytics.RiskAnalytics.PositionInput> positionInputs = new java.util.ArrayList<>();
         java.util.List<ReconciliationService.SymbolPosition> localPositions = new java.util.ArrayList<>();
@@ -8321,9 +8345,15 @@ public class TradingFrame extends JFrame {
                         position.getLastPrice(), entry.strategy.stopLossPrice(), entry.strategy.targetSellPrice()));
             }
         }
-        com.neuralarc.analytics.RiskAnalytics.Report riskReport = com.neuralarc.analytics.RiskAnalytics.analyze(holdings);
+        return new PortfolioSnapshotAssembler.RiskInputs(holdings, positionInputs, localPositions);
+    }
+
+    private void openRiskDashboard() {
+        PortfolioSnapshotAssembler.RiskInputs inputs = riskInputs();
+        java.util.List<ReconciliationService.SymbolPosition> localPositions = inputs.localPositions();
+        com.neuralarc.analytics.RiskAnalytics.Report riskReport = com.neuralarc.analytics.RiskAnalytics.analyze(inputs.holdings());
         java.util.List<com.neuralarc.analytics.RiskAnalytics.PositionRisk> positionRisks =
-                com.neuralarc.analytics.RiskAnalytics.classify(positionInputs);
+                com.neuralarc.analytics.RiskAnalytics.classify(inputs.positions());
         HttpAlpacaClient client = alpacaClientForMode(selectedApplicationMode());
         String modeLabel = selectedModeLabel();
 
@@ -8659,6 +8689,7 @@ public class TradingFrame extends JFrame {
         }
         bottomStatusBars.shutdown();
         portfolioCaptureController.shutdown();
+        portfolioEmailScheduler.stop();
         strategyPollingTimer.stop();
         uiPollingExecutor.shutdownNow();
         shutdownPollingServices();

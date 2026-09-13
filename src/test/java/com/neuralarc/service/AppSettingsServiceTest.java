@@ -280,4 +280,18 @@ class AppSettingsServiceTest {
         assertFalse(java.nio.file.Files.exists(legacyDir.resolve("settings.properties")));
         assertFalse(java.nio.file.Files.exists(legacyDir.resolve("credentials-paper.properties")));
     }
+
+    @Test
+    void portfolioSnapshotEmailSettingsDefaultToTheFiveMarketTimesAndRoundTrip() throws Exception {
+        AppSettingsService service = new AppSettingsService(tempDir.resolve("portfolio-email.db"));
+        assertEquals(com.neuralarc.model.PortfolioEmailSettings.defaults(), service.loadPortfolioEmailSettings());
+
+        com.neuralarc.model.PortfolioEmailSettings custom = new com.neuralarc.model.PortfolioEmailSettings(false, "me@example.com",
+                java.util.List.of(
+                        new com.neuralarc.model.PortfolioEmailSettings.Slot("Lunch", java.time.LocalTime.of(12, 30), true),
+                        new com.neuralarc.model.PortfolioEmailSettings.Slot("Custom", java.time.LocalTime.of(14, 5), false)));
+        service.savePortfolioEmailSettings(custom);
+
+        assertEquals(custom, service.loadPortfolioEmailSettings());
+    }
 }

@@ -108,6 +108,14 @@ public class HelpDialog extends JDialog {
             "- Pending Buy counts positions with a buy order that has not filled yet; Pending Sell counts positions with a sell order that has not filled yet, such as a target sell waiting for its price. A position with several working orders counts once."
         },
         {
+            "Application - What are portfolio snapshot emails?",
+            "NeuralArc can email you a snapshot of the whole portfolio on US trading days. Turn it on or off, change the times or send one straight away in Settings, under Communication – Portfolio Snapshot Emails.\n\n" +
+            "- The default times are 09:25 (5 minutes before the open), 09:40 (10 minutes after it), 12:00, 15:55 (5 minutes before the close) and 16:10 (10 minutes after it), all US Eastern. Each can be retimed or switched off, and you can add more.\n" +
+            "- Each email has the bottom bar's totals across every workspace, a table of each workspace's figures, and the Risk Dashboard's analysis: capital, open P&L, largest loser, concentration, open P&L by symbol, exposure by symbol and by workspace, and the risk advisories.\n" +
+            "- Emails go to the address set there, or to your User Email when it is blank. They are sent only while NeuralArc is running: a time missed by more than 3 minutes, because the app was closed or the computer asleep, is skipped rather than sent late.\n\n" +
+            "The figures are NeuralArc's own strategy accounting for the mode you are viewing. The email describes your positions; it is not a recommendation to buy or sell."
+        },
+        {
             "Application - What are pending scanner buy actions?",
             "Pending scanner rows are recommendations that have been saved locally but have not yet submitted the base limit buy order.\n\n" +
             "- Place Limit Buy for All Pending Positions submits base limit buys for every pending recommendation in the current scope.\n" +

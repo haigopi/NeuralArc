@@ -146,7 +146,7 @@ public class TradeEmailNotificationService {
         default void onEmailFailed(String eventType, String symbol, String recipientEmail, String subject, String error) {}
     }
 
-    private static final class MailjetEmailSender implements EmailSender {
+    static final class MailjetEmailSender implements EmailSender {
         @Override
         public void send(String recipientEmail, String subject, String textBody, String htmlBody) throws Exception {
             FeedbackEmailService emailService = FeedbackEmailService.fromConfiguration();

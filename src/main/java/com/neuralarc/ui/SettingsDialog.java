@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.AiRecommendationSettings;
+import com.neuralarc.model.PortfolioEmailSettings;
 import com.neuralarc.model.BrokerType;
 import com.neuralarc.model.ApplicationMode;
 import com.neuralarc.model.TimeInForce;
@@ -82,6 +83,7 @@ public class SettingsDialog extends JDialog {
     private final JComboBox<ApplicationMode> appModeBox = new JComboBox<>(ApplicationMode.values());
     private final AiRecommendationSettingsPanel aiRecommendationSettingsPanel = new AiRecommendationSettingsPanel();
     private final PositionValidationSettingsPanel validationSettingsPanel = new PositionValidationSettingsPanel();
+    private final PortfolioEmailSettingsPanel portfolioEmailSettingsPanel = new PortfolioEmailSettingsPanel();
     private final AppSettingsService appSettingsService;
     private transient Function<ConnectionRequest, ConnectionResult> connectionVerifier;
     private transient Function<Path, StrategyTransferResult> strategyExportHandler;
@@ -303,6 +305,8 @@ public class SettingsDialog extends JDialog {
 
         content.add(userPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
+        content.add(createCollapsibleSection("Communication – Portfolio Snapshot Emails", portfolioEmailSettingsPanel, true));
+        content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(apiPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(aiRecommendationSettingsPanel);
@@ -483,6 +487,12 @@ public class SettingsDialog extends JDialog {
             resetTradingDataAfterSave = decision == ApiKeyChangeDecision.DIFFERENT_ACCOUNT;
         }
 
+        String portfolioEmailProblem = portfolioEmailSettingsPanel.validationError();
+        if (portfolioEmailProblem != null) {
+            JOptionPane.showMessageDialog(this, portfolioEmailProblem, "Portfolio Snapshot Emails", JOptionPane.WARNING_MESSAGE);
+            return false;
+        }
+
         try {
             appSettingsService.save(new AppSettingsService.AppSettings(
                     email,
@@ -507,6 +517,7 @@ public class SettingsDialog extends JDialog {
             appSettingsService.saveVerboseApiJsonLoggingEnabled(verboseApiJsonLogging.isSelected());
             com.neuralarc.api.ApiRequestLogConfig.setVerboseJsonLogging(verboseApiJsonLogging.isSelected());
             appSettingsService.saveAiRecommendationSettings(aiRecommendationSettingsPanel.settings());
+            appSettingsService.savePortfolioEmailSettings(portfolioEmailSettingsPanel.settings());
             for (ApplicationMode mode : ApplicationMode.values()) {
                 String[] creds = credentialCache.get(mode);
                 if (creds == null) {
@@ -585,6 +596,7 @@ public class SettingsDialog extends JDialog {
         emailOnBuyExpected.setSelected(appliedSettings.emailOnBuyExpected());
         emailOnSellExecuted.setSelected(appliedSettings.emailOnSellExecuted());
         aiRecommendationSettingsPanel.populate(appSettingsService.loadAiRecommendationSettings());
+        portfolioEmailSettingsPanel.populate(appSettingsService.loadPortfolioEmailSettings());
         saveCredentials.setSelected(true);
         brokerBox.setSelectedItem(appliedSettings.brokerType());
         appModeBox.setSelectedItem(appliedSettings.applicationMode());
@@ -689,6 +701,7 @@ public class SettingsDialog extends JDialog {
             emailOnBuyExpected.setSelected(AppSettingsService.DEFAULT_EMAIL_ON_BUY_EXPECTED);
             emailOnSellExecuted.setSelected(AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED);
             aiRecommendationSettingsPanel.populate(AiRecommendationSettings.defaults());
+            portfolioEmailSettingsPanel.populate(PortfolioEmailSettings.defaults());
             brokerBox.setSelectedItem(BrokerType.ALPACA);
             appModeBox.setSelectedItem(ApplicationMode.PAPER);
             displayedCredentialMode = ApplicationMode.PAPER;
@@ -769,6 +782,15 @@ public class SettingsDialog extends JDialog {
         }
         ConnectionResult result = connectionVerifier.apply(new ConnectionRequest(brokerType(), applicationMode(), getApiKey(), getApiSecret()));
         markConnectionStatus(result.connected(), result.message());
+    }
+
+    /** Lets "Send a Snapshot Now" email the portfolio with the settings on screen. */
+    public void setPortfolioSnapshotSender(java.util.function.Consumer<PortfolioEmailSettings> sender) {
+        portfolioEmailSettingsPanel.setSendNowHandler(sender);
+    }
+
+    public PortfolioEmailSettings portfolioEmailSettings() {
+        return portfolioEmailSettingsPanel.settings();
     }
 
     public AiRecommendationSettings aiRecommendationSettings() {
