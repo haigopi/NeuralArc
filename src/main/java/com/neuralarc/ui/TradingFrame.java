@@ -283,7 +283,7 @@ public class TradingFrame extends JFrame {
     private final PortfolioSnapshotEmailService portfolioSnapshotEmailService = new PortfolioSnapshotEmailService(appSettingsService);
     private final PortfolioEmailScheduleService portfolioEmailScheduler = new PortfolioEmailScheduleService(
             marketHoursService, java.time.Clock.systemUTC(),
-            (settings, slot) -> SwingUtilities.invokeLater(() -> emailPortfolioSnapshot(slot.label(), settings.recipient())),
+            slot -> SwingUtilities.invokeLater(() -> emailPortfolioSnapshot(slot.label(), null)),
             message -> SwingUtilities.invokeLater(() -> log(message)));
     private final RotatingLogWriter rotatingLogWriter = new RotatingLogWriter(AppMetadata.appDataDirectory().resolve("logs"));
     private final LegalDisclosureController legalDisclosureController = new LegalDisclosureController();
@@ -1449,7 +1449,7 @@ public class TradingFrame extends JFrame {
         settingsDialog.setStrategyExportHandler(this::exportStrategiesToFile);
         settingsDialog.setStrategyImportHandler(this::importStrategiesFromFile);
         settingsDialog.setAlpacaAccountChangedHandler(this::resetLocalTradingDataForAlpacaAccountChange);
-        settingsDialog.setPortfolioSnapshotSender(settings -> emailPortfolioSnapshot("On request", settings.recipient()));
+        settingsDialog.setPortfolioSnapshotSender(email -> emailPortfolioSnapshot("On request", email));
         portfolioSnapshotEmailService.setLog(message -> SwingUtilities.invokeLater(() -> log(message)));
         strategyPollingTimer = new Timer(1000, e -> {
             triggerPollingCycle();
@@ -8306,14 +8306,18 @@ public class TradingFrame extends JFrame {
     // Opens the read-only risk dashboard: builds strategy-level risk analytics from cached
     // snapshots on the EDT, fetches Alpaca positions off-EDT for reconciliation, then renders.
     /**
-     * Emails the portfolio snapshot for the viewed mode: every workspace's totals, each workspace, and
-     * the Risk Dashboard's analysis. Built on the EDT from the cached rows, then sent in the background.
+     * Emails the portfolio snapshot for the viewed mode: every workspace's totals, each workspace, the
+     * Risk Dashboard's analysis and the broker reconciliation. Built on the EDT from the cached rows;
+     * the Alpaca comparison and the send run in the background.
      */
-    private void emailPortfolioSnapshot(String occasion, String preferredRecipient) {
+    private void emailPortfolioSnapshot(String occasion, String typedEmail) {
+        PortfolioSnapshotAssembler.RiskInputs inputs = riskInputs();
+        HttpAlpacaClient client = alpacaClientForMode(selectedApplicationMode());
         portfolioSnapshotEmailService.send(PortfolioSnapshotAssembler.assemble(
                 occasion, java.time.ZonedDateTime.now(java.time.ZoneId.of("America/New_York")), selectedModeLabel(),
                 availableFundsText, workspaceService.activeWorkspaces(selectedViewMode),
-                this::portfolioMetrics, this::computeWorkspaceSnapshot, riskInputs()), preferredRecipient);
+                this::portfolioMetrics, this::computeWorkspaceSnapshot, inputs), typedEmail,
+                () -> PortfolioSnapshotAssembler.brokerCheck(inputs.localPositions(), client));
     }
 
     /** The Risk Dashboard's inputs for the viewed mode; the portfolio snapshot email uses the same. */
@@ -8360,16 +8364,7 @@ public class TradingFrame extends JFrame {
         new SwingWorker<java.util.List<ReconciliationService.SymbolPosition>, Void>() {
             @Override
             protected java.util.List<ReconciliationService.SymbolPosition> doInBackground() {
-                java.util.List<ReconciliationService.SymbolPosition> broker = new java.util.ArrayList<>();
-                if (client != null) {
-                    for (com.neuralarc.api.AlpacaPositionData position : client.getPositions()) {
-                        if (position.exists()) {
-                            broker.add(new ReconciliationService.SymbolPosition(
-                                    position.symbol(), position.quantity(), position.avgEntryPrice()));
-                        }
-                    }
-                }
-                return broker;
+                return PortfolioSnapshotAssembler.brokerPositions(client);
             }
 
             @Override

@@ -239,6 +239,7 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
         pack();
         setMinimumSize(new Dimension(700, 560));
         setSize(700, 720);
+        DialogSizing.growTall(this, 720);
         setLocationRelativeTo(getOwner());
     }
 

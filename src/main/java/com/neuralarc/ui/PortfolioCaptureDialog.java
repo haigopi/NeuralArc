@@ -117,7 +117,7 @@ final class PortfolioCaptureDialog extends JDialog {
         applyCompactFonts(getContentPane());
         refreshMetrics();
         updateEnabledState();
-        DialogSizing.packAndFit(this, 640, 480);
+        DialogSizing.packAndFitTall(this, 640, 480);
         setLocationRelativeTo(owner);
     }
 

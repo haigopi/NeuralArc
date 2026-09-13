@@ -70,7 +70,6 @@ public class AppSettingsService {
   private static final String KEY_AI_OPENAI_MODEL = "ai.openai.model";
   private static final String KEY_AI_OPENAI_TIMEOUT = "ai.openai.timeout";
   private static final String KEY_PORTFOLIO_EMAIL_ENABLED = "portfolioEmail.enabled";
-  private static final String KEY_PORTFOLIO_EMAIL_RECIPIENT = "portfolioEmail.recipient";
   private static final String KEY_PORTFOLIO_EMAIL_SLOTS = "portfolioEmail.slots";
 
   private final AppDatabase database;
@@ -227,11 +226,10 @@ public class AppSettingsService {
     }
   }
 
-  /** When and where the portfolio snapshot emails go; the five market-session defaults until changed. */
+  /** When the portfolio snapshot emails go out; the five market-session defaults until changed. */
   public PortfolioEmailSettings loadPortfolioEmailSettings() {
     return new PortfolioEmailSettings(
         parseBoolean(readSetting(KEY_PORTFOLIO_EMAIL_ENABLED, false), PortfolioEmailSettings.DEFAULT_ENABLED),
-        readSetting(KEY_PORTFOLIO_EMAIL_RECIPIENT, false),
         PortfolioEmailSettings.decodeSlots(readSetting(KEY_PORTFOLIO_EMAIL_SLOTS, false))
     );
   }
@@ -240,7 +238,6 @@ public class AppSettingsService {
     PortfolioEmailSettings safe = settings == null ? PortfolioEmailSettings.defaults() : settings;
     try {
       writeSetting(KEY_PORTFOLIO_EMAIL_ENABLED, String.valueOf(safe.enabled()), false);
-      writeSetting(KEY_PORTFOLIO_EMAIL_RECIPIENT, safe.recipient(), false);
       writeSetting(KEY_PORTFOLIO_EMAIL_SLOTS, safe.encodeSlots(), false);
     } catch (SQLException ex) {
       throw new IOException("Failed to persist portfolio email settings", ex);

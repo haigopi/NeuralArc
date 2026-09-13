@@ -50,11 +50,26 @@ class TradeEmailNotificationServiceTest {
         service.notifyBuyExpected(strategy(), order(StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.SUBMITTED));
 
         assertEquals(1, sender.messages.size());
-        assertEquals("ops@example.com", sender.messages.getFirst().recipient());
+        assertEquals("user@example.com", sender.messages.getFirst().recipient());
         assertTrue(sender.messages.getFirst().subject().startsWith("NeuralArc: Live - Buy order placed: "),
                 sender.messages.getFirst().subject());
         assertEquals(1, listener.sent.size());
-        assertTrue(listener.sent.getFirst().contains("BUY_EXPECTED:AAPL:ops@example.com"));
+        assertTrue(listener.sent.getFirst().contains("BUY_EXPECTED:AAPL:user@example.com"));
+    }
+
+    @Test
+    void withoutAUserEmailTradeAlertsGoToTheConfiguredAddress() throws Exception {
+        RecordingSender sender = new RecordingSender();
+        TradeEmailNotificationService service = new TradeEmailNotificationService(
+                settingsWithUserEmail("", true, false),
+                sender,
+                Runnable::run,
+                "ops@example.com"
+        );
+
+        service.notifyBuyExpected(strategy(), order(StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.SUBMITTED));
+
+        assertEquals("ops@example.com", sender.messages.getFirst().recipient());
     }
 
     @Test
@@ -104,7 +119,7 @@ class TradeEmailNotificationServiceTest {
         service.notifySellExecuted(strategy(), order(StrategyOrderSide.SELL, StrategyStage.TARGET_SELL, StrategyOrderStatus.FILLED));
 
         assertEquals(1, sender.messages.size());
-        assertEquals("ops@example.com", sender.messages.getFirst().recipient());
+        assertEquals("user@example.com", sender.messages.getFirst().recipient());
         assertTrue(sender.messages.getFirst().subject().startsWith("NeuralArc: Live - Sell order executed: "),
                 sender.messages.getFirst().subject());
     }
@@ -281,7 +296,7 @@ class TradeEmailNotificationServiceTest {
         service.notifyBuyExpected(strategy(), order(StrategyOrderSide.BUY, StrategyStage.BASE_BUY, StrategyOrderStatus.SUBMITTED));
 
         assertEquals(1, listener.failed.size());
-        assertTrue(listener.failed.getFirst().contains("BUY_EXPECTED:AAPL:ops@example.com:boom"));
+        assertTrue(listener.failed.getFirst().contains("BUY_EXPECTED:AAPL:user@example.com:boom"), listener.failed.getFirst());
     }
 
     private AppSettingsService settings(boolean buyExpected, boolean sellExecuted) throws Exception {

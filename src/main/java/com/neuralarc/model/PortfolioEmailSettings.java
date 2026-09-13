@@ -12,10 +12,10 @@ import java.util.stream.Collectors;
 /**
  * When NeuralArc emails the portfolio snapshot. Times are US Eastern clock times on trading days.
  * The defaults sit around the regular session: 5 minutes before the 9:30 open, 10 minutes after it,
- * lunch, 5 minutes before the 4:00 close and 10 minutes after it. A blank recipient means the
- * user's own email from Settings.
+ * lunch, 5 minutes before the 4:00 close and 10 minutes after it. Snapshots, like every NeuralArc
+ * email, go to the user's email from Settings.
  */
-public record PortfolioEmailSettings(boolean enabled, String recipient, List<Slot> slots) {
+public record PortfolioEmailSettings(boolean enabled, List<Slot> slots) {
     public static final boolean DEFAULT_ENABLED = true;
     public static final String CUSTOM_LABEL = "Custom";
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
@@ -30,7 +30,6 @@ public record PortfolioEmailSettings(boolean enabled, String recipient, List<Slo
     }
 
     public PortfolioEmailSettings {
-        recipient = recipient == null ? "" : recipient.trim();
         slots = slots == null ? List.of() : slots.stream()
                 .filter(Objects::nonNull)
                 .sorted(Comparator.comparing(Slot::timeEt))
@@ -38,7 +37,7 @@ public record PortfolioEmailSettings(boolean enabled, String recipient, List<Slo
     }
 
     public static PortfolioEmailSettings defaults() {
-        return new PortfolioEmailSettings(DEFAULT_ENABLED, "", defaultSlots());
+        return new PortfolioEmailSettings(DEFAULT_ENABLED, defaultSlots());
     }
 
     public static List<Slot> defaultSlots() {
@@ -54,7 +53,7 @@ public record PortfolioEmailSettings(boolean enabled, String recipient, List<Slo
         return defaultSlots().stream().anyMatch(slot -> slot.label().equals(label));
     }
 
-    /** The times that will actually send: none while the emails are switched off. */
+    /** The times that will actually send: none while the snapshots are switched off. */
     public List<Slot> activeSlots() {
         return enabled ? slots.stream().filter(Slot::enabled).toList() : List.of();
     }

@@ -39,7 +39,7 @@ final class RiskDashboardDialog extends JDialog {
         add(actions, BorderLayout.SOUTH);
 
         setResizable(true);
-        DialogSizing.packAndFit(this, 1040, 760);
+        DialogSizing.packAndFitTall(this, 1040, 760);
         setLocationRelativeTo(owner);
     }
 }

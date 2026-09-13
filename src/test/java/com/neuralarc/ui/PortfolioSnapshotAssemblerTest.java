@@ -87,6 +87,35 @@ class PortfolioSnapshotAssemblerTest {
         assertEquals("-", PortfolioSnapshotAssembler.funds(null));
     }
 
+    @Test
+    void theBrokerCheckListsEverySymbolThatDisagreesWithAlpaca() {
+        List<com.neuralarc.service.ReconciliationService.SymbolPosition> local = List.of(
+                new com.neuralarc.service.ReconciliationService.SymbolPosition("GOOG", new BigDecimal("10"), new BigDecimal("150.00")),
+                new com.neuralarc.service.ReconciliationService.SymbolPosition("CRDO", new BigDecimal("20"), new BigDecimal("100.00")));
+        List<com.neuralarc.service.ReconciliationService.SymbolPosition> broker = List.of(
+                new com.neuralarc.service.ReconciliationService.SymbolPosition("GOOG", new BigDecimal("10"), new BigDecimal("150.00")),
+                new com.neuralarc.service.ReconciliationService.SymbolPosition("CRDO", new BigDecimal("15"), new BigDecimal("100.00")),
+                new com.neuralarc.service.ReconciliationService.SymbolPosition("ORCL", new BigDecimal("5"), new BigDecimal("100.00")));
+
+        PortfolioSnapshot.BrokerCheck check = PortfolioSnapshotAssembler.brokerCheck(local, broker);
+
+        assertEquals(true, check.checked());
+        assertEquals(3, check.symbolCount());
+        assertEquals(List.of("CRDO", "ORCL"), check.mismatches().stream().map(PortfolioSnapshot.Mismatch::symbol).sorted().toList());
+        assertEquals(true, check.mismatches().stream().anyMatch(m -> m.description().equals("NeuralArc tracks 20 shares, Alpaca holds 15 shares")),
+                check.mismatches().toString());
+        assertEquals(true, check.mismatches().stream().anyMatch(m -> m.description().equals("held at Alpaca (5 shares) but no NeuralArc strategy tracks it")),
+                check.mismatches().toString());
+    }
+
+    @Test
+    void withoutAnAlpacaConnectionTheEmailSaysPositionsWereNotCompared() {
+        PortfolioSnapshot.BrokerCheck check = PortfolioSnapshotAssembler.brokerCheck(List.of(), (com.neuralarc.api.HttpAlpacaClient) null);
+
+        assertEquals(false, check.checked());
+        assertEquals("Not connected to Alpaca, so positions were not compared.", check.note());
+    }
+
     private static StrategyWorkspace workspace(String id, String name, String code) {
         return new StrategyWorkspace(id, name, code, StrategyMode.PAPER, false, Instant.now(), Instant.now());
     }

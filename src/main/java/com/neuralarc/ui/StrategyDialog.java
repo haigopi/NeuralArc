@@ -666,6 +666,7 @@ public class StrategyDialog extends JDialog {
                 DIALOG_SCREEN_MARGIN,
                 DIALOG_MAX_SCREEN_HEIGHT_RATIO
         );
+        DialogSizing.growTall(this, DIALOG_MIN_HEIGHT);
         setResizable(true);
         setLocationRelativeTo(owner);
     }

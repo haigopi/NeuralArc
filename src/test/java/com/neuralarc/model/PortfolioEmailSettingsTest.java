@@ -14,30 +14,28 @@ class PortfolioEmailSettingsTest {
         PortfolioEmailSettings defaults = PortfolioEmailSettings.defaults();
 
         assertTrue(defaults.enabled());
-        assertEquals("", defaults.recipient());
         assertEquals(List.of(LocalTime.of(9, 25), LocalTime.of(9, 40), LocalTime.of(12, 0), LocalTime.of(15, 55), LocalTime.of(16, 10)),
                 defaults.slots().stream().map(PortfolioEmailSettings.Slot::timeEt).toList());
         assertEquals("on at 09:25, 09:40, 12:00, 15:55, 16:10 ET on trading days", defaults.describe());
     }
 
     @Test
-    void onlySwitchedOnTimesSendAndNoneWhileTheEmailsAreOff() {
+    void onlySwitchedOnTimesSendAndNoneWhileTheSnapshotsAreOff() {
         List<PortfolioEmailSettings.Slot> slots = List.of(
                 new PortfolioEmailSettings.Slot("Lunch", LocalTime.of(12, 0), true),
                 new PortfolioEmailSettings.Slot("After the close", LocalTime.of(16, 10), false));
 
-        assertEquals(1, new PortfolioEmailSettings(true, "", slots).activeSlots().size());
-        assertEquals(List.of(), new PortfolioEmailSettings(false, "", slots).activeSlots());
-        assertEquals("off", new PortfolioEmailSettings(false, "", slots).describe());
+        assertEquals(1, new PortfolioEmailSettings(true, slots).activeSlots().size());
+        assertEquals(List.of(), new PortfolioEmailSettings(false, slots).activeSlots());
+        assertEquals("off", new PortfolioEmailSettings(false, slots).describe());
     }
 
     @Test
     void slotsAreKeptInTimeOrderAndSurviveStorage() {
-        PortfolioEmailSettings settings = new PortfolioEmailSettings(true, " me@example.com ", List.of(
+        PortfolioEmailSettings settings = new PortfolioEmailSettings(true, List.of(
                 new PortfolioEmailSettings.Slot("Custom", LocalTime.of(14, 5), false),
                 new PortfolioEmailSettings.Slot("Before the open", LocalTime.of(9, 25), true)));
 
-        assertEquals("me@example.com", settings.recipient());
         assertEquals("Before the open", settings.slots().get(0).label());
         assertEquals("Before the open@09:25@1;Custom@14:05@0", settings.encodeSlots());
         assertEquals(settings.slots(), PortfolioEmailSettings.decodeSlots(settings.encodeSlots()));

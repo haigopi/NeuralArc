@@ -145,6 +145,7 @@ final class AverageLosingPositionsDialog {
         dialog.getRootPane().setDefaultButton(content.submitButton);
         dialog.pack();
         dialog.setMinimumSize(dialog.getSize());
+        DialogSizing.growTall(dialog, dialog.getHeight());
         dialog.setLocationRelativeTo(owner);
         dialog.setVisible(true);
         return content.confirmed ? Optional.of(content.selection()) : Optional.empty();

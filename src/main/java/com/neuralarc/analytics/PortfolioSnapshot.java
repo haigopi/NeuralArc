@@ -18,7 +18,8 @@ public record PortfolioSnapshot(
         Figures allWorkspaces,
         List<WorkspaceRow> workspaces,
         RiskAnalytics.Report risk,
-        List<RiskAnalytics.PositionRisk> positionRisks
+        List<RiskAnalytics.PositionRisk> positionRisks,
+        BrokerCheck brokerCheck
 ) {
     public PortfolioSnapshot {
         Objects.requireNonNull(takenAt, "takenAt");
@@ -28,6 +29,47 @@ public record PortfolioSnapshot(
         allWorkspaces = allWorkspaces == null ? Figures.empty() : allWorkspaces;
         workspaces = workspaces == null ? List.of() : List.copyOf(workspaces);
         positionRisks = positionRisks == null ? List.of() : List.copyOf(positionRisks);
+    }
+
+    /** A snapshot whose broker reconciliation has not been run yet. */
+    public PortfolioSnapshot(
+            String occasion,
+            ZonedDateTime takenAt,
+            String modeLabel,
+            String fundsAvailable,
+            Figures allWorkspaces,
+            List<WorkspaceRow> workspaces,
+            RiskAnalytics.Report risk,
+            List<RiskAnalytics.PositionRisk> positionRisks
+    ) {
+        this(occasion, takenAt, modeLabel, fundsAvailable, allWorkspaces, workspaces, risk, positionRisks, null);
+    }
+
+    public PortfolioSnapshot withBrokerCheck(BrokerCheck check) {
+        return new PortfolioSnapshot(occasion, takenAt, modeLabel, fundsAvailable, allWorkspaces, workspaces, risk,
+                positionRisks, check);
+    }
+
+    /**
+     * What comparing NeuralArc's positions with Alpaca's found: how many symbols were compared and
+     * which disagree, or why the comparison could not be made.
+     */
+    public record BrokerCheck(boolean checked, int symbolCount, List<Mismatch> mismatches, String note) {
+        public BrokerCheck {
+            mismatches = mismatches == null ? List.of() : List.copyOf(mismatches);
+            note = note == null ? "" : note.trim();
+        }
+
+        public static BrokerCheck compared(int symbolCount, List<Mismatch> mismatches) {
+            return new BrokerCheck(true, symbolCount, mismatches, "");
+        }
+
+        public static BrokerCheck unavailable(String reason) {
+            return new BrokerCheck(false, 0, List.of(), reason);
+        }
+    }
+
+    public record Mismatch(String symbol, String description) {
     }
 
     /** One scope's figures: its money, its P&amp;L, and how its positions stand. */

@@ -72,8 +72,10 @@ public class SettingsDialog extends JDialog {
             AppSettingsService.DEFAULT_RESUBMIT_ON_EXPIRY_ENABLED
     );
     private final JComboBox<TimeInForce> manualBuyTimeInForceBox = new JComboBox<>(TimeInForce.values());
-    private final JCheckBox emailOnBuyExpected = new JCheckBox("Buy order placed / waiting for fill", AppSettingsService.DEFAULT_EMAIL_ON_BUY_EXPECTED);
-    private final JCheckBox emailOnSellExecuted = new JCheckBox("Sell order executed", AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED);
+    // Every email preference lives in the Communication section; the trade alert boxes are its own.
+    private final CommunicationSettingsPanel communicationSettingsPanel = new CommunicationSettingsPanel();
+    private final JCheckBox emailOnBuyExpected = communicationSettingsPanel.buyExpectedCheckBox();
+    private final JCheckBox emailOnSellExecuted = communicationSettingsPanel.sellExecutedCheckBox();
     private final JCheckBox saveCredentials = new JCheckBox("Save credentials locally", false);
     private final JButton verifyConnectionButton = new JButton("Verify Connection");
     private final JButton exportStrategiesButton = new JButton("Export Strategies");
@@ -83,7 +85,6 @@ public class SettingsDialog extends JDialog {
     private final JComboBox<ApplicationMode> appModeBox = new JComboBox<>(ApplicationMode.values());
     private final AiRecommendationSettingsPanel aiRecommendationSettingsPanel = new AiRecommendationSettingsPanel();
     private final PositionValidationSettingsPanel validationSettingsPanel = new PositionValidationSettingsPanel();
-    private final PortfolioEmailSettingsPanel portfolioEmailSettingsPanel = new PortfolioEmailSettingsPanel();
     private final AppSettingsService appSettingsService;
     private transient Function<ConnectionRequest, ConnectionResult> connectionVerifier;
     private transient Function<Path, StrategyTransferResult> strategyExportHandler;
@@ -133,24 +134,9 @@ public class SettingsDialog extends JDialog {
         JPanel userPanel = createFormPanel("User Details");
         int userRow = 0;
         addFormRow(userPanel, userRow++, "User Email:", emailField, true);
-
-        JPanel emailPreferences = new JPanel();
-        emailPreferences.setLayout(new BoxLayout(emailPreferences, BoxLayout.Y_AXIS));
-        emailPreferences.setOpaque(false);
-        emailPreferences.setBorder(new EmptyBorder(2, 0, 2, 0));
-        JLabel emailPreferenceDescription = mutedDescription(
-                "Choose which strategy emails to send. Buy alerts are sent when a buy order is placed. "
-                        + "Sell alerts are sent when a sell order is filled."
-        );
-        emailOnBuyExpected.setAlignmentX(Component.LEFT_ALIGNMENT);
-        emailOnSellExecuted.setAlignmentX(Component.LEFT_ALIGNMENT);
-        emailPreferenceDescription.setAlignmentX(Component.LEFT_ALIGNMENT);
-        emailPreferences.add(emailOnBuyExpected);
-        emailPreferences.add(Box.createVerticalStrut(6));
-        emailPreferences.add(emailOnSellExecuted);
-        emailPreferences.add(Box.createVerticalStrut(8));
-        emailPreferences.add(emailPreferenceDescription);
-        addFormRow(userPanel, userRow, "Email Communications:", emailPreferences, false);
+        addFormRow(userPanel, userRow, "", mutedDescription(
+                "NeuralArc sends every email to this address. Choose which ones under Communication."), false);
+        communicationSettingsPanel.followRecipient(emailField);
 
         JPanel apiPanel = createFormPanel("Alpaca API Details");
         int apiRow = 0;
@@ -305,7 +291,7 @@ public class SettingsDialog extends JDialog {
 
         content.add(userPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
-        content.add(createCollapsibleSection("Communication – Portfolio Snapshot Emails", portfolioEmailSettingsPanel, true));
+        content.add(createCollapsibleSection("Communication", communicationSettingsPanel, true));
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(apiPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
@@ -353,7 +339,7 @@ public class SettingsDialog extends JDialog {
 
         loadAll();
         updateBrokerControlState();
-        DialogSizing.packAndFit(this, 760, 560);
+        DialogSizing.packAndFitTall(this, 760, 560);
         setResizable(true);
         setLocationRelativeTo(owner);
     }
@@ -487,9 +473,9 @@ public class SettingsDialog extends JDialog {
             resetTradingDataAfterSave = decision == ApiKeyChangeDecision.DIFFERENT_ACCOUNT;
         }
 
-        String portfolioEmailProblem = portfolioEmailSettingsPanel.validationError();
-        if (portfolioEmailProblem != null) {
-            JOptionPane.showMessageDialog(this, portfolioEmailProblem, "Portfolio Snapshot Emails", JOptionPane.WARNING_MESSAGE);
+        String communicationProblem = communicationSettingsPanel.validationError();
+        if (communicationProblem != null) {
+            JOptionPane.showMessageDialog(this, communicationProblem, "Communication", JOptionPane.WARNING_MESSAGE);
             return false;
         }
 
@@ -517,7 +503,7 @@ public class SettingsDialog extends JDialog {
             appSettingsService.saveVerboseApiJsonLoggingEnabled(verboseApiJsonLogging.isSelected());
             com.neuralarc.api.ApiRequestLogConfig.setVerboseJsonLogging(verboseApiJsonLogging.isSelected());
             appSettingsService.saveAiRecommendationSettings(aiRecommendationSettingsPanel.settings());
-            appSettingsService.savePortfolioEmailSettings(portfolioEmailSettingsPanel.settings());
+            appSettingsService.savePortfolioEmailSettings(communicationSettingsPanel.portfolioEmailSettings());
             for (ApplicationMode mode : ApplicationMode.values()) {
                 String[] creds = credentialCache.get(mode);
                 if (creds == null) {
@@ -596,7 +582,7 @@ public class SettingsDialog extends JDialog {
         emailOnBuyExpected.setSelected(appliedSettings.emailOnBuyExpected());
         emailOnSellExecuted.setSelected(appliedSettings.emailOnSellExecuted());
         aiRecommendationSettingsPanel.populate(appSettingsService.loadAiRecommendationSettings());
-        portfolioEmailSettingsPanel.populate(appSettingsService.loadPortfolioEmailSettings());
+        communicationSettingsPanel.populatePortfolioEmail(appSettingsService.loadPortfolioEmailSettings());
         saveCredentials.setSelected(true);
         brokerBox.setSelectedItem(appliedSettings.brokerType());
         appModeBox.setSelectedItem(appliedSettings.applicationMode());
@@ -701,7 +687,7 @@ public class SettingsDialog extends JDialog {
             emailOnBuyExpected.setSelected(AppSettingsService.DEFAULT_EMAIL_ON_BUY_EXPECTED);
             emailOnSellExecuted.setSelected(AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED);
             aiRecommendationSettingsPanel.populate(AiRecommendationSettings.defaults());
-            portfolioEmailSettingsPanel.populate(PortfolioEmailSettings.defaults());
+            communicationSettingsPanel.populatePortfolioEmail(PortfolioEmailSettings.defaults());
             brokerBox.setSelectedItem(BrokerType.ALPACA);
             appModeBox.setSelectedItem(ApplicationMode.PAPER);
             displayedCredentialMode = ApplicationMode.PAPER;
@@ -784,13 +770,13 @@ public class SettingsDialog extends JDialog {
         markConnectionStatus(result.connected(), result.message());
     }
 
-    /** Lets "Send a Snapshot Now" email the portfolio with the settings on screen. */
-    public void setPortfolioSnapshotSender(java.util.function.Consumer<PortfolioEmailSettings> sender) {
-        portfolioEmailSettingsPanel.setSendNowHandler(sender);
+    /** Lets "Send a Snapshot Now" email the portfolio to the User Email on screen, saved or not. */
+    public void setPortfolioSnapshotSender(java.util.function.Consumer<String> sender) {
+        communicationSettingsPanel.setSendNowHandler(sender);
     }
 
     public PortfolioEmailSettings portfolioEmailSettings() {
-        return portfolioEmailSettingsPanel.settings();
+        return communicationSettingsPanel.portfolioEmailSettings();
     }
 
     public AiRecommendationSettings aiRecommendationSettings() {
@@ -967,7 +953,7 @@ public class SettingsDialog extends JDialog {
             updateCollapsibleSectionButton(toggleButton, title, expanded);
             container.revalidate();
             container.repaint();
-            DialogSizing.packAndFit(this, 760, 560);
+            DialogSizing.packAndFitTall(this, 760, 560);
         });
 
         container.add(toggleButton, BorderLayout.NORTH);

@@ -85,7 +85,7 @@ public class TradeEmailNotificationService {
         sendAsync(
                 "BUY_EXPECTED",
                 strategy.symbol(),
-                automatedRecipientEmail,
+                recipientFor(settings),
                 contentBuilder.buySubject(strategy),
                 contentBuilder.buyText(strategy, order, context),
                 contentBuilder.buyHtml(strategy, order, context)
@@ -104,11 +104,20 @@ public class TradeEmailNotificationService {
         sendAsync(
                 "SELL_EXECUTED",
                 strategy.symbol(),
-                automatedRecipientEmail,
+                recipientFor(settings),
                 contentBuilder.sellSubject(strategy, order, context),
                 contentBuilder.sellText(strategy, order, context),
                 contentBuilder.sellHtml(strategy, order, context)
         );
+    }
+
+    /**
+     * Every NeuralArc email goes to the user's email from Settings; the configured automated address is
+     * used only when none has been entered.
+     */
+    private String recipientFor(AppSettingsService.AppSettings settings) {
+        String userEmail = settings.userEmail();
+        return userEmail == null || userEmail.isBlank() ? automatedRecipientEmail : userEmail.trim();
     }
 
     public void setNotificationListener(EmailNotificationListener notificationListener) {

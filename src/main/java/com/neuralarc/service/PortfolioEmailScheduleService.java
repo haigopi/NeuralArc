@@ -38,7 +38,7 @@ public final class PortfolioEmailScheduleService {
 
     /** Called on the scheduler thread when a send time is reached. */
     public interface SendTrigger {
-        void send(PortfolioEmailSettings settings, PortfolioEmailSettings.Slot slot);
+        void send(PortfolioEmailSettings.Slot slot);
     }
 
     private final MarketHoursService marketHours;
@@ -118,7 +118,7 @@ public final class PortfolioEmailScheduleService {
             if (late >= 0 && late < GRACE.getSeconds()) {
                 sentToday.add(slot.timeEt());
                 log.accept("[EMAIL] Portfolio snapshot time reached: " + slot.label() + " (" + slot.timeEt() + " ET).");
-                trigger.send(settings, slot);
+                trigger.send(slot);
                 return Optional.of(slot);
             }
         }

@@ -32,7 +32,7 @@ final class StockChartDialog extends JDialog {
         add(actions, BorderLayout.SOUTH);
 
         setResizable(true);
-        DialogSizing.packAndFit(this, 1180, 780);
+        DialogSizing.packAndFitTall(this, 1180, 780);
         setLocationRelativeTo(owner);
     }
 

@@ -108,12 +108,13 @@ public class HelpDialog extends JDialog {
             "- Pending Buy counts positions with a buy order that has not filled yet; Pending Sell counts positions with a sell order that has not filled yet, such as a target sell waiting for its price. A position with several working orders counts once."
         },
         {
-            "Application - What are portfolio snapshot emails?",
-            "NeuralArc can email you a snapshot of the whole portfolio on US trading days. Turn it on or off, change the times or send one straight away in Settings, under Communication – Portfolio Snapshot Emails.\n\n" +
-            "- The default times are 09:25 (5 minutes before the open), 09:40 (10 minutes after it), 12:00, 15:55 (5 minutes before the close) and 16:10 (10 minutes after it), all US Eastern. Each can be retimed or switched off, and you can add more.\n" +
-            "- Each email has the bottom bar's totals across every workspace, a table of each workspace's figures, and the Risk Dashboard's analysis: capital, open P&L, largest loser, concentration, open P&L by symbol, exposure by symbol and by workspace, and the risk advisories.\n" +
-            "- Emails go to the address set there, or to your User Email when it is blank. They are sent only while NeuralArc is running: a time missed by more than 3 minutes, because the app was closed or the computer asleep, is skipped rather than sent late.\n\n" +
-            "The figures are NeuralArc's own strategy accounting for the mode you are viewing. The email describes your positions; it is not a recommendation to buy or sell."
+            "Application - What emails does NeuralArc send?",
+            "NeuralArc sends every email to your User Email. Choose which ones in Settings, under Communication.\n\n" +
+            "- Trade alerts, for Live strategies: when a buy order is placed and waiting to fill, and when a sell order fills.\n" +
+            "- Portfolio snapshots on US trading days, by default at 09:25 (5 minutes before the open), 09:40 (10 minutes after it), 12:00, 15:55 (5 minutes before the close) and 16:10 (10 minutes after it), US Eastern. Each time can be retimed or switched off, you can add more, and Send a Snapshot Now emails one straight away.\n" +
+            "- Each snapshot has the bottom bar's totals across every workspace, a table of each workspace's figures, the Risk Dashboard's analysis (capital, open P&L, largest loser, concentration, open P&L by symbol, exposure and the risk advisories) and the broker reconciliation: whether NeuralArc's positions match what Alpaca holds.\n" +
+            "- Snapshots are sent only while NeuralArc is running: a time missed by more than 3 minutes, because the app was closed or the computer asleep, is skipped rather than sent late.\n\n" +
+            "The figures are NeuralArc's own strategy accounting for the mode you are viewing. The emails describe your positions; they are not a recommendation to buy or sell."
         },
         {
             "Application - What are pending scanner buy actions?",
@@ -616,7 +617,7 @@ public class HelpDialog extends JDialog {
         footer.add(close);
         add(footer, BorderLayout.SOUTH);
 
-        DialogSizing.packAndFit(this, 760, 560);
+        DialogSizing.packAndFitTall(this, 760, 560);
         setLocationRelativeTo(owner);
     }
 

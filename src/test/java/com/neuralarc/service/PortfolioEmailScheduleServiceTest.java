@@ -18,14 +18,8 @@ class PortfolioEmailScheduleServiceTest {
     private static final ZoneId ET = ZoneId.of("America/New_York");
     // Monday 14 September 2026 is a trading day; Labor Day was Monday 7 September.
     private final List<String> sent = new ArrayList<>();
-    private final List<String> recipients = new ArrayList<>();
     private final PortfolioEmailScheduleService scheduler = new PortfolioEmailScheduleService(
-            new MarketHoursService(), Clock.systemUTC(),
-            (settings, slot) -> {
-                sent.add(slot.label());
-                recipients.add(settings.recipient());
-            },
-            message -> { });
+            new MarketHoursService(), Clock.systemUTC(), slot -> sent.add(slot.label()), message -> { });
 
     @Test
     void eachDefaultTimeSendsOnceOnATradingDay() {
@@ -60,7 +54,7 @@ class PortfolioEmailScheduleServiceTest {
         assertTrue(scheduler.evaluate(et(2026, 9, 14, 9, 28, 0)).isEmpty(), "three minutes late is too late");
 
         PortfolioEmailScheduleService other = new PortfolioEmailScheduleService(
-                new MarketHoursService(), Clock.systemUTC(), (settings, slot) -> sent.add(slot.label()), message -> { });
+                new MarketHoursService(), Clock.systemUTC(), slot -> sent.add(slot.label()), message -> { });
         other.setSettings(PortfolioEmailSettings.defaults());
         assertEquals("Before the open", other.evaluate(et(2026, 9, 14, 9, 27, 30)).orElseThrow().label(),
                 "a couple of minutes late still sends");
@@ -68,25 +62,24 @@ class PortfolioEmailScheduleServiceTest {
 
     @Test
     void switchedOffTimesAndTheMainSwitchNeverSend() {
-        scheduler.setSettings(new PortfolioEmailSettings(true, "", List.of(
+        scheduler.setSettings(new PortfolioEmailSettings(true, List.of(
                 new PortfolioEmailSettings.Slot("Lunch", LocalTime.of(12, 0), false))));
         everyMinuteOf(2026, 9, 14);
 
-        scheduler.setSettings(new PortfolioEmailSettings(false, "", PortfolioEmailSettings.defaultSlots()));
+        scheduler.setSettings(new PortfolioEmailSettings(false, PortfolioEmailSettings.defaultSlots()));
         everyMinuteOf(2026, 9, 15);
 
         assertEquals(List.of(), sent);
     }
 
     @Test
-    void customTimesSendToTheChosenAddress() {
-        scheduler.setSettings(new PortfolioEmailSettings(true, "me@example.com", List.of(
+    void customTimesSend() {
+        scheduler.setSettings(new PortfolioEmailSettings(true, List.of(
                 new PortfolioEmailSettings.Slot(PortfolioEmailSettings.CUSTOM_LABEL, LocalTime.of(13, 30), true))));
 
         everyMinuteOf(2026, 9, 14);
 
         assertEquals(List.of("Custom"), sent);
-        assertEquals(List.of("me@example.com"), recipients);
     }
 
     @Test

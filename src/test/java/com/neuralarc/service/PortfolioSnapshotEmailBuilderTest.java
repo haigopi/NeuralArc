@@ -96,6 +96,27 @@ class PortfolioSnapshotEmailBuilderTest {
         assertEquals("+$0.01", PortfolioSnapshotEmailBuilder.signedMoney(new BigDecimal("0.01")));
     }
 
+    @Test
+    void theBrokerReconciliationSaysWhetherAlpacaAgrees() {
+        String matching = builder.html(snapshot().withBrokerCheck(PortfolioSnapshot.BrokerCheck.compared(2, List.of())));
+        assertTrue(matching.contains("Broker reconciliation (NeuralArc vs Alpaca)"));
+        assertTrue(matching.contains("All 2 symbols match Alpaca."));
+
+        String mismatched = builder.html(snapshot().withBrokerCheck(PortfolioSnapshot.BrokerCheck.compared(2, List.of(
+                new PortfolioSnapshot.Mismatch("CRDO", "NeuralArc tracks 20 shares, Alpaca holds 15 shares")))));
+        assertTrue(mismatched.contains("1 mismatch among 2 symbols:"));
+        assertTrue(mismatched.contains("NeuralArc tracks 20 shares, Alpaca holds 15 shares"));
+        assertTrue(builder.text(snapshot().withBrokerCheck(PortfolioSnapshot.BrokerCheck.compared(2, List.of(
+                new PortfolioSnapshot.Mismatch("CRDO", "NeuralArc tracks 20 shares, Alpaca holds 15 shares")))))
+                .contains("CRDO: NeuralArc tracks 20 shares, Alpaca holds 15 shares"));
+
+        String unavailable = builder.html(snapshot().withBrokerCheck(
+                PortfolioSnapshot.BrokerCheck.unavailable("Not connected to Alpaca, so positions were not compared.")));
+        assertTrue(unavailable.contains("Not connected to Alpaca, so positions were not compared."));
+
+        assertFalse(builder.html(snapshot()).contains("Broker reconciliation"), "no section before a check has run");
+    }
+
     static PortfolioSnapshot snapshot() {
         List<RiskAnalytics.Holding> holdings = List.of(
                 new RiskAnalytics.Holding("GOOG", "Growth", new BigDecimal("1614.80"), new BigDecimal("114.80")),

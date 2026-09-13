@@ -11,9 +11,9 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Emails a {@link PortfolioSnapshot} in the background through Mailjet. It goes to the address set
- * for snapshot emails, or else to the user's own email from Settings; with neither, nothing is sent
- * and the log says why. Every outcome is reported through the log callback.
+ * Emails a {@link PortfolioSnapshot} in the background through Mailjet, to the user's email from
+ * Settings like every NeuralArc email. Just before sending it compares NeuralArc's positions with
+ * Alpaca's, which is broker I/O and so never runs on the EDT. Every outcome goes to the log callback.
  */
 public class PortfolioSnapshotEmailService {
     private static final Logger LOGGER = Logger.getLogger(PortfolioSnapshotEmailService.class.getName());
@@ -43,20 +43,25 @@ public class PortfolioSnapshotEmailService {
         this.log = log == null ? ignored -> { } : log;
     }
 
-    /** Sends in the background to {@code preferredRecipient}, or to the user's email when that is blank. */
-    public void send(PortfolioSnapshot snapshot, String preferredRecipient) {
+    /**
+     * Sends in the background. {@code typedEmail} is the User Email as typed in Settings when sending
+     * from there, so an address not yet saved still works; otherwise the saved User Email is used.
+     * {@code brokerCheck} compares positions with Alpaca and runs on the background thread.
+     */
+    public void send(PortfolioSnapshot snapshot, String typedEmail, Supplier<PortfolioSnapshot.BrokerCheck> brokerCheck) {
         if (snapshot == null) {
             return;
         }
         executor.execute(() -> {
             String occasion = snapshot.occasion();
-            String recipient = resolveRecipient(preferredRecipient);
+            String recipient = resolveRecipient(typedEmail);
             if (recipient.isBlank()) {
-                log.accept("[EMAIL] Portfolio snapshot (" + occasion + ") not sent: set an email address in Settings.");
+                log.accept("[EMAIL] Portfolio snapshot (" + occasion + ") not sent: add your User Email in Settings.");
                 return;
             }
+            PortfolioSnapshot complete = snapshot.withBrokerCheck(checkBroker(brokerCheck));
             try {
-                sender.send(recipient, builder.subject(snapshot), builder.text(snapshot), builder.html(snapshot));
+                sender.send(recipient, builder.subject(complete), builder.text(complete), builder.html(complete));
                 log.accept("[EMAIL] Portfolio snapshot (" + occasion + ") sent to " + recipient + ".");
             } catch (Exception ex) {
                 LOGGER.log(Level.WARNING, "Failed to send portfolio snapshot email", ex);
@@ -65,11 +70,24 @@ public class PortfolioSnapshotEmailService {
         });
     }
 
-    String resolveRecipient(String preferredRecipient) {
-        if (preferredRecipient != null && !preferredRecipient.isBlank()) {
-            return preferredRecipient.trim();
+    String resolveRecipient(String typedEmail) {
+        if (typedEmail != null && !typedEmail.isBlank()) {
+            return typedEmail.trim();
         }
-        String fallback = userEmail.get();
-        return fallback == null ? "" : fallback.trim();
+        String saved = userEmail.get();
+        return saved == null ? "" : saved.trim();
+    }
+
+    private PortfolioSnapshot.BrokerCheck checkBroker(Supplier<PortfolioSnapshot.BrokerCheck> brokerCheck) {
+        if (brokerCheck == null) {
+            return null;
+        }
+        try {
+            return brokerCheck.get();
+        } catch (RuntimeException ex) {
+            LOGGER.log(Level.WARNING, "Broker reconciliation for the portfolio snapshot failed", ex);
+            return PortfolioSnapshot.BrokerCheck.unavailable(
+                    "Alpaca could not be reached, so positions were not compared (" + ex.getMessage() + ").");
+        }
     }
 }

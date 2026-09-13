@@ -15,8 +15,8 @@ import java.util.Map;
 
 /**
  * Writes the portfolio snapshot email: the totals across every workspace (the bottom status bar's
- * figures), each workspace's figures, and the Risk Dashboard's analysis — its KPIs, open P&amp;L by
- * symbol, exposure and risk advisories. The HTML uses tables and inline styles only, and draws bars
+ * figures), each workspace's figures, the Risk Dashboard's analysis — its KPIs, open P&amp;L by
+ * symbol, exposure and risk advisories — and the broker reconciliation with Alpaca. The HTML uses tables and inline styles only, and draws bars
  * as sized cells rather than images, so it reads the same in web, desktop and phone mail clients.
  */
 public final class PortfolioSnapshotEmailBuilder {
@@ -97,6 +97,12 @@ public final class PortfolioSnapshotEmailBuilder {
                 }
             }
         }
+        if (snapshot.brokerCheck() != null) {
+            text.append("\nBROKER RECONCILIATION (NeuralArc vs Alpaca)\n").append(brokerSummary(snapshot.brokerCheck())).append('\n');
+            for (PortfolioSnapshot.Mismatch mismatch : snapshot.brokerCheck().mismatches()) {
+                text.append("  ").append(mismatch.symbol()).append(": ").append(mismatch.description()).append('\n');
+            }
+        }
         return text.append('\n').append(footer(snapshot)).toString();
     }
 
@@ -108,7 +114,7 @@ public final class PortfolioSnapshotEmailBuilder {
             body.append(section("By workspace", "Each workspace's figures, as shown under its grid.",
                     workspaceTable(snapshot.workspaces())));
         }
-        body.append(riskSection(snapshot));
+        body.append(riskSection(snapshot)).append(brokerSection(snapshot.brokerCheck()));
         return "<!doctype html><html><head><meta charset=\"utf-8\"></head>"
                 + "<body style=\"margin:0;background:#f4f7fb;color:#172033;font-family:Arial,Helvetica,sans-serif;\">"
                 + "<div style=\"max-width:760px;margin:0 auto;padding:24px;\">"
@@ -288,6 +294,41 @@ public final class PortfolioSnapshotEmailBuilder {
                     .append("<div style=\"color:#52606d;margin-top:2px;\">").append(escape(position.advice())).append("</div></div>");
         }
         return box.append("</div>").toString();
+    }
+
+    // ---- Broker reconciliation -------------------------------------------
+
+    private String brokerSection(PortfolioSnapshot.BrokerCheck check) {
+        if (check == null) {
+            return "";
+        }
+        String color = !check.checked() || check.symbolCount() == 0 ? MUTED
+                : check.mismatches().isEmpty() ? POSITIVE : NEGATIVE;
+        StringBuilder content = new StringBuilder("<div style=\"font-size:13px;font-weight:700;color:").append(color).append(";\">")
+                .append(escape(brokerSummary(check))).append("</div>");
+        for (PortfolioSnapshot.Mismatch mismatch : check.mismatches()) {
+            content.append("<div style=\"margin-top:6px;font-size:12px;\"><b style=\"color:").append(TEXT).append(";\">")
+                    .append(escape(mismatch.symbol())).append("</b> <span style=\"color:#52606d;\">")
+                    .append(escape(mismatch.description())).append("</span></div>");
+        }
+        return subsection("Broker reconciliation (NeuralArc vs Alpaca)",
+                "Whether NeuralArc's positions agree with what Alpaca holds: shares and average cost for each symbol.",
+                "<div style=\"border:1px solid " + BORDER + ";border-radius:12px;padding:12px 14px;\">" + content + "</div>");
+    }
+
+    private static String brokerSummary(PortfolioSnapshot.BrokerCheck check) {
+        if (!check.checked()) {
+            return check.note().isBlank() ? "Alpaca could not be reached, so positions were not compared." : check.note();
+        }
+        if (check.symbolCount() == 0) {
+            return "No tracked positions to compare.";
+        }
+        if (check.mismatches().isEmpty()) {
+            return "All " + (check.symbolCount() == 1 ? "1 symbol matches" : check.symbolCount() + " symbols match") + " Alpaca.";
+        }
+        int count = check.mismatches().size();
+        return count + (count == 1 ? " mismatch" : " mismatches") + " among " + check.symbolCount()
+                + (check.symbolCount() == 1 ? " symbol" : " symbols") + ":";
     }
 
     private static String advisoryTitle(RiskAnalytics.RiskVerdict verdict) {
