@@ -166,7 +166,8 @@ final class BrokerSnapshotLoader {
                     .map(strategy -> new BrokerPositionAllocator.Claim(
                             strategy.id(),
                             localShareClaim == null ? 0 : localShareClaim.applyAsInt(strategy),
-                            strategy.createdAt()))
+                            strategy.createdAt(),
+                            StrategyRowVisibility.hiddenFromCurrentTab(strategy)))
                     .toList();
             allocation.putAll(BrokerPositionAllocator.allocate(brokerShares, claims));
         }

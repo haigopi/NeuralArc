@@ -144,6 +144,29 @@ class BrokerSnapshotLoaderTest {
     }
 
     @Test
+    void anUnclaimedPositionLandsOnAVisibleRowRatherThanACompletedOne() {
+        // The NVDA case end to end: four rows, none with local fills, the oldest completed-and-
+        // restarting so the grid never draws it. The broker's 10 shares must still be on screen.
+        Strategy hiddenOldest = completedRestartingStrategy("hidden", "NVDA", Instant.parse("2026-08-21T02:33:37Z"));
+        Strategy visible = strategy("visible", "NVDA", Instant.parse("2026-09-10T13:45:55Z"));
+        FakeHttpAlpacaClient client = new FakeHttpAlpacaClient();
+
+        Map<String, Position> snapshots = BrokerSnapshotLoader.loadPositionSnapshots(
+                List.of(hiddenOldest, visible),
+                List.of(hiddenOldest, visible),
+                mode -> client,
+                ignored -> true,
+                (mode, ignoredClient) -> List.of(new AlpacaPositionData(
+                        "NVDA", new BigDecimal("10"), new BigDecimal("211.21"), new BigDecimal("214.28"), "{}")),
+                strategy -> 0
+        );
+
+        assertEquals(10, snapshots.get("visible").getTotalShares(), "the shares are on a row the grid draws");
+        assertEquals(new BigDecimal("211.21"), snapshots.get("visible").getAverageCost());
+        assertEquals(0, snapshots.get("hidden").getTotalShares(), "and not on the hidden completed row");
+    }
+
+    @Test
     void aGenuinelySoleStrategyStillShowsTheWholePosition() {
         // The counterpart: with no other local row on the symbol, an imported position whose orders
         // were never recorded locally must still appear, or a real holding would vanish from the grid.
@@ -184,6 +207,45 @@ class BrokerSnapshotLoaderTest {
 
     private static Strategy strategy(String id, String symbol) {
         return strategy(id, symbol, Instant.now());
+    }
+
+    /** A completed strategy that restarts after exit: a row the current-strategies grid never draws. */
+    private static Strategy completedRestartingStrategy(String id, String symbol, Instant createdAt) {
+        return new Strategy(
+                id,
+                symbol + " Strategy",
+                symbol,
+                StrategyMode.PAPER,
+                StrategyStatus.COMPLETED,
+                StrategyLifecycleState.COMPLETED,
+                new BigDecimal("10"),
+                1,
+                new BigDecimal("9"),
+                1,
+                new BigDecimal("8"),
+                1,
+                true,
+                StopLossType.FIXED_PRICE,
+                new BigDecimal("7"),
+                new BigDecimal("1"),
+                false,
+                BigDecimal.ZERO,
+                true,
+                new BigDecimal("11"),
+                new BigDecimal("100"),
+                false,
+                false,
+                ProfitHoldType.PERCENT_TRAILING,
+                new BigDecimal("1"),
+                new BigDecimal("1"),
+                BigDecimal.ZERO,
+                true,   // restartAfterExitEnabled - what makes the grid hide this row
+                10,
+                new BigDecimal("1000"),
+                2,
+                createdAt,
+                createdAt
+        );
     }
 
     private static Strategy strategy(String id, String symbol, Instant createdAt) {

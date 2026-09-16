@@ -660,6 +660,9 @@ public class TradingFrame extends JFrame {
                     @Override public void onRefreshStarted() { setPortfolioRefreshButtonBusy(true); }
                     @Override public void onRefreshFinished() { setPortfolioRefreshButtonBusy(false); }
                     @Override public void syncStrategies(List<Strategy> strategies) { TradingFrame.this.syncStrategies(strategies); }
+                    @Override public int adoptUnknownBrokerSymbols() {
+                        return strategyService == null ? 0 : strategyService.syncRemoteStrategies().size();
+                    }
                     @Override public void applyPositionSnapshots(Map<String, Position> snapshots) { TradingFrame.this.applyPositionSnapshots(snapshots); }
                     @Override
                     public void handleInvalidBrokerMissingStrategies(List<Strategy> invalidStrategies) {
@@ -6000,13 +6003,17 @@ public class TradingFrame extends JFrame {
                 continue;
             }
 
-            BigDecimal sellQty = quantity.min(positionQty.max(BigDecimal.ZERO));
-            if (sellQty.compareTo(BigDecimal.ZERO) <= 0) {
+            com.neuralarc.service.SellBasis.Result basis = com.neuralarc.service.SellBasis.of(
+                    fillPrice, quantity, positionQty, averageCost,
+                    com.neuralarc.service.SellBasis.brokerAverageEntry(order));
+            if (basis.isEmpty()) {
                 continue;
             }
-            realized = realized.add(fillPrice.subtract(averageCost).multiply(sellQty));
-            positionQty = positionQty.subtract(sellQty);
-            if (positionQty.compareTo(BigDecimal.ZERO) == 0) {
+            realized = realized.add(basis.realized());
+            // Only the tracked shares leave the tracked position, however the sale was priced.
+            positionQty = positionQty.subtract(quantity.min(positionQty.max(BigDecimal.ZERO)));
+            if (positionQty.compareTo(BigDecimal.ZERO) <= 0) {
+                positionQty = BigDecimal.ZERO;
                 averageCost = BigDecimal.ZERO;
             }
         }
@@ -6195,11 +6202,10 @@ public class TradingFrame extends JFrame {
             // Keep failed rows visible when there is still open broker exposure.
             return hasOpenExposure(entry);
         }
-        if (entry.strategy.status() == StrategyStatus.ARCHIVED || entry.strategy.status() == StrategyStatus.STOPPED) {
+        // Shared with the broker-position allocator so unclaimed shares are never parked on a row
+        // this method hides: one rule, so the two cannot drift apart.
+        if (StrategyRowVisibility.hiddenFromCurrentTab(entry.strategy)) {
             return false;
-        }
-        if (entry.strategy.status() == StrategyStatus.COMPLETED) {
-            return !entry.strategy.restartAfterExitEnabled();
         }
         if (entry.strategy.status() == StrategyStatus.PAUSED
                 && (entry.strategy.pauseReason() == PauseReason.AUTO_MARKET_CLOSED
@@ -8491,17 +8497,21 @@ public class TradingFrame extends JFrame {
                 }
                 continue;
             }
-            BigDecimal sellQty = quantity.min(positionQty.max(BigDecimal.ZERO));
-            if (sellQty.compareTo(BigDecimal.ZERO) <= 0) {
+            com.neuralarc.service.SellBasis.Result basis = com.neuralarc.service.SellBasis.of(
+                    fillPrice, quantity, positionQty, averageCost,
+                    com.neuralarc.service.SellBasis.brokerAverageEntry(order));
+            if (basis.isEmpty()) {
                 continue;
             }
-            BigDecimal realized = Monetary.round(fillPrice.subtract(averageCost).multiply(sellQty));
+            BigDecimal realized = Monetary.round(basis.realized());
             java.time.Instant when = order.filledAt() != null ? order.filledAt() : order.submittedAt();
             boolean isToday = when != null
                     && java.time.LocalDate.ofInstant(when, java.time.ZoneId.systemDefault()).equals(today);
             result.add(new WorkspaceAccounting.RealizedSell(workspaceId, realized, isToday));
-            positionQty = positionQty.subtract(sellQty);
-            if (positionQty.compareTo(BigDecimal.ZERO) == 0) {
+            // Only the tracked shares leave the tracked position, however the sale was priced.
+            positionQty = positionQty.subtract(quantity.min(positionQty.max(BigDecimal.ZERO)));
+            if (positionQty.compareTo(BigDecimal.ZERO) <= 0) {
+                positionQty = BigDecimal.ZERO;
                 averageCost = BigDecimal.ZERO;
             }
         }

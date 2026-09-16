@@ -135,13 +135,16 @@ public final class HistoryTablePresenter {
                     averageCost = runningCost.divide(positionQty, 8, java.math.RoundingMode.HALF_UP);
                 }
             } else {
-                BigDecimal sellQty = quantity.min(positionQty.max(BigDecimal.ZERO));
-                if (sellQty.compareTo(BigDecimal.ZERO) > 0) {
-                    buyPriceDisplay = Monetary.round(averageCost).toPlainString();
-                    BigDecimal realizedPnl = Monetary.round(fillPrice.subtract(averageCost).multiply(sellQty));
-                    realizedPnlDisplay = realizedPnl.toPlainString();
-                    positionQty = positionQty.subtract(sellQty);
-                    if (positionQty.compareTo(BigDecimal.ZERO) == 0) {
+                com.neuralarc.service.SellBasis.Result basis = com.neuralarc.service.SellBasis.of(
+                        fillPrice, quantity, positionQty, averageCost,
+                        com.neuralarc.service.SellBasis.brokerAverageEntry(order));
+                if (!basis.isEmpty()) {
+                    buyPriceDisplay = Monetary.round(basis.averageCost()).toPlainString();
+                    realizedPnlDisplay = Monetary.round(basis.realized()).toPlainString();
+                    // Only the tracked shares leave the tracked position, however the sale was priced.
+                    positionQty = positionQty.subtract(quantity.min(positionQty.max(BigDecimal.ZERO)));
+                    if (positionQty.compareTo(BigDecimal.ZERO) <= 0) {
+                        positionQty = BigDecimal.ZERO;
                         averageCost = BigDecimal.ZERO;
                     }
                 }

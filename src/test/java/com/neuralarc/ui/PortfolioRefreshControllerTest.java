@@ -83,6 +83,45 @@ class PortfolioRefreshControllerTest {
     }
 
     @Test
+    void refreshAdoptsBrokerPositionsThatNoLocalStrategyOwns() throws Exception {
+        // Previously this only ran at app start, so stock held at the broker with no local row stayed
+        // invisible until a restart however often the operator pressed Refresh.
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        strategies.save(activePendingStrategy());
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        FakeGateway gateway = new FakeGateway(new FakeAlpacaClient());
+        gateway.adoptedSymbols = 3;
+        PortfolioRefreshController controller = new PortfolioRefreshController(
+                strategies, new InMemoryOrderRepository(), new InMemoryEventRepository(), executor, gateway);
+
+        controller.refresh(true);
+
+        assertTrue(gateway.finished.await(5, TimeUnit.SECONDS));
+        executor.shutdownNow();
+        assertEquals(1, gateway.adoptionCalls, "every refresh reconciles unknown broker symbols");
+        assertTrue(gateway.logs.stream().anyMatch(line -> line.contains("Adopted 3 broker position(s)")),
+                gateway.logs.toString());
+    }
+
+    @Test
+    void aFailedAdoptionDoesNotAbandonTheRestOfTheRefresh() throws Exception {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        strategies.save(activePendingStrategy());
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        FakeGateway gateway = new FakeGateway(new FakeAlpacaClient());
+        gateway.adoptionFailure = new IllegalStateException("broker unreachable");
+        PortfolioRefreshController controller = new PortfolioRefreshController(
+                strategies, new InMemoryOrderRepository(), new InMemoryEventRepository(), executor, gateway);
+
+        controller.refresh(true);
+
+        assertTrue(gateway.finished.await(5, TimeUnit.SECONDS), "the refresh still completes");
+        executor.shutdownNow();
+        assertTrue(gateway.logs.stream().anyMatch(line -> line.contains("Could not adopt unknown broker symbols")),
+                gateway.logs.toString());
+    }
+
+    @Test
     void refreshLogClarifiesStoredRowsAreNotVisibleGridRows() throws Exception {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
@@ -207,6 +246,9 @@ class PortfolioRefreshControllerTest {
         private final FakeAlpacaClient client;
         private final CountDownLatch finished = new CountDownLatch(1);
         private final List<String> logs = new ArrayList<>();
+        private int adoptionCalls;
+        private int adoptedSymbols;
+        private RuntimeException adoptionFailure;
 
         private FakeGateway(FakeAlpacaClient client) {
             this.client = client;
@@ -218,6 +260,13 @@ class PortfolioRefreshControllerTest {
         @Override public void onRefreshStarted() { }
         @Override public void onRefreshFinished() { finished.countDown(); }
         @Override public void syncStrategies(List<Strategy> strategies) { }
+        @Override public int adoptUnknownBrokerSymbols() {
+            adoptionCalls++;
+            if (adoptionFailure != null) {
+                throw adoptionFailure;
+            }
+            return adoptedSymbols;
+        }
         @Override public void applyPositionSnapshots(Map<String, Position> snapshots) { }
         @Override public void handleInvalidBrokerMissingStrategies(List<Strategy> invalidStrategies) { }
         @Override public void refreshStrategyTableContent() { }

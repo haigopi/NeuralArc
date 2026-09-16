@@ -32,13 +32,16 @@ final class StrategyOrderAccounting {
                 continue;
             }
 
-            BigDecimal sellQty = quantity.min(positionQty.max(BigDecimal.ZERO));
-            if (sellQty.compareTo(BigDecimal.ZERO) <= 0) {
+            SellBasis.Result basis = SellBasis.of(fillPrice, quantity, positionQty, averageCost,
+                    SellBasis.brokerAverageEntry(order));
+            if (basis.isEmpty()) {
                 continue;
             }
-            realized = realized.add(fillPrice.subtract(averageCost).multiply(sellQty));
-            positionQty = positionQty.subtract(sellQty);
-            if (positionQty.compareTo(BigDecimal.ZERO) == 0) {
+            realized = realized.add(basis.realized());
+            // Only the tracked shares leave the tracked position, however the sale was priced.
+            positionQty = positionQty.subtract(quantity.min(positionQty.max(BigDecimal.ZERO)));
+            if (positionQty.compareTo(BigDecimal.ZERO) <= 0) {
+                positionQty = BigDecimal.ZERO;
                 averageCost = BigDecimal.ZERO;
             }
         }
@@ -77,18 +80,17 @@ final class StrategyOrderAccounting {
                 continue;
             }
 
-            BigDecimal sellQty = quantity.min(positionQty.max(BigDecimal.ZERO));
-            BigDecimal realized = sellQty.compareTo(BigDecimal.ZERO) > 0
-                    ? fillPrice.subtract(averageCost).multiply(sellQty)
-                    : BigDecimal.ZERO;
+            SellBasis.Result basis = SellBasis.of(fillPrice, quantity, positionQty, averageCost,
+                    SellBasis.brokerAverageEntry(order));
             if (order.id().equals(sellOrder.id())) {
-                return Monetary.round(realized);
+                return Monetary.round(basis.realized());
             }
-            if (sellQty.compareTo(BigDecimal.ZERO) <= 0) {
+            if (basis.isEmpty()) {
                 continue;
             }
-            positionQty = positionQty.subtract(sellQty);
-            if (positionQty.compareTo(BigDecimal.ZERO) == 0) {
+            positionQty = positionQty.subtract(quantity.min(positionQty.max(BigDecimal.ZERO)));
+            if (positionQty.compareTo(BigDecimal.ZERO) <= 0) {
+                positionQty = BigDecimal.ZERO;
                 averageCost = BigDecimal.ZERO;
             }
         }

@@ -51,6 +51,12 @@ final class PortfolioRefreshController {
         void onRefreshStarted();
         void onRefreshFinished();
         void syncStrategies(List<Strategy> strategies);
+        /**
+         * Adopts broker symbols with no local strategy, returning how many were created. Refresh is
+         * the only moment an operator asks for the app and the broker to agree, so a position held
+         * with no local row must be picked up here rather than waiting for the next app start.
+         */
+        int adoptUnknownBrokerSymbols();
         void applyPositionSnapshots(Map<String, Position> snapshots);
         void handleInvalidBrokerMissingStrategies(List<Strategy> invalidStrategies);
         void refreshStrategyTableContent();
@@ -124,6 +130,12 @@ final class PortfolioRefreshController {
             if (purgedCount > 0) {
                 stored = strategyRepository.findAll();
             }
+            // Before snapshots, so a newly adopted symbol gets its broker position in the same pass
+            // rather than showing an empty row until the following refresh.
+            int adoptedCount = adoptUnknownBrokerSymbols();
+            if (adoptedCount > 0) {
+                stored = strategyRepository.findAll();
+            }
             Map<String, Position> snapshots = loadPositionSnapshots(stored);
             int reconciledCount = reconcileLeftoverLocalBrokerState(stored, snapshots);
             if (reconciledCount > 0) {
@@ -135,6 +147,25 @@ final class PortfolioRefreshController {
             runOnEdt(() -> applySuccessfulRefresh(generation, refreshedStored, snapshots, invalidStrategies));
         } catch (Exception ex) {
             runOnEdt(() -> applyFailedRefresh(generation, manualTrigger, ex));
+        }
+    }
+
+    /** Picks up positions held at the broker that no local strategy owns. Never throws into refresh. */
+    private int adoptUnknownBrokerSymbols() {
+        if (gateway.brokerType() != BrokerType.ALPACA) {
+            return 0;
+        }
+        try {
+            int adopted = gateway.adoptUnknownBrokerSymbols();
+            if (adopted > 0) {
+                gateway.log("[Portfolio Refresh] Adopted " + adopted
+                        + " broker position(s) that had no local strategy.");
+            }
+            return adopted;
+        } catch (Exception ex) {
+            // Adoption is a repair step; a failure here must not abandon the rest of the refresh.
+            gateway.log("[Portfolio Refresh] Could not adopt unknown broker symbols: " + ex.getMessage());
+            return 0;
         }
     }
 

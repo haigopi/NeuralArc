@@ -26,6 +26,13 @@ public class StrategyService {
     private static final Logger LOGGER = Logger.getLogger(StrategyService.class.getName());
     public static final String EXIT_SOURCE_JSON_KEY = "neuralarcExitSource";
     public static final String EXIT_SUBMISSION_TYPE_JSON_KEY = "neuralarcSubmissionType";
+    /**
+     * The broker's average entry for the whole position at the moment a sell was submitted. Recorded
+     * so realized P&amp;L can be measured against what the shares actually cost, even when the strategy's
+     * own order history accounts for fewer shares than the sell closed. Absent when the broker did not
+     * report one — absence means "no basis recorded", which is not the same as a basis of zero.
+     */
+    public static final String BROKER_AVERAGE_ENTRY_JSON_KEY = "neuralarcBrokerAverageEntry";
 
     private final StrategyRepository strategyRepository;
     private final StrategyOrderRepository orderRepository;
@@ -719,8 +726,12 @@ public class StrategyService {
     }
 
     public List<Strategy> syncRemoteStrategies() {
+        // Scoped to this service's mode: a paper row for a symbol must never block adopting the live
+        // position of the same symbol, which left genuinely held stock untracked indefinitely.
         Set<String> localSymbols = strategyRepository.findAll().stream()
+                .filter(strategy -> strategy != null && strategy.mode() == defaultStrategyMode)
                 .map(Strategy::symbol)
+                .filter(symbol -> symbol != null && !symbol.isBlank())
                 .map(String::toUpperCase)
                 .collect(Collectors.toCollection(HashSet::new));
         // Symbols the operator deleted. Their broker position/order usually still exists, so
@@ -741,8 +752,15 @@ public class StrategyService {
 
         List<Strategy> created = new java.util.ArrayList<>();
         for (String symbol : remoteSymbols) {
-            if (localSymbols.contains(symbol) || suppressedSymbols.contains(symbol)) {
+            if (localSymbols.contains(symbol)) {
                 continue;
+            }
+            if (RemoteSyncAdoption.skipSuppressed(symbol, suppressedSymbols, positionsBySymbol.get(symbol))) {
+                continue;
+            }
+            if (suppressedSymbols.contains(symbol)) {
+                LOGGER.info("Adopting suppressed symbol " + symbol
+                        + ": shares are actually held at the broker, so leaving it untracked would hide a real position.");
             }
             Strategy strategy = buildRemoteStrategy(symbol, openOrdersBySymbol.getOrDefault(symbol, List.of()), positionsBySymbol.get(symbol));
             strategyRepository.save(strategy);
@@ -816,6 +834,15 @@ public class StrategyService {
         if (quantity <= 0) {
             return StrategyCreationResult.failed("No open quantity to close");
         }
+        // Refuse before anything is cancelled: giving up the working orders and then declining to sell
+        // would leave the position more exposed than it was.
+        if (executionSource == SellExecutionSource.MANUAL_USER) {
+            Optional<String> refusal = ManualSellLossGuard.refusal(
+                    strategy.symbol(), quantity, position.get().avgEntryPrice(), latestPrice);
+            if (refusal.isPresent()) {
+                return StrategyCreationResult.failed(refusal.get());
+            }
+        }
         cancelPendingRemoteOrders(strategy);
         String clientOrderId = buildClientOrderId(strategy, StrategyStage.MANUAL_EXIT, workspaceCodeResolver);
         SellSubmissionType effectiveType = submissionType == null ? SellSubmissionType.LIMIT : submissionType;
@@ -823,7 +850,8 @@ public class StrategyService {
                 ? alpacaClient.submitMarketSellOrder(strategy.symbol(), quantity, clientOrderId)
                 : alpacaClient.submitLimitSellOrder(strategy.symbol(), quantity, latestPrice, clientOrderId);
         Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
-        String enrichedRawJson = withExitMetadata(submitted.rawJson(), executionSource, effectiveType);
+        String enrichedRawJson = withExitMetadata(
+                submitted.rawJson(), executionSource, effectiveType, position.get().avgEntryPrice());
         StrategyOrder order = new StrategyOrder(
                 java.util.UUID.randomUUID().toString(),
                 strategy.id(),
@@ -902,7 +930,10 @@ public class StrategyService {
                 TimeInForce.GTC
         );
         Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
-        String enrichedRawJson = withExitMetadata(submitted.rawJson(), executionSource, SellSubmissionType.LIMIT);
+        // The trigger quantity comes from the broker's position, so it can exceed the shares this
+        // strategy tracked; record the broker's cost so the fill is priced against what was paid.
+        String enrichedRawJson = withExitMetadata(
+                submitted.rawJson(), executionSource, SellSubmissionType.LIMIT, position.get().avgEntryPrice());
         StrategyOrder order = new StrategyOrder(
                 java.util.UUID.randomUUID().toString(),
                 strategy.id(),
@@ -949,12 +980,17 @@ public class StrategyService {
     private String withExitMetadata(
             String rawJson,
             SellExecutionSource executionSource,
-            SellSubmissionType submissionType
+            SellSubmissionType submissionType,
+            BigDecimal brokerAverageEntry
     ) {
         try {
             JSONObject json = rawJson == null || rawJson.isBlank() ? new JSONObject() : new JSONObject(rawJson);
             json.put(EXIT_SOURCE_JSON_KEY, (executionSource == null ? SellExecutionSource.MANUAL_USER : executionSource).name());
             json.put(EXIT_SUBMISSION_TYPE_JSON_KEY, (submissionType == null ? SellSubmissionType.LIMIT : submissionType).name());
+            // Only recorded when the broker actually reported a cost; the key's absence is meaningful.
+            if (brokerAverageEntry != null && brokerAverageEntry.compareTo(BigDecimal.ZERO) > 0) {
+                json.put(BROKER_AVERAGE_ENTRY_JSON_KEY, brokerAverageEntry.toPlainString());
+            }
             return json.toString();
         } catch (Exception ignored) {
             return rawJson == null ? "" : rawJson;
