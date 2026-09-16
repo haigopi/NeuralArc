@@ -64,6 +64,54 @@ class StrategyGridTableModelTest {
     }
 
     /** Resolve by header so these assertions survive future column reordering. */
+    @Test
+    void pnlPercentShowsTheOpenProfitAgainstWhatWasPaid() {
+        Strategy strategy = strategy("NVDA");
+        ManagedStrategy managed = new ManagedStrategy(strategy);
+        Position position = new Position("NVDA");
+        position.applyBuy(10, new BigDecimal("100.00"));
+        position.setLastPrice(new BigDecimal("112.50"));
+        managed.setCachedPosition(position);
+        StrategyGridTableModel model = new StrategyGridTableModel(
+                List.of(managed), ignored -> "Active", new StrategyTablePresenter());
+
+        assertEquals("125.00", model.getValueAt(0, columnIndex("P&L")));
+        assertEquals("+12.50%", model.getValueAt(0, columnIndex("P&L %")));
+    }
+
+    @Test
+    void timeInForceCarriesHowLongTheRowHasBeenOnTheGrid() {
+        ManagedStrategy managed = new ManagedStrategy(strategy("NVDA"));
+        StrategyGridTableModel model = new StrategyGridTableModel(
+                List.of(managed), ignored -> "Base buy pending", new StrategyTablePresenter());
+
+        String cell = String.valueOf(model.getValueAt(0, columnIndex("TIF \u00b7 Days")));
+
+        org.junit.jupiter.api.Assertions.assertTrue(cell.endsWith("today"), cell);
+    }
+
+    @Test
+    void pnlPercentIsADashWithoutAnOpenPosition() {
+        ManagedStrategy managed = new ManagedStrategy(strategy("NVDA"));
+        StrategyGridTableModel model = new StrategyGridTableModel(
+                List.of(managed), ignored -> "Base buy pending", new StrategyTablePresenter());
+
+        assertEquals("-", model.getValueAt(0, columnIndex("P&L %")));
+    }
+
+    @Test
+    void aLosingPositionReadsAsANegativePercent() {
+        ManagedStrategy managed = new ManagedStrategy(strategy("NVDA"));
+        Position position = new Position("NVDA");
+        position.applyBuy(4, new BigDecimal("50.00"));
+        position.setLastPrice(new BigDecimal("45.00"));
+        managed.setCachedPosition(position);
+        StrategyGridTableModel model = new StrategyGridTableModel(
+                List.of(managed), ignored -> "Active", new StrategyTablePresenter());
+
+        assertEquals("-10.00%", model.getValueAt(0, columnIndex("P&L %")));
+    }
+
     private static int columnIndex(String columnName) {
         for (int i = 0; i < StrategyGridTableModel.COLUMNS.length; i++) {
             if (StrategyGridTableModel.COLUMNS[i].equals(columnName)) {

@@ -61,8 +61,9 @@ public class HelpDialog extends JDialog {
         {
             "Application - What should I watch on the main screen?",
             "The main grid is the operator console.\n\n" +
-            "- Stock Price, Shares, Avg Cost, Market Value, and P&L show current or completed position context.\n" +
+            "- Stock Price, Shares, Avg Cost, Market Value, P&L and P&L % show current or completed position context. P&L % is the open profit or loss against what you paid, coloured green or red like P&L.\n" +
             "- The polling bar shows when the next rule check is due or when a broker request is in progress.\n" +
+            "- TIF \u00b7 Days shows the order's time in force with how long the row has been on the grid, for example \"GTC \u00b7 12d\": 12 days since the strategy was added, whether it is still waiting to fill or already holding shares.\n" +
             "- Broker, Market, Trade Stream, CPU, Memory, and total Market Value are shown in the bottom status bar.\n\n" +
             "Rows with no position can still show latest price when available."
         },
@@ -115,6 +116,25 @@ public class HelpDialog extends JDialog {
             "- Each snapshot has the bottom bar's totals across every workspace, a table of each workspace's figures, the Risk Dashboard's analysis (capital, open P&L, largest loser, concentration, open P&L by symbol, exposure and the risk advisories) and the broker reconciliation: whether NeuralArc's positions match what Alpaca holds.\n" +
             "- Snapshots are sent only while NeuralArc is running: a time missed by more than 3 minutes, because the app was closed or the computer asleep, is skipped rather than sent late.\n\n" +
             "The figures are NeuralArc's own strategy accounting for the mode you are viewing. The emails describe your positions; they are not a recommendation to buy or sell."
+        },
+        {
+            "Application - What is Loss Harvesting in the Risk Dashboard?",
+            "The Loss Harvesting section works out what booking your open losses would do to this year's tax bill, using this account's own trades.\n\n" +
+            "- Booked losses first cancel gains you have already realised this year, then up to $3,000 comes off ordinary income, and anything left carries forward to later years.\n" +
+            "- Short-term losses (held under a year) are listed first: they shield income taxed at ordinary rates rather than the lower long-term rate.\n" +
+            "- Losses beyond what this year can use are listed separately, since booking them only builds a carry-forward.\n" +
+            "- Wash sale: buying the same security back within 30 days either side of the sale disallows the loss. NeuralArc warns when a strategy would do this to you, because its loss-buy levels and repeat cycle buy the symbol back automatically. Switch those off before selling for tax reasons.\n\n" +
+            "These figures are information drawn from your trades, not tax advice. Confirm with your CPA before selling: state rules, other accounts and your wider portfolio all matter."
+        },
+        {
+            "Application - What does Minimize Loss Impact do?",
+            "Right-click a position that is under water and choose Minimize Loss Impact. NeuralArc reads the last month of daily bars and builds a plan to work the loss down.\n\n" +
+            "- The add is priced under the current market and never below the month's low, so the order can actually fill.\n" +
+            "- The exit is the middle of the month's daily highs — a level the stock reached on about half the sessions — so the plan asks for an ordinary move, not a full recovery to your original cost.\n" +
+            "- It shows how many shares the plan needs, what they cost, the new average cost, and whether the loss is cleared or only reduced. If the month's prices do not support a recovery, it says so instead of inventing a plan.\n" +
+            "- The add is priced at today's low — a price the market has already paid today, so the limit can fill.\n" +
+            "- Review and Execute opens an order ticket with that buy filled in: the shares the plan needs, the limit price, and the time in force from Settings. Change anything you like, then submit; cancel and nothing is sent. Only the buy is submitted — the plan's exit price is not placed for you, so set a sell trigger yourself if you want it working.\n\n" +
+            "Averaging down puts more money into a position already losing. If the price keeps falling, the larger position loses faster — the dialog says so before you act."
         },
         {
             "Application - What are pending scanner buy actions?",

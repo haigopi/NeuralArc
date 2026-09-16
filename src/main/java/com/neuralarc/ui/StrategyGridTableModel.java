@@ -10,16 +10,16 @@ import java.util.function.Function;
 final class StrategyGridTableModel extends AbstractTableModel {
     static final String[] COLUMNS = {
             "Shares", "Symbol", "Avg Entry", "Open", "Today's Low", "Today's High",
-            "Current Price", "P&L", "Market Value",
-            "Status", "Polling", "Time In Force", "Entry Source", "Exit Source", "Actions"
+            "Current Price", "P&L", "P&L %", "Market Value",
+            "Status", "Polling", "TIF \u00b7 Days", "Entry Source", "Exit Source", "Actions"
     };
 
     // Maps the grid column order to the presenter column contract used by StrategyTablePresenter.
     // Presenter indices are a stable contract (0 symbol, 1/11 status, 2 shares, 3 avg entry,
     // 4 current price, 5 market value, 6 P&L, 7 polling, 8 TIF, 9 entry, 10 exit,
-    // 13 open, 14 low, 15 high) — display order is expressed here, not by renumbering them.
+    // 13 open, 14 low, 15 high, 16 P&L %) — display order is expressed here, not by renumbering them.
     private static final int[] MODEL_TO_PRESENTER_COLUMN_INDEX = {
-            2, 0, 3, 13, 14, 15, 4, 6, 5, 1, 7, 8, 9, 10, 11
+            2, 0, 3, 13, 14, 15, 4, 6, 16, 5, 1, 7, 8, 9, 10, 11
     };
 
     private final List<ManagedStrategy> strategies;

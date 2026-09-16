@@ -219,7 +219,9 @@ final class DipHunterCoordinator {
             if (interactive) {
                 JOptionPane.showMessageDialog(ui.dialogParent(), message, "Dip Hunter Analysis", JOptionPane.WARNING_MESSAGE);
             } else {
-                ui.log("[Dip Hunter] Scheduled scan skipped: " + message);
+                // The tick fired before the broker was connected; retry rather than lose today's scan.
+                scheduleServiceForWorkspace(workspaceId).deferToday();
+                ui.log("[Dip Hunter] Scheduled scan skipped, will retry: " + message);
             }
             return;
         }

@@ -18,6 +18,19 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class StrategyTablePresenterTest {
+    @Test
+    void gridAgeCountsTheDaysSinceTheRowWasAdded() {
+        java.time.LocalDate today = java.time.LocalDate.of(2026, 9, 16);
+        java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+
+        assertEquals("today", StrategyTablePresenter.gridAge(today.atTime(9, 30).atZone(zone).toInstant(), today));
+        assertEquals("1d", StrategyTablePresenter.gridAge(today.minusDays(1).atTime(9, 30).atZone(zone).toInstant(), today));
+        assertEquals("12d", StrategyTablePresenter.gridAge(today.minusDays(12).atStartOfDay(zone).toInstant(), today));
+        assertEquals("today", StrategyTablePresenter.gridAge(today.plusDays(1).atStartOfDay(zone).toInstant(), today),
+                "a clock change never reads as a negative age");
+        assertEquals("", StrategyTablePresenter.gridAge(null, today));
+    }
+
     private final StrategyTablePresenter presenter = new StrategyTablePresenter();
 
     @Test
@@ -408,7 +421,7 @@ class StrategyTablePresenterTest {
     }
 
     @Test
-    void valueAtShowsConfiguredTimeInForce() {
+    void valueAtShowsConfiguredTimeInForceWithHowLongTheRowHasBeenOnTheGrid() {
         Strategy strategy = strategy();
         strategy.setTimeInForce(com.neuralarc.model.TimeInForce.GTC);
 
@@ -421,7 +434,10 @@ class StrategyTablePresenterTest {
                 "Limit Base Buy Placed"
         );
 
-        assertEquals("GTC", value);
+        String cell = String.valueOf(value);
+        org.junit.jupiter.api.Assertions.assertTrue(cell.startsWith("GTC · "), cell);
+        assertEquals(StrategyTablePresenter.gridAge(strategy.createdAt(), java.time.LocalDate.now()),
+                cell.substring("GTC · ".length()));
     }
 
     @Test

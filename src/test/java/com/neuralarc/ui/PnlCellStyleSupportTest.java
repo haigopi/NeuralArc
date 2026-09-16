@@ -23,5 +23,12 @@ class PnlCellStyleSupportTest {
     void blankAndZeroPnlUseDefaultColor() {
         assertEquals(DEFAULT, PnlCellStyleSupport.foregroundFor("-", DEFAULT));
         assertEquals(DEFAULT, PnlCellStyleSupport.foregroundFor("0.00", DEFAULT));
+        assertEquals(DEFAULT, PnlCellStyleSupport.foregroundFor("0.00%", DEFAULT), "a flat percent has no colour");
+    }
+
+    @Test
+    void percentsAreColouredLikeTheAmountsBesideThem() {
+        assertEquals(PnlCellStyleSupport.POSITIVE, PnlCellStyleSupport.foregroundFor("+12.50%", DEFAULT));
+        assertEquals(PnlCellStyleSupport.NEGATIVE, PnlCellStyleSupport.foregroundFor("-10.00%", DEFAULT));
     }
 }

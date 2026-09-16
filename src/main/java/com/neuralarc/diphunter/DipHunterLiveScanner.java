@@ -2,6 +2,7 @@ package com.neuralarc.diphunter;
 
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.api.AlpacaMarketDataException;
+import com.neuralarc.analytics.RecentLow;
 import com.neuralarc.model.MarketBar;
 import com.neuralarc.util.IntradayVolumeSupport;
 import com.neuralarc.util.Monetary;
@@ -99,6 +100,7 @@ public final class DipHunterLiveScanner {
         BigDecimal intradayRangePercent = valid(current) && intradayHigh.compareTo(intradayLow) > 0
                 ? intradayHigh.subtract(intradayLow).multiply(BigDecimal.valueOf(100)).divide(current, 2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
+        BigDecimal weekLow = RecentLow.weekLow(history, intradayLow);
         return Optional.of(new DipHunterCandidate(
                 symbol,
                 symbol,
@@ -115,7 +117,8 @@ public final class DipHunterLiveScanner {
                 valid(ma50) && current.compareTo(ma50) > 0,
                 intradayReversal,
                 intradayRangePercent,
-                Monetary.round(current)
+                Monetary.round(current),
+                Monetary.round(weekLow)
         ));
     }
 

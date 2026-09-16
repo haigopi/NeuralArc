@@ -36,7 +36,7 @@ class RiskDashboardPanelTest {
                 List.of(new ReconciliationService.SymbolPosition("NVDA", new BigDecimal("10"), new BigDecimal("110"))),
                 List.of(new ReconciliationService.SymbolPosition("NVDA", new BigDecimal("10"), new BigDecimal("110"))));
 
-        RiskDashboardPanel panel = new RiskDashboardPanel("Paper", report, risks, reconciliation);
+        RiskDashboardPanel panel = new RiskDashboardPanel("Paper", report, risks, reconciliation, harvesting());
 
         assertNotNull(panel);
         assertTrue(panel.getComponentCount() > 0, "dashboard should assemble sections");
@@ -47,8 +47,14 @@ class RiskDashboardPanelTest {
     void buildsWithEmptyDataWithoutThrowing() {
         RiskAnalytics.Report report = RiskAnalytics.analyze(List.of());
         ReconciliationService.Report reconciliation = new ReconciliationService().reconcile(List.of(), List.of());
-        RiskDashboardPanel panel = new RiskDashboardPanel("Live", report, List.of(), reconciliation);
+        RiskDashboardPanel panel = new RiskDashboardPanel("Live", report, List.of(), reconciliation, harvesting());
         assertNotNull(panel);
         assertTrue(panel.getComponentCount() > 0);
+    }
+
+    /** An empty harvesting report: the harvesting wording itself is covered by LossHarvestingTest. */
+    private static com.neuralarc.analytics.LossHarvesting.Report harvesting() {
+        return com.neuralarc.analytics.LossHarvesting.analyze(java.util.List.of(), java.math.BigDecimal.ZERO,
+                java.time.LocalDate.of(2026, 11, 15));
     }
 }

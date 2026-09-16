@@ -95,6 +95,15 @@ public final class OrbScheduleService {
      *
      * @return true when an analysis was fired
      */
+
+    /**
+     * The scan could not start — for example the broker was not connected yet when the tick fired.
+     * Forget today's fire so a later tick runs it, instead of the day's scan being silently lost.
+     */
+    public synchronized void deferToday() {
+        lastFiredDate = null;
+    }
+
     synchronized boolean evaluate(Instant now) {
         OrbSchedule current = schedule;
         if (current == null || !current.enabled()) {

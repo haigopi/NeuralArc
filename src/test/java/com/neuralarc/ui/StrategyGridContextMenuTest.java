@@ -52,7 +52,7 @@ class StrategyGridContextMenuTest {
                 viewRow -> { }, viewRow -> { }, viewRow -> { }, viewRow -> { }, viewRow -> { }, viewRow -> false,
                 viewRow -> { }, viewRow -> false, viewRow -> { }, viewRow -> false, viewRow -> { }, viewRow -> false,
                 () -> false, List::of, (workspaceId, viewRow) -> { },
-                viewRow -> opened[0] = viewRow);
+                viewRow -> opened[0] = viewRow, viewRow -> { }, viewRow -> true);
 
         JMenuItem item = menu.openChartItem(3);
         item.doClick();
@@ -66,6 +66,11 @@ class StrategyGridContextMenuTest {
     }
 
     private JMenu positionMenuForRow(int row, boolean eligible, boolean historySelected) throws Exception {
+        return positionMenuForRow(row, eligible, historySelected, true);
+    }
+
+    private JMenu positionMenuForRow(int row, boolean eligible, boolean historySelected, boolean losingPosition)
+            throws Exception {
         JTable table = new JTable(new DefaultTableModel(new Object[][]{{"AAPL"}}, new Object[]{"Symbol"}));
         StrategyGridContextMenu menu = new StrategyGridContextMenu(
                 table,
@@ -87,7 +92,9 @@ class StrategyGridContextMenuTest {
                 () -> historySelected,
                 List::of,
                 (workspaceId, viewRow) -> { },
-                viewRow -> { }
+                viewRow -> { },
+                viewRow -> { },
+                viewRow -> losingPosition
         );
         Method method = StrategyGridContextMenu.class.getDeclaredMethod("positionMenu", int.class);
         method.setAccessible(true);

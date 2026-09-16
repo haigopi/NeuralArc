@@ -1,5 +1,7 @@
 package com.neuralarc.diphunter;
 
+import com.neuralarc.analytics.PlannedEntryPrice;
+import com.neuralarc.analytics.ProtectiveStopPrice;
 import com.neuralarc.util.SetupScore;
 
 import java.math.BigDecimal;
@@ -102,7 +104,7 @@ public final class DipHunterAnalyzer {
 
     private DipHunterRecommendation toRecommendation(DipHunterCandidate c, DipHunterConfig cfg, int score) {
         BigDecimal entry = plannedEntryPrice(c);
-        BigDecimal stopPrice = entry.multiply(BigDecimal.ONE.subtract(cfg.stopLossPercent().movePointLeft(2))).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal stopPrice = ProtectiveStopPrice.percentBelowEntry(entry, cfg.stopLossPercent());
         BigDecimal targetPrice = entry.multiply(BigDecimal.ONE.add(cfg.takeProfitPercent().movePointLeft(2))).setScale(2, RoundingMode.HALF_UP);
         return new DipHunterRecommendation(c.symbol().toUpperCase(), c.companyName(), c.pullbackPercent(), c.dayChangePercent(),
                 c.averageVolume(), c.relativeVolume(), c.currentPrice(), c.previousClose(), c.recentHigh(),
@@ -111,10 +113,13 @@ public final class DipHunterAnalyzer {
                 DipHunterStatus.RECOMMENDED, cfg.mode(), Instant.now(clock));
     }
 
+    /**
+     * Buy the bounce a little under the market, never above it: a limit above the current price fills
+     * instantly at the market's own price, so the stop and target would be measured from a price the
+     * plan never chose. The week's low is the floor, so the order can still fill.
+     */
     private BigDecimal plannedEntryPrice(DipHunterCandidate c) {
-        // Buy the bounce at the current price; never plan below it.
-        BigDecimal current = c.currentPrice() == null ? BigDecimal.ZERO : c.currentPrice();
-        return current.setScale(2, RoundingMode.HALF_UP);
+        return PlannedEntryPrice.atOrBelowMarket(c.currentPrice(), c.weekLow(), PlannedEntryPrice.DEFAULT_DISCOUNT_PERCENT);
     }
 
     private boolean passesTrend(DipHunterCandidate c, DipHunterConfig.TrendFilter filter) {

@@ -221,7 +221,9 @@ final class RangeRiderCoordinator {
             if (interactive) {
                 JOptionPane.showMessageDialog(ui.dialogParent(), message, "Range Rider Analysis", JOptionPane.WARNING_MESSAGE);
             } else {
-                ui.log("[Range Rider] Scheduled scan skipped: " + message);
+                // The tick fired before the broker was connected; retry rather than lose today's scan.
+                scheduleServiceForWorkspace(workspaceId).deferToday();
+                ui.log("[Range Rider] Scheduled scan skipped, will retry: " + message);
             }
             return;
         }

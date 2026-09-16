@@ -37,6 +37,19 @@ class SwingScheduleServiceTest {
     }
 
     @Test
+    void aScanThatCouldNotStartIsRetriedLaterTheSameDay() {
+        SwingScheduleService svc = service(true);
+
+        assertTrue(svc.evaluate(et(TRADING_DAY, 9, 50)));
+        assertEquals(1, fires.get());
+        // The tick fired before the broker was connected, so the day's scan never actually ran.
+        svc.deferToday();
+
+        assertTrue(svc.evaluate(et(TRADING_DAY, 10, 5)), "the schedule must retry rather than lose the day");
+        assertEquals(2, fires.get());
+    }
+
+    @Test
     void firesOnceInsideWindowOnTradingDay() {
         SwingScheduleService svc = service(true);
 

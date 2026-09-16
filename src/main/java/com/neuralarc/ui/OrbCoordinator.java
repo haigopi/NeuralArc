@@ -224,9 +224,15 @@ final class OrbCoordinator {
 
     private void runAnalysis(String workspaceId, OrbConfig config, boolean armRequested, boolean interactive) {
         if (!ui.connectionOk() || ui.runtimeApiKey().isBlank()) {
-            JOptionPane.showMessageDialog(ui.dialogParent(),
-                    ui.selectedModeLabel() + " Alpaca credentials are required before scanning ORB live market data.",
-                    "ORB Engine", JOptionPane.WARNING_MESSAGE);
+            String message = ui.selectedModeLabel() + " Alpaca credentials are required before scanning ORB live market data.";
+            if (interactive) {
+                JOptionPane.showMessageDialog(ui.dialogParent(), message, "ORB Engine", JOptionPane.WARNING_MESSAGE);
+            } else {
+                // The tick fired before the broker was connected; retry rather than lose today's scan.
+                // A modal dialog here would also sit unanswered behind an unattended schedule.
+                scheduleServiceForWorkspace(workspaceId).deferToday();
+                ui.log("[ORB Engine] Scheduled scan skipped, will retry: " + message);
+            }
             return;
         }
         ui.setAnalyzeButtonEnabled(false);

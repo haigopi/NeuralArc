@@ -12,12 +12,13 @@ final class PnlCellStyleSupport {
     private PnlCellStyleSupport() {
     }
 
+    /** Green above zero, red below. Accepts an amount or a percent such as "+12.34%". */
     static Color foregroundFor(Object value, Color defaultColor) {
         if (value == null || "-".equals(value.toString())) {
             return defaultColor;
         }
         try {
-            BigDecimal pnlValue = new BigDecimal(value.toString());
+            BigDecimal pnlValue = new BigDecimal(numberText(value.toString()));
             if (pnlValue.compareTo(BigDecimal.ZERO) > 0) {
                 return POSITIVE;
             }
@@ -28,5 +29,13 @@ final class PnlCellStyleSupport {
         } catch (Exception ex) {
             return defaultColor;
         }
+    }
+
+    private static String numberText(String value) {
+        String text = value.trim();
+        if (text.endsWith("%")) {
+            text = text.substring(0, text.length() - 1).trim();
+        }
+        return text.startsWith("+") ? text.substring(1).trim() : text;
     }
 }

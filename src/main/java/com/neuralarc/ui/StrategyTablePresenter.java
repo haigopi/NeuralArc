@@ -763,6 +763,9 @@ public final class StrategyTablePresenter {
             case 15 -> {
                 return positivePriceOrDash(prices.high());
             }
+            case 16 -> {
+                return displayPnlPercent(position);
+            }
             default -> { }
         }
         if (columnIndex >= 2 && columnIndex <= 6) {
@@ -787,7 +790,7 @@ public final class StrategyTablePresenter {
             case 0 -> strategy.symbol();
             case 1 -> statusLabel;
             case 7 -> strategy.pollingIntervalSeconds();
-            case 8 -> strategy.timeInForce() == null ? "" : strategy.timeInForce().name();
+            case 8 -> timeInForceWithAge(strategy);
             case 9 -> entrySource(strategy);
             case 10 -> exitSource(strategy, realizedPnl);
             case 11 -> statusLabel;
@@ -994,6 +997,44 @@ public final class StrategyTablePresenter {
             return realizedPnl.toPlainString();
         }
         return "-";
+    }
+
+    /**
+     * Time in force with how long the row has been on the grid, such as "GTC \u00b7 12d". The age counts
+     * from when the strategy was added, so it covers a row still waiting to fill and one already holding.
+     */
+    private String timeInForceWithAge(Strategy strategy) {
+        String timeInForce = strategy.timeInForce() == null ? "" : strategy.timeInForce().name();
+        String age = gridAge(strategy.createdAt(), java.time.LocalDate.now());
+        if (age.isEmpty()) {
+            return timeInForce;
+        }
+        return timeInForce.isEmpty() ? age : timeInForce + " \u00b7 " + age;
+    }
+
+    /** "today" on the day it was added, then "1d", "12d"; empty when the row has no added time. */
+    static String gridAge(java.time.Instant createdAt, java.time.LocalDate today) {
+        if (createdAt == null || today == null) {
+            return "";
+        }
+        java.time.LocalDate added = createdAt.atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+        long days = java.time.temporal.ChronoUnit.DAYS.between(added, today);
+        return days <= 0 ? "today" : days + "d";
+    }
+
+    /** P&L against what was paid: "+12.34%", or "-" with no open position to measure. */
+    private String displayPnlPercent(Position position) {
+        if (position.getTotalShares() <= 0) {
+            return "-";
+        }
+        BigDecimal invested = position.totalInvested();
+        if (invested == null || invested.signum() <= 0) {
+            return "-";
+        }
+        BigDecimal percent = position.unrealizedPnl()
+                .multiply(BigDecimal.valueOf(100))
+                .divide(invested, 2, java.math.RoundingMode.HALF_UP);
+        return (percent.signum() > 0 ? "+" : "") + percent.toPlainString() + "%";
     }
 
     private String positivePriceOrDash(BigDecimal value) {

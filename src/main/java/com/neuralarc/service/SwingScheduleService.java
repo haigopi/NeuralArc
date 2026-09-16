@@ -124,6 +124,15 @@ public final class SwingScheduleService {
         trigger.run(current);
     }
 
+
+    /**
+     * The scan could not start — for example the broker was not connected yet when the tick fired.
+     * Forget today's fire so a later tick runs it, instead of the day's scan being silently lost.
+     */
+    public synchronized void deferToday() {
+        resetFireState();
+    }
+
     private void resetFireState() {
         lastScanDate = null;
     }

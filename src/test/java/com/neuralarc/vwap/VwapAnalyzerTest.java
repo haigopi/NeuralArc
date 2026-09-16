@@ -88,10 +88,10 @@ class VwapAnalyzerTest {
         VwapAnalyzer analyzer = new VwapAnalyzer(FIXED, null);
         VwapRecommendation rec = analyzer.analyze(List.of(strong("NVDA")),
                 VwapConfig.defaults(StrategyMode.PAPER)).getFirst();
-        assertEquals(new BigDecimal("100.00"), rec.plannedEntryPrice());
-        assertEquals(new BigDecimal("96.00"), rec.stopLossPrice());   // 4% stop
+        assertEquals(new BigDecimal("99.75"), rec.plannedEntryPrice());   // 0.25% under the market
+        assertEquals(new BigDecimal("95.76"), rec.stopLossPrice());   // 4% stop
         assertEquals(new BigDecimal("101.20"), rec.targetPrice());    // target = VWAP
-        assertEquals(new BigDecimal("1.20"), rec.reversionUpsidePercent());
+        assertEquals(new BigDecimal("1.45"), rec.reversionUpsidePercent());
         assertEquals(VwapStatus.RECOMMENDED, rec.status());
     }
 
@@ -131,6 +131,21 @@ class VwapAnalyzerTest {
 
         assertTrue(score >= VwapAnalyzer.MINIMUM_RECOMMENDATION_SCORE,
                 "an ordinary VWAP stretch must be recommendable, scored " + score);
+    }
+
+    @Test
+    void neverPlansAboveTheMarketAndFloorsAtTheWeeksLow() {
+        VwapAnalyzer analyzer = new VwapAnalyzer(FIXED, null);
+        VwapCandidate awkwardPrice = new VwapCandidate("NVDA", "NVDA Inc", new BigDecimal("215.695"),
+                new BigDecimal("218.30"), new BigDecimal("1.2"), new BigDecimal("217"), new BigDecimal("-1.0"),
+                3_000_000L, new BigDecimal("2.0"), new BigDecimal("205"), new BigDecimal("190"), true, true,
+                new BigDecimal("2.5"), BigDecimal.ZERO);
+
+        VwapRecommendation rec = analyzer.analyze(List.of(awkwardPrice), VwapConfig.defaults(StrategyMode.PAPER)).getFirst();
+
+        assertTrue(rec.plannedEntryPrice().compareTo(awkwardPrice.currentPrice()) <= 0,
+                "planned " + rec.plannedEntryPrice() + " must not sit above the market");
+        assertEquals(new BigDecimal("215.15"), rec.plannedEntryPrice());
     }
 
     private VwapCandidate strong(String symbol) {

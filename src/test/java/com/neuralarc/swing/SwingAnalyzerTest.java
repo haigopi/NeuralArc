@@ -124,14 +124,33 @@ class SwingAnalyzerTest {
         SwingAnalyzer analyzer = new SwingAnalyzer(FIXED, null);
         SwingRecommendation rec = analyzer.analyze(List.of(strong("NVDA")),
                 SwingConfig.defaults(StrategyMode.PAPER)).getFirst();
-        assertEquals(new BigDecimal("100.00"), rec.plannedEntryPrice());
-        assertEquals(new BigDecimal("94.00"), rec.stopLossPrice());   // 6% stop
+        assertEquals(new BigDecimal("99.75"), rec.plannedEntryPrice());   // 0.25% under the market
+        assertEquals(new BigDecimal("93.76"), rec.stopLossPrice());   // 6% stop, floored to the cent
         // The 110 recent high is below the operator's 12% target, so the plan aims at the target it
         // was configured for rather than at a reward smaller than its own stop.
-        assertEquals(new BigDecimal("112.00"), rec.targetPrice());
+        assertEquals(new BigDecimal("111.72"), rec.targetPrice());
         assertEquals(new BigDecimal("12.00"), rec.targetProfitPercent());
         assertEquals(new BigDecimal("2.00"), rec.rewardRiskRatio());  // reward 12 / risk 6
         assertEquals(SwingStatus.RECOMMENDED, rec.status());
+    }
+
+    @Test
+    void aTightPercentStopIsHeldATenCentGapUnderTheEntry() {
+        // A 1% stop under a $5.48 entry is only six cents of room, which stops the position out on
+        // ordinary noise. The stop is widened to the minimum gap instead.
+        SwingConfig tightStop = new SwingConfig(null, null, 0L, null, null, null, null,
+                new BigDecimal("1"), null, 0, null, StrategyMode.PAPER);
+        SwingCandidate lowPriced = new SwingCandidate("LOW", "LOW Inc", new BigDecimal("5.50"),
+                new BigDecimal("6.60"), new BigDecimal("14"), new BigDecimal("5.45"), new BigDecimal("1.0"),
+                3_000_000L, new BigDecimal("1.5"), new BigDecimal("5.40"), new BigDecimal("5.30"),
+                new BigDecimal("4.40"), true, true, true, true, new BigDecimal("4.17"), new BigDecimal("3.0"));
+
+        SwingRecommendation rec = new SwingAnalyzer(FIXED, null).analyze(List.of(lowPriced), tightStop).getFirst();
+
+        assertEquals(new BigDecimal("5.48"), rec.plannedEntryPrice());
+        assertEquals(new BigDecimal("5.38"), rec.stopLossPrice());
+        assertTrue(rec.plannedEntryPrice().subtract(rec.stopLossPrice())
+                .compareTo(new BigDecimal("0.10")) >= 0, "the stop must clear the entry by at least a dime");
     }
 
     @Test
@@ -157,7 +176,39 @@ class SwingAnalyzerTest {
                 new BigDecimal("98"), new BigDecimal("96"), new BigDecimal("80"), true, true, true, true,
                 new BigDecimal("4.17"), new BigDecimal("3.0"));
         SwingRecommendation rec = analyzer.analyze(List.of(freshHigh), SwingConfig.defaults(StrategyMode.PAPER)).getFirst();
-        assertEquals(new BigDecimal("112.00"), rec.targetPrice());   // 100 * (1 + 12%)
+        assertEquals(new BigDecimal("111.72"), rec.targetPrice());   // 99.75 * (1 + 12%)
+    }
+
+    @Test
+    void neverPlansAboveTheMarket() {
+        // The reported bug: a 215.695 market rounded half-up to a 215.70 limit, a cent above the market.
+        SwingAnalyzer analyzer = new SwingAnalyzer(FIXED, null);
+        SwingCandidate awkwardPrice = new SwingCandidate("NVDA", "NVDA Inc", new BigDecimal("215.695"),
+                new BigDecimal("237"), new BigDecimal("9.0"), new BigDecimal("214"), new BigDecimal("1.0"),
+                3_000_000L, new BigDecimal("1.5"), new BigDecimal("210"), new BigDecimal("205"),
+                new BigDecimal("180"), true, true, true, true, new BigDecimal("4.17"), new BigDecimal("3.0"),
+                BigDecimal.ZERO);
+
+        SwingRecommendation rec = analyzer.analyze(List.of(awkwardPrice), SwingConfig.defaults(StrategyMode.PAPER)).getFirst();
+
+        assertTrue(rec.plannedEntryPrice().compareTo(awkwardPrice.currentPrice()) <= 0,
+                "planned " + rec.plannedEntryPrice() + " must not sit above the market " + awkwardPrice.currentPrice());
+        assertEquals(new BigDecimal("215.15"), rec.plannedEntryPrice());
+    }
+
+    @Test
+    void theWeeksLowIsTheFloorSoTheOrderCanStillFill() {
+        SwingAnalyzer analyzer = new SwingAnalyzer(FIXED, null);
+        // The stock has not traded below 99.90 all week, so the plan stops there rather than at 99.75.
+        SwingCandidate shallowWeek = new SwingCandidate("NVDA", "NVDA Inc", new BigDecimal("100"),
+                new BigDecimal("110"), new BigDecimal("9.09"), new BigDecimal("99"), new BigDecimal("1.0"),
+                3_000_000L, new BigDecimal("1.5"), new BigDecimal("98"), new BigDecimal("96"),
+                new BigDecimal("80"), true, true, true, true, new BigDecimal("4.17"), new BigDecimal("3.0"),
+                new BigDecimal("99.90"));
+
+        SwingRecommendation rec = analyzer.analyze(List.of(shallowWeek), SwingConfig.defaults(StrategyMode.PAPER)).getFirst();
+
+        assertEquals(new BigDecimal("99.90"), rec.plannedEntryPrice());
     }
 
     private SwingCandidate strong(String symbol) {

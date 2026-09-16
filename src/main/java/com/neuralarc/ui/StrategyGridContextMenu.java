@@ -37,6 +37,8 @@ final class StrategyGridContextMenu {
     // (workspaceId, viewRow) — workspaceId is null to move the row back to All Stocks (unassigned).
     private final ObjIntConsumer<String> assignToWorkspaceHandler;
     private final IntConsumer openChartHandler;
+    private final IntConsumer minimizeLossHandler;
+    private final IntPredicate minimizeLossEnabled;
 
     StrategyGridContextMenu(
             JTable table,
@@ -58,7 +60,9 @@ final class StrategyGridContextMenu {
             Supplier<Boolean> historyTabSelected,
             Supplier<List<StrategyWorkspace>> workspacesProvider,
             ObjIntConsumer<String> assignToWorkspaceHandler,
-            IntConsumer openChartHandler
+            IntConsumer openChartHandler,
+            IntConsumer minimizeLossHandler,
+            IntPredicate minimizeLossEnabled
     ) {
         this.table = table;
         this.menuFont = menuFont;
@@ -80,6 +84,8 @@ final class StrategyGridContextMenu {
         this.workspacesProvider = workspacesProvider;
         this.assignToWorkspaceHandler = assignToWorkspaceHandler;
         this.openChartHandler = openChartHandler;
+        this.minimizeLossHandler = minimizeLossHandler;
+        this.minimizeLossEnabled = minimizeLossEnabled;
     }
 
     boolean show(MouseEvent event) {
@@ -179,6 +185,13 @@ final class StrategyGridContextMenu {
             repositionHistory.setEnabled(repositionFromHistoryEnabled.test(viewRow));
             repositionHistory.addActionListener(e -> repositionFromHistoryHandler.accept(viewRow));
             position.add(repositionHistory);
+        }
+        if (minimizeLossHandler != null && minimizeLossEnabled != null) {
+            // Only a position actually under water has a loss to work down.
+            JMenuItem minimizeLoss = item("Minimize Loss Impact...");
+            minimizeLoss.setEnabled(minimizeLossEnabled.test(viewRow));
+            minimizeLoss.addActionListener(e -> minimizeLossHandler.accept(viewRow));
+            position.add(minimizeLoss);
         }
         if (cancelPendingLimitBuyHandler != null
                 && cancelPendingLimitBuyEnabled != null

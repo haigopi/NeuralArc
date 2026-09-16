@@ -1,5 +1,7 @@
 package com.neuralarc.orb;
 
+import com.neuralarc.analytics.ProtectiveStopPrice;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -56,7 +58,7 @@ public final class OrbAnalyzer {
             case RANGE_LOW, ATR_ADJUSTED -> s.low();
             case MID_RANGE -> s.high().add(s.low()).divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
         };
-        BigDecimal stop = clampStopBelowEntry(rawStop, entry, cfg.riskPercent()).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal stop = ProtectiveStopPrice.belowEntry(entry, clampStopBelowEntry(rawStop, entry, cfg.riskPercent()));
         BigDecimal target = entry.multiply(BigDecimal.ONE.add(cfg.takeProfitPercent().movePointLeft(2))).setScale(2, RoundingMode.HALF_UP);
         int score = score(s, c, cfg);
         String rationale = "ORB long breakout: range " + s.low().setScale(2, RoundingMode.HALF_UP).toPlainString()

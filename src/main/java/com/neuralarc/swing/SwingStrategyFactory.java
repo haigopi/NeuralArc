@@ -1,5 +1,6 @@
 package com.neuralarc.swing;
 
+import com.neuralarc.analytics.PlannedEntryPrice;
 import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.Strategy;
@@ -16,7 +17,7 @@ public final class SwingStrategyFactory {
     public Strategy toStrategy(SwingRecommendation recommendation, String workspaceId, boolean executeRequested, int pollingSeconds) {
         StrategyConfig config = new StrategyConfig(
                 recommendation.symbol(),
-                recommendation.plannedEntryPrice(),
+                PlannedEntryPrice.notAboveMarket(recommendation.plannedEntryPrice(), recommendation.currentPrice()),
                 1,
                 true,
                 recommendation.stopLossPrice(),

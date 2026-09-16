@@ -27,11 +27,32 @@ final class ManualLimitBuyDialog {
             BigDecimal currentPrice,
             TimeInForce defaultTimeInForce
     ) {
+        return show(parent, strategy, currentPrice, defaultTimeInForce, 1, null, null);
+    }
+
+    /**
+     * The same ticket, seeded with an order the app has already worked out — the loss-recovery plan's
+     * add, for instance. The operator still reviews and may change every field before submitting.
+     */
+    static Optional<ManualLimitBuySelection> show(
+            Component parent,
+            Strategy strategy,
+            BigDecimal currentPrice,
+            TimeInForce defaultTimeInForce,
+            int suggestedQuantity,
+            BigDecimal suggestedLimitPrice,
+            String introHtml
+    ) {
         if (strategy == null) {
             return Optional.empty();
         }
-        JSpinner quantitySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 1_000_000, 1));
-        JTextField limitPriceField = new JTextField(defaultLimitPrice(currentPrice), 12);
+        JSpinner quantitySpinner = new JSpinner(
+                new SpinnerNumberModel(Math.max(1, suggestedQuantity), 1, 1_000_000, 1));
+        JTextField limitPriceField = new JTextField(
+                suggestedLimitPrice != null && suggestedLimitPrice.compareTo(BigDecimal.ZERO) > 0
+                        ? Monetary.round(suggestedLimitPrice).toPlainString()
+                        : defaultLimitPrice(currentPrice),
+                12);
         JRadioButton dayButton = new JRadioButton("DAY - expires at session close");
         JRadioButton gtcButton = new JRadioButton("GTC - works until filled or cancelled");
         dayButton.setOpaque(false);
@@ -54,7 +75,7 @@ final class ManualLimitBuyDialog {
         String currentPriceText = currentPrice != null && currentPrice.compareTo(BigDecimal.ZERO) > 0
                 ? "$" + Monetary.round(currentPrice).toPlainString()
                 : "not available";
-        String message = "<html><body style='width:380px'>"
+        String message = introHtml != null && !introHtml.isBlank() ? introHtml : "<html><body style='width:380px'>"
                 + "<b>Buy more shares of " + strategy.symbol() + " at limit price</b><br><br>"
                 + "Current price: " + currentPriceText + "<br>"
                 + "Enter the quantity and maximum limit price for the buy order."

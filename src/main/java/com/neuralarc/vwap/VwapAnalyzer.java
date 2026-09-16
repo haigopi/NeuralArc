@@ -1,5 +1,7 @@
 package com.neuralarc.vwap;
 
+import com.neuralarc.analytics.PlannedEntryPrice;
+import com.neuralarc.analytics.ProtectiveStopPrice;
 import com.neuralarc.util.SetupScore;
 
 import java.math.BigDecimal;
@@ -99,7 +101,7 @@ public final class VwapAnalyzer {
 
     private VwapRecommendation toRecommendation(VwapCandidate c, VwapConfig cfg, int score) {
         BigDecimal entry = plannedEntryPrice(c);
-        BigDecimal stopPrice = entry.multiply(BigDecimal.ONE.subtract(cfg.stopLossPercent().movePointLeft(2))).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal stopPrice = ProtectiveStopPrice.percentBelowEntry(entry, cfg.stopLossPercent());
         // Mean-reversion target is VWAP itself; never plan a target at or below the entry.
         BigDecimal target = c.vwap() == null ? entry : c.vwap().max(entry).setScale(2, RoundingMode.HALF_UP);
         BigDecimal reversionUpside = entry.compareTo(BigDecimal.ZERO) > 0
@@ -111,10 +113,13 @@ public final class VwapAnalyzer {
                 reversionUpside, VwapStatus.RECOMMENDED, cfg.mode(), Instant.now(clock));
     }
 
+    /**
+     * Buy the discount a little under the market, never above it: a limit above the current price
+     * fills instantly at the market's own price, so the stop and target would be measured from a
+     * price the plan never chose. The week's low is the floor, so the order can still fill.
+     */
     private BigDecimal plannedEntryPrice(VwapCandidate c) {
-        // Buy the discount at the current price; never plan below it.
-        BigDecimal current = c.currentPrice() == null ? BigDecimal.ZERO : c.currentPrice();
-        return current.setScale(2, RoundingMode.HALF_UP);
+        return PlannedEntryPrice.atOrBelowMarket(c.currentPrice(), c.weekLow(), PlannedEntryPrice.DEFAULT_DISCOUNT_PERCENT);
     }
 
     private boolean passesTrend(VwapCandidate c, VwapConfig.TrendFilter filter) {

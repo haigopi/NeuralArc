@@ -1,5 +1,7 @@
 package com.neuralarc.rangerider;
 
+import com.neuralarc.analytics.ProtectiveStopPrice;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -183,9 +185,7 @@ public final class RangeRiderAnalyzer {
                     + cfg.minimumSameDayFillRatePercent().toPlainString() + "% minimum");
             return null;
         }
-        BigDecimal stopLossPrice = entry
-                .multiply(BigDecimal.ONE.subtract(cfg.stopLossPercent().movePointLeft(2)))
-                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal stopLossPrice = ProtectiveStopPrice.percentBelowEntry(entry, cfg.stopLossPercent());
         return new RangeRiderRecommendation(
                 c.symbol().toUpperCase(), c.companyName(), c.referencePrice(),
                 c.averageOpen(), c.averageHigh(), c.averageLow(),

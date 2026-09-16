@@ -1,5 +1,6 @@
 package com.neuralarc.profitshield;
 
+import com.neuralarc.analytics.PlannedEntryPrice;
 import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.Strategy;
@@ -16,7 +17,9 @@ public final class ProfitShieldStrategyFactory {
     public Strategy toStrategy(ProfitShieldRecommendation recommendation, String workspaceId,
                                boolean executeRequested, int pollingSeconds) {
         StrategyConfig config = new StrategyConfig(
-                recommendation.symbol(), recommendation.plannedEntryPrice(), 1, true,
+                recommendation.symbol(),
+                PlannedEntryPrice.notAboveMarket(recommendation.plannedEntryPrice(), recommendation.currentPrice()),
+                1, true,
                 recommendation.stopLossPrice(), true, recommendation.targetPrice(), BigDecimal.ZERO, 0,
                 BigDecimal.ZERO, 0, false, false, BigDecimal.ZERO, Math.max(1, pollingSeconds),
                 true, false, false, ProfitHoldType.PERCENT_TRAILING, BigDecimal.ZERO, BigDecimal.ZERO,

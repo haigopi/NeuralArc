@@ -1,5 +1,7 @@
 package com.neuralarc.profitshield;
 
+import com.neuralarc.analytics.ProtectiveStopPrice;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -110,7 +112,7 @@ public final class ProfitShieldAnalyzer {
 
     /**
      * The tighter of the flat protective stop and the support shelf, never closer to the entry than
-     * half the configured stop and never at or above the entry.
+     * half the configured stop and never within {@link ProtectiveStopPrice#MINIMUM_GAP} of it.
      */
     private BigDecimal protectiveStopPrice(BigDecimal entry, BigDecimal supportPrice, ProfitShieldConfig cfg) {
         BigDecimal percentStop = entry.multiply(BigDecimal.ONE.subtract(cfg.protectiveStopPercent().movePointLeft(2)));
@@ -121,7 +123,7 @@ public final class ProfitShieldAnalyzer {
                     BigDecimal.ONE.subtract(cfg.protectiveStopPercent().movePointLeft(2).divide(BigDecimal.valueOf(2), 6, RoundingMode.HALF_UP)));
             stop = percentStop.max(shelfStop.min(tightestAllowed));
         }
-        return stop.min(entry.multiply(SHELF_UNDERCUT)).setScale(2, RoundingMode.HALF_UP);
+        return ProtectiveStopPrice.belowEntry(entry, stop.min(entry.multiply(SHELF_UNDERCUT)));
     }
 
     private boolean passesScoreThreshold(ProfitShieldRecommendation recommendation) {

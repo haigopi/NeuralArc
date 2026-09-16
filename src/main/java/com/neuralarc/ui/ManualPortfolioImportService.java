@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.analytics.ProtectiveStopPrice;
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.model.MarketBar;
 import com.neuralarc.model.StrategyRecommendation;
@@ -228,9 +229,9 @@ final class ManualPortfolioImportService {
     private BigDecimal chooseStopLoss(BigDecimal recommendedStop, BigDecimal baseBuy) {
         BigDecimal safeStop = Monetary.round(recommendedStop);
         if (safeStop.signum() > 0 && safeStop.compareTo(baseBuy) < 0) {
-            return safeStop;
+            return ProtectiveStopPrice.belowEntry(baseBuy, safeStop);
         }
-        return Monetary.round(baseBuy.multiply(new BigDecimal("0.97")));
+        return ProtectiveStopPrice.belowEntry(baseBuy, baseBuy.multiply(new BigDecimal("0.97")));
     }
 
     private String modeLabel(StrategyMode mode) {

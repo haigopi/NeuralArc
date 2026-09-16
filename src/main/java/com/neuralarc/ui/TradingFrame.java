@@ -69,6 +69,8 @@ import com.neuralarc.service.HttpAlpacaScreenerClient;
 import com.neuralarc.service.WeekendReboundScoreService;
 import com.neuralarc.service.RotatingLogWriter;
 import com.neuralarc.service.SpacesLogUploader;
+import com.neuralarc.analytics.LossHarvesting;
+import com.neuralarc.analytics.LossRecoveryPlan;
 import com.neuralarc.service.TradeEmailNotificationService;
 import com.neuralarc.service.PortfolioEmailScheduleService;
 import com.neuralarc.service.PortfolioSnapshotEmailService;
@@ -253,6 +255,10 @@ public class TradingFrame extends JFrame {
     private static final int STREAM_RECONNECT_RESET_HOUR = 6;
     private static final int STRATEGY_STOCK_PRICE_COLUMN = 6;
     private static final int STRATEGY_PNL_COLUMN = 7;
+    private static final int STRATEGY_PNL_PERCENT_COLUMN = 8;
+    private static final int STRATEGY_TIF_COLUMN = 12;
+    /** Calendar days of history behind a loss-recovery plan: about a month of sessions. */
+    private static final int LOSS_RECOVERY_LOOKBACK_DAYS = 45;
     private static final long STOCK_PRICE_TOOLTIP_TTL_MILLIS = 30_000L;
     private static final long BROKER_POSITION_SNAPSHOT_TTL_MILLIS = 15_000L;
     /** Today's open never moves and the high/low drift slowly, so one batch call per 30s is ample. */
@@ -362,6 +368,9 @@ public class TradingFrame extends JFrame {
             }
             if (viewCol == STRATEGY_STOCK_PRICE_COLUMN) {
                 return strategyStockPriceTooltip(viewRow);
+            }
+            if (viewCol == STRATEGY_TIF_COLUMN) {
+                return strategyTimeInForceTooltip(strategies.get(modelRow).strategy);
             }
             if (viewCol != StrategyGridLayoutPresenter.STATUS_COLUMN_INDEX) {
                 return null;
@@ -1589,6 +1598,7 @@ public class TradingFrame extends JFrame {
         strategyTable.setDefaultRenderer(Object.class, statusRowRenderer);
         strategyTable.setDefaultRenderer(Number.class, statusRowRenderer);
         strategyTable.getColumnModel().getColumn(STRATEGY_PNL_COLUMN).setCellRenderer(new UnrealizedPnLRenderer());
+        strategyTable.getColumnModel().getColumn(STRATEGY_PNL_PERCENT_COLUMN).setCellRenderer(new UnrealizedPnLRenderer());
         strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.POLLING_COLUMN_INDEX).setCellRenderer(new PollingBarRenderer());
         strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX).setCellRenderer(new ActionsRenderer());
         // Preferred widths express the desired layout when there is room; minimums are kept
@@ -1605,14 +1615,17 @@ public class TradingFrame extends JFrame {
             strategyTable.getColumnModel().getColumn(priceColumn).setPreferredWidth(96);
             strategyTable.getColumnModel().getColumn(priceColumn).setMinWidth(64);
         }
+        // P&L % sits beside P&L and holds a short percentage, so it stays narrow.
+        strategyTable.getColumnModel().getColumn(STRATEGY_PNL_PERCENT_COLUMN).setPreferredWidth(84);
+        strategyTable.getColumnModel().getColumn(STRATEGY_PNL_PERCENT_COLUMN).setMinWidth(62);
         strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.STATUS_COLUMN_INDEX).setPreferredWidth(420);
         strategyTable.getColumnModel().getColumn(StrategyGridLayoutPresenter.STATUS_COLUMN_INDEX).setMinWidth(170);
-        strategyTable.getColumnModel().getColumn(11).setPreferredWidth(95);
-        strategyTable.getColumnModel().getColumn(11).setMinWidth(70);
-        strategyTable.getColumnModel().getColumn(12).setPreferredWidth(150);
-        strategyTable.getColumnModel().getColumn(12).setMinWidth(90);
-        strategyTable.getColumnModel().getColumn(13).setPreferredWidth(140);
-        strategyTable.getColumnModel().getColumn(13).setMinWidth(88);
+        strategyTable.getColumnModel().getColumn(STRATEGY_TIF_COLUMN).setPreferredWidth(112);
+        strategyTable.getColumnModel().getColumn(STRATEGY_TIF_COLUMN).setMinWidth(84);
+        strategyTable.getColumnModel().getColumn(13).setPreferredWidth(150);
+        strategyTable.getColumnModel().getColumn(13).setMinWidth(90);
+        strategyTable.getColumnModel().getColumn(14).setPreferredWidth(140);
+        strategyTable.getColumnModel().getColumn(14).setMinWidth(88);
         applyStrategyGridColumnLayout();
 
         // Handle clicks in the Actions column via a mouse listener instead of a cell editor.
@@ -1717,11 +1730,12 @@ public class TradingFrame extends JFrame {
         // Make table sortable — click column headers to sort
         strategySorter = new TableRowSorter<>(strategyTableModel);
         strategySorter.setComparator(0, (left, right) -> compareNumericCells(left, right));
-        // Price block + Market Value: Buy Down, Avg Cost, Open, Low, High, Current Price, Market Value.
-        for (int numericColumn : new int[]{2, 3, 4, 5, 6, 7, 9}) {
+        // Price block + Market Value: Avg Entry, Open, Low, High, Current Price, Market Value.
+        for (int numericColumn : new int[]{2, 3, 4, 5, 6, 9}) {
             strategySorter.setComparator(numericColumn, (left, right) -> compareNumericCells(left, right));
         }
-        strategySorter.setComparator(STRATEGY_PNL_COLUMN, (left, right) -> {
+        // P&L and P&L % sort by value, with rows that have no position ("-") last either way.
+        Comparator<Object> pnlComparator = (left, right) -> {
             BigDecimal leftValue = sortableNumericValue(left);
             BigDecimal rightValue = sortableNumericValue(right);
             if (leftValue == null && rightValue == null) {
@@ -1734,7 +1748,9 @@ public class TradingFrame extends JFrame {
                 return -1;
             }
             return leftValue.compareTo(rightValue);
-        });
+        };
+        strategySorter.setComparator(STRATEGY_PNL_COLUMN, pnlComparator);
+        strategySorter.setComparator(STRATEGY_PNL_PERCENT_COLUMN, pnlComparator);
         strategySorter.setSortable(StrategyGridLayoutPresenter.POLLING_COLUMN_INDEX, false); // Polling countdown bar column — not sortable
         strategySorter.setSortable(StrategyGridLayoutPresenter.ACTIONS_COLUMN_INDEX, false); // Actions button column — not sortable
         strategySorter.setSortKeys(List.of(new RowSorter.SortKey(STRATEGY_PNL_COLUMN, SortOrder.DESCENDING)));
@@ -4467,6 +4483,25 @@ public class TradingFrame extends JFrame {
                 + "s policy=min-with-floor(2s) eligibility=ACTIVE-only");
     }
 
+    /** Explains the TIF \u00b7 Days cell: what the time in force does, and when this row joined the grid. */
+    private String strategyTimeInForceTooltip(Strategy strategy) {
+        String timeInForce = strategy.timeInForce() == null ? "" : strategy.timeInForce().name();
+        StringBuilder tooltip = new StringBuilder(switch (timeInForce) {
+            case "GTC" -> "<b>GTC</b>: the order keeps working until it fills or you cancel it.";
+            case "DAY" -> "<b>DAY</b>: the order is cancelled at the session close if it has not filled.";
+            default -> "<b>Time in force</b>: not set for this strategy.";
+        });
+        if (strategy.createdAt() != null) {
+            String added = strategy.createdAt().atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", Locale.US));
+            String age = StrategyTablePresenter.gridAge(strategy.createdAt(), java.time.LocalDate.now());
+            tooltip.append("<br>Added ").append(escapeHtml(added)).append(", ")
+                    .append("today".equals(age) ? "on the grid since today" : escapeHtml(age) + " on the grid")
+                    .append(".");
+        }
+        return TooltipStyler.html(tooltip.toString(), 320);
+    }
+
     private String strategyStockPriceTooltip(int viewRow) {
         if (viewRow < 0) {
             return null;
@@ -5397,14 +5432,24 @@ public class TradingFrame extends JFrame {
         }
 
         ManagedStrategy entry = strategies.get(row);
-        userActionLog.started("Edit Strategy " + entry.strategy.symbol());
+        reviewAndSaveStrategy(entry, entry.toConfig(), "Edit Strategy " + entry.strategy.symbol());
+    }
+
+    /**
+     * Opens the strategy editor seeded with {@code seed} and saves whatever comes back, so every path
+     * that rewrites a strategy is reviewed on the same screen first. Edit seeds it with the strategy's
+     * current settings; Minimize Loss Impact seeds it with its plan. Returns the saved strategy, or
+     * empty when the operator cancelled or the save was refused.
+     */
+    private Optional<Strategy> reviewAndSaveStrategy(ManagedStrategy entry, StrategyConfig seed, String action) {
+        userActionLog.started(action);
         HttpAlpacaMarketDataApi marketDataApi = connectionOk && !runtimeApiKey.isBlank()
                 ? new HttpAlpacaMarketDataApi(runtimeApiKey, runtimeApiSecret) : null;
-        StrategyDialog dialog = new StrategyDialog(this, entry.toConfig(), marketDataApi, autoAnalyzeResultStore);
+        StrategyDialog dialog = new StrategyDialog(this, seed, marketDataApi, autoAnalyzeResultStore);
         StrategyConfig updated = dialog.showDialog();
         if (updated == null) {
-            userActionLog.canceled("Edit Strategy " + entry.strategy.symbol());
-            return;
+            userActionLog.canceled(action);
+            return Optional.empty();
         }
 
         boolean allowDuplicateSymbols = settingsDialog.appliedAllowDuplicateSymbolStrategies();
@@ -5416,14 +5461,14 @@ public class TradingFrame extends JFrame {
                 entry.strategy.workspaceId(),
                 entry.strategy.id()
         )) {
-            userActionLog.failed("Edit Strategy " + entry.strategy.symbol(), "An active or paused strategy for " + updated.symbol() + " already exists.");
+            userActionLog.failed(action, "An active or paused strategy for " + updated.symbol() + " already exists.");
             JOptionPane.showMessageDialog(
                     this,
                     duplicateSymbolAlertMessage(updated.symbol(), entry.strategy.workspaceId(), allowDuplicateSymbols, false),
                     "Duplicate Symbol",
                     JOptionPane.WARNING_MESSAGE
             );
-            return;
+            return Optional.empty();
         }
 
         Strategy updatedStrategy = Strategy.fromConfig(entry.strategy.id(), entry.strategy.name(), updated, entry.strategy.mode());
@@ -5442,25 +5487,25 @@ public class TradingFrame extends JFrame {
         updatedStrategy.setAutoAdjustReferencePrice(entry.strategy.autoAdjustReferencePrice());
         StrategyService modeAwareService = strategyServiceForMode(entry.strategy.mode());
         if (modeAwareService == null) {
-            userActionLog.failed("Edit Strategy " + entry.strategy.symbol(), entry.strategy.mode() + " broker client is not configured.");
+            userActionLog.failed(action, entry.strategy.mode() + " broker client is not configured.");
             JOptionPane.showMessageDialog(
                     this,
                     "Broker client is not configured for this strategy mode.",
                     "Strategy Update Failed",
                     JOptionPane.ERROR_MESSAGE
             );
-            return;
+            return Optional.empty();
         }
         Optional<Strategy> updatedResult = modeAwareService.updateStrategy(updatedStrategy);
         if (updatedResult.isEmpty()) {
-            userActionLog.failed("Edit Strategy " + entry.strategy.symbol(), "Strategy service rejected the update.");
+            userActionLog.failed(action, "Strategy service rejected the update.");
             JOptionPane.showMessageDialog(
                     this,
                     "Failed to update strategy. Please review values and try again.",
                     "Strategy Update Failed",
                     JOptionPane.ERROR_MESSAGE
             );
-            return;
+            return Optional.empty();
         }
         entry.syncFrom(updatedResult.get());
         resetPollingCountdown(entry);
@@ -5468,7 +5513,8 @@ public class TradingFrame extends JFrame {
         refreshStrategyTableData();
         refreshEditedStrategyBrokerSnapshotAsync(updatedResult.get().id());
         refreshPanels();
-        userActionLog.completed("Edit Strategy " + updatedResult.get().symbol(), "Strategy saved.");
+        userActionLog.completed(action, "Strategy saved.");
+        return updatedResult;
     }
 
     private void refreshEditedStrategyBrokerSnapshotAsync(String strategyId) {
@@ -8376,7 +8422,8 @@ public class TradingFrame extends JFrame {
                     reconciliation = new ReconciliationService().reconcile(localPositions, java.util.List.of());
                     log("[RISK] Could not fetch broker positions for reconciliation: " + ex.getMessage());
                 }
-                RiskDashboardPanel panel = new RiskDashboardPanel(modeLabel, riskReport, positionRisks, reconciliation);
+                RiskDashboardPanel panel = new RiskDashboardPanel(modeLabel, riskReport, positionRisks, reconciliation,
+                        LossHarvesting.analyze(lossHarvestingPositions(), realizedGainsThisYear(), java.time.LocalDate.now()));
                 new RiskDashboardDialog(TradingFrame.this, panel).setVisible(true);
             }
         }.execute();
@@ -8994,7 +9041,7 @@ public class TradingFrame extends JFrame {
                     } else if (column == 1) {
                         Object pnlValue = table.getModel().getValueAt(modelRow, STRATEGY_PNL_COLUMN);
                         setForeground(PnlCellStyleSupport.foregroundFor(pnlValue, table.getForeground()));
-                    } else if (column == 12) {
+                    } else if (column == 13) {
                         setForeground(entrySourceTextColor(value, table.getForeground()));
                     } else {
                         setForeground(table.getForeground());
@@ -9019,7 +9066,7 @@ public class TradingFrame extends JFrame {
         private int alignmentForColumn(int column) {
             // Numeric price and P&L columns are right-aligned; text columns are left-aligned.
             return switch (column) {
-                case 2, 3, 4, 5, 6, 7, 8 -> RIGHT;
+                case 2, 3, 4, 5, 6, 7, 8, 9 -> RIGHT;
                 default -> LEFT;
             };
         }
@@ -9352,6 +9399,221 @@ public class TradingFrame extends JFrame {
             "Open the price chart: moving averages, RSI, volume, MACD and this strategy's own levels, "
                     + "with a plain-language guide to each part.";
 
+    /** Only a row holding shares that are under water has a loss worth working down. */
+    private boolean rowHasLosingPosition(int viewRow) {
+        if (viewRow < 0 || viewRow >= strategyTable.getRowCount()) {
+            return false;
+        }
+        Position position = strategies.get(strategyTable.convertRowIndexToModel(viewRow)).cachedPosition();
+        return position.getTotalShares() > 0
+                && position.getLastPrice().compareTo(BigDecimal.ZERO) > 0
+                && position.unrealizedPnl().signum() < 0;
+    }
+
+    /**
+     * Plans a way out of a losing position: a measured add low enough to pull the average cost down,
+     * then an exit the last month of prices supports. Bars are read off the EDT, and nothing reaches
+     * the broker until the operator presses Review and Execute and submits the ticket that opens.
+     */
+    private void minimizeLossImpact(int viewRow) {
+        if (!rowHasLosingPosition(viewRow)) {
+            return;
+        }
+        if (!connectionOk || runtimeApiKey.isBlank()) {
+            JOptionPane.showMessageDialog(this,
+                    selectedModeLabel() + " Alpaca credentials are required to read the last month of prices.",
+                    "Minimize Loss Impact", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        ManagedStrategy entry = strategies.get(strategyTable.convertRowIndexToModel(viewRow));
+        Strategy strategy = entry.strategy;
+        Position position = entry.cachedPosition();
+        int shares = position.getTotalShares();
+        BigDecimal averageCost = position.getAverageCost();
+        BigDecimal currentPrice = position.getLastPrice();
+        new SwingWorker<LossRecoveryPlan.Plan, Void>() {
+            @Override
+            protected LossRecoveryPlan.Plan doInBackground() throws Exception {
+                java.time.LocalDate end = java.time.LocalDate.now();
+                java.util.List<com.neuralarc.model.MarketBar> bars =
+                        new HttpAlpacaMarketDataApi(runtimeApiKey, runtimeApiSecret)
+                                .getDailyBars(strategy.symbol(), end.minusDays(LOSS_RECOVERY_LOOKBACK_DAYS), end);
+                // Price the add at today's low — a price the market has actually paid today, so it can fill.
+                return LossRecoveryPlan.forPosition(shares, averageCost, currentPrice, bars, BigDecimal.ZERO,
+                        com.neuralarc.analytics.RecentLow.sessionLow(bars, end));
+            }
+
+            @Override
+            protected void done() {
+                LossRecoveryPlan.Plan plan;
+                try {
+                    plan = get();
+                } catch (Exception ex) {
+                    log("[" + strategy.symbol() + "] Minimize loss impact failed: " + ex.getMessage());
+                    JOptionPane.showMessageDialog(TradingFrame.this,
+                            "Could not read prices for " + strategy.symbol() + ": " + ex.getMessage(),
+                            "Minimize Loss Impact", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+                LossRecoveryDialog dialog = new LossRecoveryDialog(TradingFrame.this, strategy.symbol(), shares,
+                        averageCost, currentPrice, plan);
+                dialog.setVisible(true);
+                if (dialog.wasExecuted() && plan.feasible()) {
+                    executeLossRecoveryPlan(entry, plan);
+                }
+            }
+        }.execute();
+    }
+
+    /**
+     * Opens the plan's buy as an order ticket to review: the shares it worked out, priced at today's
+     * low, with the time in force saved in Settings. Every field can still be changed, and nothing
+     * reaches the broker until the operator submits it there.
+     */
+    private void executeLossRecoveryPlan(ManagedStrategy entry, LossRecoveryPlan.Plan plan) {
+        Strategy strategy = entry.strategy;
+        String action = "Minimize Loss Impact " + strategy.symbol();
+        int suggestedShares = Math.max(1, plan.addShares());
+        Optional<ManualLimitBuySelection> selection = ManualLimitBuyDialog.show(
+                this,
+                strategy,
+                entry.cachedPosition().getLastPrice(),
+                settingsDialog.appliedManualBuyTimeInForce(),
+                suggestedShares,
+                plan.addLimitPrice(),
+                lossRecoveryTicketIntro(strategy, plan, suggestedShares)
+        );
+        if (selection.isEmpty()) {
+            userActionLog.canceled(action);
+            return;
+        }
+
+        ManualLimitBuySelection order = selection.get();
+        userActionLog.started(action);
+        new SwingWorker<StrategyService.StrategyCreationResult, Void>() {
+            @Override
+            protected StrategyService.StrategyCreationResult doInBackground() {
+                return buyMoreAtLimit(strategy, order.quantity(), order.limitPrice(),
+                        order.repositionAfterExpiry(), order.timeInForce());
+            }
+
+            @Override
+            protected void done() {
+                StrategyService.StrategyCreationResult result;
+                try {
+                    result = get();
+                } catch (Exception ex) {
+                    result = StrategyService.StrategyCreationResult.failed(ex.getMessage());
+                }
+                if (result.success()) {
+                    log("[" + strategy.symbol() + "] Loss recovery buy submitted: " + order.quantity()
+                            + " at " + order.limitPrice().toPlainString() + " (" + order.timeInForce()
+                            + "). The plan's exit at " + plan.exitPrice().toPlainString() + " was not placed.");
+                    userActionLog.completed(action, "Limit buy submitted for " + order.quantity() + " share(s).");
+                } else {
+                    userActionLog.failed(action, result.error());
+                    JOptionPane.showMessageDialog(TradingFrame.this,
+                            "Could not submit the buy for " + strategy.symbol() + ": " + result.error(),
+                            "Minimize Loss Impact", JOptionPane.ERROR_MESSAGE);
+                }
+                syncStrategiesFromRepository();
+                refreshStrategyTableData();
+                applyCurrentStrategiesRowFilter();
+                updateStatusBar();
+            }
+        }.execute();
+    }
+
+    /** Opening line of the loss-recovery ticket: what this buy is for, and what it deliberately leaves out. */
+    private String lossRecoveryTicketIntro(Strategy strategy, LossRecoveryPlan.Plan plan, int shares) {
+        return "<html><body style='width:380px'>"
+                + "<b>Minimize loss impact on " + strategy.symbol() + "</b><br><br>"
+                + "Buy " + shares + " share(s) at <b>$" + plan.addLimitPrice().toPlainString()
+                + "</b> — today's low — bringing the average cost to $"
+                + plan.newAverageCost().toPlainString() + ".<br><br>"
+                + "The plan's exit at $" + plan.exitPrice().toPlainString()
+                + " is <b>not</b> placed here; only the buy below is submitted."
+                + "<br><br><span style='color:#667085'>Every field can be changed before submitting. "
+                + "A GTC order never expires, so auto reposition only applies to a DAY order.</span>"
+                + "</body></html>";
+    }
+
+    /** Open losing positions in the viewed mode, with how long each has been held. */
+    private java.util.List<LossHarvesting.Position> lossHarvestingPositions() {
+        java.util.List<LossHarvesting.Position> positions = new java.util.ArrayList<>();
+        for (ManagedStrategy entry : strategies) {
+            if (entry.strategy.mode() != selectedViewMode) {
+                continue;
+            }
+            Position position = entry.cachedPosition();
+            if (position.getTotalShares() <= 0 || position.unrealizedPnl().signum() >= 0) {
+                continue;
+            }
+            String workspaceLabel = entry.strategy.workspaceId() == null
+                    ? "Unassigned"
+                    : workspaceService.findById(entry.strategy.workspaceId())
+                            .map(StrategyWorkspace::name).orElse("Unassigned");
+            double percent = position.totalInvested().signum() > 0
+                    ? position.unrealizedPnl().multiply(BigDecimal.valueOf(100))
+                            .divide(position.totalInvested(), 2, java.math.RoundingMode.HALF_UP).doubleValue()
+                    : 0.0;
+            // A strategy armed to buy back would trigger the wash-sale rule on a harvested loss.
+            boolean repurchaseArmed = entry.strategy.lossBuyLevelsEnabled() || entry.strategy.restartAfterExitEnabled();
+            positions.add(new LossHarvesting.Position(entry.strategy.symbol(), workspaceLabel,
+                    position.getTotalShares(), position.unrealizedPnl(), percent,
+                    heldDays(entry.strategy.id()), repurchaseArmed));
+        }
+        return positions;
+    }
+
+    /** Days since this strategy's first buy filled, or 0 when no fill is recorded. */
+    private long heldDays(String strategyId) {
+        java.time.Instant first = null;
+        for (StrategyOrder order : strategyOrderRepository.findByStrategyId(strategyId)) {
+            if (order.side() != StrategyOrderSide.BUY
+                    || StrategyOrderFillSupport.resolvedFilledQuantity(order).signum() <= 0) {
+                continue;
+            }
+            java.time.Instant when = order.filledAt() != null ? order.filledAt() : order.submittedAt();
+            if (when != null && (first == null || when.isBefore(first))) {
+                first = when;
+            }
+        }
+        return first == null ? 0L : java.time.temporal.ChronoUnit.DAYS.between(
+                java.time.LocalDate.ofInstant(first, java.time.ZoneId.systemDefault()), java.time.LocalDate.now());
+    }
+
+    /** Profit booked by sells that filled this calendar year, across the viewed mode. */
+    private BigDecimal realizedGainsThisYear() {
+        int year = java.time.LocalDate.now().getYear();
+        BigDecimal realized = BigDecimal.ZERO;
+        for (ManagedStrategy entry : strategies) {
+            if (entry.strategy.mode() != selectedViewMode) {
+                continue;
+            }
+            realized = realized.add(LossHarvesting.realizedInYear(fillsForStrategy(entry.strategy.id()), year));
+        }
+        return Monetary.round(realized);
+    }
+
+    private java.util.List<LossHarvesting.Fill> fillsForStrategy(String strategyId) {
+        java.util.List<LossHarvesting.Fill> fills = new java.util.ArrayList<>();
+        for (StrategyOrder order : strategyOrderRepository.findByStrategyId(strategyId)) {
+            if (order.status() != StrategyOrderStatus.FILLED && order.status() != StrategyOrderStatus.PARTIALLY_FILLED) {
+                continue;
+            }
+            BigDecimal quantity = StrategyOrderFillSupport.resolvedFilledQuantity(order);
+            java.time.Instant when = order.filledAt() != null ? order.filledAt() : order.submittedAt();
+            if (quantity.signum() <= 0 || when == null) {
+                continue;
+            }
+            fills.add(new LossHarvesting.Fill(order.side() == StrategyOrderSide.BUY, quantity,
+                    StrategyOrderFillSupport.resolvedFillPrice(order),
+                    java.time.LocalDate.ofInstant(when, java.time.ZoneId.systemDefault())));
+        }
+        return fills;
+    }
+
     /** Opens the stock chart for a grid row, with that strategy's levels drawn on it. */
     private void openStockChart(int viewRow) {
         if (viewRow < 0 || viewRow >= strategyTable.getRowCount()) {
@@ -9400,7 +9662,9 @@ public class TradingFrame extends JFrame {
                 () -> strategyWorkspaceTabs != null && strategyWorkspaceTabs.isHistorySelected(),
                 () -> workspaceService.activeWorkspaces(selectedViewMode),
                 this::assignStrategyRowToWorkspace,
-                this::openStockChart
+                this::openStockChart,
+                this::minimizeLossImpact,
+                this::rowHasLosingPosition
         ).show(event);
         return true;
     }
@@ -9540,6 +9804,12 @@ public class TradingFrame extends JFrame {
             return null;
         }
         text = text.replace(",", "");
+        if (text.endsWith("%")) {
+            text = text.substring(0, text.length() - 1).trim();
+        }
+        if (text.startsWith("+")) {
+            text = text.substring(1).trim();
+        }
         try {
             return new BigDecimal(text);
         } catch (NumberFormatException ignored) {

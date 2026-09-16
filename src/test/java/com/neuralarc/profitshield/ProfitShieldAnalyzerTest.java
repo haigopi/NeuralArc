@@ -175,10 +175,11 @@ class ProfitShieldAnalyzerTest {
 
         ProfitShieldRecommendation r = analyzer().analyze(List.of(hugging), defaults()).getFirst();
 
-        // Entry $99.00, half of the 3% stop = 1.5% -> $97.515 -> $97.52.
-        assertEquals(new BigDecimal("97.52"), r.stopLossPrice());
-        // $97.515 rounds up to $97.52, so the reported risk is 1.49% rather than exactly half of 3%.
-        assertEquals(new BigDecimal("1.49"), r.stopLossPercent());
+        // Entry $99.00, half of the 3% stop = 1.5% -> $97.515, floored to $97.51 so rounding can only
+        // widen the gap to the entry, never narrow it.
+        assertEquals(new BigDecimal("97.51"), r.stopLossPrice());
+        // $97.515 floors to $97.51, so the reported risk is 1.51% rather than exactly half of 3%.
+        assertEquals(new BigDecimal("1.51"), r.stopLossPercent());
     }
 
     @Test

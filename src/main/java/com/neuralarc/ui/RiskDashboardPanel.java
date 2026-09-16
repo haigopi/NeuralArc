@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.analytics.LossHarvesting;
 import com.neuralarc.analytics.RiskAnalytics;
 import com.neuralarc.service.ReconciliationService;
 import com.neuralarc.ui.chart.ChartPalette;
@@ -36,7 +37,7 @@ import java.util.Map;
  */
 final class RiskDashboardPanel extends JPanel {
     RiskDashboardPanel(String modeLabel, RiskAnalytics.Report risk, List<RiskAnalytics.PositionRisk> risks,
-                       ReconciliationService.Report reconciliation) {
+                       ReconciliationService.Report reconciliation, LossHarvesting.Report harvesting) {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setBackground(ChartPalette.CANVAS_BG);
         setBorder(new EmptyBorder(14, 16, 16, 16));
@@ -54,6 +55,11 @@ final class RiskDashboardPanel extends JPanel {
         add(row(advisoryRow(risks)));
         add(Box.createVerticalStrut(12));
         add(row(DashboardCard.of("Broker Reconciliation (NeuralArc vs Alpaca)", reconciliationContent(reconciliation), 600, reconciliationHeight(reconciliation))));
+        add(Box.createVerticalStrut(12));
+        add(sectionTitle("Loss Harvesting"));
+        add(Box.createVerticalStrut(6));
+        add(row(DashboardCard.of("Booking losses before the year ends", harvestingContent(harvesting),
+                600, harvestingHeight(harvesting))));
         add(Box.createVerticalGlue());
     }
 
@@ -262,6 +268,86 @@ final class RiskDashboardPanel extends JPanel {
             case MISSING_BROKER -> "tracked locally (" + plain(line.localQuantity()) + ") but absent at broker";
             case MATCH -> "matches";
         };
+    }
+
+    // ---- Loss harvesting --------------------------------------------------
+
+    /**
+     * What booking the open losses would do to this year's tax bill, drawn from the account's own
+     * trades. Every colour is set explicitly: this card is white while the app runs dark, so text left
+     * to the theme's own foreground is unreadable here. Deliberately worded as information — the last
+     * line says it is not tax advice.
+     */
+    private JComponent harvestingContent(LossHarvesting.Report harvesting) {
+        if (harvesting == null) {
+            return capHeight(new JLabel("<html><div style='width:560px;color:" + hex(ChartPalette.TEXT_MUTED) + ";'>"
+                    + "Loss harvesting could not be worked out for this view.</div></html>"), 40);
+        }
+        String primary = hex(ChartPalette.TEXT_PRIMARY);
+        StringBuilder html = new StringBuilder("<html><div style='width:560px;'>")
+                .append("<table width='100%' cellpadding='6' cellspacing='0'>")
+                .append("<tr><td bgcolor='#FBF0D2'><font color='#4A3A12' size='4'><b>")
+                .append(escape(harvesting.headline())).append("</b></font></td></tr>")
+                .append("<tr><td bgcolor='#E6EEFA'><font color='#1C3A63'><b>Sell by ")
+                .append(escape(LossHarvesting.date(harvesting.sellBy()))).append("</b> for the loss to count in ")
+                .append(harvesting.sellBy().getYear()).append(", and do not buy the same symbol back before <b>")
+                .append(escape(LossHarvesting.date(harvesting.repurchaseAllowedFrom())))
+                .append("</b> or the loss is disallowed.</font></td></tr></table>");
+        if (harvesting.hasCandidates()) {
+            html.append("<table cellpadding='3' cellspacing='0' style='margin-top:8px;'>");
+            html.append(harvestRows("Worth booking this year", harvesting.recommended()));
+            html.append(harvestRows("Only builds a carry-forward", harvesting.optional()));
+            html.append("</table>");
+        }
+        html.append("<div style='margin-top:8px;'>");
+        for (String note : harvesting.notes()) {
+            html.append("<font color='").append(hex(ChartPalette.TEXT_MUTED)).append("'>&bull; ")
+                    .append(escape(note)).append("</font><br>");
+        }
+        html.append("</div></div></html>");
+        JLabel label = new JLabel(html.toString());
+        label.setFont(FontLoader.ui(Font.PLAIN, 11f));
+        label.setForeground(ChartPalette.TEXT_PRIMARY);
+        label.setVerticalAlignment(JLabel.TOP);
+        return leftAlignedCapped(label);
+    }
+
+    private String harvestRows(String heading, List<LossHarvesting.Lot> lots) {
+        if (lots.isEmpty()) {
+            return "";
+        }
+        StringBuilder rows = new StringBuilder("<tr><td colspan='5' style='padding-top:8px;'><font color='")
+                .append(hex(ChartPalette.TEXT_PRIMARY)).append("'><b>").append(escape(heading)).append("</b></font></td></tr>");
+        for (LossHarvesting.Lot lot : lots) {
+            String termLabel = switch (lot.term()) {
+                case SHORT -> "short-term";
+                case LONG -> "long-term";
+                case UNKNOWN -> "term unknown";
+            };
+            rows.append("<tr>")
+                    .append("<td><font color='").append(hex(ChartPalette.TEXT_PRIMARY)).append("'><b>")
+                    .append(escape(lot.symbol())).append("</b></font></td>")
+                    .append("<td align='right'><font color='").append(hex(ChartPalette.NEGATIVE)).append("'><b>")
+                    .append(escape(money(lot.loss()))).append("</b></font></td>")
+                    .append("<td><font color='").append(hex(ChartPalette.TEXT_MUTED)).append("'>")
+                    .append(escape(termLabel)).append("</font></td>")
+                    .append("<td><font color='").append(hex(ChartPalette.TEXT_PRIMARY)).append("'>")
+                    .append(escape(lot.action())).append("</font></td>")
+                    .append("<td><font color='").append(hex(ChartPalette.WARN)).append("'>")
+                    .append(lot.washSaleRisk() ? "buys back automatically" : "").append("</font></td>")
+                    .append("</tr>");
+        }
+        return rows.toString();
+    }
+
+    private int harvestingHeight(LossHarvesting.Report harvesting) {
+        int lots = harvesting == null ? 0 : harvesting.recommended().size() + harvesting.optional().size();
+        int notes = harvesting == null ? 0 : harvesting.notes().size();
+        return 120 + lots * 22 + notes * 30;
+    }
+
+    private String hex(Color color) {
+        return String.format("#%02x%02x%02x", color.getRed(), color.getGreen(), color.getBlue());
     }
 
     // ---- Layout helpers ---------------------------------------------------

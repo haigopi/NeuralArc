@@ -2,6 +2,7 @@ package com.neuralarc.swing;
 
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.api.AlpacaMarketDataException;
+import com.neuralarc.analytics.RecentLow;
 import com.neuralarc.model.MarketBar;
 import com.neuralarc.util.IntradayVolumeSupport;
 import com.neuralarc.util.Monetary;
@@ -99,6 +100,7 @@ public final class SwingLiveScanner {
                 ? current.subtract(ma50).multiply(BigDecimal.valueOf(100)).divide(ma50, 2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
         BigDecimal atr = averageTrueRange(history, ATR_PERIOD);
+        BigDecimal weekLow = RecentLow.weekLow(history, latest.low());
         return Optional.of(new SwingCandidate(
                 symbol,
                 symbol,
@@ -117,7 +119,8 @@ public final class SwingLiveScanner {
                 valid(ma200) && current.compareTo(ma200) > 0,
                 valid(ma50) && valid(ma200) && ma50.compareTo(ma200) > 0,
                 supportProximity,
-                Monetary.round(atr)
+                Monetary.round(atr),
+                Monetary.round(weekLow)
         ));
     }
 

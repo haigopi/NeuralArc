@@ -208,7 +208,9 @@ final class GapAndGoCoordinator {
             if (interactive) {
                 JOptionPane.showMessageDialog(ui.dialogParent(), message, "Gap-and-Go Analysis", JOptionPane.WARNING_MESSAGE);
             } else {
-                ui.log("[Gap Rocket] Scheduled scan skipped: " + message);
+                // The tick fired before the broker was connected; retry rather than lose today's scan.
+                scheduleServiceForWorkspace(workspaceId).deferToday();
+                ui.log("[Gap Rocket] Scheduled scan skipped, will retry: " + message);
             }
             return;
         }

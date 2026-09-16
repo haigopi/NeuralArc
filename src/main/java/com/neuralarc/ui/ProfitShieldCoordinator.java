@@ -215,7 +215,9 @@ final class ProfitShieldCoordinator {
             if (interactive) {
                 JOptionPane.showMessageDialog(ui.dialogParent(), message, "Profit Shield Analysis", JOptionPane.WARNING_MESSAGE);
             } else {
-                ui.log("[Profit Shield] Scheduled scan skipped: " + message);
+                // The tick fired before the broker was connected; retry rather than lose today's scan.
+                scheduleServiceForWorkspace(workspaceId).deferToday();
+                ui.log("[Profit Shield] Scheduled scan skipped, will retry: " + message);
             }
             return;
         }

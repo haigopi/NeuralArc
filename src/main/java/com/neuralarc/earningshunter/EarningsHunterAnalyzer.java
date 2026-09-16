@@ -1,5 +1,7 @@
 package com.neuralarc.earningshunter;
 
+import com.neuralarc.analytics.ProtectiveStopPrice;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -51,8 +53,7 @@ public final class EarningsHunterAnalyzer {
 
     private EarningsHunterRecommendation toRecommendation(EarningsHunterCandidate c, EarningsHunterConfig cfg, int score) {
         BigDecimal entry = plannedEntryPrice(c, cfg);
-        BigDecimal stop = entry.multiply(BigDecimal.ONE.subtract(cfg.stopLossPercent().movePointLeft(2)))
-                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal stop = ProtectiveStopPrice.percentBelowEntry(entry, cfg.stopLossPercent());
         BigDecimal target = entry.multiply(BigDecimal.ONE.add(cfg.targetProfitPercent().movePointLeft(2)))
                 .setScale(2, RoundingMode.HALF_UP);
         return new EarningsHunterRecommendation(c.symbol().toUpperCase(), c.companyName(), c.currentPrice(),

@@ -224,7 +224,9 @@ final class VwapCoordinator {
             if (interactive) {
                 JOptionPane.showMessageDialog(ui.dialogParent(), message, "VWAP Desk Analysis", JOptionPane.WARNING_MESSAGE);
             } else {
-                ui.log("[VWAP Desk] Scheduled scan skipped: " + message);
+                // The tick fired before the broker was connected; retry rather than lose today's scan.
+                scheduleServiceForWorkspace(workspaceId).deferToday();
+                ui.log("[VWAP Desk] Scheduled scan skipped, will retry: " + message);
             }
             return;
         }

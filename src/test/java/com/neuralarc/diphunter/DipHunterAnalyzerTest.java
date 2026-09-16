@@ -135,10 +135,26 @@ class DipHunterAnalyzerTest {
         DipHunterAnalyzer analyzer = new DipHunterAnalyzer(FIXED, null);
         DipHunterRecommendation rec = analyzer.analyze(List.of(strong("NVDA")),
                 DipHunterConfig.defaults(StrategyMode.PAPER)).getFirst();
-        assertEquals(new BigDecimal("100.00"), rec.plannedEntryPrice());
-        assertEquals(new BigDecimal("95.00"), rec.stopLossPrice());   // 5% stop
-        assertEquals(new BigDecimal("110.00"), rec.takeProfitPrice()); // 10% target
+        assertEquals(new BigDecimal("99.75"), rec.plannedEntryPrice());   // 0.25% under the market
+        assertEquals(new BigDecimal("94.76"), rec.stopLossPrice());   // 5% stop
+        assertEquals(new BigDecimal("109.73"), rec.takeProfitPrice()); // 10% target
         assertEquals(DipHunterStatus.RECOMMENDED, rec.status());
+    }
+
+    @Test
+    void neverPlansAboveTheMarketAndFloorsAtTheWeeksLow() {
+        DipHunterAnalyzer analyzer = new DipHunterAnalyzer(FIXED, null);
+        DipHunterCandidate awkwardPrice = new DipHunterCandidate("NVDA", "NVDA Inc", new BigDecimal("7"),
+                new BigDecimal("-1.0"), 3_000_000L, new BigDecimal("3.0"), new BigDecimal("215.695"),
+                new BigDecimal("217"), new BigDecimal("232"), new BigDecimal("205"), new BigDecimal("200"),
+                true, true, true, new BigDecimal("0.5"), new BigDecimal("215"), BigDecimal.ZERO);
+
+        DipHunterRecommendation rec = analyzer.analyze(List.of(awkwardPrice),
+                DipHunterConfig.defaults(StrategyMode.PAPER)).getFirst();
+
+        assertTrue(rec.plannedEntryPrice().compareTo(awkwardPrice.currentPrice()) <= 0,
+                "planned " + rec.plannedEntryPrice() + " must not sit above the market");
+        assertEquals(new BigDecimal("215.15"), rec.plannedEntryPrice());
     }
 
     private DipHunterCandidate strong(String symbol) {

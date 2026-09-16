@@ -12,5 +12,19 @@ public record VwapCandidate(
         BigDecimal previousClose, BigDecimal dayChangePercent, long averageVolume, BigDecimal relativeVolume,
         BigDecimal movingAverage50, BigDecimal movingAverage200, boolean aboveMa50, boolean aboveMa200,
         /** Today's high-to-low range as a percentage of price - a volatility measure, not a bid/ask spread. */
-        BigDecimal intradayRangePercent
-) {}
+        BigDecimal intradayRangePercent,
+        /** Lowest price actually traded in the last week — the floor for a patient entry. */
+        BigDecimal weekLow
+) {
+    /** A candidate whose week's low is not known; the entry then aims only under the market. */
+    public VwapCandidate(
+            String symbol, String companyName, BigDecimal currentPrice, BigDecimal vwap, BigDecimal discountPercent,
+            BigDecimal previousClose, BigDecimal dayChangePercent, long averageVolume, BigDecimal relativeVolume,
+            BigDecimal movingAverage50, BigDecimal movingAverage200, boolean aboveMa50, boolean aboveMa200,
+            BigDecimal intradayRangePercent
+    ) {
+        this(symbol, companyName, currentPrice, vwap, discountPercent, previousClose, dayChangePercent, averageVolume,
+                relativeVolume, movingAverage50, movingAverage200, aboveMa50, aboveMa200, intradayRangePercent,
+                BigDecimal.ZERO);
+    }
+}

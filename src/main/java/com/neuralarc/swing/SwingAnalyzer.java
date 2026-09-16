@@ -1,5 +1,7 @@
 package com.neuralarc.swing;
 
+import com.neuralarc.analytics.PlannedEntryPrice;
+import com.neuralarc.analytics.ProtectiveStopPrice;
 import com.neuralarc.util.SetupScore;
 
 import java.math.BigDecimal;
@@ -86,8 +88,7 @@ public final class SwingAnalyzer {
 
     private SwingRecommendation toRecommendation(SwingCandidate c, SwingConfig cfg, int score) {
         BigDecimal entry = plannedEntryPrice(c);
-        BigDecimal stopPrice = entry.multiply(BigDecimal.ONE.subtract(cfg.stopLossPercent().movePointLeft(2)))
-                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal stopPrice = ProtectiveStopPrice.percentBelowEntry(entry, cfg.stopLossPercent());
         BigDecimal target = targetPrice(c, cfg, entry);
         BigDecimal targetProfitPercent = entry.compareTo(BigDecimal.ZERO) > 0
                 ? target.subtract(entry).multiply(BigDecimal.valueOf(100)).divide(entry, 2, RoundingMode.HALF_UP)
@@ -100,10 +101,13 @@ public final class SwingAnalyzer {
                 Instant.now(clock));
     }
 
+    /**
+     * Buy the pullback a little under the market, never above it: a limit above the current price
+     * fills instantly at the market's own price, so the stop and target would be measured from a
+     * price the plan never chose. The week's low is the floor, so the order can still fill.
+     */
     private BigDecimal plannedEntryPrice(SwingCandidate c) {
-        // Buy the pullback at the current price; never plan below it.
-        BigDecimal current = c.currentPrice() == null ? BigDecimal.ZERO : c.currentPrice();
-        return current.setScale(2, RoundingMode.HALF_UP);
+        return PlannedEntryPrice.atOrBelowMarket(c.currentPrice(), c.weekLow(), PlannedEntryPrice.DEFAULT_DISCOUNT_PERCENT);
     }
 
     /**
@@ -126,7 +130,8 @@ public final class SwingAnalyzer {
         if (entry.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
-        BigDecimal stop = entry.multiply(BigDecimal.ONE.subtract(cfg.stopLossPercent().movePointLeft(2)));
+        // The same stop the recommendation carries, so the scored risk matches the planned one.
+        BigDecimal stop = ProtectiveStopPrice.percentBelowEntry(entry, cfg.stopLossPercent());
         BigDecimal risk = entry.subtract(stop);
         BigDecimal reward = targetPrice(c, cfg, entry).subtract(entry);
         if (risk.compareTo(BigDecimal.ZERO) <= 0 || reward.compareTo(BigDecimal.ZERO) <= 0) {

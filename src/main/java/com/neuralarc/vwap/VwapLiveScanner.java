@@ -2,6 +2,7 @@ package com.neuralarc.vwap;
 
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.api.AlpacaMarketDataException;
+import com.neuralarc.analytics.RecentLow;
 import com.neuralarc.model.MarketBar;
 import com.neuralarc.util.IntradayVolumeSupport;
 import com.neuralarc.util.Monetary;
@@ -98,6 +99,7 @@ public final class VwapLiveScanner {
         BigDecimal intradayRangePercent = valid(current) && intradayHigh.compareTo(intradayLow) > 0
                 ? intradayHigh.subtract(intradayLow).multiply(BigDecimal.valueOf(100)).divide(current, 2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
+        BigDecimal weekLow = RecentLow.weekLow(history, intradayLow);
         return Optional.of(new VwapCandidate(
                 symbol,
                 symbol,
@@ -112,7 +114,8 @@ public final class VwapLiveScanner {
                 valid(ma200) ? Monetary.round(ma200) : BigDecimal.ZERO,
                 valid(ma50) && current.compareTo(ma50) > 0,
                 valid(ma200) && current.compareTo(ma200) > 0,
-                intradayRangePercent
+                intradayRangePercent,
+                Monetary.round(weekLow)
         ));
     }
 

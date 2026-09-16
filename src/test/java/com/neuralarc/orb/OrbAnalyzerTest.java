@@ -31,8 +31,9 @@ class OrbAnalyzerTest {
         OrbRecommendation rec = recommendations.getFirst();
         assertEquals("NVDA", rec.symbol());
         assertEquals(new BigDecimal("96.19"), rec.plannedEntry());
-        // Range-low (99.00) sits above the discounted entry (96.19); clamped to riskPercent (1%) below entry instead.
-        assertEquals(new BigDecimal("95.23"), rec.stop());
+        // Range-low (99.00) sits above the discounted entry (96.19); clamped to riskPercent (1%) below
+        // entry instead, floored to the cent so rounding cannot narrow the gap.
+        assertEquals(new BigDecimal("95.22"), rec.stop());
         assertEquals(new BigDecimal("99.08"), rec.target());
         assertTrue(rec.score() > 0);
         assertEquals(OrbStatus.RANGE_CAPTURED, rec.status());
