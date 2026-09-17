@@ -143,41 +143,67 @@ public class HttpAlpacaMarketDataApi implements AlpacaMarketDataApi {
                 .header("APCA-API-SECRET-KEY", secretKey)
                 .GET()
                 .build();
-        try {
-            HttpResponse<String> response = sendTracked(request);
-            String requestId = response.headers().firstValue("X-Request-ID").orElse("");
-            if (!requestId.isBlank()) {
-                requestIdStore.record("marketData", "GET", url, requestId);
-            }
-            int status = response.statusCode();
-            String bodyText = response.body() == null ? "{}" : response.body();
-
-            if (status == 401 || status == 403) {
-                throw new AlpacaMarketDataException("Alpaca API authentication failed (HTTP " + status
-                        + "). Please verify your API key and secret in Settings.");
-            }
-            if (status == 422) {
-                throw new AlpacaMarketDataException("Invalid request to Alpaca API (HTTP 422): " + bodyText);
-            }
-            if (status == 429) {
-                throw new AlpacaMarketDataException("Alpaca API rate limit exceeded (HTTP 429). "
-                        + "Try again in a few seconds or reduce the analysis interval.");
-            }
-            if (status < 200 || status >= 300) {
-                throw new AlpacaMarketDataException("Alpaca API returned HTTP " + status + ": " + bodyText);
-            }
+        int attempt = 0;
+        while (true) {
+            attempt++;
             try {
-                return new JSONObject(bodyText);
+                HttpResponse<String> response = sendTracked(request);
+                String requestId = response.headers().firstValue("X-Request-ID").orElse("");
+                if (!requestId.isBlank()) {
+                    requestIdStore.record("marketData", "GET", url, requestId);
+                }
+                int status = response.statusCode();
+                String bodyText = response.body() == null ? "{}" : response.body();
+
+                if (status == 401 || status == 403) {
+                    throw new AlpacaMarketDataException("Alpaca API authentication failed (HTTP " + status
+                            + "). Please verify your API key and secret in Settings.");
+                }
+                if (status == 422) {
+                    throw new AlpacaMarketDataException("Invalid request to Alpaca API (HTTP 422): " + bodyText);
+                }
+                if (status == 429) {
+                    // The limit is per minute and usually clears within seconds, so this is the one
+                    // status worth retrying; an auth or validation failure answers the same every time.
+                    if (RateLimitBackoff.hasAttemptsLeft(attempt)
+                            && sleepBeforeRetry(RateLimitBackoff.delayMillis(attempt), url)) {
+                        continue;
+                    }
+                    throw new AlpacaMarketDataException("Alpaca API rate limit exceeded (HTTP 429) after "
+                            + attempt + " attempt(s). Try again in a few seconds, or analyze fewer symbols at once.");
+                }
+                if (status < 200 || status >= 300) {
+                    throw new AlpacaMarketDataException("Alpaca API returned HTTP " + status + ": " + bodyText);
+                }
+                try {
+                    return new JSONObject(bodyText);
+                } catch (Exception ex) {
+                    throw new AlpacaMarketDataException("Failed to parse Alpaca API response: " + bodyText, ex);
+                }
+            } catch (AlpacaMarketDataException ex) {
+                throw ex;
+            } catch (java.net.http.HttpTimeoutException ex) {
+                throw new AlpacaMarketDataException("Request to Alpaca timed out. Check your network connection.", ex);
             } catch (Exception ex) {
-                throw new AlpacaMarketDataException("Failed to parse Alpaca API response: " + bodyText, ex);
+                LOGGER.log(Level.WARNING, "Alpaca market data HTTP error: " + url, ex);
+                throw new AlpacaMarketDataException("Network error while contacting Alpaca: " + ex.getMessage(), ex);
             }
-        } catch (AlpacaMarketDataException ex) {
-            throw ex;
-        } catch (java.net.http.HttpTimeoutException ex) {
-            throw new AlpacaMarketDataException("Request to Alpaca timed out. Check your network connection.", ex);
-        } catch (Exception ex) {
-            LOGGER.log(Level.WARNING, "Alpaca market data HTTP error: " + url, ex);
-            throw new AlpacaMarketDataException("Network error while contacting Alpaca: " + ex.getMessage(), ex);
+        }
+    }
+
+    /**
+     * Waits out a rate limit before retrying. Returns false when the thread was interrupted - the
+     * Smart Picks workers are shut down that way when the dialog closes, and a cancelled run should
+     * stop rather than sit out its backoff.
+     */
+    private boolean sleepBeforeRetry(long millis, String url) {
+        LOGGER.info(() -> "Alpaca rate limited; retrying in " + millis + "ms: " + url);
+        try {
+            Thread.sleep(millis);
+            return true;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 

@@ -460,28 +460,28 @@ final class PortfolioActionsSupport {
                 return "Placed";
             }
         },
-        CLEAN_PENDING_BASE_BUYS("Clean All Pending Base Buys") {
+        CLEAN_PENDING_AND_CANCELED("Clean Pending and Cancelled Rows") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return entry != null
-                        && entry.strategy != null
-                        && PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(entry.strategy);
+                return PortfolioActionMatchers.isCleanableGridRow(entry);
             }
 
             @Override
             String confirmHeading(int count) {
-                return "Delete " + count + " pending base-buy recommendation(s)?";
+                return "Delete " + count + " pending and cancelled row(s)?";
             }
 
             @Override
             String confirmDetail() {
-                return "This permanently deletes pending scanner recommendations that have not placed a broker order yet."
-                        + "<br>Submitted orders, open positions, and active strategies are not included.";
+                return "Clears both kinds of row that sit in the grid without doing anything: those waiting to place"
+                        + " a base buy, and those cancelled by you and waiting for a manual restart."
+                        + "<br>They are permanently deleted locally. A row holding shares, or with a working broker"
+                        + " order, is never included.";
             }
 
             @Override
             String emptyMessage() {
-                return "There are no pending base-buy recommendations to delete.";
+                return "There are no pending or cancelled rows to clean.";
             }
 
             @Override

@@ -96,6 +96,15 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
 
     private static LoadResult cachedTrendResult;
     private static Instant cachedTrendLoadedAt;
+    /**
+     * Symbols analysed per batch, with a pause between batches. Analysing twenty symbols at once sent
+     * roughly a hundred and twenty market-data requests in one burst - on top of strategy polling and
+     * the per-minute schedulers - which Alpaca rate-limited. Small spaced batches finish a little
+     * slower and actually return every symbol.
+     */
+    static final int ANALYSIS_BATCH_SIZE = 4;
+    static final long ANALYSIS_BATCH_PAUSE_MILLIS = 1_500L;
+
     private static final List<DiversifiedStock> TOP_20_DIVERSIFIED_STOCKS = List.of(
             new DiversifiedStock("MSFT", "Microsoft Corporation", "Diversified top 20 - technology"),
             new DiversifiedStock("AAPL", "Apple Inc.", "Diversified top 20 - technology"),
@@ -121,6 +130,8 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
 
     private final TrendingStocksService trendingStocksService;
     private final AlpacaMarketDataApi marketDataApi;
+    /** Per-run bar cache, replaced at the start of each load so a refresh sees current prices. */
+    private volatile com.neuralarc.api.CachingMarketDataApi analysisApi;
     private final Consumer<List<SmartPicksSimulationSelection>> placementHandler;
     private final Consumer<String> logSink;
     private final StrategyMode targetMode;
@@ -275,6 +286,9 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
             @Override
             protected LoadResult doInBackground() throws Exception {
                 setProgress(5);
+                // One cache for the whole run: each symbol asks for four overlapping daily windows,
+                // and every symbol in the run shares this instance, so each window is fetched once.
+                analysisApi = new com.neuralarc.api.CachingMarketDataApi(marketDataApi);
                 return switch (universe) {
                     case DIVERSIFIED_TOP_20 -> loadDiversifiedTop20(value -> setProgress(value));
                     case WEEKEND_REBOUND -> loadWeekendRebound(value -> setProgress(value));
@@ -329,7 +343,8 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
     private SmartPicksStockAnalysis analyze(TrendingStock stock) {
         try {
             log("Analysis started for " + stock.symbol());
-            AutoAnalyzeBundle bundle = new AutoAnalyzeService(marketDataApi)
+            com.neuralarc.api.AlpacaMarketDataApi api = analysisApi;
+            AutoAnalyzeBundle bundle = new AutoAnalyzeService(api == null ? marketDataApi : api)
                     .analyzeBundle(stock.symbol(), 12, 15, stock.latestPrice());
             log("Analysis completed for " + stock.symbol());
             return new SmartPicksStockAnalysis(stock, bundle, "");
@@ -420,12 +435,22 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
         secondGroup.forEach(stock -> groupedStocks.add(new GroupedStock(1, stock)));
         List<SmartPicksStockAnalysis> firstAnalyses = new ArrayList<>();
         List<SmartPicksStockAnalysis> secondAnalyses = new ArrayList<>();
-        List<SmartPicksStockAnalysis> analyses = SmartPicksParallelExecutor.mapPreservingOrder(
-                groupedStocks,
-                "neuralarc-smart-picks-analysis",
-                groupedStock -> analyze(groupedStock.stock()),
-                completed -> progressCallback.set(percent(completed, taskCount))
-        );
+        // Paced rather than fired all at once: each symbol costs several market-data requests, and the
+        // whole set in one burst is what Alpaca rate-limited. Order is preserved batch by batch.
+        List<SmartPicksStockAnalysis> analyses = new ArrayList<>(taskCount);
+        List<List<GroupedStock>> batches = BulkPlacementRunner.batches(groupedStocks, ANALYSIS_BATCH_SIZE);
+        for (int batchIndex = 0; batchIndex < batches.size(); batchIndex++) {
+            int alreadyCompleted = analyses.size();
+            analyses.addAll(SmartPicksParallelExecutor.mapPreservingOrder(
+                    batches.get(batchIndex),
+                    "neuralarc-smart-picks-analysis",
+                    groupedStock -> analyze(groupedStock.stock()),
+                    completed -> progressCallback.set(percent(alreadyCompleted + completed, taskCount))
+            ));
+            if (batchIndex < batches.size() - 1) {
+                Thread.sleep(ANALYSIS_BATCH_PAUSE_MILLIS);
+            }
+        }
         for (int i = 0; i < groupedStocks.size(); i++) {
             if (groupedStocks.get(i).groupIndex() == 0) {
                 firstAnalyses.add(analyses.get(i));

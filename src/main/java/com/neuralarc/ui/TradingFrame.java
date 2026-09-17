@@ -721,6 +721,9 @@ public class TradingFrame extends JFrame {
             @Override public StrategyService.ArchiveResult deletePendingBaseBuyStrategy(String strategyId) {
                 return TradingFrame.this.deletePendingBaseBuyStrategy(strategyId);
             }
+            @Override public StrategyService.ArchiveResult deleteCleanableGridStrategy(String strategyId) {
+                return TradingFrame.this.deleteCleanableGridStrategy(strategyId);
+            }
             @Override
             public StrategyService.StrategyCreationResult sellPosition(
                     Strategy strategy,
@@ -4096,6 +4099,42 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    /**
+     * Deletes a row cleaned off the grid: a recommendation that never placed its base buy, or one the
+     * operator cancelled and left waiting for a manual restart. Guarded again here rather than trusting
+     * the filter, so a row that has since taken a position or placed an order is never removed.
+     */
+    private StrategyService.ArchiveResult deleteCleanableGridStrategy(String strategyId) {
+        if (strategyId == null || strategyId.isBlank()) {
+            return StrategyService.ArchiveResult.failed("Strategy id is missing");
+        }
+        Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
+        if (maybeStrategy.isEmpty()) {
+            return StrategyService.ArchiveResult.failed("Strategy not found");
+        }
+        Strategy strategy = maybeStrategy.get();
+        boolean pendingPlacement = PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(strategy);
+        boolean cancelledByUser = strategy.status() == StrategyStatus.PAUSED
+                && strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED;
+        if (!pendingPlacement && !cancelledByUser) {
+            return StrategyService.ArchiveResult.failed(
+                    "Only pending recommendations and user-cancelled rows can be cleaned");
+        }
+        if (PortfolioActionMatchers.isPendingOrderState(strategy.currentState())) {
+            return StrategyService.ArchiveResult.failed("A broker order is still working for this row");
+        }
+        if (loadPositionForStrategy(strategy).getTotalShares() != 0) {
+            return StrategyService.ArchiveResult.failed("This row still holds shares");
+        }
+        strategyOrderRepository.deleteByStrategyId(strategy.id());
+        strategyEventRepository.deleteByStrategyId(strategy.id());
+        strategyRepository.deleteById(strategy.id());
+        suppressRemoteSyncFor(strategy);
+        log("[PORTFOLIO] Cleaned " + strategy.symbol() + " off the grid ("
+                + (pendingPlacement ? "pending base buy" : "cancelled by user") + ").");
+        return StrategyService.ArchiveResult.success(strategy.id());
+    }
+
     private StrategyService.ArchiveResult deletePendingBaseBuyStrategy(String strategyId) {
         if (strategyId == null || strategyId.isBlank()) {
             return StrategyService.ArchiveResult.failed("Strategy id is missing");
@@ -4725,7 +4764,7 @@ public class TradingFrame extends JFrame {
             }
             Set<String> positionSymbols = new HashSet<>();
             for (com.neuralarc.api.AlpacaPositionData position : client.getPositions()) {
-                if (position != null && position.exists() && position.symbol() != null && !position.symbol().isBlank()) {
+                if (position != null && position.hasExposure() && position.symbol() != null && !position.symbol().isBlank()) {
                     positionSymbols.add(position.symbol().toUpperCase(Locale.ROOT));
                 }
             }
@@ -8390,7 +8429,7 @@ public class TradingFrame extends JFrame {
             BigDecimal totalPnl = position.unrealizedPnl().add(realizedPnlForStrategy(entry.strategy.id()));
             holdings.add(new com.neuralarc.analytics.RiskAnalytics.Holding(
                     entry.strategy.symbol(), workspaceLabel, position.marketValue(), totalPnl));
-            if (position.getTotalShares() > 0) {
+            if (position.getTotalShares() != 0) {
                 localPositions.add(new ReconciliationService.SymbolPosition(
                         entry.strategy.symbol(),
                         BigDecimal.valueOf(position.getTotalShares()),

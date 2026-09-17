@@ -43,6 +43,7 @@ import java.util.concurrent.Executor;
  */
 final class GapAndGoCoordinator {
     static final String RECOMMENDED_STATUS = "GAP_ROCKET_RECOMMENDED";
+    static final String MONITORING_STATUS = "GAP_ROCKET_MONITORING";
 
     /** Callbacks the coordinator needs from the host frame. */
     interface Ui {
@@ -89,7 +90,11 @@ final class GapAndGoCoordinator {
     }
 
     static boolean isPendingOrderPlacement(Strategy strategy) {
-        return strategy != null && RECOMMENDED_STATUS.equalsIgnoreCase(strategy.latestOrderStatus());
+        if (strategy == null) {
+            return false;
+        }
+        String status = strategy.latestOrderStatus();
+        return RECOMMENDED_STATUS.equalsIgnoreCase(status) || MONITORING_STATUS.equalsIgnoreCase(status);
     }
 
     /** Load any persisted enabled schedule and start the premarket scheduler. */

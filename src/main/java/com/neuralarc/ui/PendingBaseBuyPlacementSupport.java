@@ -11,6 +11,17 @@ final class PendingBaseBuyPlacementSupport {
     private PendingBaseBuyPlacementSupport() {
     }
 
+    /**
+     * A scanner row whose base buy still has to be placed.
+     *
+     * <p>Each scanner writes one of two statuses when it creates a row: {@code *_RECOMMENDED} when it
+     * only scanned, and {@code *_MONITORING} when execution was requested. The monitoring branch reads
+     * as though the order were already armed, but nothing submits it - those rows carry no broker
+     * order at all - so both branches are still waiting for their base buy and both belong here.
+     *
+     * <p>Matched against the exact statuses rather than a prefix, so a future terminal state such as
+     * {@code *_CANCELED} can never quietly become something this action would submit.
+     */
     static boolean isPendingBaseBuyPlacement(Strategy strategy) {
         return GapAndGoCoordinator.isPendingOrderPlacement(strategy)
                 || OrbCoordinator.isPendingOrderPlacement(strategy)

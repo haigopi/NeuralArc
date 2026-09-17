@@ -43,7 +43,31 @@ class SmartPicksParallelExecutorTest {
     @Test
     void threadCountUsesBoundedPool() {
         assertEquals(1, SmartPicksParallelExecutor.threadCount(1));
-        assertTrue(SmartPicksParallelExecutor.threadCount(20) <= 6);
+        assertTrue(SmartPicksParallelExecutor.threadCount(20) <= 3,
+                "each symbol costs six market-data requests, so the pool stays small to respect the rate limit");
         assertTrue(SmartPicksParallelExecutor.threadCount(20) >= 2);
+    }
+
+    @Test
+    void analysisRunsInSmallSpacedBatchesRatherThanOneBurst() {
+        // Twenty symbols at six requests each is ~120 calls; sent at once, Alpaca rate-limits them.
+        List<List<Integer>> batches = BulkPlacementRunner.batches(
+                java.util.stream.IntStream.rangeClosed(1, 20).boxed().toList(),
+                SmartPicksTrendingStocksDialog.ANALYSIS_BATCH_SIZE);
+
+        assertEquals(5, batches.size());
+        assertTrue(batches.stream().allMatch(batch -> batch.size() <= SmartPicksTrendingStocksDialog.ANALYSIS_BATCH_SIZE));
+        assertEquals(20, batches.stream().mapToInt(List::size).sum(), "no symbol is dropped by batching");
+        assertTrue(SmartPicksTrendingStocksDialog.ANALYSIS_BATCH_PAUSE_MILLIS > 0,
+                "batches must be spaced, or batching alone does not slow the burst");
+    }
+
+    @Test
+    void theInFlightRequestCeilingStaysWellUnderTheRateLimit() {
+        // Threads x requests-per-symbol is what actually hits Alpaca at any instant.
+        int requestsPerSymbol = 6;
+        int worstCaseInFlight = SmartPicksParallelExecutor.threadCount(20) * requestsPerSymbol;
+
+        assertTrue(worstCaseInFlight <= 18, "worst case was " + worstCaseInFlight + " concurrent requests");
     }
 }

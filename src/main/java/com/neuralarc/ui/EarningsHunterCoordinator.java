@@ -54,7 +54,11 @@ final class EarningsHunterCoordinator {
     }
 
     static boolean isPendingOrderPlacement(Strategy strategy) {
-        return strategy != null && RECOMMENDED_STATUS.equalsIgnoreCase(strategy.latestOrderStatus());
+        if (strategy == null) {
+            return false;
+        }
+        String status = strategy.latestOrderStatus();
+        return RECOMMENDED_STATUS.equalsIgnoreCase(status) || MONITORING_STATUS.equalsIgnoreCase(status);
     }
 
     void analyze(EarningsHunterConfig config, boolean executeRequested) {

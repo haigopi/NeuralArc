@@ -82,7 +82,11 @@ final class RangeRiderCoordinator {
     }
 
     static boolean isPendingOrderPlacement(Strategy strategy) {
-        return strategy != null && RECOMMENDED_STATUS.equalsIgnoreCase(strategy.latestOrderStatus());
+        if (strategy == null) {
+            return false;
+        }
+        String status = strategy.latestOrderStatus();
+        return RECOMMENDED_STATUS.equalsIgnoreCase(status) || MONITORING_STATUS.equalsIgnoreCase(status);
     }
 
     /** Load any persisted enabled schedule and start the regular-session scheduler. */

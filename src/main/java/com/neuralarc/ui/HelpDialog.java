@@ -143,7 +143,7 @@ public class HelpDialog extends JDialog {
             "- Place Limit Buy for Losing Pending Positions targets amber pending rows where the planned base buy is above the cached current price.\n" +
             "- Readjust Losing Pending Base Buy Positions lowers amber pending base-buy limits so those rows are ready for placement.\n" +
             "- Place Limit Buy for Gaining Pending Positions targets green pending rows where the planned base buy is below the cached current price.\n" +
-            "- Clean All Pending Base Buys deletes unsubmitted pending recommendations; it does not cancel broker orders or sell positions.\n" +
+            "- Clean Pending and Cancelled Rows deletes both kinds of idle row in one sweep: recommendations that never placed a base buy, and rows you cancelled that are waiting for a manual restart. A row holding shares, or with a working broker order, is never included, and no broker order is cancelled and nothing is sold.\n" +
             "- Cancel amber/green pending buys removes only the matching unsubmitted pending recommendations.\n\n" +
             "If a row already placed a broker order, use the pending order cancel actions instead of cleanup."
         },

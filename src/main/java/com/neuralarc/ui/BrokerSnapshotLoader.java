@@ -175,9 +175,10 @@ final class BrokerSnapshotLoader {
     }
 
     private static int brokerShares(AlpacaPositionData position) {
-        if (position == null || !position.exists() || position.quantity() == null) {
+        if (position == null || !position.hasExposure() || position.quantity() == null) {
             return 0;
         }
+        // DOWN rounds toward zero, so a short keeps its sign without ever deepening.
         return position.quantity().setScale(0, RoundingMode.DOWN).intValue();
     }
 
@@ -208,11 +209,11 @@ final class BrokerSnapshotLoader {
     ) {
         Position snapshot = new Position(symbol == null ? "" : symbol);
         boolean positionMarketPriceApplied = false;
-        if (remotePosition != null && remotePosition.exists()) {
+        if (remotePosition != null && remotePosition.hasExposure()) {
             int quantity = allocatedShares == null
                     ? remotePosition.quantity().setScale(0, RoundingMode.DOWN).intValue()
                     : allocatedShares;
-            if (quantity > 0) {
+            if (quantity != 0) {
                 snapshot.applyBuy(quantity, remotePosition.avgEntryPrice());
             }
             if (remotePosition.marketPrice() != null && remotePosition.marketPrice().compareTo(BigDecimal.ZERO) > 0) {

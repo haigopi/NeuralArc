@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -56,8 +57,56 @@ class PendingBaseBuyPlacementSupportTest {
         monitoring.setLatestOrderStatus("PROFIT_SHIELD_MONITORING");
 
         assertTrue(PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(recommended));
-        assertFalse(PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(monitoring),
-                "a monitoring row already has its order armed");
+        assertTrue(PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(monitoring),
+                "a monitoring row reads as armed but never submitted an order, so its base buy is still pending");
+    }
+
+    @Test
+    void everyScannerMonitoringStatusIsStillWaitingToPlaceItsBaseBuy() {
+        // The status a scanner writes when execution was requested. It marks the row armed without
+        // submitting anything, so these rows are exactly the ones the bulk placement should pick up.
+        for (String status : List.of(
+                "GAP_ROCKET_MONITORING",
+                "DIP_HUNTER_MONITORING",
+                "VWAP_MONITORING",
+                "SWING_MONITORING",
+                "RANGE_RIDER_MONITORING",
+                "EARNINGS_HUNTER_MONITORING",
+                "PROFIT_SHIELD_MONITORING")) {
+            Strategy monitoring = strategy("AAPL");
+            monitoring.setLatestOrderStatus(status);
+
+            assertTrue(PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(monitoring), status);
+        }
+    }
+
+    @Test
+    void anArmedOpeningRangeRowIsAlsoWaitingToPlace() {
+        Strategy armed = strategy("NVDA");
+        armed.setLatestOrderStatus("ORB_ARMED");
+
+        assertTrue(PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(armed));
+    }
+
+    @Test
+    void aStatusThatAlreadyReachedTheBrokerIsNeverPending() {
+        // The guard on widening the gate: a row whose order really is at the broker must never be
+        // resubmitted, however it got there.
+        for (String status : List.of("accepted", "new", "filled", "expired", "invalid", "partially_filled", "")) {
+            Strategy live = strategy("MSFT");
+            live.setLatestOrderStatus(status);
+
+            assertFalse(PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(live), status);
+        }
+    }
+
+    @Test
+    void anUnknownScannerStateIsNotTreatedAsPending() {
+        // Exact matching, not prefixes: a future terminal state must not become submittable by name.
+        Strategy canceled = strategy("KO");
+        canceled.setLatestOrderStatus("DIP_HUNTER_CANCELED");
+
+        assertFalse(PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(canceled));
     }
 
     @Test

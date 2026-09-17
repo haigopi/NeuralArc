@@ -14,7 +14,12 @@ import java.util.logging.Logger;
 
 final class SmartPicksParallelExecutor {
     private static final Logger LOGGER = Logger.getLogger(SmartPicksParallelExecutor.class.getName());
-    private static final int MAX_THREADS = 6;
+    /**
+     * Deliberately small. Each analysed symbol costs six market-data requests, so six threads put up
+     * to thirty-six requests in flight at once and tripped Alpaca's per-minute limit; the run then
+     * came back with half its symbols failed rather than slow.
+     */
+    private static final int MAX_THREADS = 3;
 
     private SmartPicksParallelExecutor() {}
 

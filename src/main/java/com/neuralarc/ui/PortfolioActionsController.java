@@ -41,6 +41,7 @@ final class PortfolioActionsController {
         StrategyService.ArchiveResult deleteLocalTradeHistoryStrategy(String strategyId);
         StrategyService.ArchiveResult deleteLocalPaperStrategy(String strategyId);
         StrategyService.ArchiveResult deletePendingBaseBuyStrategy(String strategyId);
+        StrategyService.ArchiveResult deleteCleanableGridStrategy(String strategyId);
         StrategyService.StrategyCreationResult sellPosition(
                 Strategy strategy,
                 SellSubmissionType submissionType,
@@ -143,19 +144,19 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    void handleCleanPendingBaseBuys() {
-        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CLEAN_PENDING_BASE_BUYS;
+    void handleCleanPendingAndCanceled() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CLEAN_PENDING_AND_CANCELED;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
         if (!confirmBulkAction(action, targets)) {
             return;
         }
 
         gateway.log(action.logPrefix() + " preparing to delete " + targets.size()
-                + " pending base-buy recommendation(s).");
+                + " pending and cancelled row(s).");
         new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return deletePendingBaseBuyTargets(targets);
+                return deleteCleanableGridTargets(targets);
             }
 
             @Override
@@ -803,11 +804,21 @@ final class PortfolioActionsController {
         });
     }
 
-    PortfolioActionsSupport.BatchResult deletePendingBaseBuyTargets(List<ManagedStrategy> targets) {
-        return deletePendingBaseBuyTargets(targets, "[Clean Pending Base Buys]");
+    PortfolioActionsSupport.BatchResult deleteCleanableGridTargets(List<ManagedStrategy> targets) {
+        String logPrefix = PortfolioActionsSupport.BulkAction.CLEAN_PENDING_AND_CANCELED.logPrefix();
+        return runTargetsInParallel(targets, entry -> {
+            gateway.log(logPrefix + " deleting " + entry.strategy.symbol() + ".");
+            StrategyService.ArchiveResult result = gateway.deleteCleanableGridStrategy(entry.strategy.id());
+            if (result.success()) {
+                return TargetResult.success(entry.strategy.symbol());
+            }
+            gateway.log(logPrefix + " failed " + entry.strategy.symbol() + ": " + result.error());
+            return TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+        });
     }
 
-    private PortfolioActionsSupport.BatchResult deletePendingBaseBuyTargets(
+    /** Deletes pending recommendations, labelled by the action that asked; used by the amber/green cancels. */
+    PortfolioActionsSupport.BatchResult deletePendingBaseBuyTargets(
             List<ManagedStrategy> targets,
             String logPrefix
     ) {

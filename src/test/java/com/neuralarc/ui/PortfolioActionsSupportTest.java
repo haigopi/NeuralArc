@@ -375,11 +375,15 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
-    void cleanPendingBaseBuysTargetsScannerRecommendationsOnly() {
+    void cleanPendingAndCanceledClearsBothIdleRowKindsInOnePass() {
+        // The two states that clutter the grid without doing anything: waiting to place a base buy,
+        // and cancelled by the operator awaiting a manual restart.
         ManagedStrategy dipHunter = managed("AAPL", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
         dipHunter.strategy.setLatestOrderStatus("DIP_HUNTER_RECOMMENDED");
-        ManagedStrategy swing = managed("MSFT", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO);
-        swing.strategy.setLatestOrderStatus("SWING_RECOMMENDED");
+        ManagedStrategy monitoring = managed("MSFT", StrategyStatus.CREATED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        monitoring.strategy.setLatestOrderStatus("SWING_MONITORING");
+        ManagedStrategy cancelledByUser = managed("NVDA", StrategyStatus.PAUSED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        cancelledByUser.strategy.setPauseReason(PauseReason.MANUAL_LIMIT_BUY_CANCELED);
         ManagedStrategy submittedOrder = managed(
                 "TSLA",
                 StrategyStatus.ACTIVE,
@@ -391,11 +395,53 @@ class PortfolioActionsSupportTest {
         submittedOrder.strategy.setLatestOrderStatus("new");
 
         List<ManagedStrategy> targets = support.filterTargets(
-                List.of(dipHunter, swing, submittedOrder),
-                PortfolioActionsSupport.BulkAction.CLEAN_PENDING_BASE_BUYS
+                List.of(dipHunter, monitoring, cancelledByUser, submittedOrder),
+                PortfolioActionsSupport.BulkAction.CLEAN_PENDING_AND_CANCELED
         );
 
-        assertEquals(List.of("AAPL", "MSFT"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+        assertEquals(List.of("AAPL", "MSFT", "NVDA"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
+    }
+
+    @Test
+    void cleanPendingAndCanceledLeavesAUserPausedRowAlone() {
+        // Pausing is not abandoning, and a paused row can still hold a position. Archive those instead.
+        ManagedStrategy userPaused = managed("AAPL", StrategyStatus.PAUSED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        userPaused.strategy.setPauseReason(PauseReason.USER_PAUSED);
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(userPaused),
+                PortfolioActionsSupport.BulkAction.CLEAN_PENDING_AND_CANCELED
+        );
+
+        assertTrue(targets.isEmpty());
+    }
+
+    @Test
+    void cleanPendingAndCanceledNeverDeletesARowThatStillHoldsShares() {
+        ManagedStrategy holdsShares = managed("AAPL", StrategyStatus.PAUSED, 5,
+                new BigDecimal("100.00"), new BigDecimal("101.00"));
+        holdsShares.strategy.setPauseReason(PauseReason.MANUAL_LIMIT_BUY_CANCELED);
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(holdsShares),
+                PortfolioActionsSupport.BulkAction.CLEAN_PENDING_AND_CANCELED
+        );
+
+        assertTrue(targets.isEmpty(), "a cancelled row that still owns stock is not clutter");
+    }
+
+    @Test
+    void cleanPendingAndCanceledNeverDeletesARowWithAWorkingBrokerOrder() {
+        ManagedStrategy working = managed("AAPL", StrategyStatus.PAUSED,
+                StrategyLifecycleState.BASE_BUY_PLACED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        working.strategy.setPauseReason(PauseReason.MANUAL_LIMIT_BUY_CANCELED);
+
+        List<ManagedStrategy> targets = support.filterTargets(
+                List.of(working),
+                PortfolioActionsSupport.BulkAction.CLEAN_PENDING_AND_CANCELED
+        );
+
+        assertTrue(targets.isEmpty(), "deleting this would orphan the order still working at the broker");
     }
 
     @Test
@@ -697,13 +743,25 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
-    void cleanPendingBaseBuysResultLabelIsDeleted() {
+    void cleanPendingAndCanceledResultLabelIsDeleted() {
         String message = support.buildResultMessage(
-                PortfolioActionsSupport.BulkAction.CLEAN_PENDING_BASE_BUYS,
+                PortfolioActionsSupport.BulkAction.CLEAN_PENDING_AND_CANCELED,
                 new PortfolioActionsSupport.BatchResult(List.of("AAPL"), List.of())
         );
 
         assertTrue(message.contains("Deleted: 1"));
+    }
+
+    @Test
+    void cleanPendingAndCanceledConfirmationSaysWhatIsExcluded() {
+        String message = support.buildConfirmationMessage(
+                PortfolioActionsSupport.BulkAction.CLEAN_PENDING_AND_CANCELED,
+                List.of(managed("AAPL", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO))
+        );
+
+        assertTrue(message.contains("permanently deleted"), message);
+        assertTrue(message.contains("holding shares"), message);
+        assertTrue(message.contains("working broker"), message);
     }
 
     @Test

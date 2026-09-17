@@ -21,7 +21,9 @@ public class Position {
         BigDecimal oldCost = averageCost.multiply(BigDecimal.valueOf(totalShares));
         BigDecimal newCost = normalizedPrice.multiply(BigDecimal.valueOf(qty));
         totalShares += qty;
-        if (totalShares > 0) {
+        // Also when the count is negative: a short has a cost basis like any other position, and
+        // leaving it at zero made its unrealized P&L the whole market value rather than the move.
+        if (totalShares != 0) {
             averageCost = Monetary.round(oldCost.add(newCost).divide(BigDecimal.valueOf(totalShares), 6, RoundingMode.HALF_UP));
         }
         lastPrice = normalizedPrice;
@@ -29,13 +31,19 @@ public class Position {
 
     public synchronized void applySell(int qty, BigDecimal price) {
         BigDecimal normalizedPrice = Monetary.round(price);
-        if (qty > totalShares) {
-            qty = totalShares;
+        lastPrice = normalizedPrice;
+        // Never past flat into a short. A short's cost basis is read from the broker, not invented by
+        // selling shares this ledger never recorded buying - which would book P&L against a zero cost.
+        int sellable = Math.max(0, totalShares);
+        if (qty > sellable) {
+            qty = sellable;
+        }
+        if (qty <= 0) {
+            return;
         }
         BigDecimal pnlPerShare = normalizedPrice.subtract(averageCost);
         realizedPnl = Monetary.round(realizedPnl.add(pnlPerShare.multiply(BigDecimal.valueOf(qty))));
         totalShares -= qty;
-        lastPrice = normalizedPrice;
         if (totalShares == 0) {
             averageCost = Monetary.zero();
         }

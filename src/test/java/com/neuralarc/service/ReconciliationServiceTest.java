@@ -48,6 +48,51 @@ class ReconciliationServiceTest {
     }
 
     @Test
+    void aShortHeldOnBothSidesReconcilesRatherThanReadingAsFlat() {
+        // MRVL: short 1 at the broker and short 1 in NeuralArc's own records. Measured as "> 0" both
+        // sides looked flat, so a real exposure reported a clean match against nothing.
+        ReconciliationService.Report report = service.reconcile(
+                List.of(pos("MRVL", "-1", "201.20")),
+                List.of(pos("MRVL", "-1", "201.20"))
+        );
+
+        assertEquals(ReconciliationService.Status.MATCH, statusOf(report, "MRVL"));
+        assertFalse(report.hasMismatches());
+    }
+
+    @Test
+    void aShortTheBrokerHoldsButNeuralArcDoesNotIsFlagged() {
+        ReconciliationService.Report report = service.reconcile(
+                List.of(),
+                List.of(pos("OKLO", "-1", "38.12"))
+        );
+
+        assertEquals(ReconciliationService.Status.MISSING_LOCAL, statusOf(report, "OKLO"));
+    }
+
+    @Test
+    void aShortThatDisagreesOnSizeIsAQuantityMismatch() {
+        ReconciliationService.Report report = service.reconcile(
+                List.of(pos("PL", "-5", "19.27")),
+                List.of(pos("PL", "-1", "19.27"))
+        );
+
+        assertEquals(ReconciliationService.Status.QTY_MISMATCH, statusOf(report, "PL"));
+    }
+
+    @Test
+    void aShortsAverageCostIsReportedAsAPositivePrice() {
+        // The cost weight and the quantity are both negative, so the blended price must stay positive.
+        ReconciliationService.Report report = service.reconcile(
+                List.of(pos("TTAN", "-1", "84.96")),
+                List.of(pos("TTAN", "-1", "84.96"))
+        );
+
+        assertEquals(new BigDecimal("84.96"), report.lines().stream()
+                .filter(line -> line.symbol().equals("TTAN")).findFirst().orElseThrow().localAverageCost());
+    }
+
+    @Test
     void flagsMissingOnEitherSide() {
         ReconciliationService.Report report = service.reconcile(
                 List.of(pos("TSLA", "3", "250.00")),   // local only

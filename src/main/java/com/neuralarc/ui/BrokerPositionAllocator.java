@@ -58,7 +58,17 @@ final class BrokerPositionAllocator {
         for (Claim claim : ordered) {
             allocation.put(claim.strategyId(), 0);
         }
-        int remaining = Math.max(0, brokerShares);
+        if (brokerShares < 0) {
+            // A short is not divided between rows the way a long holding is: nothing was bought to
+            // claim a part of it. It belongs whole to one row, and to one the grid actually draws.
+            Claim shortHolder = ordered.stream()
+                    .filter(claim -> !claim.hidden())
+                    .findFirst()
+                    .orElse(ordered.getFirst());
+            allocation.put(shortHolder.strategyId(), brokerShares);
+            return allocation;
+        }
+        int remaining = brokerShares;
         if (remaining == 0) {
             return allocation;
         }

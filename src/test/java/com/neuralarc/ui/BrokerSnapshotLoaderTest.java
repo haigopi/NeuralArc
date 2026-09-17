@@ -167,6 +167,29 @@ class BrokerSnapshotLoaderTest {
     }
 
     @Test
+    void aShortBrokerPositionIsShownRatherThanTreatedAsFlat() {
+        // MRVL: short 1 at 201.2005, marked 229.56. This row showed nothing at all before.
+        Strategy sole = strategy("sole", "MRVL", Instant.parse("2026-05-01T10:00:00Z"));
+        FakeHttpAlpacaClient client = new FakeHttpAlpacaClient();
+
+        Map<String, Position> snapshots = BrokerSnapshotLoader.loadPositionSnapshots(
+                List.of(sole),
+                List.of(sole),
+                mode -> client,
+                ignored -> true,
+                (mode, ignoredClient) -> List.of(new AlpacaPositionData(
+                        "MRVL", new BigDecimal("-1"), new BigDecimal("201.2005"), new BigDecimal("229.56"), "{}")),
+                strategy -> 0
+        );
+
+        Position snapshot = snapshots.get("sole");
+        assertEquals(-1, snapshot.getTotalShares());
+        assertEquals(new BigDecimal("201.20"), snapshot.getAverageCost());
+        assertEquals(new BigDecimal("-229.56"), snapshot.marketValue());
+        assertEquals(new BigDecimal("-28.36"), snapshot.unrealizedPnl());
+    }
+
+    @Test
     void aGenuinelySoleStrategyStillShowsTheWholePosition() {
         // The counterpart: with no other local row on the symbol, an imported position whose orders
         // were never recorded locally must still appear, or a real holding would vanish from the grid.

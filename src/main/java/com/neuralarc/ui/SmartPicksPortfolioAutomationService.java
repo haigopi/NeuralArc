@@ -28,10 +28,13 @@ final class SmartPicksPortfolioAutomationService {
             RecommendationType recommendationType,
             int quantity
     ) {
+        // One cache for the whole run: every symbol asks for the same four overlapping daily windows,
+        // so without this each one costs four requests where one will do.
+        AlpacaMarketDataApi cachedApi = new com.neuralarc.api.CachingMarketDataApi(marketDataApi);
         return SmartPicksParallelExecutor.mapPreservingOrder(
                         stocks,
                         "neuralarc-smart-picks-auto-analyze",
-                        stock -> analyzeSelection(stock, recommendationType, quantity),
+                        stock -> analyzeSelection(cachedApi, stock, recommendationType, quantity),
                         null
                 ).stream()
                 .flatMap(Optional::stream)
@@ -39,12 +42,13 @@ final class SmartPicksPortfolioAutomationService {
     }
 
     private Optional<SmartPicksSimulationSelection> analyzeSelection(
+            AlpacaMarketDataApi api,
             TrendingStock stock,
             RecommendationType recommendationType,
             int quantity
     ) {
         try {
-            AutoAnalyzeBundle bundle = new AutoAnalyzeService(marketDataApi)
+            AutoAnalyzeBundle bundle = new AutoAnalyzeService(api)
                     .analyzeBundle(stock.symbol(), 1, 15, stock.latestPrice());
             return Optional.of(new SmartPicksSimulationSelection(stock, bundle, recommendationType, quantity));
         } catch (Exception ex) {

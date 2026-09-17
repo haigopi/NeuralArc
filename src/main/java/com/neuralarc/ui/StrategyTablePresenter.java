@@ -781,7 +781,7 @@ public final class StrategyTablePresenter {
                     yield positivePriceOrDash(prices.baseBuyExecutedPrice());
                 }
                 case 4 -> displayPrice(position, lastSellPrice);
-                case 5 -> position.getTotalShares() > 0 ? position.marketValue().toPlainString() : "-";
+                case 5 -> position.getTotalShares() != 0 ? position.marketValue().toPlainString() : "-";
                 case 6 -> displayPnl(position, realizedPnl);
                 default -> "";
             };
@@ -965,7 +965,7 @@ public final class StrategyTablePresenter {
     }
 
     private Object displayQuantity(Strategy strategy, Position position) {
-        if (position.getTotalShares() > 0) {
+        if (position.getTotalShares() != 0) {
             return position.getTotalShares();
         }
         if (strategy == null || strategy.status() != StrategyStatus.ACTIVE) {
@@ -990,7 +990,7 @@ public final class StrategyTablePresenter {
     }
 
     private String displayPnl(Position position, BigDecimal realizedPnl) {
-        if (position.getTotalShares() > 0) {
+        if (position.getTotalShares() != 0) {
             return position.unrealizedPnl().toPlainString();
         }
         if (realizedPnl != null && realizedPnl.compareTo(BigDecimal.ZERO) != 0) {

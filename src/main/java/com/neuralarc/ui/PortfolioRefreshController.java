@@ -622,7 +622,9 @@ final class PortfolioRefreshController {
         for (Strategy strategy : candidates) {
             String symbol = strategy.symbol().toUpperCase(Locale.ROOT);
             AlpacaPositionData position = positionsBySymbol.get(symbol);
-            boolean hasPosition = position != null && position.exists();
+            // A short counts as broker presence: without this a shorted symbol looked abandoned and
+            // its row was treated as invalid.
+            boolean hasPosition = position != null && position.hasExposure();
             boolean hasOpenOrder = openOrderSymbols.contains(symbol);
             if (!hasPosition && !hasOpenOrder) {
                 invalid.add(strategy);

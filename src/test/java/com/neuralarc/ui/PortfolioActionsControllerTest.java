@@ -202,11 +202,24 @@ class PortfolioActionsControllerTest {
     }
 
     @Test
+    void cleanableGridTargetsDeleteThroughGateway() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        PortfolioActionsSupport.BatchResult result = controller.deleteCleanableGridTargets(List.of(managed("AAPL")));
+
+        assertEquals(List.of("AAPL"), result.successes());
+        assertTrue(result.failures().isEmpty());
+        assertEquals(List.of("AAPL-id"), gateway.cleanedGridStrategyIds);
+    }
+
+    @Test
     void deletePendingBaseBuyTargetsDeleteThroughGateway() {
         FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
         PortfolioActionsController controller = new PortfolioActionsController(gateway);
 
-        PortfolioActionsSupport.BatchResult result = controller.deletePendingBaseBuyTargets(List.of(managed("AAPL")));
+        PortfolioActionsSupport.BatchResult result = controller.deletePendingBaseBuyTargets(
+                List.of(managed("AAPL")), "[Cancel Amber Pending Buys]");
 
         assertEquals(List.of("AAPL"), result.successes());
         assertTrue(result.failures().isEmpty());
@@ -387,6 +400,7 @@ class PortfolioActionsControllerTest {
         private final CountDownLatch sellsEntered = new CountDownLatch(2);
         private final java.util.List<String> deletedPaperStrategyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private final java.util.List<String> placedPendingStrategyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        private final java.util.List<String> cleanedGridStrategyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private final java.util.List<String> readjustedPendingStrategyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private final java.util.List<String> deletedPendingBaseBuyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private final AtomicInteger activeSellTriggers = new AtomicInteger();
@@ -509,6 +523,11 @@ class PortfolioActionsControllerTest {
         @Override
         public StrategyService.ArchiveResult deletePendingBaseBuyStrategy(String strategyId) {
             deletedPendingBaseBuyIds.add(strategyId);
+            return StrategyService.ArchiveResult.success(strategyId);
+        }
+        @Override
+        public StrategyService.ArchiveResult deleteCleanableGridStrategy(String strategyId) {
+            cleanedGridStrategyIds.add(strategyId);
             return StrategyService.ArchiveResult.success(strategyId);
         }
         @Override public JMenuItem createMenuItem(String text, String iconPath, Runnable action) { return new JMenuItem(text); }

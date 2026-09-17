@@ -97,7 +97,7 @@ final class PortfolioSnapshotAssembler {
         List<ReconciliationService.SymbolPosition> broker = new ArrayList<>();
         if (client != null) {
             for (AlpacaPositionData position : client.getPositions()) {
-                if (position.exists()) {
+                if (position.hasExposure()) {
                     broker.add(new ReconciliationService.SymbolPosition(
                             position.symbol(), position.quantity(), position.avgEntryPrice()));
                 }

@@ -35,6 +35,30 @@ final class PortfolioActionMatchers {
                 || state == StrategyLifecycleState.SELL_PARTIALLY_FILLED;
     }
 
+    /**
+     * A row the operator can clear off the grid in one sweep: a scanner recommendation whose base buy
+     * was never placed, or a row cancelled by the user and waiting for a manual restart. Both are
+     * inert - no shares, no working broker order - so removing them loses nothing still in play.
+     *
+     * <p>A user-paused row is deliberately excluded. Pausing is not abandoning, and such a row can
+     * still hold a position; use Remove Inactive List to archive those.
+     */
+    static boolean isCleanableGridRow(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return false;
+        }
+        boolean pendingPlacement = PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(entry.strategy);
+        boolean cancelledByUser = entry.strategy.status() == StrategyStatus.PAUSED
+                && entry.strategy.pauseReason() == PauseReason.MANUAL_LIMIT_BUY_CANCELED;
+        if (!pendingPlacement && !cancelledByUser) {
+            return false;
+        }
+        if (entry.cachedPosition().getTotalShares() != 0) {
+            return false;
+        }
+        return !isPendingOrderState(entry.strategy.currentState());
+    }
+
     static boolean isRemovableInactive(ManagedStrategy entry) {
         if (entry == null || entry.strategy == null) {
             return false;

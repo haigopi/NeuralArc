@@ -118,6 +118,27 @@ class BrokerPositionAllocatorTest {
     }
 
     @Test
+    void aShortBelongsWholeToOneVisibleRow() {
+        // Nothing was bought, so no row can claim a part of it; splitting it would invent holdings.
+        Map<String, Integer> allocation = BrokerPositionAllocator.allocate(-1, List.of(
+                new BrokerPositionAllocator.Claim("hidden", 0, OLDER, true),
+                new BrokerPositionAllocator.Claim("visible", 0, NEWER, false)
+        ));
+
+        assertEquals(-1, allocation.get("visible"));
+        assertEquals(0, allocation.get("hidden"));
+        assertEquals(-1, allocation.values().stream().mapToInt(Integer::intValue).sum());
+    }
+
+    @Test
+    void aShortOnASingleRowStaysOnThatRow() {
+        Map<String, Integer> allocation = BrokerPositionAllocator.allocate(-5, List.of(
+                new BrokerPositionAllocator.Claim("only", 0, OLDER)));
+
+        assertEquals(-5, allocation.get("only"));
+    }
+
+    @Test
     void closedBrokerPositionLeavesEveryRowEmpty() {
         Map<String, Integer> allocation = BrokerPositionAllocator.allocate(0, List.of(
                 new BrokerPositionAllocator.Claim("first", 10, OLDER),

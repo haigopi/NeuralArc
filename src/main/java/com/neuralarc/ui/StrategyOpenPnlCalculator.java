@@ -15,7 +15,7 @@ final class StrategyOpenPnlCalculator {
             return Optional.empty();
         }
         Position position = entry.cachedPosition();
-        if (position.getTotalShares() <= 0
+        if (position.getTotalShares() == 0
                 || position.getLastPrice().compareTo(BigDecimal.ZERO) <= 0
                 || position.getAverageCost().compareTo(BigDecimal.ZERO) <= 0) {
             return Optional.empty();

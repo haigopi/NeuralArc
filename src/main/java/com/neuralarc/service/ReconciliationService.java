@@ -59,8 +59,10 @@ public final class ReconciliationService {
     }
 
     private Status classify(SymbolPosition local, SymbolPosition broker) {
-        boolean hasLocal = local != null && local.quantity().compareTo(BigDecimal.ZERO) > 0;
-        boolean hasBroker = broker != null && broker.quantity().compareTo(BigDecimal.ZERO) > 0;
+        // A short is exposure too. Measured as "> 0" it read as flat, so a symbol the account was
+        // short of reconciled as a clean match against nothing and never appeared as a mismatch.
+        boolean hasLocal = local != null && local.quantity().signum() != 0;
+        boolean hasBroker = broker != null && broker.quantity().signum() != 0;
         if (hasLocal && !hasBroker) {
             return Status.MISSING_BROKER;   // tracked locally, broker shows nothing
         }
@@ -97,7 +99,7 @@ public final class ReconciliationService {
         Map<String, SymbolPosition> result = new LinkedHashMap<>();
         for (Map.Entry<String, BigDecimal> entry : qtyBySymbol.entrySet()) {
             BigDecimal qty = entry.getValue();
-            BigDecimal avgCost = qty.compareTo(BigDecimal.ZERO) > 0
+            BigDecimal avgCost = qty.signum() != 0
                     ? costWeightBySymbol.get(entry.getKey()).divide(qty, 4, RoundingMode.HALF_UP)
                     : BigDecimal.ZERO;
             result.put(entry.getKey(), new SymbolPosition(entry.getKey(), qty, Monetary.round(avgCost)));
