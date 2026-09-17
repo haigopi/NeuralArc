@@ -661,7 +661,7 @@ public class TradingFrame extends JFrame {
                     @Override public void onRefreshFinished() { setPortfolioRefreshButtonBusy(false); }
                     @Override public void syncStrategies(List<Strategy> strategies) { TradingFrame.this.syncStrategies(strategies); }
                     @Override public int adoptUnknownBrokerSymbols() {
-                        return strategyService == null ? 0 : strategyService.syncRemoteStrategies().size();
+                        return TradingFrame.this.adoptUnknownBrokerSymbols();
                     }
                     @Override public void applyPositionSnapshots(Map<String, Position> snapshots) { TradingFrame.this.applyPositionSnapshots(snapshots); }
                     @Override
@@ -3982,6 +3982,44 @@ public class TradingFrame extends JFrame {
         ApplicationMode applicationMode = mode == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER;
         HttpAlpacaClient client = alpacaClientForMode(applicationMode);
         return tradingRuntimeSupport.createStrategyService(client, mode);
+    }
+
+    /**
+     * Adopts broker positions that no local strategy owns, in <em>both</em> modes.
+     *
+     * <p>Deliberately not the runtime {@code strategyService}: that field is bound to a single
+     * application mode, and at startup it is wired before the default view is chosen. A live holding
+     * would then be checked against the paper account, find nothing, and stay untracked for as long
+     * as the app ran - which is exactly how five held symbols sat in the reconciliation report while
+     * every refresh reported success.
+     */
+    private int adoptUnknownBrokerSymbols() {
+        int adopted = 0;
+        for (StrategyMode mode : List.of(StrategyMode.PAPER, StrategyMode.LIVE)) {
+            adopted += adoptUnknownBrokerSymbolsForMode(mode);
+        }
+        return adopted;
+    }
+
+    private int adoptUnknownBrokerSymbolsForMode(StrategyMode mode) {
+        StrategyService service = strategyServiceForMode(mode);
+        if (service == null) {
+            log("[Portfolio Refresh] Broker adoption skipped for " + mode.name()
+                    + ": no broker client is configured for that mode.");
+            return 0;
+        }
+        // Built fresh per call, so the suppression list has to be attached or every deleted symbol
+        // would look unsuppressed and be recreated.
+        service.setRemoteSyncSuppressionRepository(remoteSyncSuppressionRepository);
+        List<Strategy> created = service.syncRemoteStrategies();
+        // Logged even at zero: this step was previously silent unless it adopted something, which is
+        // why a mode-mismatched sync looked identical to having nothing to do.
+        log("[Portfolio Refresh] Broker adoption checked " + mode.name() + ": adopted " + created.size()
+                + (created.isEmpty()
+                        ? "."
+                        : " (" + created.stream().map(Strategy::symbol)
+                                .collect(java.util.stream.Collectors.joining(", ")) + ")."));
+        return created.size();
     }
 
     public void promptForRequiredSettings() {

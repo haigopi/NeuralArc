@@ -101,6 +101,26 @@ class StrategyServiceRemoteSyncTest {
     }
 
     @Test
+    void aHeldSymbolIsAdoptedByItsOwnModeEvenWhenAnotherModesAccountHoldsNothing() {
+        // The shipped bug: adoption ran against whichever single mode the runtime happened to bind,
+        // so five symbols held in the live account were checked against the paper one, found absent,
+        // and stayed untracked while every refresh reported success.
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        FakeAlpacaClient liveAlpaca = new FakeAlpacaClient();
+        liveAlpaca.allPositions = List.of(position("RKLB", "2", "60.71"));
+        FakeAlpacaClient paperAlpaca = new FakeAlpacaClient();
+
+        assertTrue(service(strategies, paperAlpaca, StrategyMode.PAPER, ApplicationMode.PAPER)
+                .syncRemoteStrategies().isEmpty(), "the paper account holds nothing");
+
+        List<Strategy> created = service(strategies, liveAlpaca, StrategyMode.LIVE, ApplicationMode.LIVE)
+                .syncRemoteStrategies();
+
+        assertEquals(List.of("RKLB"), created.stream().map(Strategy::symbol).toList());
+        assertEquals(StrategyMode.LIVE, created.getFirst().mode());
+    }
+
+    @Test
     void nothingAtTheBrokerMeansNothingIsCreated() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
 
@@ -109,11 +129,20 @@ class StrategyServiceRemoteSyncTest {
     }
 
     private static StrategyService liveService(InMemoryStrategyRepository strategies, FakeAlpacaClient alpaca) {
+        return service(strategies, alpaca, StrategyMode.LIVE, ApplicationMode.LIVE);
+    }
+
+    private static StrategyService service(
+            InMemoryStrategyRepository strategies,
+            FakeAlpacaClient alpaca,
+            StrategyMode strategyMode,
+            ApplicationMode applicationMode
+    ) {
         try {
             AppSettingsService settings = new AppSettingsService(
                     java.nio.file.Files.createTempDirectory("neuralarc-remote-sync").resolve("settings.properties"));
             settings.save(new AppSettingsService.AppSettings(
-                    "test@example.com", true, true, false, BrokerType.ALPACA, ApplicationMode.LIVE, false));
+                    "test@example.com", true, true, false, BrokerType.ALPACA, applicationMode, false));
             return new StrategyService(
                     strategies,
                     new InMemoryOrderRepository(),
@@ -121,7 +150,7 @@ class StrategyServiceRemoteSyncTest {
                     alpaca,
                     new StrategyValidator(),
                     true,
-                    StrategyMode.LIVE,
+                    strategyMode,
                     settings,
                     new MarketHoursService());
         } catch (Exception ex) {
