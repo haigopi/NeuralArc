@@ -50,6 +50,52 @@ final class PortfolioCaptureIndicatorPresenter {
         return text.toString();
     }
 
+    /**
+     * The status line for pullback monitoring. Before the minimum is reached it reads like a target
+     * line (the minimum is the target that arms the pullback); once armed it shows the peak open profit
+     * and the level at which a pullback from that peak liquidates.
+     */
+    static String pullbackMonitoringText(PortfolioCaptureConfig config, BigDecimal contextPnl, BigDecimal contextCapital,
+                                         boolean armed, BigDecimal peakProfit) {
+        if (config == null || config.mode() != PortfolioCaptureMode.PULLBACK_MONITORING) {
+            return "";
+        }
+        Figures figures = Figures.of(config, contextPnl, contextCapital);
+        StringBuilder text = new StringBuilder(armed ? "Pullback Armed" : "Waiting for Minimum");
+        text.append(SEPARATOR).append("Open P&L ").append(signedMoney(figures.pnl));
+        if (figures.capitalKnown()) {
+            text.append(" (").append(signedPercent(figures.pnlPercent())).append(')');
+        }
+        if (armed) {
+            BigDecimal peak = Monetary.round(peakProfit == null ? BigDecimal.ZERO : peakProfit);
+            text.append(SEPARATOR).append("Peak ").append(signedMoney(peak));
+            text.append(SEPARATOR).append("Liquidates at ")
+                    .append(signedMoney(PortfolioCapturePullbackEvaluator.liquidationThreshold(config, peak)));
+            return text.append(SEPARATOR).append("Pullback ").append(pullbackLabel(config)).toString();
+        }
+        text.append(SEPARATOR).append("Minimum ").append(figures.targetLabel());
+        if (figures.targetAmountKnown()) {
+            text.append(SEPARATOR).append("Progress ").append(Monetary.round(figures.progressPercent())).append('%');
+        }
+        return text.append(SEPARATOR).append("Pullback ").append(pullbackLabel(config)).toString();
+    }
+
+    static String pullbackMonitoringExplanation(PortfolioCaptureConfig config) {
+        if (config == null || config.mode() != PortfolioCaptureMode.PULLBACK_MONITORING) {
+            return "";
+        }
+        return "Pullback monitoring waits until open P&L reaches the minimum, then tracks the highest open "
+                + "profit since. It liquidates once open profit falls " + pullbackLabel(config)
+                + " from that peak. Open P&L excludes profit already banked by closed trades.";
+    }
+
+    private static String pullbackLabel(PortfolioCaptureConfig config) {
+        BigDecimal value = Monetary.round(config.pullbackValue() == null ? BigDecimal.ZERO : config.pullbackValue());
+        return config.pullbackType() == PortfolioCapturePullbackType.AMOUNT_FROM_PEAK
+                ? "$" + value + " from peak"
+                : value + "% from peak";
+    }
+
     /** Plain-text explanation of how the line's numbers relate, appended to the indicator tooltip. */
     static String targetMonitoringExplanation(PortfolioCaptureConfig config, BigDecimal contextPnl, BigDecimal contextCapital) {
         if (config == null || config.mode() != PortfolioCaptureMode.TARGET_MONITORING) {

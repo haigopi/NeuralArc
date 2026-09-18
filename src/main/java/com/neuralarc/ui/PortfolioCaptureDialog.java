@@ -45,7 +45,10 @@ final class PortfolioCaptureDialog extends JDialog {
     private static final Font UI_FONT = FontLoader.ui(Font.PLAIN, 11f);
     private static final Font UI_BOLD_FONT = FontLoader.ui(Font.BOLD, 11f);
     private static final Font DESCRIPTION_FONT = FontLoader.ui(Font.PLAIN, 10f);
-    private static final String DISCLAIMER = "<html><body style='width:460px'>"
+    /** Help text wraps at this width so no single sentence can push the dialog wider than its window. */
+    private static final int TEXT_WIDTH = 500;
+    private static final String DISCLAIMER = "<html><body style='width:"
+            + CompactFormLayout.cssWidth(500) + "px'>"
             + "<b>Disclaimer:</b><br>"
             + "All portfolio liquidation actions execute using live market orders at the marketplace.<br>"
             + "Final execution prices depend on real-time market conditions, bid/ask spread, liquidity, slippage, and broker execution timing.<br>"
@@ -117,9 +120,9 @@ final class PortfolioCaptureDialog extends JDialog {
         applyCompactFonts(getContentPane());
         refreshMetrics();
         updateEnabledState();
-        // Wide enough for the widest row - a radio, its value and its unit - since growTall only ever
-        // adds height, so anything that does not fit horizontally at pack time stays cut off.
-        DialogSizing.packAndFitTall(this, 820, 480);
+        // The content is built to a fixed reading width (wrapped help text, natural-width fields), so the
+        // packed width fits it exactly; growTall then only adds height.
+        DialogSizing.packAndFitTall(this, 580, 480);
         setLocationRelativeTo(owner);
     }
 
@@ -136,7 +139,7 @@ final class PortfolioCaptureDialog extends JDialog {
         content.setBorder(new EmptyBorder(10, 12, 10, 12));
         content.add(modeSection(), BorderLayout.NORTH);
 
-        JPanel center = new JPanel(new GridBagLayout());
+        JPanel center = CompactFormLayout.widthTrackingPanel(new GridBagLayout());
         center.setOpaque(false);
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridx = 0;
@@ -155,12 +158,10 @@ final class PortfolioCaptureDialog extends JDialog {
         centerScroll.setBorder(BorderFactory.createEmptyBorder());
         centerScroll.setOpaque(false);
         centerScroll.getViewport().setOpaque(false);
-        // As-needed rather than never: the dialog is sized to fit its content, but a wider font or
-        // locale must scroll rather than silently cut the units and trailing controls off the edge.
-        centerScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        // The view tracks the viewport width, so this pane only ever scrolls vertically.
+        centerScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         centerScroll.getVerticalScrollBar().setUnitIncrement(16);
-        centerScroll.getHorizontalScrollBar().setUnitIncrement(16);
-        centerScroll.setPreferredSize(DialogSizing.preferredViewportSize(center, 680, 360, 900, 560));
+        centerScroll.setPreferredSize(DialogSizing.preferredViewportSize(center, 540, 360, 720, 560));
         content.add(centerScroll, BorderLayout.CENTER);
         content.add(buttonBar(), BorderLayout.SOUTH);
         setContentPane(content);
@@ -209,60 +210,55 @@ final class PortfolioCaptureDialog extends JDialog {
 
     private JPanel metricsSection() {
         JPanel panel = section("Portfolio Metrics");
-        addMetric(panel, "Total Investment", investmentValue, 0);
-        addMetric(panel, "Current Market Value", marketValue, 1);
-        addMetric(panel, "Realized Profit/Loss (Banked)", realizedPnlValue, 2);
-        addMetric(panel, "Current Unrealized Profit/Loss", pnlValue, 3);
-        addMetric(panel, "Unrealized Profit/Loss Percent", pnlPercentValue, 4);
-        addMetric(panel, "Current Target Progress", progressValue, 5);
+        // Two label/value pairs per row, each value right-aligned beside its own label rather than
+        // stranded at the far edge of the dialog.
+        JPanel grid = CompactFormLayout.form();
+        addMetric(grid, "Total Investment", investmentValue, 0, 0);
+        addMetric(grid, "Market Value", marketValue, 0, 1);
+        addMetric(grid, "Unrealized P/L", pnlValue, 1, 0);
+        addMetric(grid, "Unrealized P/L %", pnlPercentValue, 1, 1);
+        addMetric(grid, "Realized P/L (Banked)", realizedPnlValue, 2, 0);
+        addMetric(grid, "Target Progress", progressValue, 2, 1);
+        GridBagConstraints filler = baseGbc(0);
+        filler.gridx = 4;
+        grid.add(javax.swing.Box.createHorizontalStrut(0), filler);
+        panel.add(grid, baseGbc(0));
         addDescription(panel,
                 "Targets are measured on unrealized profit only — the P&L this liquidation would "
                         + "actually realize. Realized profit from trades already closed is shown for "
-                        + "reference and cannot trigger a liquidation.", 6);
+                        + "reference and cannot trigger a liquidation.", 1);
         return panel;
     }
 
     private JPanel targetSection() {
         JPanel panel = section("Target Monitoring");
-        panel.add(percentTarget, naturalCell(0, 0));
-        panel.add(percentField, growingCell(0, 1));
-        panel.add(amountTarget, naturalCell(1, 0));
-        panel.add(amountField, growingCell(1, 1));
-        GridBagConstraints gbc = baseGbc(2);
-        gbc.gridx = 0;
-        gbc.gridwidth = 2;
-        panel.add(includeLosses, gbc);
-        gbc.gridy++;
-        panel.add(pullbackPanel(), gbc);
-        gbc.gridy++;
-        panel.add(description("Target mode liquidates at the minimum. Pullback mode arms at the minimum and liquidates only after profit falls from its subsequent peak."), gbc);
-        gbc.gridy++;
-        panel.add(advancedPanel(), gbc);
+        JPanel targets = CompactFormLayout.form();
+        CompactFormLayout.addRow(targets, 0, percentTarget, percentField, unit("%"));
+        CompactFormLayout.addRow(targets, 1, amountTarget, amountField, unit("USD"));
+        panel.add(targets, baseGbc(0));
+        panel.add(includeLosses, baseGbc(1));
+        panel.add(pullbackPanel(), baseGbc(2));
+        panel.add(description("Target mode liquidates at the minimum. Pullback mode arms at the minimum and liquidates only after profit falls from its subsequent peak."), baseGbc(3));
+        JPanel interval = CompactFormLayout.form();
+        CompactFormLayout.addRow(interval, 0, fieldLabel("Monitoring interval"), intervalField, unit("seconds"));
+        panel.add(interval, baseGbc(4));
+        panel.add(activeOnly, baseGbc(5));
         return panel;
     }
 
     private JPanel pullbackPanel() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setOpaque(false);
-        panel.setBorder(BorderFactory.createTitledBorder("Pullback After Minimum"));
-        // The label and the unit keep their natural width; only the value field absorbs slack. Giving
-        // every cell equal weight is what pushed "% from peak profit" past the right edge.
-        panel.add(percentPullback, naturalCell(0, 0));
-        panel.add(pullbackPercentField, growingCell(0, 1));
-        panel.add(new JLabel("% from peak profit"), naturalCell(0, 2));
-        panel.add(amountPullback, naturalCell(1, 0));
-        panel.add(pullbackAmountField, growingCell(1, 1));
-        panel.add(new JLabel("from peak profit"), naturalCell(1, 2));
-        return panel;
-    }
-
-    private JPanel advancedPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        panel.setOpaque(false);
-        panel.add(new JLabel("Monitoring Interval"));
-        panel.add(intervalField);
-        panel.add(new JLabel("seconds"));
-        panel.add(activeOnly);
+        TitledBorder border = BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(ThemeColors.color("NeuralArc.Section.border", new Color(190, 194, 202))),
+                "Pullback After Minimum");
+        border.setTitleFont(UI_BOLD_FONT);
+        border.setTitleColor(ThemeColors.color("NeuralArc.Section.titleForeground", new Color(70, 75, 85)));
+        panel.setBorder(BorderFactory.createCompoundBorder(border, new EmptyBorder(2, 6, 4, 6)));
+        JPanel rows = CompactFormLayout.form();
+        CompactFormLayout.addRow(rows, 0, percentPullback, pullbackPercentField, unit("% from peak profit"));
+        CompactFormLayout.addRow(rows, 1, amountPullback, pullbackAmountField, unit("USD from peak profit"));
+        panel.add(rows, baseGbc(0));
         return panel;
     }
 
@@ -274,47 +270,36 @@ final class PortfolioCaptureDialog extends JDialog {
                 "Liquidation executes, Smart Picks runs once, then monitoring stops.", 2);
         addRadioWithDescription(panel, continuousLoop,
                 "Liquidation executes, Smart Picks runs automatically, monitoring restarts, and the cycle repeats.", 4);
-        GridBagConstraints gbc = baseGbc(6);
-        gbc.gridwidth = 2;
-        panel.add(reentryOptionsPanel(), gbc);
-        gbc.gridy++;
-        panel.add(autoCleanPending, gbc);
-        gbc.gridy++;
-        panel.add(description("Pending base buy limits will be automatically cancelled before every automated liquidation cycle."), gbc);
+        panel.add(reentryOptionsPanel(), baseGbc(6));
+        panel.add(autoCleanPending, baseGbc(7));
+        panel.add(description("Pending base buy limits will be automatically cancelled before every automated liquidation cycle."), baseGbc(8));
         return panel;
     }
 
     private JPanel reentryOptionsPanel() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setOpaque(false);
-        GridBagConstraints gbc = baseGbc(0);
-        gbc.gridwidth = 2;
-        panel.add(paperMode, gbc);
-        gbc.gridx = 2;
-        panel.add(liveMode, gbc);
-        gbc.gridx = 0;
-        gbc.gridy++;
-        gbc.gridwidth = 1;
-        panel.add(fieldLabel("Smart Picks strategy"), gbc);
-        gbc.gridx = 1;
-        gbc.gridwidth = 3;
-        panel.add(reentrySmartPicksStrategy, gbc);
-        // "Term" and its dropdown keep their own width rather than sharing a quarter each, which is
-        // what squeezed the dropdown off the edge.
-        panel.add(fieldLabel("Quantity"), naturalCell(2, 0));
-        panel.add(reentryQuantity, naturalCell(2, 1));
-        panel.add(fieldLabel("Term"), naturalCell(2, 2));
-        panel.add(reentryTerm, growingCell(2, 3));
-        return panel;
+        JPanel tradingMode = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        tradingMode.setOpaque(false);
+        tradingMode.add(paperMode);
+        tradingMode.add(javax.swing.Box.createHorizontalStrut(16));
+        tradingMode.add(liveMode);
+        JPanel form = CompactFormLayout.form();
+        CompactFormLayout.addRow(form, 0, fieldLabel("Re-entry mode"), tradingMode, null);
+        CompactFormLayout.addRow(form, 1, fieldLabel("Smart Picks strategy"), reentrySmartPicksStrategy, null);
+        // The unit rides with the spinner: the field column is as wide as the strategy dropdown.
+        JPanel quantity = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        quantity.setOpaque(false);
+        quantity.add(reentryQuantity);
+        quantity.add(javax.swing.Box.createHorizontalStrut(6));
+        quantity.add(unit("shares per pick"));
+        CompactFormLayout.addRow(form, 2, fieldLabel("Quantity"), quantity, null);
+        CompactFormLayout.addRow(form, 3, fieldLabel("Term"), reentryTerm, null);
+        return form;
     }
 
     private JPanel disclaimerSection() {
         JPanel panel = section("Execution Disclaimer");
-        GridBagConstraints gbc = baseGbc(0);
-        gbc.gridwidth = 2;
-        panel.add(description(DISCLAIMER), gbc);
-        gbc.gridy++;
-        panel.add(acknowledgement, gbc);
+        panel.add(description(DISCLAIMER), baseGbc(0));
+        panel.add(acknowledgement, baseGbc(1));
         return panel;
     }
 
@@ -480,7 +465,8 @@ final class PortfolioCaptureDialog extends JDialog {
         realizedPnlValue.setText(money(snapshot.realizedPnl()));
         pnlValue.setText(money(snapshot.unrealizedPnl()));
         pnlValue.setForeground(snapshot.unrealizedPnl().compareTo(BigDecimal.ZERO) < 0
-                ? new Color(183, 28, 28) : new Color(27, 94, 32));
+                ? ThemeColors.color("NeuralArc.pnlNegative", new Color(183, 28, 28))
+                : ThemeColors.color("NeuralArc.pnlPositive", new Color(27, 94, 32)));
         pnlPercentValue.setText(Monetary.round(snapshot.profitLossPercent()) + "%");
         progressValue.setText(Monetary.round(snapshot.targetProgressPercent()) + "%");
     }
@@ -590,46 +576,35 @@ final class PortfolioCaptureDialog extends JDialog {
     }
 
     private void addRadioWithDescription(JPanel panel, JRadioButton radio, String text, int row) {
-        GridBagConstraints gbc = baseGbc(row);
-        gbc.gridwidth = 2;
-        panel.add(radio, gbc);
-        gbc.gridy++;
+        panel.add(radio, baseGbc(row));
+        GridBagConstraints gbc = baseGbc(row + 1);
+        // Indent the help text under the radio's label rather than under its circle.
+        gbc.insets = new Insets(0, 24, 4, 8);
         panel.add(description(text), gbc);
     }
 
     private void addDescription(JPanel panel, String text, int row) {
-        GridBagConstraints gbc = baseGbc(row);
-        gbc.gridwidth = 2;
-        panel.add(description(text), gbc);
+        panel.add(description(text), baseGbc(row));
     }
 
-    private void addMetric(JPanel panel, String label, JLabel value, int row) {
-        GridBagConstraints gbc = baseGbc(row);
-        JLabel name = new JLabel(label);
-        name.setFont(UI_BOLD_FONT);
-        panel.add(name, gbc);
-        gbc.gridx = 1;
-        gbc.anchor = GridBagConstraints.EAST;
+    private void addMetric(JPanel grid, String label, JLabel value, int row, int pair) {
+        int column = pair * 2;
+        GridBagConstraints name = new GridBagConstraints();
+        name.gridx = column;
+        name.gridy = row;
+        name.anchor = GridBagConstraints.WEST;
+        name.insets = new Insets(2, pair == 0 ? 0 : 28, 2, 10);
+        grid.add(fieldLabel(label), name);
+        GridBagConstraints amount = new GridBagConstraints();
+        amount.gridx = column + 1;
+        amount.gridy = row;
+        amount.anchor = GridBagConstraints.EAST;
+        amount.fill = GridBagConstraints.HORIZONTAL;
+        // Room for a six-figure dollar amount, so the columns do not shift as values refresh.
+        amount.ipadx = 36;
+        amount.insets = new Insets(2, 0, 2, 0);
         value.setHorizontalAlignment(SwingConstants.RIGHT);
-        panel.add(value, gbc);
-    }
-
-    /** A cell that keeps its natural width: labels, radios and units are never squeezed or clipped. */
-    private GridBagConstraints naturalCell(int row, int column) {
-        GridBagConstraints gbc = baseGbc(row);
-        gbc.gridx = column;
-        gbc.weightx = 0;
-        gbc.fill = GridBagConstraints.NONE;
-        return gbc;
-    }
-
-    /** The one cell per row that absorbs the leftover width, so the row fills without crowding. */
-    private GridBagConstraints growingCell(int row, int column) {
-        GridBagConstraints gbc = baseGbc(row);
-        gbc.gridx = column;
-        gbc.weightx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        return gbc;
+        grid.add(value, amount);
     }
 
     private GridBagConstraints baseGbc(int row) {
@@ -644,9 +619,15 @@ final class PortfolioCaptureDialog extends JDialog {
     }
 
     private JLabel description(String text) {
-        JLabel label = new JLabel(text);
+        JLabel label = new JLabel(text.startsWith("<html>") ? text : CompactFormLayout.wrapped(text, TEXT_WIDTH));
         label.setForeground(MUTED);
         label.setFont(DESCRIPTION_FONT);
+        return label;
+    }
+
+    private JLabel unit(String text) {
+        JLabel label = new JLabel(text);
+        label.setForeground(MUTED);
         return label;
     }
 

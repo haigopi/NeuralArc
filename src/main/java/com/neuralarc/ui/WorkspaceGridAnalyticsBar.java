@@ -5,6 +5,7 @@ import com.neuralarc.util.ThemeColors;
 import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
 import java.awt.Color;
 import java.awt.Component;
@@ -42,6 +43,8 @@ final class WorkspaceGridAnalyticsBar extends JPanel {
     private static final int GAP = 18;
     private static final int ROW_GAP = 2;
     private static final int TOOLTIP_WIDTH = 420;
+    private static final int ROLL_MILLIS = 650;
+    private static final int ROLL_FRAME_MILLIS = 35;
 
     private final Font captionFont;
     private final Font figureFont;
@@ -52,6 +55,11 @@ final class WorkspaceGridAnalyticsBar extends JPanel {
     private List<String> shownCaptions = List.of();
     private Color neutralColor;
     private int rowCount = 1;
+    // Rolling-number animation played when the tab changes, so the operator sees the new figures land.
+    private final Map<JLabel, String> rollTargets = new HashMap<>();
+    private final Timer rollTimer = new Timer(ROLL_FRAME_MILLIS, ignored -> rollFrame());
+    private long rollStartedAt;
+    private String lastScopeLabel;
 
     WorkspaceGridAnalyticsBar(Font baseFont) {
         this.captionFont = baseFont.deriveFont(Font.PLAIN, 11f);
@@ -78,6 +86,10 @@ final class WorkspaceGridAnalyticsBar extends JPanel {
      * The tab name's tooltip carries the reference figures that are not repeated in the row.
      */
     void apply(String scopeLabel, String titleTooltipHtml, List<PortfolioScopePresenter.Figure> items) {
+        boolean tabChanged = lastScopeLabel != null && !lastScopeLabel.equals(scopeLabel);
+        lastScopeLabel = scopeLabel;
+        // Only an on-screen bar rolls; a hidden one has nobody to show it to and just takes the values.
+        boolean roll = isShowing() && (tabChanged || rollTimer.isRunning());
         title.setText(scopeLabel == null || scopeLabel.isBlank() ? " " : scopeLabel);
         title.setToolTipText(titleTooltipHtml == null ? null : TooltipStyler.html(titleTooltipHtml, TOOLTIP_WIDTH));
         List<String> captionsNow = items.stream().map(PortfolioScopePresenter.Figure::caption).toList();
@@ -86,7 +98,15 @@ final class WorkspaceGridAnalyticsBar extends JPanel {
         }
         for (PortfolioScopePresenter.Figure item : items) {
             JLabel figure = figures.get(item.caption());
-            figure.setText(item.text());
+            if (roll) {
+                // A refresh arriving mid-roll just retargets the reels at the newer value.
+                rollTargets.put(figure, item.text());
+                if (tabChanged) {
+                    figure.setText(RollingDigits.frame(item.text(), 0, this::randomDigit));
+                }
+            } else {
+                figure.setText(item.text());
+            }
             figure.setForeground(switch (item.tone()) {
                 case POSITIVE -> POSITIVE;
                 case NEGATIVE -> NEGATIVE;
@@ -96,8 +116,25 @@ final class WorkspaceGridAnalyticsBar extends JPanel {
             figure.setToolTipText(tooltip);
             captions.get(figure).setToolTipText(tooltip);
         }
+        if (roll && tabChanged) {
+            rollStartedAt = System.currentTimeMillis();
+            rollTimer.restart();
+        }
         revalidate();
         repaint();
+    }
+
+    private void rollFrame() {
+        double progress = (System.currentTimeMillis() - rollStartedAt) / (double) ROLL_MILLIS;
+        rollTargets.forEach((figure, target) -> figure.setText(RollingDigits.frame(target, progress, this::randomDigit)));
+        if (progress >= 1) {
+            rollTimer.stop();
+            rollTargets.clear();
+        }
+    }
+
+    private int randomDigit() {
+        return java.util.concurrent.ThreadLocalRandom.current().nextInt(10);
     }
 
     String scopeTitle() {
@@ -115,6 +152,8 @@ final class WorkspaceGridAnalyticsBar extends JPanel {
 
     private void rebuild(List<String> captionTexts) {
         removeAll();
+        rollTimer.stop();
+        rollTargets.clear();
         figures.clear();
         captions.clear();
         add(title);

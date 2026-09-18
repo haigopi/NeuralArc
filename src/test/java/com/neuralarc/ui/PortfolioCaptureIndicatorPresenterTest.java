@@ -121,6 +121,45 @@ class PortfolioCaptureIndicatorPresenterTest {
                 PortfolioCaptureConfig.captureNow(), BigDecimal.ZERO, BigDecimal.ZERO));
     }
 
+    @Test
+    void pullbackMonitoringHasAStatusLineBeforeItArms() {
+        // Regression guard: pullback mode used to produce no status line at all, so an active pullback
+        // monitor showed neither the rainbow text nor "Liquidation Monitor Active".
+        String text = PortfolioCaptureIndicatorPresenter.pullbackMonitoringText(
+                pullbackConfig(), new BigDecimal("20.00"), new BigDecimal("1000.00"), false, BigDecimal.ZERO);
+
+        assertEquals("Waiting for Minimum | Open P&L +$20.00 (+2.00%) | Minimum +5.00% = +$50.00"
+                + " | Progress 40.00% | Pullback 10.00% from peak", text);
+    }
+
+    @Test
+    void armedPullbackShowsThePeakAndTheLevelThatLiquidates() {
+        String text = PortfolioCaptureIndicatorPresenter.pullbackMonitoringText(
+                pullbackConfig(), new BigDecimal("70.00"), new BigDecimal("1000.00"), true, new BigDecimal("80.00"));
+
+        assertEquals("Pullback Armed | Open P&L +$70.00 (+7.00%) | Peak +$80.00 | Liquidates at +$72.00"
+                + " | Pullback 10.00% from peak", text);
+    }
+
+    @Test
+    void pullbackTextIsEmptyForTargetMode() {
+        assertEquals("", PortfolioCaptureIndicatorPresenter.pullbackMonitoringText(
+                config(PortfolioCaptureTargetType.PROFIT_PERCENT, new BigDecimal("5.00")),
+                BigDecimal.ONE, BigDecimal.TEN, false, BigDecimal.ZERO));
+    }
+
+    private PortfolioCaptureConfig pullbackConfig() {
+        return new PortfolioCaptureConfig(
+                PortfolioCaptureMode.PULLBACK_MONITORING,
+                PortfolioCaptureTargetType.PROFIT_PERCENT,
+                new BigDecimal("5.00"),
+                true, 45, true, true,
+                PortfolioCaptureExecutionFlow.EXECUTE_ONCE_AND_STOP,
+                StrategyMode.PAPER, 1, RecommendationType.SHORT_TERM,
+                PortfolioCaptureSmartPicksStrategy.VOLATILE, false,
+                PortfolioCapturePullbackType.PERCENT_FROM_PEAK, new BigDecimal("10"));
+    }
+
     private PortfolioCaptureConfig config(PortfolioCaptureTargetType targetType, BigDecimal targetValue) {
         return new PortfolioCaptureConfig(
                 PortfolioCaptureMode.TARGET_MONITORING,

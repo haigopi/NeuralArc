@@ -301,9 +301,10 @@ public class TradingFrame extends JFrame {
     private Timer capturePortfolioPulseTimer;
     private boolean capturePortfolioPulseOn;
     private final PortfolioCaptureUiStateStore capturePortfolioUiStates = new PortfolioCaptureUiStateStore();
-    private PortfolioCaptureUiStateStore.Key activeCapturePortfolioUiKey;
-    private PortfolioCaptureConfig capturePortfolioConfigForUi;
-    private StrategyMode capturePortfolioModeForUi;
+    // Automation state per mode + tab: each workspace runs its own liquidation monitor.
+    private final Map<PortfolioCaptureUiStateStore.Key, PortfolioCaptureAutomationState> captureAutomationStates =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private final JButton stopAllLiquidationsButton = new JButton("Stop Liquidations");
 
     private final UserIdentityService identityService = new UserIdentityService();
     private final UserActionLogSupport userActionLog = new UserActionLogSupport(this::log);
@@ -336,13 +337,11 @@ public class TradingFrame extends JFrame {
     // Last fully-rendered status line. Cached so a window resize only re-trims the existing text
     // instead of recomputing the workspace accounting snapshot on every resize event.
     private String capturePortfolioIndicatorFullText = "";
-    private PortfolioCaptureAutomationState capturePortfolioAutomationState =
-            PortfolioCaptureAutomationState.STOPPED;
     private final JButton footerActionsButton = new JButton("Actions");
     private final JPopupMenu footerActionsMenu = new JPopupMenu();
     private final PortfolioRefreshController portfolioRefreshController;
     private final PortfolioActionsController portfolioActionsController;
-    private final PortfolioCaptureController portfolioCaptureController;
+    private final PortfolioCaptureRuns portfolioCaptureRuns;
     private final List<ManagedStrategy> strategies = new ArrayList<>();
     private final List<HistoryTablePresenter.HistoryRow> filledOrderRows = new ArrayList<>();
     private final StrategyGridTableModel strategyTableModel = new StrategyGridTableModel(
@@ -824,13 +823,11 @@ public class TradingFrame extends JFrame {
             @Override public void actionCanceled(String actionName) { userActionLog.canceled(actionName); }
             @Override public void actionFailed(String actionName, String reason) { userActionLog.failed(actionName, reason); }
         });
-        portfolioCaptureController = new PortfolioCaptureController(
-                new PortfolioCaptureController.Gateway() {
+        portfolioCaptureRuns = new PortfolioCaptureRuns(
+                new PortfolioCaptureRuns.Host() {
                     @Override public List<ManagedStrategy> strategies() {
                         return strategies;
                     }
-                    @Override public StrategyMode selectedViewMode() { return selectedViewMode; }
-                    @Override public String selectedWorkspaceId() { return selectedWorkspaceId; }
                     @Override public BigDecimal realizedPnlForStrategy(String strategyId) { return TradingFrame.this.realizedPnlForStrategy(strategyId); }
                     @Override
                     public StrategyService.StrategyCreationResult sellPosition(
@@ -845,22 +842,22 @@ public class TradingFrame extends JFrame {
                     @Override public boolean tradingSessionOpen() { return TradingFrame.this.isMarketOpenForUi(); }
                     @Override public String nextTradingSessionOpenDisplay() { return TradingFrame.this.nextTradingSessionOpenDisplay(); }
                     @Override
-                    public void onMonitoringChanged(boolean active, PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config,
-                                                    StrategyMode mode, String workspaceId) {
-                        TradingFrame.this.updateCapturePortfolioUi(active, config, mode, workspaceId);
+                    public void onMonitoringChanged(PortfolioCaptureRuns.Scope scope, boolean active, PortfolioCaptureConfig config) {
+                        TradingFrame.this.updateCapturePortfolioUi(scope, active);
                     }
                     @Override
-                    public void onSnapshotUpdated(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
-                        TradingFrame.this.updateCapturePortfolioIndicator(config);
+                    public void onSnapshotUpdated(PortfolioCaptureRuns.Scope scope, PortfolioCaptureConfig config) {
+                        TradingFrame.this.updateCapturePortfolioIndicator(scope);
                     }
                     @Override
-                    public void onAutomationStateChanged(PortfolioCaptureAutomationState state, int loopCount, int pendingCanceled) {
-                        TradingFrame.this.updateCaptureAutomationState(state, loopCount, pendingCanceled);
+                    public void onAutomationStateChanged(PortfolioCaptureRuns.Scope scope, PortfolioCaptureAutomationState state) {
+                        TradingFrame.this.updateCaptureAutomationState(scope, state);
                     }
-                    @Override public void onExecutionStarted() { setCapturePortfolioBusy(true); }
+                    @Override public void onExecutionStarted(PortfolioCaptureRuns.Scope scope) { setCapturePortfolioBusy(scope, true); }
                     @Override
-                    public void onExecutionFinished(PortfolioCaptureExecutionResult result, boolean targetTriggered) {
-                        setCapturePortfolioBusy(false);
+                    public void onExecutionFinished(PortfolioCaptureRuns.Scope scope, PortfolioCaptureExecutionResult result,
+                                                    boolean targetTriggered) {
+                        setCapturePortfolioBusy(scope, false);
                         syncStrategiesFromRepository();
                         refreshStrategyTableContent();
                         refreshPanels();
@@ -870,7 +867,7 @@ public class TradingFrame extends JFrame {
                     @Override public void log(String message) { TradingFrame.this.log(message); }
                 },
                 new PortfolioCaptureCalculator(),
-                new PortfolioCaptureStateStore(AppMetadata.appDataDirectory().resolve("portfolio-capture-state.json")),
+                AppMetadata.appDataDirectory(),
                 new PortfolioCaptureHistoryStore(AppMetadata.appDataDirectory().resolve("portfolio-capture-history.json"))
         );
         tradingRuntimeSupport = new TradingRuntimeSupport(
@@ -1047,7 +1044,7 @@ public class TradingFrame extends JFrame {
                                 strategyOrderRepository.findByStrategyId(strategy.id()));
             }
             @Override public void excludeFromPortfolioCaptureIfRunning(String strategyId) {
-                portfolioCaptureController.excludeStrategyFromActiveCapture(strategyId);
+                portfolioCaptureRuns.excludeStrategyFromActiveCapture(strategyId);
             }
             @Override public BigDecimal realizedPnlForStrategy(String strategyId) { return TradingFrame.this.realizedPnlForStrategy(strategyId); }
             @Override public String closePaperAccountState(Strategy strategy) { return TradingFrame.this.closePaperAccountState(strategy); }
@@ -1509,67 +1506,17 @@ public class TradingFrame extends JFrame {
                         + "It does not automatically liquidate positions.",
                 320
         ));
-        killSwitchButton.setFocusPainted(false);
-        killSwitchButton.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
-        killSwitchButton.setFont(FontLoader.ui(Font.BOLD, 11f));
-        killSwitchButton.setForeground(Color.WHITE);
-        killSwitchButton.setBackground(new Color(180, 20, 20));
-        killSwitchButton.setOpaque(true);
-        killSwitchButton.setContentAreaFilled(true);
-        javax.swing.border.Border killSwitchInner = new EmptyBorder(4, 10, 4, 10);
-        javax.swing.border.Border killSwitchPressedInner = new EmptyBorder(3, 9, 3, 9);
-        killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(120, 10, 10), 1, true),
-                killSwitchInner
-        ));
-        killSwitchButton.setMargin(new java.awt.Insets(4, 10, 4, 10));
-        killSwitchButton.addMouseListener(new MouseAdapter() {
-            private static final Color BASE_BG     = new Color(180, 20, 20);
-            private static final Color BASE_BORDER  = new Color(120, 10, 10);
-            private static final Color HOVER_BG    = new Color(210, 32, 32);
-            private static final Color HOVER_BORDER = new Color(148, 15, 15);
-            private static final Color PRESS_BG    = new Color(148, 14, 14);
-            private static final Color PRESS_BORDER = new Color(95,  6,  6);
-            @Override public void mouseEntered(MouseEvent e) {
-                if (killSwitchButton.isEnabled()) {
-                    killSwitchButton.setBackground(HOVER_BG);
-                    killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
-                            BorderFactory.createLineBorder(HOVER_BORDER, 1, true),
-                            killSwitchInner));
-                }
-            }
-            @Override public void mouseExited(MouseEvent e) {
-                killSwitchButton.setBackground(BASE_BG);
-                killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
-                        BorderFactory.createLineBorder(BASE_BORDER, 1, true),
-                        killSwitchInner));
-            }
-            @Override public void mousePressed(MouseEvent e) {
-                if (killSwitchButton.isEnabled() && e.getButton() == MouseEvent.BUTTON1) {
-                    killSwitchButton.setBackground(PRESS_BG);
-                    killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
-                            BorderFactory.createLineBorder(PRESS_BORDER, 2, true),
-                            killSwitchPressedInner));
-                }
-            }
-            @Override public void mouseReleased(MouseEvent e) {
-                if (killSwitchButton.contains(e.getPoint()) && killSwitchButton.isEnabled()) {
-                    killSwitchButton.setBackground(HOVER_BG);
-                    killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
-                            BorderFactory.createLineBorder(HOVER_BORDER, 1, true),
-                            killSwitchInner));
-                } else {
-                    killSwitchButton.setBackground(BASE_BG);
-                    killSwitchButton.setBorder(BorderFactory.createCompoundBorder(
-                            BorderFactory.createLineBorder(BASE_BORDER, 1, true),
-                            killSwitchInner));
-                }
-            }
-        });
+        styleHeaderDangerButton(killSwitchButton);
         killSwitchButton.addActionListener(e -> killAllStrategies());
         configureButtonShortcut(killSwitchButton, KeyEvent.VK_K,
                 KeyStroke.getKeyStroke(KeyEvent.VK_K, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
                 "killSwitch");
+        stopAllLiquidationsButton.setText("Stop Liquidations");
+        applyButtonIcon(stopAllLiquidationsButton, "icons/kill-switch.svg", 15);
+        styleHeaderDangerButton(stopAllLiquidationsButton);
+        stopAllLiquidationsButton.addActionListener(e -> stopAllLiquidations());
+        updateStopAllLiquidationsButton();
+        headerControlsPanel.add(stopAllLiquidationsButton);
         headerControlsPanel.add(killSwitchButton);
 
         JPanel headerInfoWrapper = new JPanel(new GridBagLayout());
@@ -2188,7 +2135,7 @@ public class TradingFrame extends JFrame {
         setExtendedState(getExtendedState() | JFrame.MAXIMIZED_BOTH);
         setLocationRelativeTo(null);
         startBackgroundUpdateAvailabilityCheck();
-        SwingUtilities.invokeLater(portfolioCaptureController::restoreIfNeeded);
+        SwingUtilities.invokeLater(portfolioCaptureRuns::restoreAll);
         applyViewModeTheme();
     }
 
@@ -2570,7 +2517,7 @@ public class TradingFrame extends JFrame {
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 Color top = b.getModel().isRollover() ? new Color(58, 132, 255) : new Color(42, 101, 225);
                 Color bottom = b.getModel().isRollover() ? new Color(120, 84, 255) : new Color(91, 63, 204);
-                if (portfolioCaptureController != null && portfolioCaptureController.monitoringActive()) {
+                if (portfolioCaptureRuns != null && portfolioCaptureRuns.monitoringActive(selectedCaptureScope())) {
                     top = capturePortfolioPulseOn ? new Color(36, 140, 108) : CAPTURE_ACTIVE_BG;
                     bottom = capturePortfolioPulseOn ? new Color(16, 128, 98) : new Color(24, 152, 118);
                 }
@@ -2865,27 +2812,28 @@ public class TradingFrame extends JFrame {
         if (selectedCapturePortfolioUiKey() == null) {
             return;
         }
-        activeCapturePortfolioUiKey = selectedCapturePortfolioUiKey();
+        // Every mode + workspace owns its own run, so this dialog only ever sees and controls the
+        // run of the tab it was opened from.
+        PortfolioCaptureRuns.Scope scope = selectedCaptureScope();
+        PortfolioCaptureController controller = portfolioCaptureRuns.controller(scope);
         userActionLog.started("Liquidate Portfolio");
         PortfolioCaptureDialog dialog = new PortfolioCaptureDialog(
                 this,
-                portfolioCaptureController::currentSnapshot,
+                controller::currentSnapshot,
                 config -> {
                     userActionLog.started("Liquidate Portfolio Now");
-                    portfolioCaptureController.executeNow(config);
+                    controller.executeNow(config);
                 },
                 config -> {
                     userActionLog.started("Liquidate Portfolio Monitoring");
-                    portfolioCaptureController.activateMonitoring(config);
+                    controller.activateMonitoring(config);
                     userActionLog.completed("Liquidate Portfolio Monitoring", "Monitoring activated.");
                 },
                 () -> {
-                    portfolioCaptureController.emergencyStop();
+                    controller.emergencyStop();
                     userActionLog.completed("Liquidate Portfolio Monitoring", "Monitoring deactivated.");
                 },
-                // Scoped to the tab being viewed: a run started in another workspace must not appear
-                // here as active, or this dialog would offer to deactivate a run it does not own.
-                portfolioCaptureController.monitoringActiveFor(selectedViewMode, selectedWorkspaceId)
+                controller.monitoringActive()
         );
         boolean changed = dialog.showDialog();
         if (!changed) {
@@ -2893,39 +2841,35 @@ public class TradingFrame extends JFrame {
         }
     }
 
-    private void updateCapturePortfolioUi(boolean active, PortfolioCaptureConfig config,
-                                          StrategyMode mode, String workspaceId) {
-        PortfolioCaptureUiStateStore.Key contextKey = capturePortfolioUiKey(mode, workspaceId);
-        PortfolioCaptureUiStateStore.Key key = active
-                ? contextKey
-                : activeCapturePortfolioUiKey == null ? contextKey : activeCapturePortfolioUiKey;
-        activeCapturePortfolioUiKey = active ? key : null;
-        capturePortfolioConfigForUi = active ? config : null;
-        if (!active) {
-            capturePortfolioAutomationState = PortfolioCaptureAutomationState.STOPPED;
-        }
-        capturePortfolioModeForUi = active && key != null ? key.mode() : null;
-        if (key != null) {
-            capturePortfolioUiStates.update(key, capturePortfolioUiStates.state(key)
-                    .withButton("Liquidate Portfolio", true)
-                    .withIndicator(active ? captureIndicatorText(config) : "", active)
-                    .withPulse(active));
-        }
-        applySelectedCapturePortfolioState();
-        updateCapturePortfolioIndicator(config);
+    /** The mode and workspace of the strategy tab being viewed. */
+    private PortfolioCaptureRuns.Scope selectedCaptureScope() {
+        return new PortfolioCaptureRuns.Scope(selectedViewMode, selectedWorkspaceId);
     }
 
-    private void updateCapturePortfolioIndicator(PortfolioCaptureConfig config) {
-        PortfolioCaptureUiStateStore.Key key = activeCapturePortfolioUiKey == null
-                ? selectedCapturePortfolioUiKey()
-                : activeCapturePortfolioUiKey;
-        String indicatorText = captureIndicatorText(config);
-        if (key != null) {
-            capturePortfolioUiStates.update(key, capturePortfolioUiStates.state(key)
-                    .withIndicator(indicatorText, !indicatorText.isBlank()));
+    private PortfolioCaptureUiStateStore.Key captureUiKey(PortfolioCaptureRuns.Scope scope) {
+        return capturePortfolioUiKey(scope.mode(), scope.workspaceId());
+    }
+
+    private void updateCapturePortfolioUi(PortfolioCaptureRuns.Scope scope, boolean active) {
+        PortfolioCaptureUiStateStore.Key key = captureUiKey(scope);
+        if (!active) {
+            captureAutomationStates.remove(key);
         }
-        if (key != null && key.equals(selectedCapturePortfolioUiKey())) {
-            capturePortfolioConfigForUi = config;
+        String indicatorText = active ? captureIndicatorText(scope) : "";
+        capturePortfolioUiStates.update(key, capturePortfolioUiStates.state(key)
+                .withButton("Liquidate Portfolio", true)
+                .withIndicator(indicatorText, active)
+                .withPulse(active));
+        applySelectedCapturePortfolioState();
+        updateStopAllLiquidationsButton();
+    }
+
+    private void updateCapturePortfolioIndicator(PortfolioCaptureRuns.Scope scope) {
+        PortfolioCaptureUiStateStore.Key key = captureUiKey(scope);
+        String indicatorText = captureIndicatorText(scope);
+        capturePortfolioUiStates.update(key, capturePortfolioUiStates.state(key)
+                .withIndicator(indicatorText, portfolioCaptureRuns.monitoringActive(scope) && !indicatorText.isBlank()));
+        if (key.equals(selectedCapturePortfolioUiKey())) {
             applySelectedCapturePortfolioState();
         }
     }
@@ -2938,22 +2882,54 @@ public class TradingFrame extends JFrame {
      * calculator's own progress figure is what previously produced a meaningless 100% beside a
      * losing P&L; banked realized P&L cannot be captured again and so has no place on this line.
      */
-    private String captureIndicatorText(PortfolioCaptureConfig config) {
-        if (config == null || config.mode() != PortfolioCaptureMode.TARGET_MONITORING) {
+    private String captureIndicatorText(PortfolioCaptureRuns.Scope scope) {
+        PortfolioCaptureController controller = portfolioCaptureRuns.controller(scope);
+        PortfolioCaptureConfig config = controller.activeConfig();
+        if (config == null) {
             return "";
         }
-        PortfolioCaptureSnapshot context = portfolioCaptureController.previewSnapshot(config);
+        PortfolioCaptureSnapshot context = controller.previewSnapshot(config);
+        if (config.mode() == PortfolioCaptureMode.PULLBACK_MONITORING) {
+            return PortfolioCaptureIndicatorPresenter.pullbackMonitoringText(config, context.unrealizedPnl(),
+                    context.totalInvestment(), controller.pullbackArmed(), controller.peakProfit());
+        }
         return PortfolioCaptureIndicatorPresenter.targetMonitoringText(
                 config, context.unrealizedPnl(), context.totalInvestment());
     }
 
-    private String captureIndicatorExplanation(PortfolioCaptureConfig config) {
-        if (config == null || config.mode() != PortfolioCaptureMode.TARGET_MONITORING) {
+    private String captureIndicatorExplanation(PortfolioCaptureRuns.Scope scope) {
+        PortfolioCaptureController controller = portfolioCaptureRuns.controller(scope);
+        PortfolioCaptureConfig config = controller.activeConfig();
+        if (config == null) {
             return "";
         }
-        PortfolioCaptureSnapshot context = portfolioCaptureController.previewSnapshot(config);
+        PortfolioCaptureSnapshot context = controller.previewSnapshot(config);
+        if (config.mode() == PortfolioCaptureMode.PULLBACK_MONITORING) {
+            return PortfolioCaptureIndicatorPresenter.pullbackMonitoringExplanation(config);
+        }
         return PortfolioCaptureIndicatorPresenter.targetMonitoringExplanation(
                 config, context.unrealizedPnl(), context.totalInvestment());
+    }
+
+    /** Enables Stop Liquidations only while at least one monitor is running in any mode or workspace. */
+    private void updateStopAllLiquidationsButton() {
+        List<PortfolioCaptureRuns.Scope> active = portfolioCaptureRuns.activeScopes();
+        stopAllLiquidationsButton.setEnabled(!active.isEmpty());
+        stopAllLiquidationsButton.setToolTipText(TooltipStyler.text(active.isEmpty()
+                ? "No Liquidate Portfolio monitor is running in any workspace."
+                : "Deactivates all " + active.size() + " Liquidate Portfolio monitor"
+                        + (active.size() == 1 ? "" : "s")
+                        + " across every workspace, in both Paper and Live mode. "
+                        + "Positions and open orders are not touched and nothing is sold.",
+                320));
+    }
+
+    private void stopAllLiquidations() {
+        userActionLog.started("Stop All Liquidations");
+        int stopped = portfolioCaptureRuns.stopAll();
+        updateStopAllLiquidationsButton();
+        userActionLog.completed("Stop All Liquidations",
+                stopped == 0 ? "No liquidation monitors were running." : "Deactivated " + stopped + " liquidation monitor(s).");
     }
 
     /** Re-trims the cached status line after the slot it lives in changes width. */
@@ -3003,8 +2979,8 @@ public class TradingFrame extends JFrame {
      * summary instead of lagging at the slower monitoring-tick cadence.
      */
     private void refreshActiveCaptureIndicator() {
-        if (portfolioCaptureController.monitoringActive()) {
-            updateCapturePortfolioIndicator(portfolioCaptureController.activeConfig());
+        for (PortfolioCaptureRuns.Scope scope : portfolioCaptureRuns.activeScopes()) {
+            updateCapturePortfolioIndicator(scope);
         }
     }
 
@@ -3020,7 +2996,7 @@ public class TradingFrame extends JFrame {
      * produce them.
      */
     private String composeCaptureIndicatorText(String storedIndicatorText) {
-        String live = captureIndicatorText(capturePortfolioConfigForUi);
+        String live = captureIndicatorText(selectedCaptureScope());
         if (live.isBlank()) {
             return storedIndicatorText == null ? "" : storedIndicatorText;
         }
@@ -3050,7 +3026,7 @@ public class TradingFrame extends JFrame {
                 ? RainbowText.toHtml(fitCaptureIndicatorText(indicatorText))
                 : "");
         boolean pausedForClosedMarket = state.monitoringActive()
-                && capturePortfolioAutomationState == PortfolioCaptureAutomationState.PAUSED_MARKET_CLOSED;
+                && captureAutomationStates.get(key) == PortfolioCaptureAutomationState.PAUSED_MARKET_CLOSED;
         capturePortfolioIndicator.setForeground(state.monitoringActive() && !pausedForClosedMarket
                 ? CAPTURE_INDICATOR_ACTIVE_TEXT
                 : CAPTURE_INDICATOR_IDLE_TEXT);
@@ -3104,7 +3080,7 @@ public class TradingFrame extends JFrame {
     /** Full (untrimmed) status line plus a plain-language explanation of how its figures relate. */
     private String captureIndicatorTooltip(String fullIndicatorText) {
         StringBuilder tooltip = new StringBuilder(fullIndicatorText);
-        String explanation = captureIndicatorExplanation(capturePortfolioConfigForUi);
+        String explanation = captureIndicatorExplanation(selectedCaptureScope());
         if (!explanation.isBlank()) {
             tooltip.append("\n\n").append(explanation);
         }
@@ -3124,26 +3100,29 @@ public class TradingFrame extends JFrame {
         return state.buttonText();
     }
 
-    private void updateCaptureAutomationState(PortfolioCaptureAutomationState state, int loopCount, int pendingCanceled) {
+    private void updateCaptureAutomationState(PortfolioCaptureRuns.Scope scope, PortfolioCaptureAutomationState state) {
         SwingUtilities.invokeLater(() -> {
-            if (state == PortfolioCaptureAutomationState.STOPPED && !portfolioCaptureController.monitoringActive()) {
+            PortfolioCaptureUiStateStore.Key key = captureUiKey(scope);
+            boolean running = portfolioCaptureRuns.monitoringActive(scope);
+            if (state == PortfolioCaptureAutomationState.STOPPED && !running) {
+                captureAutomationStates.remove(key);
+                updateStopAllLiquidationsButton();
                 return;
             }
-            capturePortfolioAutomationState = state;
-            if (state == PortfolioCaptureAutomationState.PAUSED_MARKET_CLOSED && activeCapturePortfolioUiKey != null) {
-                capturePortfolioUiStates.update(activeCapturePortfolioUiKey, capturePortfolioUiStates.state(activeCapturePortfolioUiKey)
+            captureAutomationStates.put(key, state);
+            if (state == PortfolioCaptureAutomationState.PAUSED_MARKET_CLOSED) {
+                capturePortfolioUiStates.update(key, capturePortfolioUiStates.state(key)
                         .withButton("Liquidate Portfolio:Auto Paused [Closed Market]", true)
                         .withPulse(false));
-            } else if (portfolioCaptureController.monitoringActive()
-                    && state == PortfolioCaptureAutomationState.MONITORING
-                    && activeCapturePortfolioUiKey != null) {
-                capturePortfolioUiStates.update(activeCapturePortfolioUiKey, capturePortfolioUiStates.state(activeCapturePortfolioUiKey)
+            } else if (running && state == PortfolioCaptureAutomationState.MONITORING) {
+                capturePortfolioUiStates.update(key, capturePortfolioUiStates.state(key)
                         .withButton("Liquidate Portfolio", true)
                         .withPulse(true));
             }
             // Counters and the paused/active presentation are both derived inside apply..., so this is
             // the single place the chrome is written — nothing here can be clobbered by a later pass.
             applySelectedCapturePortfolioState();
+            updateStopAllLiquidationsButton();
         });
     }
 
@@ -3158,13 +3137,14 @@ public class TradingFrame extends JFrame {
      * would mix in liquidations from every other workspace and from the opposite trading mode.
      */
     private String captureAutomationCounterText() {
-        PortfolioCaptureConfig config = capturePortfolioConfigForUi;
+        PortfolioCaptureController controller = portfolioCaptureRuns.controller(selectedCaptureScope());
+        PortfolioCaptureConfig config = controller.activeConfig();
         StringBuilder text = new StringBuilder();
         if (config != null && config.continuousLoop()) {
-            text.append(" | Loops ").append(portfolioCaptureController.loopCount());
+            text.append(" | Loops ").append(controller.loopCount());
         }
         if (config != null && config.autoCleanPendingBeforeCycle()) {
-            text.append(" | Pending Buy Orders Cancelled ").append(portfolioCaptureController.pendingCanceledCount());
+            text.append(" | Pending Buy Orders Cancelled ").append(controller.pendingCanceledCount());
         }
         return text.toString();
     }
@@ -3308,13 +3288,9 @@ public class TradingFrame extends JFrame {
         }
     }
 
-    private void setCapturePortfolioBusy(boolean busy) {
-        PortfolioCaptureUiStateStore.Key key = activeCapturePortfolioUiKey == null
-                ? selectedCapturePortfolioUiKey()
-                : activeCapturePortfolioUiKey;
-        if (key != null) {
-            capturePortfolioUiStates.update(key, capturePortfolioUiStates.state(key).withBusy(busy));
-        }
+    private void setCapturePortfolioBusy(PortfolioCaptureRuns.Scope scope, boolean busy) {
+        PortfolioCaptureUiStateStore.Key key = captureUiKey(scope);
+        capturePortfolioUiStates.update(key, capturePortfolioUiStates.state(key).withBusy(busy));
         applySelectedCapturePortfolioState();
     }
 
@@ -3376,7 +3352,7 @@ public class TradingFrame extends JFrame {
     }
 
     private String portfolioCaptureHistorySummaryHtml() {
-        PortfolioCaptureHistoryStore.Summary summary = portfolioCaptureController.captureHistorySummary();
+        PortfolioCaptureHistoryStore.Summary summary = portfolioCaptureRuns.captureHistorySummary();
         if (summary == null || summary.captureCount() == 0) {
             return "";
         }
@@ -8821,7 +8797,7 @@ public class TradingFrame extends JFrame {
             capturePortfolioPulseTimer.stop();
         }
         bottomStatusBars.shutdown();
-        portfolioCaptureController.shutdown();
+        portfolioCaptureRuns.shutdown();
         portfolioEmailScheduler.stop();
         strategyPollingTimer.stop();
         uiPollingExecutor.shutdownNow();
@@ -8835,6 +8811,67 @@ public class TradingFrame extends JFrame {
             analyticsPublisher.publish(new AnalyticsEvent("APP_EXIT"));
             analyticsPublisher.shutdown();
         }
+    }
+
+    /** The red header-button look shared by KILL SWITCH and Stop Liquidations. */
+    private void styleHeaderDangerButton(JButton button) {
+        button.setFocusPainted(false);
+        button.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+        button.setFont(FontLoader.ui(Font.BOLD, 11f));
+        button.setForeground(Color.WHITE);
+        button.setBackground(new Color(180, 20, 20));
+        button.setOpaque(true);
+        button.setContentAreaFilled(true);
+        javax.swing.border.Border inner = new EmptyBorder(4, 10, 4, 10);
+        javax.swing.border.Border pressedInner = new EmptyBorder(3, 9, 3, 9);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(120, 10, 10), 1, true),
+                inner
+        ));
+        button.setMargin(new java.awt.Insets(4, 10, 4, 10));
+        button.addMouseListener(new MouseAdapter() {
+            private static final Color BASE_BG     = new Color(180, 20, 20);
+            private static final Color BASE_BORDER  = new Color(120, 10, 10);
+            private static final Color HOVER_BG    = new Color(210, 32, 32);
+            private static final Color HOVER_BORDER = new Color(148, 15, 15);
+            private static final Color PRESS_BG    = new Color(148, 14, 14);
+            private static final Color PRESS_BORDER = new Color(95,  6,  6);
+            @Override public void mouseEntered(MouseEvent e) {
+                if (button.isEnabled()) {
+                    button.setBackground(HOVER_BG);
+                    button.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createLineBorder(HOVER_BORDER, 1, true),
+                            inner));
+                }
+            }
+            @Override public void mouseExited(MouseEvent e) {
+                button.setBackground(BASE_BG);
+                button.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(BASE_BORDER, 1, true),
+                        inner));
+            }
+            @Override public void mousePressed(MouseEvent e) {
+                if (button.isEnabled() && e.getButton() == MouseEvent.BUTTON1) {
+                    button.setBackground(PRESS_BG);
+                    button.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createLineBorder(PRESS_BORDER, 2, true),
+                            pressedInner));
+                }
+            }
+            @Override public void mouseReleased(MouseEvent e) {
+                if (button.contains(e.getPoint()) && button.isEnabled()) {
+                    button.setBackground(HOVER_BG);
+                    button.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createLineBorder(HOVER_BORDER, 1, true),
+                            inner));
+                } else {
+                    button.setBackground(BASE_BG);
+                    button.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createLineBorder(BASE_BORDER, 1, true),
+                            inner));
+                }
+            }
+        });
     }
 
     private void killAllStrategies() {

@@ -26,11 +26,17 @@ final class PortfolioCapturePullbackEvaluator {
         if (pullback.compareTo(BigDecimal.ZERO) <= 0 || peak.compareTo(BigDecimal.ZERO) <= 0) {
             return new Evaluation(true, peak, false);
         }
-        BigDecimal liquidationThreshold = config.pullbackType() == PortfolioCapturePullbackType.AMOUNT_FROM_PEAK
+        BigDecimal liquidationThreshold = liquidationThreshold(config, peak);
+        return new Evaluation(true, peak, currentProfit.compareTo(liquidationThreshold) <= 0);
+    }
+
+    /** The open profit at or below which an armed pullback liquidates, given the peak so far. */
+    static BigDecimal liquidationThreshold(PortfolioCaptureConfig config, BigDecimal peak) {
+        BigDecimal pullback = config.pullbackValue() == null ? BigDecimal.ZERO : config.pullbackValue();
+        return config.pullbackType() == PortfolioCapturePullbackType.AMOUNT_FROM_PEAK
                 ? peak.subtract(pullback)
                 : peak.subtract(peak.multiply(pullback)
                         .divide(BigDecimal.valueOf(100), 8, RoundingMode.HALF_UP));
-        return new Evaluation(true, peak, currentProfit.compareTo(liquidationThreshold) <= 0);
     }
 
     /**
