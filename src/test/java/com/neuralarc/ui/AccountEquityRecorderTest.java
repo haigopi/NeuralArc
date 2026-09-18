@@ -1,8 +1,8 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.db.AppDatabase;
-import com.neuralarc.db.SqlitePortfolioValueRepository;
-import com.neuralarc.model.PortfolioValueSample;
+import com.neuralarc.db.SqliteAccountEquityRepository;
+import com.neuralarc.model.IntradayValueSample;
 import com.neuralarc.model.StrategyMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -19,7 +19,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class PortfolioValueRecorderTest {
+class AccountEquityRecorderTest {
     @TempDir
     Path tempDir;
 
@@ -27,8 +27,8 @@ class PortfolioValueRecorderTest {
 
     @Test
     void keepsOnePointPerMinuteHoldingTheMinutesLastReading() {
-        SqlitePortfolioValueRepository repository = repository();
-        PortfolioValueRecorder recorder = recorder(repository);
+        SqliteAccountEquityRepository repository = repository();
+        AccountEquityRecorder recorder = recorder(repository);
 
         recorder.record(StrategyMode.LIVE, new BigDecimal("1000"), new BigDecimal("990"));
         clock.at("2026-09-18T14:30:40Z");
@@ -36,9 +36,9 @@ class PortfolioValueRecorderTest {
         clock.at("2026-09-18T14:31:05Z");
         recorder.record(StrategyMode.LIVE, new BigDecimal("1010"), new BigDecimal("990"));
 
-        List<PortfolioValueSample> today = recorder.today(StrategyMode.LIVE);
+        List<IntradayValueSample> today = recorder.today(StrategyMode.LIVE);
         assertEquals(List.of(new BigDecimal("1004.00"), new BigDecimal("1010.00")),
-                today.stream().map(PortfolioValueSample::marketValue).toList());
+                today.stream().map(IntradayValueSample::value).toList());
         assertEquals(Instant.parse("2026-09-18T14:30:00Z"), today.get(0).minute());
         repository.invalidateCache();
         assertEquals(today, repository.findDay(StrategyMode.LIVE, LocalDate.of(2026, 9, 18)), "every minute is persisted");
@@ -46,26 +46,37 @@ class PortfolioValueRecorderTest {
 
     @Test
     void todaysSeriesIsRestoredAfterARestart() {
-        SqlitePortfolioValueRepository repository = repository();
+        SqliteAccountEquityRepository repository = repository();
         recorder(repository).record(StrategyMode.PAPER, new BigDecimal("5000"), new BigDecimal("4900"));
 
-        PortfolioValueRecorder restarted = recorder(repository());
+        AccountEquityRecorder restarted = recorder(repository());
 
         assertEquals(1, restarted.today(StrategyMode.PAPER).size());
     }
 
     @Test
-    void anAllZeroReadingFromBeforePositionsLoadIsNotPlotted() {
-        PortfolioValueRecorder recorder = recorder(repository());
+    void anUnreadableAccountIsNotPlottedAsAZeroEquityCrash() {
+        AccountEquityRecorder recorder = recorder(repository());
 
-        recorder.record(StrategyMode.LIVE, BigDecimal.ZERO, BigDecimal.ZERO);
+        recorder.record(StrategyMode.LIVE, BigDecimal.ZERO, new BigDecimal("1000"));
+        recorder.record(StrategyMode.LIVE, null, new BigDecimal("1000"));
 
         assertTrue(recorder.today(StrategyMode.LIVE).isEmpty());
     }
 
     @Test
+    void aMissingPreviousCloseFallsBackToTheReadingItself() {
+        AccountEquityRecorder recorder = recorder(repository());
+
+        recorder.record(StrategyMode.LIVE, new BigDecimal("1000"), BigDecimal.ZERO);
+
+        assertEquals(new BigDecimal("1000.00"), recorder.today(StrategyMode.LIVE).get(0).baseline(),
+                "a zero baseline would report the whole account as today's gain");
+    }
+
+    @Test
     void aNewMarketDayStartsAFreshSeries() {
-        PortfolioValueRecorder recorder = recorder(repository());
+        AccountEquityRecorder recorder = recorder(repository());
         recorder.record(StrategyMode.LIVE, new BigDecimal("1000"), new BigDecimal("990"));
 
         clock.at("2026-09-19T14:30:00Z");
@@ -73,12 +84,12 @@ class PortfolioValueRecorderTest {
         assertTrue(recorder.today(StrategyMode.LIVE).isEmpty());
     }
 
-    private SqlitePortfolioValueRepository repository() {
-        return new SqlitePortfolioValueRepository(AppDatabase.open(tempDir.resolve("neuralarc.db")));
+    private SqliteAccountEquityRepository repository() {
+        return new SqliteAccountEquityRepository(AppDatabase.open(tempDir.resolve("neuralarc.db")));
     }
 
-    private PortfolioValueRecorder recorder(SqlitePortfolioValueRepository repository) {
-        return new PortfolioValueRecorder(repository, Runnable::run, clock, null);
+    private AccountEquityRecorder recorder(SqliteAccountEquityRepository repository) {
+        return new AccountEquityRecorder(repository, Runnable::run, clock, null);
     }
 
     private static final class MutableClock extends Clock {

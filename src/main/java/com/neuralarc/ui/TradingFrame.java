@@ -171,6 +171,7 @@ public class TradingFrame extends JFrame {
 
     private final JLabel positionSummary = new JLabel("Position: -");
     private final JLabel ruleState = new JLabel("Rules: -");
+    private PositionBarsColumn positionBarsColumn;
     private final JLabel paperUnrealizedSummary = new JLabel("Paper Unrealized P&L Total: -");
     private final JLabel headerTotalsSeparator = new JLabel("|");
     private final JLabel liveUnrealizedSummary = new JLabel("Live Unrealized P&L Total: -");
@@ -342,11 +343,15 @@ public class TradingFrame extends JFrame {
     private final PortfolioRefreshController portfolioRefreshController;
     private final PortfolioActionsController portfolioActionsController;
     private final PortfolioCaptureRuns portfolioCaptureRuns;
-    private final PortfolioValueRecorder portfolioValueRecorder;
-    private final com.neuralarc.ui.chart.PortfolioValueChart portfolioValueChart =
-            new com.neuralarc.ui.chart.PortfolioValueChart(java.time.ZoneId.systemDefault());
-    // Samples the portfolio value even when nothing else refreshes, so every minute gets its point.
-    private Timer portfolioValueSampleTimer;
+    private final AccountEquityRecorder accountEquityRecorder;
+    private final com.neuralarc.ui.chart.IntradayValueChart accountEquityChart =
+            new com.neuralarc.ui.chart.IntradayValueChart(java.time.ZoneId.systemDefault());
+    // Reads Alpaca account equity every 30s so each minute of the day gets its point.
+    private Timer accountEquitySampleTimer;
+    private final AtomicBoolean accountEquityFetchInFlight = new AtomicBoolean(false);
+    private final WorkspaceValueRecorder workspaceValueRecorder;
+    private final com.neuralarc.ui.chart.IntradayValueChart workspaceValueChart =
+            new com.neuralarc.ui.chart.IntradayValueChart("Workspace Value", java.time.ZoneId.systemDefault());
     private final List<ManagedStrategy> strategies = new ArrayList<>();
     private final List<HistoryTablePresenter.HistoryRow> filledOrderRows = new ArrayList<>();
     private final StrategyGridTableModel strategyTableModel = new StrategyGridTableModel(
@@ -635,13 +640,16 @@ public class TradingFrame extends JFrame {
         gapAndGoCoordinator = new GapAndGoCoordinator(
                 new GapAndGoCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
-        java.util.concurrent.ExecutorService portfolioValueWriter = java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "portfolio-value-writer");
+        java.util.concurrent.ExecutorService accountEquityWriter = java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "account-equity-writer");
             thread.setDaemon(true);
             return thread;
         });
-        portfolioValueRecorder = new PortfolioValueRecorder(
-                new com.neuralarc.db.SqlitePortfolioValueRepository(appDatabase), portfolioValueWriter,
+        accountEquityRecorder = new AccountEquityRecorder(
+                new com.neuralarc.db.SqliteAccountEquityRepository(appDatabase), accountEquityWriter,
+                java.time.Clock.systemUTC(), this::log);
+        workspaceValueRecorder = new WorkspaceValueRecorder(
+                new com.neuralarc.db.SqliteWorkspaceValueRepository(appDatabase), accountEquityWriter,
                 java.time.Clock.systemUTC(), this::log);
         orbCoordinator = new OrbCoordinator(new OrbCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
@@ -2031,8 +2039,8 @@ public class TradingFrame extends JFrame {
         eventLogScrollPane.setBackground(new Color(0, 0, 0, 0));
         eventLogScrollPane.getViewport().setOpaque(false);
         eventLogScrollPane.getViewport().setBackground(new Color(0, 0, 0, 0));
-        // Two columns: today's portfolio value on the left, the event log on the right.
-        JSplitPane logsColumns = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, portfolioValueChart, eventLogScrollPane);
+        // Two columns: today's account equity on the left, the event log on the right.
+        JSplitPane logsColumns = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, accountEquityChart, eventLogScrollPane);
         logsColumns.setResizeWeight(0.4);
         logsColumns.setContinuousLayout(true);
         logsColumns.setDividerSize(6);
@@ -2044,9 +2052,12 @@ public class TradingFrame extends JFrame {
                     ThemeColors.color("NeuralArc.SplitPane.divider", new Color(189, 198, 210)));
         }
         CollapsibleSectionPanel eventLogSection = new CollapsibleSectionPanel("Logs", logsColumns);
-        portfolioValueSampleTimer = new Timer(30_000, ignored -> recordPortfolioValue());
-        portfolioValueSampleTimer.setInitialDelay(5_000);
-        portfolioValueSampleTimer.start();
+        accountEquitySampleTimer = new Timer(30_000, ignored -> {
+            sampleAccountEquityAsync();
+            recordWorkspaceValues();
+        });
+        accountEquitySampleTimer.setInitialDelay(5_000);
+        accountEquitySampleTimer.start();
 
         // Put event log and strategy grid in a vertical split so both are always visible
         JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
@@ -2099,10 +2110,52 @@ public class TradingFrame extends JFrame {
         detailSectionsPanel.add(Box.createVerticalStrut(8));
         detailSectionsPanel.add(rulesSection);
 
+        // Two columns: Position and Rules Triggered on the left, the position's daily bars on the right.
+        positionBarsColumn = new PositionBarsColumn(new PositionBarsColumn.Host() {
+            @Override
+            public PositionBarsColumn.BarsSource barsSource() {
+                if (!connectionOk || runtimeApiKey.isBlank()) {
+                    return null;
+                }
+                HttpAlpacaMarketDataApi api = new HttpAlpacaMarketDataApi(runtimeApiKey, runtimeApiSecret);
+                return api::getDailyBars;
+            }
+
+            @Override
+            public void openFullChart(ManagedStrategy entry) {
+                openStockChart(entry);
+            }
+        }, uiPollingExecutor, java.time.Clock.systemDefaultZone());
+        CollapsibleSectionPanel positionBarsSection = new CollapsibleSectionPanel("Position Bars", positionBarsColumn);
+        CollapsibleSectionPanel workspaceValueSection = new CollapsibleSectionPanel("Workspace Value", workspaceValueChart);
+        JSplitPane chartColumns = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, positionBarsSection, workspaceValueSection);
+        chartColumns.setResizeWeight(0.5);
+        chartColumns.setContinuousLayout(true);
+        chartColumns.setDividerSize(6);
+        chartColumns.setBorder(null);
+        chartColumns.setOpaque(false);
+        if (chartColumns.getUI() instanceof BasicSplitPaneUI chartColumnsUi) {
+            chartColumnsUi.getDivider().setBorder(BorderFactory.createEmptyBorder());
+            chartColumnsUi.getDivider().setBackground(
+                    ThemeColors.color("NeuralArc.SplitPane.divider", new Color(189, 198, 210)));
+        }
+        // Three columns: Position and Rules Triggered, the position's bars, the workspace's value today.
+        JSplitPane detailColumns = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, detailSectionsPanel, chartColumns);
+        detailColumns.setResizeWeight(0.34);
+        detailColumns.setContinuousLayout(true);
+        detailColumns.setDividerSize(6);
+        detailColumns.setBorder(null);
+        detailColumns.setOpaque(false);
+        if (detailColumns.getUI() instanceof BasicSplitPaneUI detailColumnsUi) {
+            detailColumnsUi.getDivider().setBorder(BorderFactory.createEmptyBorder());
+            detailColumnsUi.getDivider().setBackground(
+                    ThemeColors.color("NeuralArc.SplitPane.divider", new Color(189, 198, 210)));
+        }
+
         JPanel statusPanel = new JPanel(new BorderLayout(0, 10));
         statusPanel.setOpaque(false);
         statusPanel.setBorder(new EmptyBorder(8, 0, 14, 0));
-        statusPanel.add(detailSectionsPanel, BorderLayout.CENTER);
+        statusPanel.add(detailColumns, BorderLayout.CENTER);
 
         add(headerPanel, BorderLayout.NORTH);
         add(splitPane, BorderLayout.CENTER);
@@ -2918,11 +2971,11 @@ public class TradingFrame extends JFrame {
         }
         PortfolioCaptureSnapshot context = controller.previewSnapshot(config);
         if (config.mode() == PortfolioCaptureMode.PULLBACK_MONITORING) {
-            return PortfolioCaptureIndicatorPresenter.pullbackMonitoringText(config, context.unrealizedPnl(),
-                    context.totalInvestment(), controller.pullbackArmed(), controller.peakProfit());
+            return PortfolioCaptureIndicatorPresenter.pullbackMonitoringText(config, context.targetBasis().pnl(),
+                    context.targetBasis().investment(), controller.pullbackArmed(), controller.peakProfit());
         }
         return PortfolioCaptureIndicatorPresenter.targetMonitoringText(
-                config, context.unrealizedPnl(), context.totalInvestment());
+                config, context.targetBasis().pnl(), context.targetBasis().investment());
     }
 
     private String captureIndicatorExplanation(PortfolioCaptureRuns.Scope scope) {
@@ -2936,7 +2989,7 @@ public class TradingFrame extends JFrame {
             return PortfolioCaptureIndicatorPresenter.pullbackMonitoringExplanation(config);
         }
         return PortfolioCaptureIndicatorPresenter.targetMonitoringExplanation(
-                config, context.unrealizedPnl(), context.totalInvestment());
+                config, context.targetBasis().pnl(), context.targetBasis().investment());
     }
 
     /** Enables Stop Liquidations only while at least one monitor is running in any mode or workspace. */
@@ -5679,6 +5732,7 @@ public class TradingFrame extends JFrame {
         updateUnrealizedSummaries();
         refreshActiveCaptureIndicator();
         ManagedStrategy entry = selectedManagedStrategy();
+        refreshPositionBarsColumn(entry);
         if (entry == null) {
             positionSummary.setText("Position: -");
             ruleState.setText("Rules: -");
@@ -6207,6 +6261,35 @@ public class TradingFrame extends JFrame {
         if (modelRow >= 0 && modelRow < strategies.size()) {
             selectedStrategyId = strategies.get(modelRow).strategy.id();
         }
+    }
+
+    /**
+     * Points the bars column at the selected row, or, with none selected, at the first losing position
+     * in grid order — the one most worth a look.
+     */
+    private void refreshPositionBarsColumn(ManagedStrategy selected) {
+        if (positionBarsColumn == null) {
+            return;
+        }
+        if (selected != null) {
+            positionBarsColumn.show(selected, false);
+            return;
+        }
+        positionBarsColumn.show(firstLosingPositionInGrid(), true);
+    }
+
+    private ManagedStrategy firstLosingPositionInGrid() {
+        for (int viewRow = 0; viewRow < strategyTable.getRowCount(); viewRow++) {
+            int modelRow = strategyTable.convertRowIndexToModel(viewRow);
+            if (modelRow < 0 || modelRow >= strategies.size()) {
+                continue;
+            }
+            ManagedStrategy candidate = strategies.get(modelRow);
+            if (PositionBarsSelection.isLosing(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private ManagedStrategy selectedManagedStrategy() {
@@ -8436,30 +8519,75 @@ public class TradingFrame extends JFrame {
                     portfolioScopePresenter.present(PortfolioScopePresenter.ALL_WORKSPACES, portfolioMetrics(null)));
         }
         refreshWorkspaceSummary();
-        refreshPortfolioValueChart();
+        refreshAccountEquityChart();
+        refreshWorkspaceValueChart();
     }
 
-    /**
-     * Records this minute's total portfolio value for both modes — the same all-workspaces market value
-     * the bottom status bar shows — so switching modes shows a complete day for each.
-     */
-    private void recordPortfolioValue() {
-        if (portfolioValueRecorder == null) {
+    /** Records this minute's holdings value of every workspace, in both modes, from the cached grid rows. */
+    private void recordWorkspaceValues() {
+        if (workspaceValueRecorder == null) {
             return;
         }
         for (StrategyMode mode : StrategyMode.values()) {
-            SystemMetricsPresenter.PortfolioScopeMetrics metrics = portfolioMetrics(mode, null);
-            portfolioValueRecorder.record(mode, metrics.marketValue(), metrics.investedValue());
+            for (StrategyWorkspace workspace : workspaceService.activeWorkspaces(mode)) {
+                workspaceValueRecorder.record(mode, workspace.id(), portfolioMetrics(mode, workspace.id()).marketValue());
+            }
         }
-        refreshPortfolioValueChart();
+        refreshWorkspaceValueChart();
     }
 
-    private void refreshPortfolioValueChart() {
-        if (portfolioValueRecorder == null) {
+    /** The selected workspace's line, or the first workspace's while All Stocks is selected. */
+    private void refreshWorkspaceValueChart() {
+        if (workspaceValueRecorder == null) {
             return;
         }
-        portfolioValueChart.setSamples(portfolioValueRecorder.today(selectedViewMode),
-                (selectedViewMode == StrategyMode.LIVE ? "Live" : "Paper") + " · all workspaces");
+        String modeLabel = selectedViewMode == StrategyMode.LIVE ? "Live" : "Paper";
+        Optional<StrategyWorkspace> workspace = selectedWorkspaceId == null
+                ? workspaceService.activeWorkspaces(selectedViewMode).stream().findFirst()
+                : workspaceService.findById(selectedWorkspaceId);
+        if (workspace.isEmpty()) {
+            workspaceValueChart.setSamples(List.of(), "No workspaces in " + modeLabel + " yet");
+            return;
+        }
+        String id = workspace.get().id();
+        workspaceValueChart.setSamples(workspaceValueRecorder.today(selectedViewMode, id),
+                workspace.get().name() + " · " + modeLabel,
+                workspaceValueRecorder.baselineLabel(selectedViewMode, id));
+    }
+
+    /**
+     * Reads Alpaca account equity for both modes off the EDT and records this minute's point, so
+     * switching modes shows a complete day for each. A mode without a connected client is skipped.
+     */
+    private void sampleAccountEquityAsync() {
+        if (accountEquityRecorder == null || !connectionOk || connectionRetryPending
+                || !accountEquityFetchInFlight.compareAndSet(false, true)) {
+            return;
+        }
+        Map<StrategyMode, HttpAlpacaClient> clients = new EnumMap<>(StrategyMode.class);
+        for (StrategyMode mode : StrategyMode.values()) {
+            HttpAlpacaClient client = alpacaClientForMode(mode == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER);
+            if (client != null) {
+                clients.put(mode, client);
+            }
+        }
+        uiPollingExecutor.execute(() -> {
+            try {
+                clients.forEach((mode, client) -> client.getAccountEquity().ifPresent(
+                        equity -> accountEquityRecorder.record(mode, equity.equity(), equity.lastEquity())));
+            } finally {
+                accountEquityFetchInFlight.set(false);
+                SwingUtilities.invokeLater(this::refreshAccountEquityChart);
+            }
+        });
+    }
+
+    private void refreshAccountEquityChart() {
+        if (accountEquityRecorder == null) {
+            return;
+        }
+        accountEquityChart.setSamples(accountEquityRecorder.today(selectedViewMode),
+                selectedViewMode == StrategyMode.LIVE ? "Live account" : "Paper account");
     }
 
     /** Totals the current-mode grid rows of one workspace, or of every workspace when the id is null. */
@@ -8467,7 +8595,7 @@ public class TradingFrame extends JFrame {
         return portfolioMetrics(selectedViewMode, workspaceId);
     }
 
-    /** Totals one mode's current grid rows, for one workspace or every workspace when the id is null. */
+    /** Totals one mode's grid rows, for one workspace or every workspace when the id is null. */
     private SystemMetricsPresenter.PortfolioScopeMetrics portfolioMetrics(StrategyMode mode, String workspaceId) {
         List<ManagedStrategy> rows = strategies.stream()
                 .filter(entry -> entry.strategy != null && entry.strategy.mode() == mode)
@@ -8865,8 +8993,8 @@ public class TradingFrame extends JFrame {
         }
         bottomStatusBars.shutdown();
         portfolioCaptureRuns.shutdown();
-        if (portfolioValueSampleTimer != null) {
-            portfolioValueSampleTimer.stop();
+        if (accountEquitySampleTimer != null) {
+            accountEquitySampleTimer.stop();
         }
         portfolioEmailScheduler.stop();
         strategyPollingTimer.stop();
@@ -9817,7 +9945,13 @@ public class TradingFrame extends JFrame {
         if (viewRow < 0 || viewRow >= strategyTable.getRowCount()) {
             return;
         }
-        ManagedStrategy entry = strategies.get(strategyTable.convertRowIndexToModel(viewRow));
+        openStockChart(strategies.get(strategyTable.convertRowIndexToModel(viewRow)));
+    }
+
+    private void openStockChart(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return;
+        }
         String workspaceId = entry.strategy.workspaceId();
         String workspace = workspaceId == null || workspaceId.isBlank()
                 ? "All Stocks"

@@ -75,7 +75,7 @@ final class PortfolioCaptureDialog extends JDialog {
     private final JRadioButton amountPullback = new JRadioButton("Pullback Amount");
     private final JTextField pullbackPercentField = new JTextField("10", 8);
     private final JTextField pullbackAmountField = new JTextField("100", 8);
-    private final JCheckBox includeLosses = new JCheckBox("Include losses in net P/L", true);
+    private final JCheckBox includeLosses = new JCheckBox("Also sell losing positions", true);
     private final JTextField intervalField = new JTextField("45", 5);
     private final JCheckBox activeOnly = new JCheckBox("Active strategies only", true);
     private final JRadioButton executeOnce = new JRadioButton("Execute once", true);
@@ -224,9 +224,9 @@ final class PortfolioCaptureDialog extends JDialog {
         grid.add(javax.swing.Box.createHorizontalStrut(0), filler);
         panel.add(grid, baseGbc(0));
         addDescription(panel,
-                "Targets are measured on unrealized profit only — the P&L this liquidation would "
-                        + "actually realize. Realized profit from trades already closed is shown for "
-                        + "reference and cannot trigger a liquidation.", 1);
+                "Targets are measured on the net open P&L of every position, losing ones included, "
+                        + "even when losing positions are kept rather than sold. Realized profit from trades "
+                        + "already closed is shown for reference and cannot trigger a liquidation.", 1);
         return panel;
     }
 
@@ -236,6 +236,9 @@ final class PortfolioCaptureDialog extends JDialog {
         CompactFormLayout.addRow(targets, 0, percentTarget, percentField, unit("%"));
         CompactFormLayout.addRow(targets, 1, amountTarget, amountField, unit("USD"));
         panel.add(targets, baseGbc(0));
+        includeLosses.setToolTipText(CompactFormLayout.wrapped("The target is always measured on the net P&L of "
+                + "every position, losers included. This only decides what is sold once it is met: checked sells "
+                + "everything; unchecked sells the profitable positions and keeps the losing ones open.", 320));
         panel.add(includeLosses, baseGbc(1));
         panel.add(pullbackPanel(), baseGbc(2));
         panel.add(description("Target mode liquidates at the minimum. Pullback mode arms at the minimum and liquidates only after profit falls from its subsequent peak."), baseGbc(3));
@@ -460,14 +463,16 @@ final class PortfolioCaptureDialog extends JDialog {
 
     private void refreshMetrics() {
         PortfolioCaptureSnapshot snapshot = snapshotSupplier.apply(previewConfig());
-        investmentValue.setText(money(snapshot.totalInvestment()));
-        marketValue.setText(money(snapshot.marketValue()));
+        // The metrics show what the target is measured on: every eligible position, losers included.
+        PortfolioCaptureSnapshot.TargetBasis basis = snapshot.targetBasis();
+        investmentValue.setText(money(basis.investment()));
+        marketValue.setText(money(basis.marketValue()));
         realizedPnlValue.setText(money(snapshot.realizedPnl()));
-        pnlValue.setText(money(snapshot.unrealizedPnl()));
-        pnlValue.setForeground(snapshot.unrealizedPnl().compareTo(BigDecimal.ZERO) < 0
+        pnlValue.setText(money(basis.pnl()));
+        pnlValue.setForeground(basis.pnl().compareTo(BigDecimal.ZERO) < 0
                 ? ThemeColors.color("NeuralArc.pnlNegative", new Color(183, 28, 28))
                 : ThemeColors.color("NeuralArc.pnlPositive", new Color(27, 94, 32)));
-        pnlPercentValue.setText(Monetary.round(snapshot.profitLossPercent()) + "%");
+        pnlPercentValue.setText(Monetary.round(basis.pnlPercent()) + "%");
         progressValue.setText(Monetary.round(snapshot.targetProgressPercent()) + "%");
     }
 

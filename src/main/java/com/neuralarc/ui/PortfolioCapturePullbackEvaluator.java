@@ -16,7 +16,8 @@ final class PortfolioCapturePullbackEvaluator {
         if (snapshot == null || config == null || config.mode() != PortfolioCaptureMode.PULLBACK_MONITORING) {
             return new Evaluation(false, peak, false);
         }
-        BigDecimal currentProfit = Monetary.round(snapshot.unrealizedPnl());
+        // Measured on the net open P&L, like the target, so excluded losers cannot inflate the peak.
+        BigDecimal currentProfit = Monetary.round(snapshot.targetBasis().pnl());
         boolean nowArmed = armed || minimumReached(snapshot, config);
         if (!nowArmed) {
             return new Evaluation(false, peak, false);
@@ -50,8 +51,8 @@ final class PortfolioCapturePullbackEvaluator {
             return false;
         }
         BigDecimal current = config.targetType() == PortfolioCaptureTargetType.PROFIT_PERCENT
-                ? snapshot.profitLossPercent()
-                : snapshot.unrealizedPnl();
+                ? snapshot.targetBasis().pnlPercent()
+                : snapshot.targetBasis().pnl();
         return current.compareTo(BigDecimal.ZERO) > 0 && current.compareTo(target) >= 0;
     }
 

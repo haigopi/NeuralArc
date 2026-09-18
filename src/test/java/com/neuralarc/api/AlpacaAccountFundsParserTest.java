@@ -26,4 +26,29 @@ class AlpacaAccountFundsParserTest {
 
         assertEquals(new BigDecimal("20000.00"), AlpacaAccountFundsParser.availableFunds(json));
     }
+
+    @Test
+    void readsEquityAndThePreviousCloseEquity() {
+        java.util.Optional<AlpacaAccountEquity> equity = AlpacaAccountFundsParser.equity(
+                new JSONObject("{\"equity\":\"20512.40\",\"last_equity\":\"20200.30\",\"cash\":\"512.40\"}"));
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                new AlpacaAccountEquity(new java.math.BigDecimal("20512.40"), new java.math.BigDecimal("20200.30")),
+                equity.orElseThrow());
+    }
+
+    @Test
+    void anAccountWithoutEquityIsNotReadAsZero() {
+        org.junit.jupiter.api.Assertions.assertTrue(AlpacaAccountFundsParser.equity(new JSONObject("{}")).isEmpty());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                AlpacaAccountFundsParser.equity(new JSONObject("{\"equity\":\"0\"}")).isEmpty());
+    }
+
+    @Test
+    void aMissingPreviousCloseUsesTodaysEquityAsTheBaseline() {
+        AlpacaAccountEquity equity = AlpacaAccountFundsParser.equity(
+                new JSONObject("{\"equity\":\"1000\"}")).orElseThrow();
+
+        org.junit.jupiter.api.Assertions.assertEquals(equity.equity(), equity.lastEquity());
+    }
 }

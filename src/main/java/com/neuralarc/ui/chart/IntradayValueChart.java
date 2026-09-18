@@ -1,7 +1,7 @@
 package com.neuralarc.ui.chart;
 
 import com.formdev.flatlaf.FlatLaf;
-import com.neuralarc.model.PortfolioValueSample;
+import com.neuralarc.model.IntradayValueSample;
 import com.neuralarc.util.FontLoader;
 import com.neuralarc.util.Monetary;
 
@@ -28,30 +28,41 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Today's total portfolio value as a single line, one point per minute.
+ * A value over today as a single line, one point per minute: the broker account's equity at the top of
+ * the window, one workspace's holdings beside the grid.
  *
- * <p>The header states the latest value and the change since the day's first sample, with an explicit
- * sign so the direction never rests on colour alone. The plot keeps a thin line over a faint area,
- * three recessive gridlines and time labels at the ends; hovering shows a crosshair and the exact
- * reading for that minute. One series, so the title names it and there is no legend.
+ * <p>The header states the latest value and the day's change against its baseline (the previous
+ * close), with an explicit sign so the direction never rests on colour alone. The baseline is drawn as a
+ * faint dashed reference line, so above or below it reads as up or down on the day at a glance. The
+ * plot keeps a thin line over a faint area, recessive gridlines and time labels at the ends; hovering
+ * shows a crosshair and the exact reading for that minute. One series, so the title names it and
+ * there is no legend.
  */
-public final class PortfolioValueChart extends JComponent {
+public final class IntradayValueChart extends JComponent {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("h:mm a", Locale.US);
     private static final int LEFT_AXIS = 58;
     private static final int HEADER = 40;
     private static final int BOTTOM_AXIS = 20;
 
     private final ZoneId displayZone;
-    private List<PortfolioValueSample> samples = List.of();
+    private List<IntradayValueSample> samples = List.of();
     private String scopeLabel = "";
+    private final String title;
+    private String baselineLabel = "Prev close";
     private int hoverIndex = -1;
 
-    public PortfolioValueChart(ZoneId displayZone) {
+    public IntradayValueChart(ZoneId displayZone) {
+        this("Account Equity", displayZone);
+    }
+
+    /** {@code title} names the line, e.g. "Account Equity" or "Workspace Value". */
+    public IntradayValueChart(String title, ZoneId displayZone) {
+        this.title = title == null ? "" : title;
         this.displayZone = displayZone == null ? ZoneId.systemDefault() : displayZone;
         setOpaque(false);
         setPreferredSize(new Dimension(420, 180));
         setMinimumSize(new Dimension(220, 120));
-        getAccessibleContext().setAccessibleName("Portfolio value today");
+        getAccessibleContext().setAccessibleName(this.title + " today");
         MouseAdapter hover = new MouseAdapter() {
             @Override
             public void mouseMoved(MouseEvent event) {
@@ -82,14 +93,21 @@ public final class PortfolioValueChart extends JComponent {
     }
 
     /** Replaces the series; {@code scopeLabel} names what it covers, e.g. "Paper · all workspaces". */
-    public void setSamples(List<PortfolioValueSample> samples, String scopeLabel) {
-        List<PortfolioValueSample> next = samples == null ? List.of() : List.copyOf(samples);
+    public void setSamples(List<IntradayValueSample> samples, String scopeLabel) {
+        setSamples(samples, scopeLabel, "Prev close");
+    }
+
+    /** As above, naming the dashed baseline, e.g. "Prev close" or "Day start". */
+    public void setSamples(List<IntradayValueSample> samples, String scopeLabel, String baselineLabel) {
+        List<IntradayValueSample> next = samples == null ? List.of() : List.copyOf(samples);
         String nextLabel = scopeLabel == null ? "" : scopeLabel;
-        if (next.equals(this.samples) && nextLabel.equals(this.scopeLabel)) {
+        String nextBaseline = baselineLabel == null || baselineLabel.isBlank() ? "Prev close" : baselineLabel;
+        if (next.equals(this.samples) && nextLabel.equals(this.scopeLabel) && nextBaseline.equals(this.baselineLabel)) {
             return;
         }
         this.samples = next;
         this.scopeLabel = nextLabel;
+        this.baselineLabel = nextBaseline;
         if (hoverIndex >= next.size()) {
             hoverIndex = -1;
         }
@@ -97,7 +115,7 @@ public final class PortfolioValueChart extends JComponent {
         repaint();
     }
 
-    List<PortfolioValueSample> samples() {
+    List<IntradayValueSample> samples() {
         return samples;
     }
 
@@ -106,8 +124,8 @@ public final class PortfolioValueChart extends JComponent {
         if (samples.isEmpty()) {
             return "Waiting for the first reading";
         }
-        PortfolioValueSample last = samples.get(samples.size() - 1);
-        return money(last.marketValue()) + "  " + change(samples.get(0).marketValue(), last.marketValue()) + " today";
+        IntradayValueSample last = samples.get(samples.size() - 1);
+        return money(last.value()) + "  " + change(last.baseline(), last.value()) + " today";
     }
 
     /** Signed change from {@code start} to {@code value}, with its percent: "+$312.10 (+1.54%)". */
@@ -174,7 +192,7 @@ public final class PortfolioValueChart extends JComponent {
             if (samples.isEmpty()) {
                 g.setFont(FontLoader.ui(Font.PLAIN, 11f));
                 g.setColor(mutedText());
-                String message = "The first point appears within a minute.";
+                String message = "The first point appears once the Alpaca account is read.";
                 FontMetrics metrics = g.getFontMetrics();
                 g.drawString(message, (plotLeft + right - metrics.stringWidth(message)) / 2, (plotTop + plotBottom) / 2);
                 return;
@@ -189,30 +207,32 @@ public final class PortfolioValueChart extends JComponent {
         g.setFont(FontLoader.ui(Font.BOLD, 12f));
         FontMetrics titleMetrics = g.getFontMetrics();
         g.setColor(primaryText());
-        g.drawString("Portfolio Value", x, y + titleMetrics.getAscent());
-        int afterTitle = x + titleMetrics.stringWidth("Portfolio Value") + 8;
+        g.drawString(title, x, y + titleMetrics.getAscent());
+        int afterTitle = x + titleMetrics.stringWidth(title) + 8;
         g.setFont(FontLoader.ui(Font.PLAIN, 11f));
         g.setColor(mutedText());
         g.drawString("Today" + (scopeLabel.isBlank() ? "" : " · " + scopeLabel), afterTitle, y + titleMetrics.getAscent());
         if (samples.isEmpty()) {
             return;
         }
-        PortfolioValueSample last = samples.get(samples.size() - 1);
+        IntradayValueSample last = samples.get(samples.size() - 1);
         int line2 = y + titleMetrics.getHeight() + g.getFontMetrics().getAscent() + 2;
         g.setFont(FontLoader.ui(Font.BOLD, 15f));
-        String value = money(last.marketValue());
+        String value = money(last.value());
         g.setColor(primaryText());
         g.drawString(value, x, line2 + 2);
         int afterValue = x + g.getFontMetrics().stringWidth(value) + 10;
         g.setFont(FontLoader.ui(Font.BOLD, 11f));
-        BigDecimal delta = last.marketValue().subtract(samples.get(0).marketValue());
-        g.setColor(ChartPalette.signColor(delta.doubleValue()));
-        g.drawString(change(samples.get(0).marketValue(), last.marketValue()), afterValue, line2 + 2);
+        g.setColor(ChartPalette.signColor(last.dayChange().doubleValue()));
+        String dayChange = change(last.baseline(), last.value()) + " today";
+        g.drawString(dayChange, afterValue, line2 + 2);
     }
 
     private void paintPlot(Graphics2D g, int left, int top, int right, int bottom) {
-        double min = samples.stream().mapToDouble(s -> s.marketValue().doubleValue()).min().orElse(0);
-        double max = samples.stream().mapToDouble(s -> s.marketValue().doubleValue()).max().orElse(0);
+        double previousClose = samples.get(samples.size() - 1).baseline().doubleValue();
+        // The previous close is in range, so its reference line is always on the plot.
+        double min = Math.min(previousClose, samples.stream().mapToDouble(s -> s.value().doubleValue()).min().orElse(0));
+        double max = Math.max(previousClose, samples.stream().mapToDouble(s -> s.value().doubleValue()).max().orElse(0));
         double pad = Math.max((max - min) * 0.12, Math.max(1, Math.abs(max) * 0.002));
         double low = min - pad;
         double high = max + pad;
@@ -238,8 +258,17 @@ public final class PortfolioValueChart extends JComponent {
             xs[i] = samples.size() == 1
                     ? right
                     : left + (int) Math.round((samples.get(i).minute().getEpochSecond() - start) * (right - left) / (double) span);
-            ys[i] = yFor(samples.get(i).marketValue().doubleValue(), low, high, top, bottom);
+            ys[i] = yFor(samples.get(i).value().doubleValue(), low, high, top, bottom);
         }
+
+        int closeY = yFor(previousClose, low, high, top, bottom);
+        g.setColor(withAlpha(mutedText(), 170));
+        g.setStroke(new BasicStroke(1f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 1f, new float[]{4f, 4f}, 0f));
+        g.drawLine(left, closeY, right, closeY);
+        g.setStroke(new BasicStroke(1f));
+        String closeLabel = baselineLabel;
+        g.drawString(closeLabel, right - metrics.stringWidth(closeLabel),
+                closeY < top + metrics.getHeight() ? closeY + metrics.getAscent() + 2 : closeY - 3);
 
         Color line = lineColor();
         if (samples.size() > 1) {
@@ -286,12 +315,11 @@ public final class PortfolioValueChart extends JComponent {
         g.setStroke(new BasicStroke(1f));
         dot(g, x, y, line);
 
-        PortfolioValueSample sample = samples.get(hoverIndex);
+        IntradayValueSample sample = samples.get(hoverIndex);
         String[] rows = {
                 TIME.format(sample.minute().atZone(displayZone)),
-                money(sample.marketValue()),
-                change(samples.get(0).marketValue(), sample.marketValue()) + " since first reading",
-                "Unrealized P/L " + signedMoney(sample.unrealizedPnl())
+                money(sample.value()),
+                change(sample.baseline(), sample.value()) + " since " + baselineLabel.toLowerCase(java.util.Locale.US)
         };
         g.setFont(FontLoader.ui(Font.PLAIN, 11f));
         FontMetrics metrics = g.getFontMetrics();
@@ -343,10 +371,6 @@ public final class PortfolioValueChart extends JComponent {
 
     private static String money(BigDecimal value) {
         return (value.signum() < 0 ? "-$" : "$") + String.format(Locale.US, "%,.2f", Monetary.round(value).abs());
-    }
-
-    private static String signedMoney(BigDecimal value) {
-        return (value.signum() < 0 ? "-$" : "+$") + String.format(Locale.US, "%,.2f", Monetary.round(value).abs());
     }
 
     private static boolean dark() {

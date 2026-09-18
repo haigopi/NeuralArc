@@ -65,6 +65,11 @@ public interface AlpacaClient {
         return Optional.empty();
     }
 
+    /** Account equity now and at the previous close; empty when the account cannot be read. */
+    default Optional<AlpacaAccountEquity> getAccountEquity() {
+        return Optional.empty();
+    }
+
     BigDecimal getLatestPrice(String symbol);
 
     default List<MarketBar> getDailyBars(String symbol, LocalDate startDate, LocalDate endDate) {

@@ -176,6 +176,47 @@ class PortfolioCaptureCalculatorTest {
         assertFalse(calculator.targetReached(snapshot, PortfolioCaptureConfig.captureNow()));
     }
 
+    @Test
+    void excludingLossesDoesNotLetTheWinnersAloneMeetTheTarget() {
+        // Regression guard for the $454 target: winners were about +$726, losers about -$475, so net open
+        // P&L was about $250. Measuring the target on the winners alone fired it and sold every winner.
+        ManagedStrategy winner = strategy("s1", "AAPL", StrategyStatus.ACTIVE, 100, "100", "107.26");
+        ManagedStrategy loser = strategy("s2", "MSFT", StrategyStatus.ACTIVE, 100, "100", "95.25");
+        PortfolioCaptureConfig config = config(PortfolioCaptureTargetType.PROFIT_AMOUNT, "454", false);
+
+        PortfolioCaptureSnapshot snapshot = calculator.calculate(List.of(winner, loser), config);
+
+        assertEquals(new BigDecimal("251.00"), snapshot.targetBasis().pnl(), "the target sees the net P&L");
+        assertFalse(calculator.targetReached(snapshot, config), "$251 net has not met a $454 target");
+    }
+
+    @Test
+    void onceTheNetTargetIsMetExcludingLossesSellsOnlyTheWinners() {
+        ManagedStrategy winner = strategy("s1", "AAPL", StrategyStatus.ACTIVE, 100, "100", "110");
+        ManagedStrategy loser = strategy("s2", "MSFT", StrategyStatus.ACTIVE, 100, "100", "99");
+        PortfolioCaptureConfig config = config(PortfolioCaptureTargetType.PROFIT_AMOUNT, "454", false);
+
+        PortfolioCaptureSnapshot snapshot = calculator.calculate(List.of(winner, loser), config);
+
+        assertEquals(new BigDecimal("900.00"), snapshot.targetBasis().pnl());
+        assertTrue(calculator.targetReached(snapshot, config));
+        assertEquals(List.of("AAPL"), snapshot.rows().stream().map(PortfolioCaptureSnapshot.Row::symbol).toList(),
+                "the losing position is kept open");
+        assertEquals(new BigDecimal("1000.00"), snapshot.unrealizedPnl(), "the sale realizes the winners' profit");
+    }
+
+    @Test
+    void aPercentTargetWithLossesExcludedIsMeasuredOnTheWholePortfolio() {
+        ManagedStrategy winner = strategy("s1", "AAPL", StrategyStatus.ACTIVE, 10, "100", "110");   // +10%
+        ManagedStrategy loser = strategy("s2", "MSFT", StrategyStatus.ACTIVE, 10, "100", "92");     // -8%
+        PortfolioCaptureConfig config = config(PortfolioCaptureTargetType.PROFIT_PERCENT, "5", false);
+
+        PortfolioCaptureSnapshot snapshot = calculator.calculate(List.of(winner, loser), config);
+
+        assertEquals(new BigDecimal("1.00"), snapshot.targetBasis().pnlPercent(), "+$20 on $2,000 is 1%, not 10%");
+        assertFalse(calculator.targetReached(snapshot, config));
+    }
+
     private PortfolioCaptureConfig config(PortfolioCaptureTargetType targetType, String target, boolean includeLosses) {
         return new PortfolioCaptureConfig(
                 PortfolioCaptureMode.TARGET_MONITORING,

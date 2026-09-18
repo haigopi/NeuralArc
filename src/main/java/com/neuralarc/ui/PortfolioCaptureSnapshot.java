@@ -16,6 +16,12 @@ import java.util.List;
  * {@code profitLossPercent} is that figure over {@code totalInvestment}, the capital still at risk.
  * Keeping the two apart matters: folding realized P&amp;L into the target basis previously let banked
  * profit from closed trades satisfy a percent target and liquidate open positions at a loss.
+ *
+ * <p>{@code rows} and their totals are what a liquidation <em>sells</em>; {@link #targetBasis()} is what
+ * the target is <em>measured on</em>: the net open P&amp;L of every eligible position, losers included.
+ * The two differ when losses are excluded — then only the winners are sold, but the target still has
+ * to be met by the portfolio as a whole. Measuring it on the winners alone fired a $454 target while
+ * the portfolio's net P&amp;L was about $250, and sold every profitable position.
  */
 record PortfolioCaptureSnapshot(
         BigDecimal totalInvestment,
@@ -26,8 +32,32 @@ record PortfolioCaptureSnapshot(
         BigDecimal targetProgressPercent,
         int eligibleCount,
         List<Row> rows,
-        Instant calculatedAt
+        Instant calculatedAt,
+        TargetBasis targetBasis
 ) {
+    /** A snapshot whose target is measured on exactly the rows it sells. */
+    PortfolioCaptureSnapshot(
+            BigDecimal totalInvestment,
+            BigDecimal marketValue,
+            BigDecimal realizedPnl,
+            BigDecimal unrealizedPnl,
+            BigDecimal profitLossPercent,
+            BigDecimal targetProgressPercent,
+            int eligibleCount,
+            List<Row> rows,
+            Instant calculatedAt
+    ) {
+        this(totalInvestment, marketValue, realizedPnl, unrealizedPnl, profitLossPercent, targetProgressPercent,
+                eligibleCount, rows, calculatedAt, new TargetBasis(totalInvestment, marketValue, unrealizedPnl));
+    }
+
+    /** The net open position of every eligible row, winners and losers alike: what the target is measured on. */
+    record TargetBasis(BigDecimal investment, BigDecimal marketValue, BigDecimal pnl) {
+        BigDecimal pnlPercent() {
+            return Monetary.round(percent(pnl, investment));
+        }
+    }
+
     static PortfolioCaptureSnapshot empty() {
         return new PortfolioCaptureSnapshot(
                 Monetary.zero(),

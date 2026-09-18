@@ -40,6 +40,10 @@ final class PortfolioCaptureCalculator {
         // is reported but is NOT capturable, so it must never contribute to the target basis.
         BigDecimal realized = Monetary.zero();
         BigDecimal unrealized = Monetary.zero();
+        // The target is measured on every eligible row, losers included, whether or not losers are sold.
+        BigDecimal basisInvestment = Monetary.zero();
+        BigDecimal basisMarketValue = Monetary.zero();
+        BigDecimal basisPnl = Monetary.zero();
 
         for (ManagedStrategy entry : strategies) {
             if (entry == null || entry.strategy == null) {
@@ -54,8 +58,11 @@ final class PortfolioCaptureCalculator {
                 continue;
             }
             BigDecimal rowPnl = pnlRow.unrealizedPnl();
+            basisInvestment = basisInvestment.add(pnlRow.investment());
+            basisMarketValue = basisMarketValue.add(pnlRow.marketValue());
+            basisPnl = basisPnl.add(rowPnl);
             if (!includeLosses && rowPnl.compareTo(BigDecimal.ZERO) < 0) {
-                continue;
+                continue; // Kept, not sold — but it still counted against the target above.
             }
             rows.add(new PortfolioCaptureSnapshot.Row(
                     pnlRow.strategyId(),
@@ -77,7 +84,9 @@ final class PortfolioCaptureCalculator {
         realized = Monetary.round(realized);
         unrealized = Monetary.round(unrealized);
         BigDecimal pnlPercent = Monetary.round(PortfolioCaptureSnapshot.percent(unrealized, investment));
-        BigDecimal progress = targetProgress(unrealized, pnlPercent, config);
+        PortfolioCaptureSnapshot.TargetBasis basis = new PortfolioCaptureSnapshot.TargetBasis(
+                Monetary.round(basisInvestment), Monetary.round(basisMarketValue), Monetary.round(basisPnl));
+        BigDecimal progress = targetProgress(basis.pnl(), basis.pnlPercent(), config);
         return new PortfolioCaptureSnapshot(
                 investment,
                 marketValue,
@@ -87,16 +96,18 @@ final class PortfolioCaptureCalculator {
                 progress,
                 rows.size(),
                 List.copyOf(rows),
-                Instant.now()
+                Instant.now(),
+                basis
         );
     }
 
     /**
-     * Whether the configured profit target is actually met by the P&L a liquidation would realize
-     * right now. Every precondition is checked explicitly because this is the gate that sells real
-     * positions: there must be a positive target, at least one row to sell, and the open P&L of those
-     * rows must itself be in profit. Banked realized P&L is deliberately excluded — it cannot be
-     * captured a second time, and counting it once allowed a losing portfolio to trip the target.
+     * Whether the configured profit target is met by the portfolio's net open P&L — every eligible
+     * position, losers included, even when losers are excluded from the sale. Every precondition is
+     * checked explicitly because this is the gate that sells real positions: there must be a positive
+     * target, at least one row to sell, and the net open P&L must itself be in profit. Banked realized
+     * P&L is deliberately excluded — it cannot be captured a second time, and counting it once allowed
+     * a losing portfolio to trip the target.
      */
     boolean targetReached(PortfolioCaptureSnapshot snapshot, PortfolioCaptureConfig config) {
         if (snapshot == null || config == null || config.mode() == PortfolioCaptureMode.CAPTURE_NOW) {
@@ -109,9 +120,10 @@ final class PortfolioCaptureCalculator {
         if (snapshot.eligibleCount() <= 0 || snapshot.rows().isEmpty()) {
             return false;
         }
+        PortfolioCaptureSnapshot.TargetBasis basis = snapshot.targetBasis();
         BigDecimal capturable = config.targetType() == PortfolioCaptureTargetType.PROFIT_PERCENT
-                ? snapshot.profitLossPercent()
-                : snapshot.unrealizedPnl();
+                ? basis.pnlPercent()
+                : basis.pnl();
         if (capturable.compareTo(BigDecimal.ZERO) <= 0) {
             return false;
         }

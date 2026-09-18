@@ -205,6 +205,8 @@ public final class AppDatabase {
         applyMigration("017_range_rider_schedules", this::migration017);
         applyMigration("018_profit_shield_schedules", this::migration018);
         applyMigration("019_portfolio_value_samples", this::migration019);
+        applyMigration("020_account_equity_samples", this::migration020);
+        applyMigration("021_workspace_value_samples", this::migration021);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -606,6 +608,44 @@ public final class AppDatabase {
                     )""");
             st.execute("CREATE INDEX IF NOT EXISTS idx_portfolio_value_samples_day "
                     + "ON portfolio_value_samples(mode, session_date)");
+        }
+    }
+
+    /**
+     * The intraday chart plots broker account equity, not position market value. The 019 table held
+     * market value for one day before release; its readings would read as equity, so it goes.
+     */
+    private void migration020() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS account_equity_samples (
+                        mode          TEXT    NOT NULL,
+                        session_date  TEXT    NOT NULL,
+                        minute_epoch  INTEGER NOT NULL,
+                        equity        TEXT    NOT NULL,
+                        last_equity   TEXT    NOT NULL,
+                        PRIMARY KEY (mode, minute_epoch)
+                    )""");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_account_equity_samples_day "
+                    + "ON account_equity_samples(mode, session_date)");
+            st.execute("DROP TABLE IF EXISTS portfolio_value_samples");
+        }
+    }
+
+    /** One row per mode, workspace and minute: each workspace's intraday holdings value. */
+    private void migration021() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS workspace_value_samples (
+                        mode          TEXT    NOT NULL,
+                        workspace_id  TEXT    NOT NULL,
+                        session_date  TEXT    NOT NULL,
+                        minute_epoch  INTEGER NOT NULL,
+                        market_value  TEXT    NOT NULL,
+                        PRIMARY KEY (mode, workspace_id, minute_epoch)
+                    )""");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_workspace_value_samples_day "
+                    + "ON workspace_value_samples(mode, workspace_id, session_date)");
         }
     }
 

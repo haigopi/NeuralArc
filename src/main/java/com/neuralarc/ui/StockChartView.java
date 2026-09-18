@@ -261,52 +261,7 @@ final class StockChartView extends JPanel {
     }
 
     private static JTextArea wrapping(String text, float size, Color color) {
-        return new WrappingText(text, size, color);
-    }
-
-    /**
-     * A read-only paragraph that wraps at word boundaries. Its preferred height is measured at the
-     * column's real width: a plain wrapping text area reports its height before it has been given a
-     * width, so a layout manager would size every paragraph as a single line.
-     */
-    private static final class WrappingText extends JTextArea {
-        private static final int FALLBACK_WIDTH = GUIDE_WIDTH - 40;
-
-        private WrappingText(String text, float size, Color color) {
-            super(text);
-            setLineWrap(true);
-            setWrapStyleWord(true);
-            setEditable(false);
-            setFocusable(false);
-            setOpaque(false);
-            setBorder(BorderFactory.createEmptyBorder());
-            setFont(FontLoader.ui(Font.PLAIN, size));
-            setForeground(color);
-            setAlignmentX(Component.LEFT_ALIGNMENT);
-        }
-
-        @Override
-        public Dimension getPreferredSize() {
-            int width = availableWidth();
-            if (getWidth() != width) {
-                super.setSize(width, Short.MAX_VALUE); // Wrap to this width before measuring.
-            }
-            return new Dimension(width, super.getPreferredSize().height);
-        }
-
-        @Override
-        public Dimension getMaximumSize() {
-            return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);
-        }
-
-        private int availableWidth() {
-            Container parent = getParent();
-            if (parent == null || parent.getWidth() <= 0) {
-                return FALLBACK_WIDTH;
-            }
-            Insets insets = parent.getInsets();
-            return Math.max(40, parent.getWidth() - insets.left - insets.right);
-        }
+        return new WrappingText(text, size, color, GUIDE_WIDTH - 40);
     }
 
     private static Color toneColor(StockChartReadings.Tone tone) {

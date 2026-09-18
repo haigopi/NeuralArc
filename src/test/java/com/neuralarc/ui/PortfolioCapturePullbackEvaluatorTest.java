@@ -79,7 +79,10 @@ class PortfolioCapturePullbackEvaluatorTest {
 
     private PortfolioCaptureSnapshot snapshot(String pnl, String percent) {
         // One open row: arming requires something to sell, and the row values themselves are not read.
-        return new PortfolioCaptureSnapshot(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+        // The investment the two figures imply, so the target basis derives the same percent.
+        BigDecimal investment = new BigDecimal(pnl).multiply(BigDecimal.valueOf(100))
+                .divide(new BigDecimal(percent), 2, java.math.RoundingMode.HALF_UP);
+        return new PortfolioCaptureSnapshot(investment, BigDecimal.ZERO, BigDecimal.ZERO,
                 new BigDecimal(pnl), new BigDecimal(percent), BigDecimal.ZERO, 1,
                 List.of(new PortfolioCaptureSnapshot.Row("s1", "AAPL", 1, BigDecimal.ONE, BigDecimal.ONE,
                         BigDecimal.ONE, BigDecimal.ONE, new BigDecimal(pnl))),

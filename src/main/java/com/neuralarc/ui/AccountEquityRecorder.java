@@ -1,7 +1,7 @@
 package com.neuralarc.ui;
 
-import com.neuralarc.db.SqlitePortfolioValueRepository;
-import com.neuralarc.model.PortfolioValueSample;
+import com.neuralarc.db.SqliteAccountEquityRepository;
+import com.neuralarc.model.IntradayValueSample;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.util.Monetary;
 
@@ -19,24 +19,24 @@ import java.util.concurrent.Executor;
 import java.util.function.Consumer;
 
 /**
- * Keeps today's minute-by-minute portfolio value per trading mode and persists each minute.
+ * Keeps today's minute-by-minute account equity per trading mode and persists each minute.
  *
  * <p>Readings arrive more often than once a minute; the last reading of a minute is the one kept, so
  * the stored series has exactly one point per minute. The day is the US market session day, so a
  * series does not split at the operator's local midnight. The series lives in memory for the chart
  * (read on the EDT) and every write goes to the database on {@code writer}, off the EDT.
  */
-final class PortfolioValueRecorder {
+final class AccountEquityRecorder {
     static final ZoneId SESSION_ZONE = ZoneId.of("America/New_York");
 
-    private final SqlitePortfolioValueRepository repository;
+    private final SqliteAccountEquityRepository repository;
     private final Executor writer;
     private final Clock clock;
     private final Consumer<String> log;
-    private final Map<StrategyMode, List<PortfolioValueSample>> today = new EnumMap<>(StrategyMode.class);
+    private final Map<StrategyMode, List<IntradayValueSample>> today = new EnumMap<>(StrategyMode.class);
     private LocalDate loadedDay;
 
-    PortfolioValueRecorder(SqlitePortfolioValueRepository repository, Executor writer, Clock clock, Consumer<String> log) {
+    AccountEquityRecorder(SqliteAccountEquityRepository repository, Executor writer, Clock clock, Consumer<String> log) {
         this.repository = repository;
         this.writer = writer;
         this.clock = clock;
@@ -44,19 +44,19 @@ final class PortfolioValueRecorder {
     }
 
     /**
-     * Records a reading for the current minute. An all-zero reading is dropped: it is what the grid
-     * reports before positions have loaded at startup, and plotting it would draw a false crash to $0.
+     * Records a reading for the current minute. A missing or non-positive equity is dropped: it means the
+     * account could not be read, and plotting it would draw a false crash to $0.
      */
-    synchronized void record(StrategyMode mode, BigDecimal marketValue, BigDecimal investedValue) {
-        if (mode == null || marketValue == null || investedValue == null
-                || (marketValue.signum() == 0 && investedValue.signum() == 0)) {
+    synchronized void record(StrategyMode mode, BigDecimal equity, BigDecimal lastEquity) {
+        if (mode == null || equity == null || equity.signum() <= 0) {
             return;
         }
+        BigDecimal previousClose = lastEquity == null || lastEquity.signum() <= 0 ? equity : lastEquity;
         Instant now = Instant.now(clock);
         LocalDate day = sessionDay(now);
-        List<PortfolioValueSample> series = series(mode, day);
-        PortfolioValueSample sample = new PortfolioValueSample(
-                now.truncatedTo(ChronoUnit.MINUTES), Monetary.round(marketValue), Monetary.round(investedValue));
+        List<IntradayValueSample> series = series(mode, day);
+        IntradayValueSample sample = new IntradayValueSample(
+                now.truncatedTo(ChronoUnit.MINUTES), Monetary.round(equity), Monetary.round(previousClose));
         if (!series.isEmpty() && series.get(series.size() - 1).minute().equals(sample.minute())) {
             series.set(series.size() - 1, sample);
         } else {
@@ -66,25 +66,25 @@ final class PortfolioValueRecorder {
             try {
                 repository.save(mode, day, sample);
             } catch (RuntimeException ex) {
-                log.accept("[Portfolio Chart] Could not save the portfolio value sample: " + ex.getMessage());
+                log.accept("[Equity Chart] Could not save the account equity sample: " + ex.getMessage());
             }
         });
     }
 
     /** Today's samples for {@code mode}, oldest first. */
-    synchronized List<PortfolioValueSample> today(StrategyMode mode) {
+    synchronized List<IntradayValueSample> today(StrategyMode mode) {
         return List.copyOf(series(mode, sessionDay(Instant.now(clock))));
     }
 
-    private List<PortfolioValueSample> series(StrategyMode mode, LocalDate day) {
+    private List<IntradayValueSample> series(StrategyMode mode, LocalDate day) {
         if (!day.equals(loadedDay)) {
             today.clear();
             loadedDay = day;
             writer.execute(() -> {
                 try {
-                    repository.pruneBefore(day.minusDays(SqlitePortfolioValueRepository.RETENTION_DAYS));
+                    repository.pruneBefore(day.minusDays(SqliteAccountEquityRepository.RETENTION_DAYS));
                 } catch (RuntimeException ex) {
-                    log.accept("[Portfolio Chart] Could not prune old portfolio value samples: " + ex.getMessage());
+                    log.accept("[Equity Chart] Could not prune old account equity samples: " + ex.getMessage());
                 }
             });
         }

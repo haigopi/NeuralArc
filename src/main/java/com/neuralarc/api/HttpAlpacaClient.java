@@ -270,6 +270,21 @@ public class HttpAlpacaClient implements AlpacaClient {
     }
 
     @Override
+    public Optional<AlpacaAccountEquity> getAccountEquity() {
+        HttpRequest request = baseRequest(tradingBaseUrl + "/v2/account").GET().build();
+        Optional<String> body = executeBody(request);
+        if (body.isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            return AlpacaAccountFundsParser.equity(new JSONObject(body.get()));
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "Failed to parse account equity", ex);
+            return Optional.empty();
+        }
+    }
+
+    @Override
     public BigDecimal getLatestPrice(String symbol) {
         if (symbol == null || symbol.isBlank()) {
             return Monetary.zero();

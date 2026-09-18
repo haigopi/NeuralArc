@@ -260,7 +260,7 @@ final class PortfolioCaptureController {
                     lastSnapshot, activeConfig, pullbackArmed, peakProfit);
             if (!pullbackArmed && evaluation.armed()) {
                 gateway.log("[Portfolio Liquidation] Pullback monitoring armed at profit=$"
-                        + Monetary.round(lastSnapshot.unrealizedPnl()) + ".");
+                        + Monetary.round(lastSnapshot.targetBasis().pnl()) + ".");
             }
             pullbackArmed = evaluation.armed();
             peakProfit = evaluation.peakProfit();
@@ -537,7 +537,9 @@ final class PortfolioCaptureController {
                 snapshot.targetProgressPercent(),
                 rows.size(),
                 rows,
-                snapshot.calculatedAt()
+                snapshot.calculatedAt(),
+                // Dropping manually sold rows changes what is sold, not what the target was measured on.
+                snapshot.targetBasis()
         );
     }
 
