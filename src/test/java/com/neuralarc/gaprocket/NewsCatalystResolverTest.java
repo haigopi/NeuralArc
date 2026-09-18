@@ -241,4 +241,38 @@ class NewsCatalystResolverTest {
                 new BigDecimal("50"), new BigDecimal("46"), new BigDecimal("51"), new BigDecimal("48"),
                 null, null, true, false, new BigDecimal("0.5"), true, new BigDecimal("49"));
     }
+
+    @Test
+    void anExhaustedOpenAiQuotaStopsFurtherCallsForTheRestOfTheScan() {
+        // Regression guard: every symbol used to call OpenAI and log its own 429, although an account
+        // with no credit fails the same way every time.
+        int[] calls = {0};
+        List<String> log = new java.util.ArrayList<>();
+        AiRecommendationProvider outOfCredit = new AiRecommendationProvider() {
+            @Override
+            public AiRecommendationResponse analyzeStock(AiRecommendationRequest request) throws AiRecommendationException {
+                calls[0]++;
+                throw new AiRecommendationException("OpenAI request failed with HTTP 429 (insufficient_quota: no credit)");
+            }
+
+            @Override
+            public AiProviderHealthStatus healthCheck() {
+                return null;
+            }
+
+            @Override
+            public AiProviderType getProviderType() {
+                return AiProviderType.OPENAI;
+            }
+        };
+        NewsCatalystResolver resolver = new NewsCatalystResolver(outOfCredit, Clock.systemUTC(), log::add);
+
+        resolver.enrich(candidate("AAA"));
+        resolver.enrich(candidate("BBB"));
+        resolver.enrich(candidate("CCC"));
+
+        assertEquals(1, calls[0]);
+        assertEquals(1, log.size(), log.toString());
+        assertTrue(log.get(0).contains("insufficient_quota"), log.toString());
+    }
 }

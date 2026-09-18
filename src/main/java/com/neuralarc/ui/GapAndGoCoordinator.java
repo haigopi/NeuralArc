@@ -54,6 +54,7 @@ final class GapAndGoCoordinator {
         int defaultStrategyPollingSeconds();
         String selectedWorkspaceId();
         boolean isGapRocketWorkspaceSelected();
+        boolean workspaceExists(String workspaceId);
         void log(String message);
         void setScanButtonsEnabled(boolean enabled);
         void onRecommendationsApplied(String workspaceId, String firstAddedStrategyId);
@@ -97,10 +98,23 @@ final class GapAndGoCoordinator {
         return RECOMMENDED_STATUS.equalsIgnoreCase(status) || MONITORING_STATUS.equalsIgnoreCase(status);
     }
 
-    /** Load any persisted enabled schedule and start the premarket scheduler. */
+    /**
+     * Load any persisted enabled schedule and start the premarket scheduler. A schedule whose workspace
+     * was deleted is removed instead: it would otherwise keep scanning — and auto-executing — every
+     * trading morning for a workspace that no longer exists.
+     */
     void start() {
         scheduleRepository.findAll().stream()
                 .filter(GapAndGoSchedule::enabled)
+                .filter(schedule -> {
+                    if (ui.workspaceExists(schedule.workspaceId())) {
+                        return true;
+                    }
+                    scheduleRepository.deleteById(schedule.id());
+                    ui.log("[Gap Rocket] Removed the autonomous schedule of deleted workspace "
+                            + schedule.workspaceId() + "; it will no longer scan.");
+                    return false;
+                })
                 .forEach(schedule -> {
                     GapAndGoScheduleService service = scheduleServiceForWorkspace(schedule.workspaceId());
                     service.setSchedule(schedule);
@@ -177,15 +191,34 @@ final class GapAndGoCoordinator {
         if (workspaceId == null) {
             return;
         }
-        GapAndGoScheduleService selectedScheduleService = scheduleServicesByWorkspace.get(workspaceId);
-        GapAndGoSchedule existing = selectedScheduleService == null ? null : selectedScheduleService.schedule();
-        if (existing == null) {
-            return;
+        if (cancelScheduleForWorkspace(workspaceId)) {
+            ui.onScheduleChanged(null);
         }
-        selectedScheduleService.clearSchedule();
-        scheduleRepository.deleteById(existing.id());
-        ui.onScheduleChanged(null);
-        ui.log("[Gap Rocket] Autonomous schedule cancelled.");
+    }
+
+    /**
+     * Stops and deletes {@code workspaceId}'s schedule, including one persisted but not loaded.
+     *
+     * @return true when a schedule was removed
+     */
+    boolean cancelScheduleForWorkspace(String workspaceId) {
+        if (workspaceId == null) {
+            return false;
+        }
+        GapAndGoScheduleService service = scheduleServicesByWorkspace.remove(workspaceId);
+        if (service != null) {
+            service.clearSchedule();
+            service.stop();
+        }
+        List<GapAndGoSchedule> persisted = scheduleRepository.findAll().stream()
+                .filter(schedule -> workspaceId.equals(schedule.workspaceId()))
+                .toList();
+        persisted.forEach(schedule -> scheduleRepository.deleteById(schedule.id()));
+        boolean removed = !persisted.isEmpty();
+        if (removed) {
+            ui.log("[Gap Rocket] Autonomous schedule cancelled for workspace " + workspaceId + ".");
+        }
+        return removed;
     }
 
     private GapAndGoScheduleService scheduleServiceForWorkspace(String workspaceId) {
@@ -242,6 +275,18 @@ final class GapAndGoCoordinator {
                         Clock.systemDefaultZone(), ui::log);
                 GapRocketAnalyzer analyzer = new GapRocketAnalyzer(Clock.systemUTC(), ui::log);
                 List<GapRocketCandidate> scanned = scanner.candidates(symbols);
+                if (!interactive && ScheduledScanRetryPolicy.mostlyUnmeasurable(
+                        scanner.lastUnmeasurableCount(), symbols.size())
+                        && scheduleServiceForWorkspace(workspaceId).retryAfterOpen(java.time.Instant.now())) {
+                    // Scoring the few symbols that did print would lock in a verdict on a sliver of the
+                    // list; the real gappers are exactly the thin names IEX has not printed yet.
+                    ui.log("[Gap Rocket] " + scanner.lastUnmeasurableCount() + " of " + symbols.size()
+                            + " symbol(s) had no premarket data on the Alpaca feed yet. Retrying automatically at "
+                            + GapAndGoScheduleService.POST_OPEN_RETRY_ET + " ET, after the open and before the"
+                            + " 9:45 ET execution window.");
+                    recordScan(workspaceId, false, "Premarket data unavailable; retrying after the open");
+                    return;
+                }
                 if (scanned.isEmpty() && !symbols.isEmpty()) {
                     // Symbols resolved but none produced a measurable gap: a data/timing problem, not
                     // filters set too tight. Say so, otherwise every symbol reads as a market verdict.

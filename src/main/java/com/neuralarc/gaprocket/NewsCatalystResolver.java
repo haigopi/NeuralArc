@@ -42,6 +42,8 @@ public final class NewsCatalystResolver {
     private final AlpacaNewsClient newsClient;
     private final Clock clock;
     private final Consumer<String> log;
+    // Set once OpenAI reports the account out of credit; every later call in this scan would fail too.
+    private volatile boolean quotaExhausted;
 
     public NewsCatalystResolver(AiRecommendationProvider provider, Clock clock, Consumer<String> log) {
         this(provider, null, clock, log);
@@ -67,7 +69,7 @@ public final class NewsCatalystResolver {
         if (candidate == null) {
             return null;
         }
-        if (provider == null) {
+        if (provider == null || quotaExhausted) {
             return candidate;
         }
         if (!hasRecentNews(candidate.symbol())) {
@@ -84,7 +86,15 @@ public final class NewsCatalystResolver {
             }
             return withCatalyst(candidate, type.get(), buildSummary(response));
         } catch (AiRecommendationException ex) {
-            log.accept("[Gap Rocket] News analysis unavailable for " + candidate.symbol() + ": " + ex.getMessage());
+            String message = ex.getMessage() == null ? "" : ex.getMessage();
+            if (message.contains("insufficient_quota")) {
+                if (!quotaExhausted) {
+                    quotaExhausted = true;
+                    log.accept("[Gap Rocket] AI news analysis stopped for this scan: " + message);
+                }
+                return candidate;
+            }
+            log.accept("[Gap Rocket] News analysis unavailable for " + candidate.symbol() + ": " + message);
             return candidate;
         }
     }

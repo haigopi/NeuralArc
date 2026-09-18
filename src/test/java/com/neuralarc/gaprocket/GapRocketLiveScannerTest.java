@@ -242,4 +242,16 @@ class GapRocketLiveScannerTest {
                     new BigDecimal(low), new BigDecimal(close), new BigDecimal(volume));
         }
     }
+
+    @Test
+    void countsTheSymbolsWhoseGapCouldNotBeMeasured() {
+        GapRocketLiveScanner scanner = new GapRocketLiveScanner(
+                new PremarketNoDataFakeApi(),
+                Clock.fixed(Instant.parse("2026-08-21T13:07:00Z"), ZoneOffset.UTC),
+                ignored -> { }, 0L, ignored -> { });
+
+        scanner.candidates(List.of("AIFU", "BBAI"));
+
+        assertEquals(2, scanner.lastUnmeasurableCount());
+    }
 }

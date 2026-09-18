@@ -342,6 +342,11 @@ public class TradingFrame extends JFrame {
     private final PortfolioRefreshController portfolioRefreshController;
     private final PortfolioActionsController portfolioActionsController;
     private final PortfolioCaptureRuns portfolioCaptureRuns;
+    private final PortfolioValueRecorder portfolioValueRecorder;
+    private final com.neuralarc.ui.chart.PortfolioValueChart portfolioValueChart =
+            new com.neuralarc.ui.chart.PortfolioValueChart(java.time.ZoneId.systemDefault());
+    // Samples the portfolio value even when nothing else refreshes, so every minute gets its point.
+    private Timer portfolioValueSampleTimer;
     private final List<ManagedStrategy> strategies = new ArrayList<>();
     private final List<HistoryTablePresenter.HistoryRow> filledOrderRows = new ArrayList<>();
     private final StrategyGridTableModel strategyTableModel = new StrategyGridTableModel(
@@ -630,6 +635,14 @@ public class TradingFrame extends JFrame {
         gapAndGoCoordinator = new GapAndGoCoordinator(
                 new GapAndGoCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
+        java.util.concurrent.ExecutorService portfolioValueWriter = java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "portfolio-value-writer");
+            thread.setDaemon(true);
+            return thread;
+        });
+        portfolioValueRecorder = new PortfolioValueRecorder(
+                new com.neuralarc.db.SqlitePortfolioValueRepository(appDatabase), portfolioValueWriter,
+                java.time.Clock.systemUTC(), this::log);
         orbCoordinator = new OrbCoordinator(new OrbCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
         dipHunterCoordinator = new DipHunterCoordinator(new DipHunterCoordinatorUi(), appDatabase, strategyRepository,
@@ -2018,7 +2031,22 @@ public class TradingFrame extends JFrame {
         eventLogScrollPane.setBackground(new Color(0, 0, 0, 0));
         eventLogScrollPane.getViewport().setOpaque(false);
         eventLogScrollPane.getViewport().setBackground(new Color(0, 0, 0, 0));
-        CollapsibleSectionPanel eventLogSection = new CollapsibleSectionPanel("Logs", eventLogScrollPane);
+        // Two columns: today's portfolio value on the left, the event log on the right.
+        JSplitPane logsColumns = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, portfolioValueChart, eventLogScrollPane);
+        logsColumns.setResizeWeight(0.4);
+        logsColumns.setContinuousLayout(true);
+        logsColumns.setDividerSize(6);
+        logsColumns.setBorder(null);
+        logsColumns.setOpaque(false);
+        if (logsColumns.getUI() instanceof BasicSplitPaneUI logsColumnsUi) {
+            logsColumnsUi.getDivider().setBorder(BorderFactory.createEmptyBorder());
+            logsColumnsUi.getDivider().setBackground(
+                    ThemeColors.color("NeuralArc.SplitPane.divider", new Color(189, 198, 210)));
+        }
+        CollapsibleSectionPanel eventLogSection = new CollapsibleSectionPanel("Logs", logsColumns);
+        portfolioValueSampleTimer = new Timer(30_000, ignored -> recordPortfolioValue());
+        portfolioValueSampleTimer.setInitialDelay(5_000);
+        portfolioValueSampleTimer.start();
 
         // Put event log and strategy grid in a vertical split so both are always visible
         JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
@@ -6246,10 +6274,14 @@ public class TradingFrame extends JFrame {
     }
 
     private boolean includeInCurrentStrategiesTab(ManagedStrategy entry) {
+        return entry != null && entry.strategy != null
+                && entry.strategy.mode() == selectedViewMode
+                && includeInStrategiesTab(entry);
+    }
+
+    /** Whether a row belongs on the current (not history) grid of its own mode. */
+    private boolean includeInStrategiesTab(ManagedStrategy entry) {
         if (entry == null || entry.strategy == null) {
-            return false;
-        }
-        if (entry.strategy.mode() != selectedViewMode) {
             return false;
         }
         if (entry.strategy.status() == StrategyStatus.FAILED) {
@@ -8232,6 +8264,9 @@ public class TradingFrame extends JFrame {
         @Override public int defaultStrategyPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
         @Override public String selectedWorkspaceId() { return selectedWorkspaceId; }
         @Override public boolean isGapRocketWorkspaceSelected() { return isSelectedGapRocketWorkspace(); }
+        @Override public boolean workspaceExists(String workspaceId) {
+            return workspaceId != null && workspaceService.findById(workspaceId).isPresent();
+        }
         @Override public void log(String message) { TradingFrame.this.log(message); }
         @Override public void setScanButtonsEnabled(boolean enabled) {
             gapRocketAnalyzeButton.setEnabled(enabled);
@@ -8401,13 +8436,43 @@ public class TradingFrame extends JFrame {
                     portfolioScopePresenter.present(PortfolioScopePresenter.ALL_WORKSPACES, portfolioMetrics(null)));
         }
         refreshWorkspaceSummary();
+        refreshPortfolioValueChart();
+    }
+
+    /**
+     * Records this minute's total portfolio value for both modes — the same all-workspaces market value
+     * the bottom status bar shows — so switching modes shows a complete day for each.
+     */
+    private void recordPortfolioValue() {
+        if (portfolioValueRecorder == null) {
+            return;
+        }
+        for (StrategyMode mode : StrategyMode.values()) {
+            SystemMetricsPresenter.PortfolioScopeMetrics metrics = portfolioMetrics(mode, null);
+            portfolioValueRecorder.record(mode, metrics.marketValue(), metrics.investedValue());
+        }
+        refreshPortfolioValueChart();
+    }
+
+    private void refreshPortfolioValueChart() {
+        if (portfolioValueRecorder == null) {
+            return;
+        }
+        portfolioValueChart.setSamples(portfolioValueRecorder.today(selectedViewMode),
+                (selectedViewMode == StrategyMode.LIVE ? "Live" : "Paper") + " · all workspaces");
     }
 
     /** Totals the current-mode grid rows of one workspace, or of every workspace when the id is null. */
     private SystemMetricsPresenter.PortfolioScopeMetrics portfolioMetrics(String workspaceId) {
+        return portfolioMetrics(selectedViewMode, workspaceId);
+    }
+
+    /** Totals one mode's current grid rows, for one workspace or every workspace when the id is null. */
+    private SystemMetricsPresenter.PortfolioScopeMetrics portfolioMetrics(StrategyMode mode, String workspaceId) {
         List<ManagedStrategy> rows = strategies.stream()
-                .filter(this::includeInCurrentStrategiesTab)
-                .filter(entry -> matchesPortfolioActionScope(entry.strategy, selectedViewMode, workspaceId))
+                .filter(entry -> entry.strategy != null && entry.strategy.mode() == mode)
+                .filter(this::includeInStrategiesTab)
+                .filter(entry -> matchesPortfolioActionScope(entry.strategy, mode, workspaceId))
                 .toList();
         return systemMetricsPresenter.computePortfolioScopeMetrics(rows, strategyOrderRepository::findByStrategyId);
     }
@@ -8651,6 +8716,8 @@ public class TradingFrame extends JFrame {
         }
         WorkspaceService.DeleteResult result = strategyWorkspaceTabs.deleteWorkspace(workspaceId);
         if (result == WorkspaceService.DeleteResult.DELETED) {
+            // A deleted workspace's Gap Rocket schedule must not keep scanning (and auto-executing) for it.
+            gapAndGoCoordinator.cancelScheduleForWorkspace(workspaceId);
             log("[WORKSPACE] Deleted empty strategy workspace '" + currentName + "'.");
             userActionLog.completed("Delete Workspace", currentName);
         }
@@ -8798,6 +8865,9 @@ public class TradingFrame extends JFrame {
         }
         bottomStatusBars.shutdown();
         portfolioCaptureRuns.shutdown();
+        if (portfolioValueSampleTimer != null) {
+            portfolioValueSampleTimer.stop();
+        }
         portfolioEmailScheduler.stop();
         strategyPollingTimer.stop();
         uiPollingExecutor.shutdownNow();

@@ -30,6 +30,7 @@ public final class GapRocketLiveScanner {
     private final long requestIntervalMillis;
     private final Sleeper sleeper;
     private boolean requestStarted;
+    private int lastUnmeasurableCount;
 
     public GapRocketLiveScanner(AlpacaMarketDataApi marketDataApi, Clock clock, Consumer<String> log) {
         this(marketDataApi, clock, log, DEFAULT_REQUEST_INTERVAL_MILLIS, Thread::sleep);
@@ -53,6 +54,7 @@ public final class GapRocketLiveScanner {
         if (symbols == null || symbols.isEmpty()) {
             return List.of();
         }
+        lastUnmeasurableCount = 0;
         LocalDate today = LocalDate.now(clock.withZone(US_EASTERN));
         boolean spyGreen = isIndexGreen("SPY", today);
         boolean qqqGreen = isIndexGreen("QQQ", today);
@@ -113,6 +115,7 @@ public final class GapRocketLiveScanner {
             log.accept("[Gap Rocket] Skipped " + symbol
                     + ": no premarket or session data yet from the Alpaca feed (newest bar is still "
                     + barDate(previousDaily) + "). Gap cannot be measured.");
+            lastUnmeasurableCount++;
             return java.util.Optional.empty();
         }
         BigDecimal current = valid(latestBar.close()) ? latestBar.close() : latestBar.open();
@@ -157,6 +160,14 @@ public final class GapRocketLiveScanner {
      * True when the newest bar the feed returned is the previous session's own bar — i.e. nothing has
      * printed for today yet. Any gap derived from it would compare the prior close against itself.
      */
+    /**
+     * How many symbols in the last {@link #candidates} call had no bar for today yet, so no gap could
+     * be measured — a feed-timing gap, not a market verdict.
+     */
+    public int lastUnmeasurableCount() {
+        return lastUnmeasurableCount;
+    }
+
     private boolean isStale(MarketBar latest, MarketBar previousDaily) {
         return latest == previousDaily || barDate(latest).isEqual(barDate(previousDaily));
     }

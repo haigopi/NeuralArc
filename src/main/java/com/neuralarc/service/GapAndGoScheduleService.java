@@ -29,6 +29,8 @@ import java.util.logging.Logger;
 public final class GapAndGoScheduleService {
     private static final Logger LOGGER = Logger.getLogger(GapAndGoScheduleService.class.getName());
     private static final ZoneId US_EASTERN = ZoneId.of("America/New_York");
+    /** When a premarket scan had nothing to measure, the one retry runs this long after the 9:30 open. */
+    public static final LocalTime POST_OPEN_RETRY_ET = LocalTime.of(9, 35);
 
     /** Callback invoked (on the scheduler thread) when a scheduled scan should run. */
     public interface ScanTrigger {
@@ -44,6 +46,7 @@ public final class GapAndGoScheduleService {
     private GapAndGoSchedule schedule;
     private LocalDate lastInitialScanDate;
     private Instant lastScanAt;
+    private Instant retryAt;
 
     public GapAndGoScheduleService(MarketHoursService marketHours, Clock clock, ScanTrigger trigger, Consumer<String> log) {
         this.marketHours = marketHours == null ? new MarketHoursService() : marketHours;
@@ -116,6 +119,11 @@ public final class GapAndGoScheduleService {
             fire(current, now, date, "initial premarket scan");
             return true;
         }
+        if (retryAt != null && !now.isBefore(retryAt)) {
+            retryAt = null;
+            fire(current, now, date, "post-open retry");
+            return true;
+        }
         Duration cadence = rescanCadence(current.config().executionFrequency());
         if (cadence == null) {
             return false;
@@ -145,6 +153,29 @@ public final class GapAndGoScheduleService {
 
 
     /**
+     * The scan ran but the feed had no premarket prints to measure a gap against — routine before the
+     * open on the free IEX feed. Rather than lose the day, run it once more at
+     * {@link #POST_OPEN_RETRY_ET}, when session bars exist and the screener reflects today's movers.
+     * The 9:45 ET execution window has not opened by then, so nothing is missed.
+     *
+     * @return true when a retry was scheduled; false when it is already past the retry time, the
+     *         retry would fall outside the execution window, or no schedule is set
+     */
+    public synchronized boolean retryAfterOpen(Instant now) {
+        GapAndGoSchedule current = schedule;
+        if (current == null || !current.enabled()) {
+            return false;
+        }
+        ZonedDateTime eastern = now.atZone(US_EASTERN);
+        if (!eastern.toLocalTime().isBefore(POST_OPEN_RETRY_ET)
+                || !POST_OPEN_RETRY_ET.isBefore(current.executionWindowEndEt())) {
+            return false;
+        }
+        retryAt = eastern.toLocalDate().atTime(POST_OPEN_RETRY_ET).atZone(US_EASTERN).toInstant();
+        return true;
+    }
+
+    /**
      * The scan could not start — for example the broker was not connected yet when the tick fired.
      * Forget today's fire so a later tick runs it, instead of the day's scan being silently lost.
      */
@@ -155,5 +186,6 @@ public final class GapAndGoScheduleService {
     private void resetFireState() {
         lastInitialScanDate = null;
         lastScanAt = null;
+        retryAt = null;
     }
 }

@@ -58,13 +58,23 @@ public class OpenAiRecommendationProvider implements AiRecommendationProvider {
                 .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
                 .build();
         try {
-            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new AiRecommendationException("OpenAI request failed with HTTP " + response.statusCode());
+            for (int attempt = 1; ; attempt++) {
+                HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+                int status = response.statusCode();
+                if (status >= 200 && status < 300) {
+                    return parseOpenAiResponse(response.body());
+                }
+                if (attempt >= OpenAiErrors.MAX_ATTEMPTS || !OpenAiErrors.retryable(status, response.body())) {
+                    throw new AiRecommendationException(OpenAiErrors.describe(status, response.body()));
+                }
+                // A rate limit clears in seconds; failing now would drop this symbol's analysis for good.
+                Thread.sleep(OpenAiErrors.delayMillis(attempt, response.headers().firstValue("retry-after")));
             }
-            return parseOpenAiResponse(response.body());
         } catch (AiRecommendationException ex) {
             throw ex;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new AiRecommendationException("OpenAI request interrupted while waiting to retry.", ex);
         } catch (Exception ex) {
             throw new AiRecommendationException("OpenAI request failed: " + ex.getMessage(), ex);
         }

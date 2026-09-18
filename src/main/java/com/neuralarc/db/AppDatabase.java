@@ -204,6 +204,7 @@ public final class AppDatabase {
         applyMigration("016_remote_sync_suppressions", this::migration016);
         applyMigration("017_range_rider_schedules", this::migration017);
         applyMigration("018_profit_shield_schedules", this::migration018);
+        applyMigration("019_portfolio_value_samples", this::migration019);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -588,6 +589,23 @@ public final class AppDatabase {
                         updated_at               TEXT NOT NULL
                     )""");
             st.execute("CREATE INDEX IF NOT EXISTS idx_profit_shield_schedules_workspace ON profit_shield_schedules(workspace_id)");
+        }
+    }
+
+    /** One row per trading mode per minute: the intraday portfolio value series. */
+    private void migration019() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS portfolio_value_samples (
+                        mode           TEXT    NOT NULL,
+                        session_date   TEXT    NOT NULL,
+                        minute_epoch   INTEGER NOT NULL,
+                        market_value   TEXT    NOT NULL,
+                        invested_value TEXT    NOT NULL,
+                        PRIMARY KEY (mode, minute_epoch)
+                    )""");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_portfolio_value_samples_day "
+                    + "ON portfolio_value_samples(mode, session_date)");
         }
     }
 

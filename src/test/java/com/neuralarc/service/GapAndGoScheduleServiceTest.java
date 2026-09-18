@@ -108,4 +108,39 @@ class GapAndGoScheduleServiceTest {
         assertTrue(svc.evaluate(et(TRADING_DAY.plusDays(1), 9, 10))); // Tuesday
         assertEquals(2, fires.get());
     }
+
+    @Test
+    void aPremarketScanWithNothingToMeasureRetriesOnceAfterTheOpen() {
+        GapAndGoScheduleService svc = service(GapRocketConfig.ExecutionFrequency.MANUAL, true);
+        assertTrue(svc.evaluate(et(TRADING_DAY, 9, 5)));
+
+        assertTrue(svc.retryAfterOpen(et(TRADING_DAY, 9, 6)));
+
+        assertFalse(svc.evaluate(et(TRADING_DAY, 9, 20)), "not before the open");
+        assertTrue(svc.evaluate(et(TRADING_DAY, 9, 35)), "retries at 9:35 ET");
+        assertFalse(svc.evaluate(et(TRADING_DAY, 9, 40)), "only once");
+        assertEquals(2, fires.get());
+    }
+
+    @Test
+    void noRetryIsScheduledOnceThePostOpenTimeHasPassed() {
+        GapAndGoScheduleService svc = service(GapRocketConfig.ExecutionFrequency.MANUAL, true);
+        assertTrue(svc.evaluate(et(TRADING_DAY, 9, 35)));
+
+        // A scan at or after 9:35 already had session data; retrying it would just repeat the verdict.
+        assertFalse(svc.retryAfterOpen(et(TRADING_DAY, 9, 36)));
+        assertFalse(svc.evaluate(et(TRADING_DAY, 9, 50)));
+        assertEquals(1, fires.get());
+    }
+
+    @Test
+    void clearingTheScheduleDropsAPendingRetry() {
+        GapAndGoScheduleService svc = service(GapRocketConfig.ExecutionFrequency.MANUAL, true);
+        assertTrue(svc.evaluate(et(TRADING_DAY, 9, 5)));
+        assertTrue(svc.retryAfterOpen(et(TRADING_DAY, 9, 6)));
+
+        svc.clearSchedule();
+
+        assertFalse(svc.evaluate(et(TRADING_DAY, 9, 35)));
+    }
 }
