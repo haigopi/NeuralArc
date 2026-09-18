@@ -191,6 +191,27 @@ final class PortfolioCaptureController {
         return monitoringTimer != null && monitoringTimer.isRunning();
     }
 
+    /**
+     * Whether monitoring is running <em>for this very mode and workspace</em>.
+     *
+     * <p>Only one liquidation run exists at a time and it belongs to the tab it was started from, so
+     * the plain {@link #monitoringActive()} flag reads true in every other tab too. A dialog opened
+     * elsewhere then shows that run's state and offers to deactivate something it does not own.
+     */
+    boolean monitoringActiveFor(StrategyMode mode, String workspaceId) {
+        if (!monitoringActive()) {
+            return false;
+        }
+        StrategyMode scopedMode = mode == null ? StrategyMode.PAPER : mode;
+        return activeMode == scopedMode
+                && java.util.Objects.equals(blankToNull(activeWorkspaceId), blankToNull(workspaceId));
+    }
+
+    /** All Stocks carries no workspace id; blank and null must read as that same single scope. */
+    private static String blankToNull(String workspaceId) {
+        return workspaceId == null || workspaceId.isBlank() ? null : workspaceId;
+    }
+
     PortfolioCaptureConfig activeConfig() {
         return activeConfig;
     }

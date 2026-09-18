@@ -1594,7 +1594,9 @@ public class TradingFrame extends JFrame {
         strategyTable.setRowSelectionAllowed(true);
         strategyTable.setColumnSelectionAllowed(false);
         strategyTable.setCellSelectionEnabled(false);
-        strategyTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        // Shift-click and ctrl-click select a block of rows so the right-click menu can act on all of
+        // them at once; actions that need per-row input stay disabled while more than one is selected.
+        strategyTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         strategyTable.setSelectionBackground(TABLE_SELECTION_BG);
         strategyTable.setSelectionForeground(TABLE_SELECTION_FG);
         strategyTable.setRowMargin(0);
@@ -2881,7 +2883,9 @@ public class TradingFrame extends JFrame {
                     portfolioCaptureController.emergencyStop();
                     userActionLog.completed("Liquidate Portfolio Monitoring", "Monitoring deactivated.");
                 },
-                portfolioCaptureController.monitoringActive()
+                // Scoped to the tab being viewed: a run started in another workspace must not appear
+                // here as active, or this dialog would offer to deactivate a run it does not own.
+                portfolioCaptureController.monitoringActiveFor(selectedViewMode, selectedWorkspaceId)
         );
         boolean changed = dialog.showDialog();
         if (!changed) {
@@ -9727,7 +9731,10 @@ public class TradingFrame extends JFrame {
         if (viewRow < 0 || viewCol < 0) {
             return true;
         }
-        strategyTable.setRowSelectionInterval(viewRow, viewRow);
+        // Keep a multi-row selection when the click lands inside it; the menu reads the selection.
+        if (!strategyTable.isRowSelected(viewRow)) {
+            strategyTable.setRowSelectionInterval(viewRow, viewRow);
+        }
         strategyTable.setColumnSelectionInterval(viewCol, viewCol);
         new StrategyGridContextMenu(
                 strategyTable,

@@ -117,7 +117,9 @@ final class PortfolioCaptureDialog extends JDialog {
         applyCompactFonts(getContentPane());
         refreshMetrics();
         updateEnabledState();
-        DialogSizing.packAndFitTall(this, 640, 480);
+        // Wide enough for the widest row - a radio, its value and its unit - since growTall only ever
+        // adds height, so anything that does not fit horizontally at pack time stays cut off.
+        DialogSizing.packAndFitTall(this, 820, 480);
         setLocationRelativeTo(owner);
     }
 
@@ -153,9 +155,12 @@ final class PortfolioCaptureDialog extends JDialog {
         centerScroll.setBorder(BorderFactory.createEmptyBorder());
         centerScroll.setOpaque(false);
         centerScroll.getViewport().setOpaque(false);
-        centerScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        // As-needed rather than never: the dialog is sized to fit its content, but a wider font or
+        // locale must scroll rather than silently cut the units and trailing controls off the edge.
+        centerScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         centerScroll.getVerticalScrollBar().setUnitIncrement(16);
-        centerScroll.setPreferredSize(DialogSizing.preferredViewportSize(center, 560, 360, 640, 560));
+        centerScroll.getHorizontalScrollBar().setUnitIncrement(16);
+        centerScroll.setPreferredSize(DialogSizing.preferredViewportSize(center, 680, 360, 900, 560));
         content.add(centerScroll, BorderLayout.CENTER);
         content.add(buttonBar(), BorderLayout.SOUTH);
         setContentPane(content);
@@ -219,17 +224,12 @@ final class PortfolioCaptureDialog extends JDialog {
 
     private JPanel targetSection() {
         JPanel panel = section("Target Monitoring");
-        GridBagConstraints gbc = baseGbc(0);
-        panel.add(percentTarget, gbc);
-        gbc.gridx = 1;
-        panel.add(percentField, gbc);
+        panel.add(percentTarget, naturalCell(0, 0));
+        panel.add(percentField, growingCell(0, 1));
+        panel.add(amountTarget, naturalCell(1, 0));
+        panel.add(amountField, growingCell(1, 1));
+        GridBagConstraints gbc = baseGbc(2);
         gbc.gridx = 0;
-        gbc.gridy++;
-        panel.add(amountTarget, gbc);
-        gbc.gridx = 1;
-        panel.add(amountField, gbc);
-        gbc.gridx = 0;
-        gbc.gridy++;
         gbc.gridwidth = 2;
         panel.add(includeLosses, gbc);
         gbc.gridy++;
@@ -245,19 +245,14 @@ final class PortfolioCaptureDialog extends JDialog {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setOpaque(false);
         panel.setBorder(BorderFactory.createTitledBorder("Pullback After Minimum"));
-        GridBagConstraints gbc = baseGbc(0);
-        panel.add(percentPullback, gbc);
-        gbc.gridx = 1;
-        panel.add(pullbackPercentField, gbc);
-        gbc.gridx = 2;
-        panel.add(new JLabel("% from peak profit"), gbc);
-        gbc.gridx = 0;
-        gbc.gridy++;
-        panel.add(amountPullback, gbc);
-        gbc.gridx = 1;
-        panel.add(pullbackAmountField, gbc);
-        gbc.gridx = 2;
-        panel.add(new JLabel("from peak profit"), gbc);
+        // The label and the unit keep their natural width; only the value field absorbs slack. Giving
+        // every cell equal weight is what pushed "% from peak profit" past the right edge.
+        panel.add(percentPullback, naturalCell(0, 0));
+        panel.add(pullbackPercentField, growingCell(0, 1));
+        panel.add(new JLabel("% from peak profit"), naturalCell(0, 2));
+        panel.add(amountPullback, naturalCell(1, 0));
+        panel.add(pullbackAmountField, growingCell(1, 1));
+        panel.add(new JLabel("from peak profit"), naturalCell(1, 2));
         return panel;
     }
 
@@ -304,16 +299,12 @@ final class PortfolioCaptureDialog extends JDialog {
         gbc.gridx = 1;
         gbc.gridwidth = 3;
         panel.add(reentrySmartPicksStrategy, gbc);
-        gbc.gridx = 0;
-        gbc.gridy++;
-        gbc.gridwidth = 1;
-        panel.add(fieldLabel("Quantity"), gbc);
-        gbc.gridx = 1;
-        panel.add(reentryQuantity, gbc);
-        gbc.gridx = 2;
-        panel.add(fieldLabel("Term"), gbc);
-        gbc.gridx = 3;
-        panel.add(reentryTerm, gbc);
+        // "Term" and its dropdown keep their own width rather than sharing a quarter each, which is
+        // what squeezed the dropdown off the edge.
+        panel.add(fieldLabel("Quantity"), naturalCell(2, 0));
+        panel.add(reentryQuantity, naturalCell(2, 1));
+        panel.add(fieldLabel("Term"), naturalCell(2, 2));
+        panel.add(reentryTerm, growingCell(2, 3));
         return panel;
     }
 
@@ -621,6 +612,24 @@ final class PortfolioCaptureDialog extends JDialog {
         gbc.anchor = GridBagConstraints.EAST;
         value.setHorizontalAlignment(SwingConstants.RIGHT);
         panel.add(value, gbc);
+    }
+
+    /** A cell that keeps its natural width: labels, radios and units are never squeezed or clipped. */
+    private GridBagConstraints naturalCell(int row, int column) {
+        GridBagConstraints gbc = baseGbc(row);
+        gbc.gridx = column;
+        gbc.weightx = 0;
+        gbc.fill = GridBagConstraints.NONE;
+        return gbc;
+    }
+
+    /** The one cell per row that absorbs the leftover width, so the row fills without crowding. */
+    private GridBagConstraints growingCell(int row, int column) {
+        GridBagConstraints gbc = baseGbc(row);
+        gbc.gridx = column;
+        gbc.weightx = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        return gbc;
     }
 
     private GridBagConstraints baseGbc(int row) {

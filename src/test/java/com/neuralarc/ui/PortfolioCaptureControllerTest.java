@@ -22,6 +22,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PortfolioCaptureControllerTest {
@@ -52,6 +53,60 @@ class PortfolioCaptureControllerTest {
         assertEquals(1, gateway.result.capturedCount());
         assertEquals(new BigDecimal("1000.00"), gateway.result.totalInvestment());
         assertEquals(new BigDecimal("1100.00"), gateway.result.estimatedPortfolioValue());
+    }
+
+    @Test
+    void monitoringIsReportedOnlyForTheModeAndWorkspaceItWasStartedIn() {
+        // Regression guard. Only one liquidation run exists at a time and it belongs to the tab that
+        // started it, but the dialog asked the unscoped "is the timer running" flag — so every other
+        // workspace showed that run as active and offered to deactivate a run it did not own.
+        BlockingGateway gateway = new BlockingGateway(List.of(strategy("s1", "AAPL", 10, "100", "110")));
+        gateway.selectedViewMode = StrategyMode.LIVE;
+        gateway.selectedWorkspaceId = "workspace-a";
+        PortfolioCaptureController controller = controller(gateway, "scoped");
+
+        controller.activateMonitoring(config());
+        try {
+            assertTrue(controller.monitoringActive(), "the run itself is active");
+            assertTrue(controller.monitoringActiveFor(StrategyMode.LIVE, "workspace-a"),
+                    "the workspace that started it sees it");
+            assertFalse(controller.monitoringActiveFor(StrategyMode.LIVE, "workspace-b"),
+                    "another workspace must not show this run");
+            assertFalse(controller.monitoringActiveFor(StrategyMode.PAPER, "workspace-a"),
+                    "the other mode must not show this run");
+            assertFalse(controller.monitoringActiveFor(StrategyMode.LIVE, null),
+                    "All Stocks is its own scope, not a wildcard over every workspace");
+        } finally {
+            controller.emergencyStop();
+        }
+    }
+
+    @Test
+    void allStocksMonitoringIsNotReportedInsideAWorkspace() {
+        BlockingGateway gateway = new BlockingGateway(List.of(strategy("s1", "AAPL", 10, "100", "110")));
+        gateway.selectedViewMode = StrategyMode.LIVE;
+        gateway.selectedWorkspaceId = null;
+        PortfolioCaptureController controller = controller(gateway, "all-stocks");
+
+        controller.activateMonitoring(config());
+        try {
+            assertTrue(controller.monitoringActiveFor(StrategyMode.LIVE, null));
+            assertTrue(controller.monitoringActiveFor(StrategyMode.LIVE, "   "),
+                    "a blank workspace id is the same All Stocks scope");
+            assertFalse(controller.monitoringActiveFor(StrategyMode.LIVE, "workspace-a"),
+                    "a workspace tab must not inherit the All Stocks run");
+        } finally {
+            controller.emergencyStop();
+        }
+    }
+
+    private PortfolioCaptureController controller(BlockingGateway gateway, String name) {
+        return new PortfolioCaptureController(
+                gateway,
+                new PortfolioCaptureCalculator(),
+                new PortfolioCaptureStateStore(tempDir.resolve(name + "-state.json")),
+                new PortfolioCaptureHistoryStore(tempDir.resolve(name + "-history.json"))
+        );
     }
 
     @Test
@@ -156,6 +211,7 @@ class PortfolioCaptureControllerTest {
         private final CountDownLatch finished = new CountDownLatch(1);
         private final List<String> soldStrategyIds = new ArrayList<>();
         private StrategyMode selectedViewMode = StrategyMode.PAPER;
+        private String selectedWorkspaceId;
         private PortfolioCaptureExecutionResult result;
 
         private BlockingGateway(List<ManagedStrategy> strategies) {
@@ -164,7 +220,7 @@ class PortfolioCaptureControllerTest {
 
         @Override public List<ManagedStrategy> strategies() { return strategies; }
         @Override public StrategyMode selectedViewMode() { return selectedViewMode; }
-        @Override public String selectedWorkspaceId() { return null; }
+        @Override public String selectedWorkspaceId() { return selectedWorkspaceId; }
         @Override public BigDecimal realizedPnlForStrategy(String strategyId) { return BigDecimal.ZERO; }
 
         @Override

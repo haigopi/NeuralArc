@@ -97,17 +97,25 @@ final class StrategyGridContextMenu {
         if (viewRow < 0 || viewCol < 0) {
             return true;
         }
-        table.setRowSelectionInterval(viewRow, viewRow);
+        // Right-clicking inside an existing selection keeps it, so a shift-selected block can be acted
+        // on as a block; right-clicking outside it starts a fresh single-row selection.
+        if (!table.isRowSelected(viewRow)) {
+            table.setRowSelectionInterval(viewRow, viewRow);
+        }
         table.setColumnSelectionInterval(viewCol, viewCol);
+        int[] selectedRows = table.getSelectedRows();
 
         JPopupMenu popup = new JPopupMenu();
         if (openChartHandler != null) {
-            popup.add(openChartItem(viewRow));
+            JMenuItem chart = openChartItem(viewRow);
+            // One chart per window: there is nothing sensible to open for ten rows at once.
+            singleRowOnly(chart, selectedRows.length);
+            popup.add(chart);
             popup.addSeparator();
         }
-        popup.add(copyMenu(viewRow, viewCol));
-        popup.add(positionMenu(viewRow));
-        JMenu workspaceMenu = workspaceMenu(viewRow);
+        popup.add(copyMenu(viewRow, viewCol, selectedRows));
+        popup.add(positionMenu(viewRow, selectedRows));
+        JMenu workspaceMenu = workspaceMenu(selectedRows);
         if (workspaceMenu != null) {
             popup.add(workspaceMenu);
         }
@@ -115,7 +123,7 @@ final class StrategyGridContextMenu {
         return true;
     }
 
-    private JMenu workspaceMenu(int viewRow) {
+    private JMenu workspaceMenu(int[] selectedRows) {
         if (workspacesProvider == null || assignToWorkspaceHandler == null) {
             return null;
         }
@@ -123,59 +131,88 @@ final class StrategyGridContextMenu {
         if (workspaces == null || workspaces.isEmpty()) {
             return null; // No workspaces created yet — nothing to move into.
         }
-        JMenu menu = new JMenu("Move to Workspace");
+        JMenu menu = new JMenu("Move to Workspace" + rowSuffix(selectedRows.length));
         menu.setFont(menuFont);
         JMenuItem none = item("All Stocks (unassigned)");
-        none.addActionListener(e -> assignToWorkspaceHandler.accept(null, viewRow));
+        none.addActionListener(e -> forEachSelected(selectedRows, row -> assignToWorkspaceHandler.accept(null, row)));
         menu.add(none);
         for (StrategyWorkspace workspace : workspaces) {
             JMenuItem target = item(workspace.name());
-            target.addActionListener(e -> assignToWorkspaceHandler.accept(workspace.id(), viewRow));
+            target.addActionListener(e ->
+                    forEachSelected(selectedRows, row -> assignToWorkspaceHandler.accept(workspace.id(), row)));
             menu.add(target);
         }
         return menu;
     }
 
-    private JMenu copyMenu(int viewRow, int viewCol) {
+    private JMenu copyMenu(int viewRow, int viewCol, int[] selectedRows) {
         Object value = table.getValueAt(viewRow, viewCol);
         String text = value == null ? "" : value.toString();
         JMenu copy = new JMenu("Copy");
         copy.setFont(menuFont);
         JMenuItem copyCell = item("Cell Text");
         copyCell.addActionListener(e -> clipboardWriter.accept(text));
+        // One click landed on one cell; there is no "the cell" across a multi-row selection.
+        singleRowOnly(copyCell, selectedRows.length);
         copy.add(copyCell);
-        JMenuItem copyRow = item("Row Text");
-        copyRow.addActionListener(e -> clipboardWriter.accept(rowTextProvider.apply(viewRow)));
+        JMenuItem copyRow = item("Row Text" + rowSuffix(selectedRows.length));
+        copyRow.addActionListener(e -> {
+            StringBuilder rows = new StringBuilder();
+            for (int row : selectedRows) {
+                if (rows.length() > 0) {
+                    rows.append(System.lineSeparator());
+                }
+                rows.append(rowTextProvider.apply(row));
+            }
+            clipboardWriter.accept(rows.toString());
+        });
         copy.add(copyRow);
         return copy;
     }
 
-    private JMenu positionMenu(int viewRow) {
+    private JMenu positionMenu(int viewRow, int[] selectedRows) {
+        int selectedCount = selectedRows.length;
         JMenu position = new JMenu("Position");
         position.setFont(menuFont);
+
+        // Anything that asks for details one row at a time stays single-row. Ten prompts in a row is
+        // poor enough, but a modal dialog also pumps the event queue: a queued grid refresh could
+        // re-sort the table between prompts, and the rest of the selection would then point at
+        // different strategies than the operator picked.
         JMenuItem buy = item("Buy More at Market Price");
         buy.addActionListener(e -> buyMoreAtMarketHandler.accept(viewRow));
+        singleRowOnly(buy, selectedCount);
         position.add(buy);
         JMenuItem buyLimit = item("Buy More at Limit Price");
         buyLimit.addActionListener(e -> buyMoreAtLimitHandler.accept(viewRow));
+        singleRowOnly(buyLimit, selectedCount);
         position.add(buyLimit);
         JMenuItem sell = item("Sell at Market-Place");
         sell.addActionListener(e -> sellAtMarketPlaceHandler.accept(viewRow));
+        singleRowOnly(sell, selectedCount);
         position.add(sell);
         JMenuItem reposition = item("Reposition Expired Stock");
         reposition.addActionListener(e -> repositionExpiredHandler.accept(viewRow));
+        singleRowOnly(reposition, selectedCount);
         position.add(reposition);
-        if (placePendingBaseBuyHandler != null
-                && placePendingBaseBuyEnabled != null
-                && placePendingBaseBuyEnabled.test(viewRow)) {
-            JMenuItem placePending = item("Place Pending Base Buy");
-            placePending.addActionListener(e -> placePendingBaseBuyHandler.accept(viewRow));
-            position.add(placePending);
+
+        // These run without asking anything, so they apply to the whole selection. The label counts
+        // the rows that actually qualify, not the rows highlighted.
+        if (placePendingBaseBuyHandler != null && placePendingBaseBuyEnabled != null) {
+            int eligible = countEligible(selectedRows, placePendingBaseBuyEnabled);
+            if (eligible > 0) {
+                JMenuItem placePending = item("Place Pending Base Buy" + rowSuffix(eligible));
+                placePending.addActionListener(e ->
+                        forEachEligible(selectedRows, placePendingBaseBuyEnabled, placePendingBaseBuyHandler));
+                position.add(placePending);
+            }
         }
         if (readjustLosingPendingBaseBuyHandler != null && readjustLosingPendingBaseBuyEnabled != null) {
-            JMenuItem readjustPending = item("Readjust Losing Pending Base Buy");
-            readjustPending.setEnabled(readjustLosingPendingBaseBuyEnabled.test(viewRow));
-            readjustPending.addActionListener(e -> readjustLosingPendingBaseBuyHandler.accept(viewRow));
+            int eligible = countEligible(selectedRows, readjustLosingPendingBaseBuyEnabled);
+            JMenuItem readjustPending = item("Readjust Losing Pending Base Buy" + rowSuffix(eligible));
+            readjustPending.setEnabled(eligible > 0);
+            readjustPending.addActionListener(e -> forEachEligible(
+                    selectedRows, readjustLosingPendingBaseBuyEnabled, readjustLosingPendingBaseBuyHandler));
             position.add(readjustPending);
         }
         if (Boolean.TRUE.equals(historyTabSelected == null ? null : historyTabSelected.get())
@@ -184,23 +221,68 @@ final class StrategyGridContextMenu {
             JMenuItem repositionHistory = item("Reposition Stock");
             repositionHistory.setEnabled(repositionFromHistoryEnabled.test(viewRow));
             repositionHistory.addActionListener(e -> repositionFromHistoryHandler.accept(viewRow));
+            singleRowOnly(repositionHistory, selectedCount);
             position.add(repositionHistory);
         }
         if (minimizeLossHandler != null && minimizeLossEnabled != null) {
-            // Only a position actually under water has a loss to work down.
+            // Only a position actually under water has a loss to work down, and the plan is reviewed
+            // one symbol at a time.
             JMenuItem minimizeLoss = item("Minimize Loss Impact...");
             minimizeLoss.setEnabled(minimizeLossEnabled.test(viewRow));
             minimizeLoss.addActionListener(e -> minimizeLossHandler.accept(viewRow));
+            singleRowOnly(minimizeLoss, selectedCount);
             position.add(minimizeLoss);
         }
-        if (cancelPendingLimitBuyHandler != null
-                && cancelPendingLimitBuyEnabled != null
-                && cancelPendingLimitBuyEnabled.test(viewRow)) {
-            JMenuItem cancelBuy = item("Cancel Pending Limit Buy");
-            cancelBuy.addActionListener(e -> cancelPendingLimitBuyHandler.accept(viewRow));
-            position.add(cancelBuy);
+        if (cancelPendingLimitBuyHandler != null && cancelPendingLimitBuyEnabled != null) {
+            int eligible = countEligible(selectedRows, cancelPendingLimitBuyEnabled);
+            if (eligible > 0) {
+                JMenuItem cancelBuy = item("Cancel Pending Limit Buy" + rowSuffix(eligible));
+                cancelBuy.addActionListener(e ->
+                        forEachEligible(selectedRows, cancelPendingLimitBuyEnabled, cancelPendingLimitBuyHandler));
+                position.add(cancelBuy);
+            }
         }
         return position;
+    }
+
+    /** Greys out an action that only makes sense for one row, saying why. Never re-enables. */
+    private static void singleRowOnly(JMenuItem item, int selectedRowCount) {
+        if (selectedRowCount > 1) {
+            item.setEnabled(false);
+            item.setToolTipText("Select a single row: this action asks for details one row at a time.");
+        }
+    }
+
+    private static String rowSuffix(int count) {
+        return count > 1 ? "  (" + count + " rows)" : "";
+    }
+
+    /**
+     * Runs an action for each selected row. Safe against the view indices shifting: this runs on the
+     * EDT, and a grid refresh can only repaint once the whole loop has returned.
+     */
+    private void forEachSelected(int[] selectedRows, IntConsumer action) {
+        for (int row : selectedRows) {
+            action.accept(row);
+        }
+    }
+
+    private void forEachEligible(int[] selectedRows, IntPredicate eligible, IntConsumer action) {
+        for (int row : selectedRows) {
+            if (eligible.test(row)) {
+                action.accept(row);
+            }
+        }
+    }
+
+    private static int countEligible(int[] selectedRows, IntPredicate eligible) {
+        int count = 0;
+        for (int row : selectedRows) {
+            if (eligible.test(row)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /** Opens the row's stock chart, with the strategy's own levels drawn on it. */

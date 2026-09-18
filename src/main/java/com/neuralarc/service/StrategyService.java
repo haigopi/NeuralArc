@@ -749,6 +749,15 @@ public class StrategyService {
 
         Set<String> remoteSymbols = new HashSet<>(openOrdersBySymbol.keySet());
         remoteSymbols.addAll(positionsBySymbol.keySet());
+        if (remoteSymbols.isEmpty()) {
+            // The broker client turns a failed request into an empty list, so "nothing held" and
+            // "could not read the account" arrive here identically. Say so rather than report a clean
+            // pass: a silent zero is what hid five held symbols through several refreshes.
+            LOGGER.warning("Broker adoption (" + defaultStrategyMode.name() + ") read no open orders and no"
+                    + " positions. Either the account is genuinely empty or the request failed - the broker"
+                    + " client cannot tell these apart, so nothing is adopted this pass.");
+            return List.of();
+        }
 
         List<Strategy> created = new java.util.ArrayList<>();
         for (String symbol : remoteSymbols) {
