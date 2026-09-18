@@ -73,8 +73,11 @@ public final class SystemMetricsPresenter {
             if (position.getTotalShares() > 0) {
                 investedValue = investedValue.add(position.totalInvested());
             }
-            if (position.getTotalShares() > 0 && position.getLastPrice().compareTo(BigDecimal.ZERO) > 0) {
-                int trend = position.getLastPrice().compareTo(position.getAverageCost());
+            // Every open position counts, short ones included, and each is classed by the sign of its own
+            // P&L: for a short, a price above entry is a loss. Counting longs only (or comparing price with
+            // cost) left shorts out, so Gaining + Losing no longer summed to the header's unrealized P&L.
+            if (position.getTotalShares() != 0 && position.getLastPrice().compareTo(BigDecimal.ZERO) > 0) {
+                int trend = position.unrealizedPnl().signum();
                 if (trend > 0) {
                     gainingPnl = gainingPnl.add(position.unrealizedPnl());
                     gainingCount++;

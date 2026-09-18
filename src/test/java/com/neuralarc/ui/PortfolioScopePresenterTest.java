@@ -41,7 +41,7 @@ class PortfolioScopePresenterTest {
         assertEquals("0", view.gaining().text());
         assertEquals("0", view.losing().text());
         assertEquals("$0.00 vs $0.00  (Total $0.00)", view.investedVsUpcoming().text());
-        assertTrue(view.gaining().tooltipHtml().contains("0 positions trading above the average cost."));
+        assertTrue(view.gaining().tooltipHtml().contains("0 positions in profit."));
     }
 
     @Test
@@ -52,7 +52,7 @@ class PortfolioScopePresenterTest {
         assertTrue(view.investedVsUpcoming().tooltipHtml().startsWith("<b>Growth</b>"));
         assertTrue(view.investedVsUpcoming().tooltipHtml().contains("what you actually paid for the shares you hold now"));
         assertTrue(view.investedVsUpcoming().tooltipHtml().contains("will cost if they fill (1 position)"));
-        assertTrue(view.gaining().tooltipHtml().contains("1 position trading above the average cost, up +$250.00"));
+        assertTrue(view.gaining().tooltipHtml().contains("1 position in profit, up +$250.00"));
         assertTrue(view.losing().tooltipHtml().contains("down $80.10 in total"));
         assertTrue(view.pendingBuy().tooltipHtml().contains("has not filled yet, worth $4,500.00"));
         assertTrue(view.pendingSell().tooltipHtml().contains("for example a target sell"));

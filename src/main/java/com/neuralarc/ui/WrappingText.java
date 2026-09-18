@@ -42,6 +42,19 @@ final class WrappingText extends JTextArea {
         return new Dimension(width, super.getPreferredSize().height);
     }
 
+    /**
+     * A new width changes how many lines the text wraps to, so the layout must ask for the height again.
+     * Deferred, because this also runs from inside {@link #getPreferredSize()}'s own measuring.
+     */
+    @Override
+    public void setBounds(int x, int y, int width, int height) {
+        boolean widthChanged = width != getWidth();
+        super.setBounds(x, y, width, height);
+        if (widthChanged && isDisplayable()) {
+            javax.swing.SwingUtilities.invokeLater(this::revalidate);
+        }
+    }
+
     @Override
     public Dimension getMaximumSize() {
         return new Dimension(Integer.MAX_VALUE, getPreferredSize().height);

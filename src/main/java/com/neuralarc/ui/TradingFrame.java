@@ -169,7 +169,9 @@ public class TradingFrame extends JFrame {
     private static final String SMART_PICKS_MENU_DIVERSIFIED = "Diversified Leaders (Top 20)";
     private static final String SMART_PICKS_MENU_WEEKEND_REBOUND = "Weekend Rebound";
 
-    private final JLabel positionSummary = new JLabel("Position: -");
+    // Wraps onto further lines: a long position summary used to be cut off with an ellipsis.
+    private final WrappingText positionSummary = new WrappingText("Position: -", 10f,
+            ThemeColors.color("NeuralArc.Detail.foreground", new Color(35, 35, 45)), 420);
     private final JLabel ruleState = new JLabel("Rules: -");
     private PositionBarsColumn positionBarsColumn;
     private final JLabel paperUnrealizedSummary = new JLabel("Paper Unrealized P&L Total: -");
@@ -2488,10 +2490,12 @@ public class TradingFrame extends JFrame {
         refreshPortfolioButton.setText(busy ? "Refreshing..." : "Refresh");
     }
 
-    private CollapsibleSectionPanel createDetailSection(JLabel titleLabel, JLabel contentLabel) {
+    private CollapsibleSectionPanel createDetailSection(JLabel titleLabel, JComponent contentLabel) {
         titleLabel.setForeground(ThemeColors.color("NeuralArc.Section.titleForeground", new Color(78, 84, 94)));
         contentLabel.setForeground(ThemeColors.color("NeuralArc.Detail.foreground", new Color(35, 35, 45)));
-        contentLabel.setVerticalAlignment(SwingConstants.TOP);
+        if (contentLabel instanceof JLabel label) {
+            label.setVerticalAlignment(SwingConstants.TOP);
+        }
         contentLabel.setBorder(new EmptyBorder(2, 0, 0, 0));
 
         JPanel contentPanel = new JPanel(new BorderLayout());
@@ -2848,7 +2852,7 @@ public class TradingFrame extends JFrame {
      * Installs a right-click "Copy to Clipboard" popup on {@code panel} and its
      * {@code contentLabel}.  The copied text is the current text of the label.
      */
-    private void installCopyPopup(JPanel panel, JLabel contentLabel) {
+    private void installCopyPopup(JPanel panel, javax.swing.text.JTextComponent contentLabel) {
         JPopupMenu popup = new JPopupMenu();
         JMenuItem copyItem = new JMenuItem("📋 Copy to Clipboard");
         copyItem.setFont(BASE_FONT.deriveFont(Font.PLAIN, 12f));

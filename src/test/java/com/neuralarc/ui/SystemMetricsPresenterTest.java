@@ -136,6 +136,39 @@ class SystemMetricsPresenterTest {
         assertEquals("CPU: -", text);
     }
 
+    @Test
+    void aShortPositionCountsAndGainingPlusLosingEqualsTheWholePnl() {
+        // Regression guard from the screenshot: the header read -$476.69 while Gaining + Losing read
+        // +$3.11 and -$442.25. The $37.55 gap was MRVL, short 1 share at $201.20 now $238.75, which
+        // the footer skipped because it only counted long positions.
+        ManagedStrategy longWinner = managed("AAPL", StrategyStatus.ACTIVE, 1, new BigDecimal("100.00"), new BigDecimal("103.11"));
+        ManagedStrategy longLoser = managed("ORCL", StrategyStatus.ACTIVE, 1, new BigDecimal("600.00"), new BigDecimal("157.75"));
+        ManagedStrategy shortLoser = managed("MRVL", StrategyStatus.ACTIVE, -1, new BigDecimal("201.20"), new BigDecimal("238.75"));
+
+        SystemMetricsPresenter.PortfolioScopeMetrics metrics = new SystemMetricsPresenter()
+                .computePortfolioScopeMetrics(List.of(longWinner, longLoser, shortLoser), id -> List.of());
+
+        assertEquals(1, metrics.gainingCount());
+        assertEquals(2, metrics.losingCount(), "a short priced above its entry is losing");
+        assertEquals(new BigDecimal("-479.80"), metrics.losingPnl());
+        BigDecimal wholePnl = longWinner.cachedPosition().unrealizedPnl()
+                .add(longLoser.cachedPosition().unrealizedPnl())
+                .add(shortLoser.cachedPosition().unrealizedPnl());
+        assertEquals(0, wholePnl.compareTo(metrics.gainingPnl().add(metrics.losingPnl())),
+                "the footer's two sides sum to the same P&L the header shows");
+    }
+
+    @Test
+    void aShortPositionPricedBelowItsEntryIsGaining() {
+        ManagedStrategy shortWinner = managed("MRVL", StrategyStatus.ACTIVE, -2, new BigDecimal("240.00"), new BigDecimal("230.00"));
+
+        SystemMetricsPresenter.PortfolioScopeMetrics metrics = new SystemMetricsPresenter()
+                .computePortfolioScopeMetrics(List.of(shortWinner), id -> List.of());
+
+        assertEquals(1, metrics.gainingCount());
+        assertEquals(new BigDecimal("20.00"), metrics.gainingPnl().setScale(2));
+    }
+
     private static ManagedStrategy managed(String symbol, StrategyStatus status, int shares, BigDecimal price) {
         return managed(symbol, status, shares, price, price);
     }
@@ -143,8 +176,8 @@ class SystemMetricsPresenterTest {
     private static ManagedStrategy managed(String symbol, StrategyStatus status, int shares, BigDecimal cost, BigDecimal lastPrice) {
         ManagedStrategy managed = new ManagedStrategy(strategy(symbol, StrategyMode.PAPER, status));
         Position position = new Position(symbol);
-        if (shares > 0) {
-            position.applyBuy(shares, cost);
+        if (shares != 0) {
+            position.applyBuy(shares, cost); // A negative count opens a short at this cost.
             position.setLastPrice(lastPrice);
         }
         managed.setCachedPosition(position);

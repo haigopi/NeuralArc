@@ -70,14 +70,14 @@ final class PortfolioScopePresenter {
                         + "<br><b>Total " + money(committed) + "</b>: the money committed to this scope once those orders fill.");
         Item gaining = new Item(
                 trendText(metrics.gainingCount(), metrics.gainingPnl()),
-                scopeHtml + ": " + positions(metrics.gainingCount()) + " trading above the average cost"
+                scopeHtml + ": " + positions(metrics.gainingCount()) + " in profit"
                         + (metrics.gainingCount() == 0 ? "." : ", up " + signedMoney(metrics.gainingPnl()) + " in total.")
-                        + "<br>This profit is unrealized: it is locked in only when the shares are sold.");
+                        + "<br>This profit is unrealized: it is locked in only when the position is closed.");
         Item losing = new Item(
                 trendText(metrics.losingCount(), metrics.losingPnl()),
-                scopeHtml + ": " + positions(metrics.losingCount()) + " trading below the average cost"
+                scopeHtml + ": " + positions(metrics.losingCount()) + " at a loss"
                         + (metrics.losingCount() == 0 ? "." : ", down " + money(nonNull(metrics.losingPnl()).abs()) + " in total.")
-                        + "<br>This loss is unrealized: it becomes final only if the shares are sold at this price.");
+                        + "<br>This loss is unrealized: it becomes final only if the position is closed at this price.");
         Item pendingBuy = new Item(
                 String.valueOf(metrics.pendingBuyPositions()),
                 scopeHtml + ": " + positions(metrics.pendingBuyPositions())
