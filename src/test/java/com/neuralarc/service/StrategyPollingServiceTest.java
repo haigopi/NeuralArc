@@ -183,6 +183,87 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void aStopLossAndTheMissingSellTriggerRepairNeverSellMoreThanIsHeld() {
+        // Replays MRVL on Sept 1: one share, a sell-trigger strategy whose broker order had gone, and the
+        // price through the stop. One poll placed a STOP_LOSS sell and then, from a stale order list,
+        // "restored" a full-size TARGET_SELL. Both filled and the account went short a share.
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setProfitControlMode(ProfitControlMode.SELL_TRIGGER);
+        strategy.setTargetSellEnabled(true);
+        strategy.setTargetSellPrice(new BigDecimal("12.00"));
+        strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 1, new BigDecimal("8.00")));
+        f.alpaca.latestPrice = new BigDecimal("6.90");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", BigDecimal.ONE, new BigDecimal("8.00"), new BigDecimal("6.90"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+
+        List<StrategyOrder> sells = f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.side() == StrategyOrderSide.SELL)
+                .toList();
+        assertEquals(1, sells.size(), "one share, one sell: " + sells);
+        assertEquals(StrategyStage.STOP_LOSS, sells.get(0).stage());
+    }
+
+    @Test
+    void aStopLossCancelsTheRestingTargetSellBeforeSelling() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 1, new BigDecimal("8.00")));
+        f.addOrder(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.TARGET_SELL,
+                "ord-resting", "client-resting", "AAPL",
+                StrategyOrderSide.SELL, StrategyOrderType.LIMIT,
+                new BigDecimal("12.00"), BigDecimal.ZERO,
+                BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO,
+                StrategyOrderStatus.PENDING,
+                Instant.now().minusSeconds(90), Instant.now().minusSeconds(90), null, "{}"
+        ));
+        f.alpaca.orderById.put("ord-resting", new AlpacaOrderData("ord-resting", "client-resting", "AAPL", "sell",
+                "limit", new BigDecimal("12.00"), BigDecimal.ZERO, BigDecimal.ZERO, "new", "{}"));
+        f.alpaca.latestPrice = new BigDecimal("6.90");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", BigDecimal.ONE, new BigDecimal("8.00"), new BigDecimal("6.90"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+
+        assertEquals(StrategyOrderStatus.CANCELED, f.orders.findByAlpacaOrderId("ord-resting").orElseThrow().status(),
+                "the resting target sell is cancelled first");
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.STOP_LOSS).isPresent());
+        long working = f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.side() == StrategyOrderSide.SELL && order.isPending())
+                .count();
+        assertEquals(1, working, "only the stop-loss sell is left working");
+    }
+
+    @Test
+    void aStopLossWaitsWhenTheRestingSellCannotBeConfirmedCancelled() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 1, new BigDecimal("8.00")));
+        f.addOrder(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.TARGET_SELL,
+                "ord-stuck", "client-stuck", "AAPL",
+                StrategyOrderSide.SELL, StrategyOrderType.LIMIT,
+                new BigDecimal("12.00"), BigDecimal.ZERO,
+                BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO,
+                StrategyOrderStatus.PENDING,
+                Instant.now().minusSeconds(90), Instant.now().minusSeconds(90), null, "{}"
+        ));
+        f.alpaca.orderById.put("ord-stuck", new AlpacaOrderData("ord-stuck", "client-stuck", "AAPL", "sell",
+                "limit", new BigDecimal("12.00"), BigDecimal.ZERO, BigDecimal.ZERO, "new", "{}"));
+        f.alpaca.leaveCancelPending.add("ord-stuck");
+        f.alpaca.latestPrice = new BigDecimal("6.90");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", BigDecimal.ONE, new BigDecimal("8.00"), new BigDecimal("6.90"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.STOP_LOSS).isEmpty(),
+                "no second sell while the first may still fill");
+    }
+
+    @Test
     void stopLossDoesNotTriggerWhenDisabled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);

@@ -514,10 +514,11 @@ final class StrategyProfitControlEvaluator {
         if (strategy.currentState() != StrategyLifecycleState.SELL_PLACED) {
             return false;
         }
+        // Any working sell covers the position — a stop-loss sell included. Counting only target-sell
+        // client ids read a working stop-loss sell as "missing", and the replacement opened a short.
         List<AlpacaOrderData> remoteOpenOrders = alpacaClient.getOpenOrders(strategy.symbol());
         boolean openSellExists = remoteOpenOrders.stream()
-                .anyMatch(order -> "sell".equalsIgnoreCase(order.side())
-                        && isBrokerManagedClientOrderId(order.clientOrderId()));
+                .anyMatch(order -> "sell".equalsIgnoreCase(order.side()));
         return !openSellExists;
     }
 

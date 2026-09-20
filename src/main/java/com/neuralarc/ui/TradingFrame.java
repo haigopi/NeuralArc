@@ -679,6 +679,7 @@ public class TradingFrame extends JFrame {
                     @Override public boolean isConnected() { return connectionOk; }
                     @Override public BrokerType brokerType() { return currentBrokerType; }
                     @Override public HttpAlpacaClient alpacaClientForMode(ApplicationMode mode) { return TradingFrame.this.alpacaClientForMode(mode); }
+                    @Override public boolean modeActive(StrategyMode mode) { return ModeActivity.runsFor(mode, selectedViewMode); }
                     @Override public void onRefreshStarted() { setPortfolioRefreshButtonBusy(true); }
                     @Override public void onRefreshFinished() { setPortfolioRefreshButtonBusy(false); }
                     @Override public void syncStrategies(List<Strategy> strategies) { TradingFrame.this.syncStrategies(strategies); }
@@ -2281,12 +2282,7 @@ public class TradingFrame extends JFrame {
         updateGapRocketScheduleBadge(gapAndGoCoordinator.currentSchedule());
         refreshCapturePortfolioModeVisibility();
         updateHeaderModeStatus(currentBrokerType);
-        refreshStrategyRuntimeServices(
-                savedApiKeyForSelectedMode(),
-                savedApiSecretForSelectedMode(),
-                selectedApplicationMode()
-        );
-        restartTradingEventStreamForSelectedMode();
+        rebindRuntimeToSelectedMode();
         userActionLog.completed("Mode Switch", "Viewing " + selectedViewMode.name() + " data.");
         log("[MODE] Switched app view to " + selectedViewMode.name() + ". Grids and actions are scoped to this mode.");
     }
@@ -2305,6 +2301,20 @@ public class TradingFrame extends JFrame {
 
     private String savedApiSecretForSelectedMode() {
         return settingsDialog.savedApiSecret(selectedApplicationMode());
+    }
+
+    /**
+     * Points the strategy poller, the order services and the trade stream at the selected mode. Only
+     * the selected mode is polled and streamed (Live keeps a companion poller while Paper is viewed,
+     * so live stop-losses never go unwatched; Paper gets none while Live is viewed).
+     */
+    private void rebindRuntimeToSelectedMode() {
+        refreshStrategyRuntimeServices(
+                savedApiKeyForSelectedMode(),
+                savedApiSecretForSelectedMode(),
+                selectedApplicationMode()
+        );
+        restartTradingEventStreamForSelectedMode();
     }
 
     private void restartTradingEventStreamForSelectedMode() {
@@ -4061,7 +4071,9 @@ public class TradingFrame extends JFrame {
     private int adoptUnknownBrokerSymbols() {
         int adopted = 0;
         for (StrategyMode mode : List.of(StrategyMode.PAPER, StrategyMode.LIVE)) {
-            adopted += adoptUnknownBrokerSymbolsForMode(mode);
+            if (ModeActivity.runsFor(mode, selectedViewMode)) {
+                adopted += adoptUnknownBrokerSymbolsForMode(mode);
+            }
         }
         return adopted;
     }
@@ -4924,7 +4936,7 @@ public class TradingFrame extends JFrame {
     private void logExposureStateMismatches(String phase) {
         List<String> mismatches = new ArrayList<>();
         for (ManagedStrategy entry : strategies) {
-            if (entry == null || entry.strategy == null) {
+            if (entry == null || entry.strategy == null || !ModeActivity.runsFor(entry.strategy.mode(), selectedViewMode)) {
                 continue;
             }
             int pendingOrders = (int) strategyOrderRepository.findByStrategyId(entry.strategy.id()).stream()
@@ -5174,6 +5186,11 @@ public class TradingFrame extends JFrame {
             selectedStrategyId = null;
             log("[MODE] Startup default view set to " + selectedViewMode.name()
                     + " because live strategies " + (startupMode == StrategyMode.LIVE ? "exist." : "do not exist."));
+            // The connection may already be up, bound to the Paper default: rebind it, as a manual switch
+            // does. Without this a Live-view session kept polling Paper and listening to the Paper stream.
+            if (connectionOk) {
+                rebindRuntimeToSelectedMode();
+            }
         }
         syncModeToggleSelection();
         applyViewModeTheme();
@@ -8533,6 +8550,9 @@ public class TradingFrame extends JFrame {
             return;
         }
         for (StrategyMode mode : StrategyMode.values()) {
+            if (!ModeActivity.runsFor(mode, selectedViewMode)) {
+                continue;
+            }
             for (StrategyWorkspace workspace : workspaceService.activeWorkspaces(mode)) {
                 workspaceValueRecorder.record(mode, workspace.id(), portfolioMetrics(mode, workspace.id()).marketValue());
             }
@@ -8570,6 +8590,9 @@ public class TradingFrame extends JFrame {
         }
         Map<StrategyMode, HttpAlpacaClient> clients = new EnumMap<>(StrategyMode.class);
         for (StrategyMode mode : StrategyMode.values()) {
+            if (!ModeActivity.runsFor(mode, selectedViewMode)) {
+                continue;
+            }
             HttpAlpacaClient client = alpacaClientForMode(mode == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER);
             if (client != null) {
                 clients.put(mode, client);

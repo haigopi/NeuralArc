@@ -45,6 +45,14 @@ final class PortfolioRefreshController {
     private static final int MAX_STUCK_REFRESH_RETRIES = 2;
 
     interface Gateway {
+        /**
+         * Whether refresh should read this mode's broker account. Live always; Paper only while it is the
+         * selected mode, so a Live session does no Paper broker work. Defaults to both.
+         */
+        default boolean modeActive(StrategyMode mode) {
+            return true;
+        }
+
         boolean isConnected();
         BrokerType brokerType();
         HttpAlpacaClient alpacaClientForMode(ApplicationMode mode);
@@ -348,7 +356,7 @@ final class PortfolioRefreshController {
     }
 
     private boolean includeInRefresh(Strategy strategy) {
-        if (strategy == null) {
+        if (strategy == null || !gateway.modeActive(strategy.mode())) {
             return false;
         }
         if (strategy.status() == StrategyStatus.ACTIVE
@@ -365,8 +373,12 @@ final class PortfolioRefreshController {
             return List.of();
         }
         List<Strategy> invalid = new ArrayList<>();
-        invalid.addAll(findInvalidBrokerMissingStrategiesForMode(stored, StrategyMode.PAPER, ApplicationMode.PAPER));
-        invalid.addAll(findInvalidBrokerMissingStrategiesForMode(stored, StrategyMode.LIVE, ApplicationMode.LIVE));
+        if (gateway.modeActive(StrategyMode.PAPER)) {
+            invalid.addAll(findInvalidBrokerMissingStrategiesForMode(stored, StrategyMode.PAPER, ApplicationMode.PAPER));
+        }
+        if (gateway.modeActive(StrategyMode.LIVE)) {
+            invalid.addAll(findInvalidBrokerMissingStrategiesForMode(stored, StrategyMode.LIVE, ApplicationMode.LIVE));
+        }
         return invalid;
     }
 
@@ -431,8 +443,12 @@ final class PortfolioRefreshController {
             return 0;
         }
         int count = 0;
-        count += reconcileLeftoverLocalBrokerStateForMode(stored, snapshots, StrategyMode.PAPER, ApplicationMode.PAPER);
-        count += reconcileLeftoverLocalBrokerStateForMode(stored, snapshots, StrategyMode.LIVE, ApplicationMode.LIVE);
+        if (gateway.modeActive(StrategyMode.PAPER)) {
+            count += reconcileLeftoverLocalBrokerStateForMode(stored, snapshots, StrategyMode.PAPER, ApplicationMode.PAPER);
+        }
+        if (gateway.modeActive(StrategyMode.LIVE)) {
+            count += reconcileLeftoverLocalBrokerStateForMode(stored, snapshots, StrategyMode.LIVE, ApplicationMode.LIVE);
+        }
         return count;
     }
 

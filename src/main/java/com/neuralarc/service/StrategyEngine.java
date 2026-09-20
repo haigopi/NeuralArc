@@ -33,6 +33,7 @@ public class StrategyEngine {
     private final AppSettingsService appSettingsService;
     private final MarketHoursService marketHoursService;
     private final StrategyProfitControlEvaluator profitControlEvaluator;
+    private final ExitOrderCanceller exitOrderCanceller;
     private final TradeEmailNotificationService emailNotificationService;
     private final ExpiredEntryOrderResubmitter expiredEntryOrderResubmitter;
     private final BaseBuyPriceGuard baseBuyPriceGuard = new BaseBuyPriceGuard();
@@ -108,6 +109,7 @@ public class StrategyEngine {
         this.emailNotificationService = emailNotificationService;
         this.expiredEntryOrderResubmitter = new ExpiredEntryOrderResubmitter(orderRepository, alpacaClient);
         this.stopLossAutoCorrector = new StopLossAutoCorrector(strategyRepository, stateMachine);
+        this.exitOrderCanceller = new ExitOrderCanceller(alpacaClient, orderRepository);
         this.profitControlEvaluator = new StrategyProfitControlEvaluator(
                 strategyRepository,
                 orderRepository,
@@ -217,7 +219,14 @@ public class StrategyEngine {
                 strategyRepository.save(strategy);
             }
             evaluateManagedStopLoss(strategy, position.get(), latestPrice, orders, outcomes);
-            profitControlEvaluator.evaluate(strategy, position.get(), latestPrice, orders, outcomes);
+            // Re-read: the stop loss may have just placed a sell, and profit controls must see it. Acting
+            // on the list from before it is how one poll placed two full-size sells on MRVL.
+            orders = orderRepository.findByStrategyId(strategy.id());
+            if (hasPendingStage(orders, StrategyStage.STOP_LOSS)) {
+                logRule(strategy, "PROFIT_CONTROLS", "SKIPPED", "A stop-loss sell is working for this position", outcomes);
+            } else {
+                profitControlEvaluator.evaluate(strategy, position.get(), latestPrice, orders, outcomes);
+            }
         } else {
             logRule(strategy, "STOP_LOSS", "SKIPPED", "No open position", outcomes);
             logRule(strategy, "PROFIT_CONTROLS", "SKIPPED", "No open position", outcomes);
@@ -443,10 +452,36 @@ public class StrategyEngine {
                 : decision.detail();
         logRule(strategy, "STOP_LOSS", decision.action().logStatus(), detail, outcomes);
         if (decision.action() == ManagedStopLossEvaluator.Action.SELL) {
+            if (!clearWorkingExitSells(strategy, orders, outcomes)) {
+                return;
+            }
             // A stop-loss exits near the market by design, so it is priced at the latest price.
             submitSellOrder(strategy, StrategyStage.STOP_LOSS, position.quantity(), latestPrice, TimeInForce.DAY,
                     StrategyLifecycleState.SELL_PLACED, "Stop loss sell submitted", StrategyEventType.STOP_LOSS_TRIGGERED);
         }
+    }
+
+    /**
+     * Cancels the working target or trailing sells before a stop-loss sell, and waits for the broker to
+     * confirm each is gone. A resting target sell plus a stop-loss sell is two sells on one position;
+     * on a margin account both can fill, and the second opens a short.
+     *
+     * @return true when nothing is left working and the stop loss may sell now
+     */
+    private boolean clearWorkingExitSells(Strategy strategy, List<StrategyOrder> orders, List<RuleOutcome> outcomes) {
+        for (StrategyOrder order : orders) {
+            if (order.side() != StrategyOrderSide.SELL || !order.isPending() || order.stage() == StrategyStage.STOP_LOSS) {
+                continue;
+            }
+            ExitOrderCanceller.Outcome outcome = exitOrderCanceller.cancelAndConfirm(order);
+            if (outcome != ExitOrderCanceller.Outcome.CANCELED) {
+                logRule(strategy, "STOP_LOSS", "DEFERRED", outcome == ExitOrderCanceller.Outcome.FILLED
+                        ? "The working " + order.stage() + " sell filled first; no stop-loss sell needed"
+                        : "Waiting for the broker to confirm the " + order.stage() + " sell is cancelled", outcomes);
+                return false;
+            }
+        }
+        return true;
     }
 
     private void maybeRestartStrategy(Strategy strategy, List<StrategyOrder> orders, BigDecimal latestPrice) {
@@ -712,6 +747,32 @@ public class StrategyEngine {
         return order;
     }
 
+    /**
+     * Caps a sell at the shares the broker says are held, less those already committed to this
+     * strategy's working sells, so no path can sell past flat into a short. Read fresh from the broker
+     * and the order store, never from the poll's earlier snapshot.
+     */
+    private int sellableQuantity(Strategy strategy, StrategyStage stage, int requested) {
+        if (requested <= 0) {
+            return 0;
+        }
+        BigDecimal held = alpacaClient.getPosition(strategy.symbol())
+                .map(AlpacaPositionData::quantity)
+                .orElse(BigDecimal.ZERO);
+        List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
+        int allowed = SellQuantityGuard.allowed(requested, held, orders);
+        if (allowed < requested) {
+            String detail = "Sell of " + requested + " capped to " + allowed + ": broker holds " + held.toPlainString()
+                    + " share(s) and " + SellQuantityGuard.committedToSells(orders)
+                    + " are already committed to working sell orders";
+            LOGGER.warning("[" + strategy.symbol() + "][" + stage + "] " + detail);
+            stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.ORDER_STATUS_UPDATED,
+                    detail, "{\"symbol\":\"" + strategy.symbol() + "\"}");
+            strategyRepository.save(strategy);
+        }
+        return allowed;
+    }
+
     private StrategyOrder submitSellOrder(
             Strategy strategy,
             StrategyStage stage,
@@ -725,7 +786,8 @@ public class StrategyEngine {
         if (!isAutoExecutionAllowed(strategy.id())) {
             return null;
         }
-        int requestedQuantity = quantity.setScale(0, java.math.RoundingMode.DOWN).intValue();
+        int requestedQuantity = sellableQuantity(strategy, stage,
+                quantity.setScale(0, java.math.RoundingMode.DOWN).intValue());
         if (requestedQuantity <= 0) {
             return null;
         }
@@ -812,7 +874,8 @@ public class StrategyEngine {
         if (!isAutoExecutionAllowed(strategy.id())) {
             return null;
         }
-        int requestedQuantity = quantity.setScale(0, java.math.RoundingMode.DOWN).intValue();
+        int requestedQuantity = sellableQuantity(strategy, StrategyStage.PROFIT_EXIT,
+                quantity.setScale(0, java.math.RoundingMode.DOWN).intValue());
         if (requestedQuantity <= 0) {
             return null;
         }

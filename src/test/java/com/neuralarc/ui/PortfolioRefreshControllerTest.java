@@ -83,6 +83,35 @@ class PortfolioRefreshControllerTest {
     }
 
     @Test
+    void aLiveSessionDoesNoPaperBrokerWorkOnRefresh() throws Exception {
+        // The same Paper strategy as above, but with Live selected: refresh must not read the Paper
+        // account at all, so the expired Paper order is left exactly as it was until Paper is viewed.
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        Strategy strategy = activePendingStrategy();
+        strategy.setLatestOrderStatus("new");
+        strategy.setLatestAlpacaOrderId("ord-expired");
+        strategies.save(strategy);
+        orders.save(order(strategy.id(), "ord-expired"));
+        FakeAlpacaClient client = new FakeAlpacaClient();
+        client.ordersById.put("ord-expired", new AlpacaOrderData("ord-expired", "client-expired", "AAPL", "buy",
+                "limit", new BigDecimal("8.00"), BigDecimal.ZERO, BigDecimal.ZERO, "expired", "{}"));
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        FakeGateway gateway = new FakeGateway(client);
+        gateway.paperActive = false;
+        PortfolioRefreshController controller = new PortfolioRefreshController(
+                strategies, orders, new InMemoryEventRepository(), executor, gateway);
+
+        controller.refresh(true);
+
+        assertTrue(gateway.finished.await(5, TimeUnit.SECONDS));
+        executor.shutdownNow();
+        Strategy untouched = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, untouched.status(), "not reconciled against the Paper account");
+        assertEquals(StrategyOrderStatus.SUBMITTED, orders.findByAlpacaOrderId("ord-expired").orElseThrow().status());
+    }
+
+    @Test
     void refreshAdoptsBrokerPositionsThatNoLocalStrategyOwns() throws Exception {
         // Previously this only ran at app start, so stock held at the broker with no local row stayed
         // invisible until a restart however often the operator pressed Refresh.
@@ -257,6 +286,10 @@ class PortfolioRefreshControllerTest {
         @Override public boolean isConnected() { return true; }
         @Override public BrokerType brokerType() { return BrokerType.ALPACA; }
         @Override public HttpAlpacaClient alpacaClientForMode(ApplicationMode mode) { return mode == ApplicationMode.PAPER ? client : null; }
+        boolean paperActive = true;
+        @Override public boolean modeActive(com.neuralarc.model.StrategyMode mode) {
+            return mode != com.neuralarc.model.StrategyMode.PAPER || paperActive;
+        }
         @Override public void onRefreshStarted() { }
         @Override public void onRefreshFinished() { finished.countDown(); }
         @Override public void syncStrategies(List<Strategy> strategies) { }
