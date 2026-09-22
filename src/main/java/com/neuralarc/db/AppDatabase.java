@@ -207,6 +207,7 @@ public final class AppDatabase {
         applyMigration("019_portfolio_value_samples", this::migration019);
         applyMigration("020_account_equity_samples", this::migration020);
         applyMigration("021_workspace_value_samples", this::migration021);
+        applyMigration("022_smart_picks_schedules", this::migration022);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -646,6 +647,27 @@ public final class AppDatabase {
                     )""");
             st.execute("CREATE INDEX IF NOT EXISTS idx_workspace_value_samples_day "
                     + "ON workspace_value_samples(mode, workspace_id, session_date)");
+        }
+    }
+
+    /** Autonomous scans for the Smart Picks workspaces (Movers, Leaders, Weekend Rebound). */
+    private void migration022() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS smart_picks_schedules (
+                        id                 TEXT PRIMARY KEY,
+                        enabled            INTEGER NOT NULL DEFAULT 1,
+                        workspace_id       TEXT NOT NULL,
+                        workspace_code     TEXT NOT NULL,
+                        scan_time_et       TEXT NOT NULL,
+                        days               TEXT NOT NULL,
+                        execute_after_scan INTEGER NOT NULL DEFAULT 0,
+                        quantity           INTEGER NOT NULL DEFAULT 1,
+                        term               TEXT NOT NULL,
+                        mode               TEXT NOT NULL,
+                        updated_at         TEXT NOT NULL
+                    )""");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_smart_picks_schedules_workspace ON smart_picks_schedules(workspace_id)");
         }
     }
 

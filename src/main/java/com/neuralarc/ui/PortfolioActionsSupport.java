@@ -578,7 +578,8 @@ final class PortfolioActionsSupport {
 
             @Override
             String confirmDetail() {
-                return "Matching strategies hold no shares and have no working broker order, so their trade is finished."
+                return "Matching strategies hold no shares, so their trade is finished. Failed rows are included;"
+                        + " a buy order still working for one is cancelled at the broker before it is archived."
                         + "<br>They are archived: the rows leave the active grids and every fill stays in Trade History."
                         + "<br>A closed strategy set to repeat its cycle will not re-arm once archived.";
             }

@@ -322,6 +322,9 @@ public class StrategyService {
         });
     }
 
+    /** The cancel result's error when there was simply nothing working to cancel. */
+    public static final String NO_PENDING_LIMIT_BUYS = "No pending limit buy orders found";
+
     public LimitBuyCancelResult cancelPendingLimitBuys(String strategyId) {
         Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
         if (maybeStrategy.isEmpty()) {
@@ -333,7 +336,7 @@ public class StrategyService {
         }
         int canceledCount = pendingLimitOrderCanceler.cancelPendingLimitBuys(strategy);
         if (canceledCount <= 0) {
-            return LimitBuyCancelResult.failed("No pending limit buy orders found");
+            return LimitBuyCancelResult.failed(NO_PENDING_LIMIT_BUYS);
         }
 
         List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());

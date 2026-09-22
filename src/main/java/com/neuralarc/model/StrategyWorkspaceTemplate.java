@@ -46,6 +46,13 @@ public record StrategyWorkspaceTemplate(String name, String code, String descrip
                         "Defensive book focused on protecting realized gains: scan liquid stocks with quiet daily ranges, shallow historical drawdowns, and an intact long-term trend, rank the most resilient on live data, and track capital-preserving entries with a support-tightened protective stop in a dedicated Profit Shield grid.", true),
                 new StrategyWorkspaceTemplate("Earnings Hunter", "EARNINGS",
                         "Scan live earnings-related news plus current market reaction, rank event-driven long setups, and track planned entries in a dedicated Earnings Hunter grid.", true),
+                // The Smart Picks strategies, each with its own grid and autonomous scan schedule.
+                new StrategyWorkspaceTemplate("High Volatility Movers", "MOVERS",
+                        "Scan the day's biggest gainers and losers on live data, analyze each with Auto Analyze, and track the best volatility setups in a dedicated grid. Scans every weekday at 10:00 ET by default, after the opening swings settle.", true),
+                new StrategyWorkspaceTemplate("Diversified Leaders", "LEADERS",
+                        "Analyze a diversified list of 20 sector-leading large caps and track the strongest entries in a dedicated grid. Scans Mondays at 10:00 ET by default.", true),
+                new StrategyWorkspaceTemplate("Weekend Rebound", "REBOUND",
+                        "Scan Friday's controlled selloffs in liquid stocks, score each by how often it rebounded on Mondays after a Friday decline, and track rebound entries in a dedicated grid. Scans Fridays at 3:30 PM ET by default, before the close.", true),
                 new StrategyWorkspaceTemplate("Manual Trades", "MANUAL",
                         "A home for discretionary, manually managed trades.", true),
                 new StrategyWorkspaceTemplate("Custom Strategy", CUSTOM_CODE,

@@ -102,9 +102,26 @@ final class ManagedStrategy {
     }
 
     StrategyConfig toConfig() {
+        return toConfig(strategy.baseBuyLimitPrice());
+    }
+
+    /**
+     * The settings to open the editor with. Once shares are held, "Base buy price" shows what the
+     * position actually cost — its average entry — not the entry rule's original limit price, which is
+     * stale after the first fill (TSLA showed $389.72 while the shares averaged $368.11 after later buys).
+     */
+    StrategyConfig toEditConfig() {
+        Position held = cachedPosition;
+        if (held != null && held.getTotalShares() > 0 && held.getAverageCost().signum() > 0) {
+            return toConfig(held.getAverageCost());
+        }
+        return toConfig();
+    }
+
+    private StrategyConfig toConfig(BigDecimal baseBuyPrice) {
         return new StrategyConfig(
                 strategy.symbol(),
-                strategy.baseBuyLimitPrice(),
+                baseBuyPrice,
                 strategy.baseBuyQuantity(),
                 strategy.automatedStopLossEnabled(),
                 strategy.stopLossPrice(),

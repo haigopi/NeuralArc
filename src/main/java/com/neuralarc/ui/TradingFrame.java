@@ -45,6 +45,7 @@ import com.neuralarc.model.VwapSchedule;
 import com.neuralarc.model.ProfitShieldSchedule;
 import com.neuralarc.model.RangeRiderSchedule;
 import com.neuralarc.model.SwingSchedule;
+import com.neuralarc.model.SmartPicksSchedule;
 import com.neuralarc.service.AutoAnalyzeResultStore;
 import com.neuralarc.service.AutoRiskAdjustmentService;
 import com.neuralarc.service.FeedbackEmailService;
@@ -165,9 +166,6 @@ public class TradingFrame extends JFrame {
     private static final DateTimeFormatter RULE_TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM d yyyy, h:mm a");
     private static final DateTimeFormatter NEXT_OPEN_FORMAT = DateTimeFormatter.ofPattern("EEE, MMM d yyyy h:mm a z");
     private static final int GRID_SEARCH_MIN_STOCK_COUNT = 9;
-    private static final String SMART_PICKS_MENU_VOLATILE = "High Volatility Movers";
-    private static final String SMART_PICKS_MENU_DIVERSIFIED = "Diversified Leaders (Top 20)";
-    private static final String SMART_PICKS_MENU_WEEKEND_REBOUND = "Weekend Rebound";
 
     // Wraps onto further lines: a long position summary used to be cut off with an ellipsis.
     private final WrappingText positionSummary = new WrappingText("Position: -", 10f,
@@ -460,6 +458,7 @@ public class TradingFrame extends JFrame {
     private static final String RANGE_RIDER_EMPTY_CARD = "rangeRiderEmpty";
     private static final String PROFIT_SHIELD_EMPTY_CARD = "profitShieldEmpty";
     private static final String EARNINGS_HUNTER_EMPTY_CARD = "earningsHunterEmpty";
+    private static final String SMART_PICKS_EMPTY_CARD = "smartPicksEmpty";
     private final JTabbedPane strategyTabs = new JTabbedPane();
     private final JTextField currentStrategiesSearchField = new JTextField(24);
     private final JTextField tradeHistorySearchField = new JTextField(24);
@@ -500,6 +499,8 @@ public class TradingFrame extends JFrame {
     private final ScanHistoryTablePanel rangeRiderScanHistoryPanel = new ScanHistoryTablePanel();
     private final ScanHistoryTablePanel profitShieldScanHistoryPanel = new ScanHistoryTablePanel();
     private final ScanHistoryTablePanel earningsHunterScanHistoryPanel = new ScanHistoryTablePanel();
+    private final ScanHistoryTablePanel smartPicksScanHistoryPanel = new ScanHistoryTablePanel();
+    private SmartPicksWorkspaceView smartPicksWorkspaceView;
     private JPanel headerPanel;
     private final EnumMap<StrategyMode, GapRocketConfig> lastGapRocketConfigs = new EnumMap<>(StrategyMode.class);
     private final EnumMap<StrategyMode, OrbConfig> lastOrbConfigs = new EnumMap<>(StrategyMode.class);
@@ -529,6 +530,7 @@ public class TradingFrame extends JFrame {
     private final SqliteScanHistoryRepository scanHistoryRepository;
     private final SqliteRemoteSyncSuppressionRepository remoteSyncSuppressionRepository;
     private final GapAndGoCoordinator gapAndGoCoordinator;
+    private final SmartPicksWorkspaceCoordinator smartPicksWorkspaceCoordinator;
     private final OrbCoordinator orbCoordinator;
     private final DipHunterCoordinator dipHunterCoordinator;
     private final VwapCoordinator vwapCoordinator;
@@ -642,6 +644,19 @@ public class TradingFrame extends JFrame {
         gapAndGoCoordinator = new GapAndGoCoordinator(
                 new GapAndGoCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
+        smartPicksWorkspaceCoordinator = new SmartPicksWorkspaceCoordinator(new SmartPicksWorkspaceCoordinator.Ui() {
+            @Override public boolean connectionOk() { return connectionOk; }
+            @Override public boolean workspaceExists(String workspaceId) {
+                return workspaceId != null && workspaceService.findById(workspaceId).isPresent();
+            }
+            @Override public String runScan(SmartPicksSchedule schedule, SmartPicksWorkspaceKind kind) {
+                return runSmartPicks(kind.automationStrategy(), schedule.mode(), schedule.quantity(), schedule.term(),
+                        schedule.workspaceId(), schedule.executeAfterScan(), "[Smart Picks][" + kind.title() + "]");
+            }
+            @Override public void onScheduleChanged() { SwingUtilities.invokeLater(TradingFrame.this::refreshNewStrategyButtonPresentation); }
+            @Override public void log(String message) { TradingFrame.this.log(message); }
+        }, new com.neuralarc.db.SqliteSmartPicksScheduleRepository(appDatabase), scanHistoryRepository,
+                marketHoursService, uiPollingExecutor, java.time.Clock.systemUTC());
         java.util.concurrent.ExecutorService accountEquityWriter = java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "account-equity-writer");
             thread.setDaemon(true);
@@ -3280,31 +3295,61 @@ public class TradingFrame extends JFrame {
         return canceled;
     }
 
+    /** Liquidation re-entry: runs the chosen Smart Picks strategy into its matching workspace, if there is one. */
     private String runSmartPicksAutomation(PortfolioCaptureConfig config) {
-        ApplicationMode mode = config.reentryMode() == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER;
-        String apiKey = settingsDialog.savedApiKey(mode);
-        String apiSecret = settingsDialog.savedApiSecret(mode);
-        if (apiKey.isBlank() || apiSecret.isBlank()) {
-            return "Skipped: Alpaca credentials are required.";
-        }
+        SmartPicksWorkspaceKind kind = SmartPicksWorkspaceKind.forStrategy(config.reentrySmartPicksStrategy());
+        String workspaceId = smartPicksWorkspaceId(kind, config.reentryMode());
         log("[Portfolio Liquidation] Auto re-entry started. mode=" + config.reentryMode()
                 + " quantity=" + config.reentryQuantity()
                 + " term=" + config.reentryRecommendationType()
-                + " smartPicksStrategy=" + config.reentrySmartPicksStrategy());
+                + " smartPicksStrategy=" + config.reentrySmartPicksStrategy()
+                + " workspace=" + (workspaceId == null ? "All Stocks" : kind.title()));
+        return runSmartPicks(config.reentrySmartPicksStrategy(), config.reentryMode(), config.reentryQuantity(),
+                config.reentryRecommendationType(), workspaceId, true, "[Portfolio Liquidation]");
+    }
+
+    /** The first active workspace of {@code kind} in {@code mode}, or null when none has been created. */
+    private String smartPicksWorkspaceId(SmartPicksWorkspaceKind kind, StrategyMode mode) {
+        return workspaceService.activeWorkspaces(mode).stream()
+                .filter(workspace -> kind.code().equalsIgnoreCase(workspace.code()))
+                .map(StrategyWorkspace::id)
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * Runs a Smart Picks strategy headlessly: fetch its live universe, analyze each stock, then either
+     * create and activate the picks in {@code workspaceId} ({@code place}) or only report them. Blocking;
+     * call it off the EDT. Shared by the liquidation re-entry and the Smart Picks workspace schedules.
+     */
+    private String runSmartPicks(PortfolioCaptureSmartPicksStrategy strategy, StrategyMode mode, int quantity,
+                                 RecommendationType term, String workspaceId, boolean place, String logTag) {
+        ApplicationMode applicationMode = mode == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER;
+        String apiKey = settingsDialog.savedApiKey(applicationMode);
+        String apiSecret = settingsDialog.savedApiSecret(applicationMode);
+        if (apiKey.isBlank() || apiSecret.isBlank()) {
+            return "Skipped: Alpaca credentials are required.";
+        }
         HttpAlpacaMarketDataApi marketDataApi = new HttpAlpacaMarketDataApi(apiKey, apiSecret);
-        List<TrendingStock> stocks = new ArrayList<>();
+        List<TrendingStock> stocks;
         try {
-            stocks.addAll(portfolioCaptureSmartPicksStocks(config, apiKey, apiSecret, marketDataApi));
+            stocks = SmartPicksUniverseLoader.load(strategy, apiKey, apiSecret, marketDataApi, logTag, this::log);
         } catch (Exception ex) {
-            log("[Portfolio Liquidation] Auto re-entry failed to fetch Smart Picks stocks: " + ex.getMessage());
+            log(logTag + " Could not fetch Smart Picks stocks: " + ex.getMessage());
             return "Skipped: unable to fetch Smart Picks stocks.";
         }
         List<SmartPicksSimulationSelection> selections = new SmartPicksPortfolioAutomationService(marketDataApi, this::log)
-                .analyzeSelections(stocks, config.reentryRecommendationType(), config.reentryQuantity());
+                .analyzeSelections(stocks, term, quantity);
+        if (!place) {
+            return selections.isEmpty()
+                    ? "No picks qualified"
+                    : selections.size() + " pick(s): " + selections.stream()
+                            .map(selection -> selection.stock().symbol()).toList();
+        }
         SmartPicksSimulationPlacementController controller = new SmartPicksSimulationPlacementController(new SmartPicksSimulationPlacementController.Gateway() {
             @Override public com.neuralarc.service.StrategyRepository repository() { return strategyRepository; }
             @Override public StrategyService.StrategyCreationResult createPaperStrategy(Strategy strategy) {
-                return createStrategy(strategy, config.reentryMode());
+                return createStrategy(strategy, mode);
             }
             @Override public StrategyService.StrategyCreationResult createStrategy(Strategy strategy, StrategyMode targetMode) {
                 StrategyService service = strategyServiceForMode(targetMode);
@@ -3315,72 +3360,25 @@ public class TradingFrame extends JFrame {
             }
             @Override public boolean confirmReplaceWaitingPaperStrategy(String symbol) { return true; }
             @Override public boolean allowDuplicateSymbols() { return settingsDialog.appliedAllowDuplicateSymbolStrategies(); }
-            @Override public String targetWorkspaceId() { return null; }
+            @Override public String targetWorkspaceId() { return workspaceId; }
             @Override public int defaultStrategyPollingSeconds() { return settingsDialog.appliedDefaultStrategyPollingSeconds(); }
             @Override public boolean defaultRepeatCycleAfterProfitExitEnabled() { return settingsDialog.appliedDefaultRepeatCycleAfterProfitExitEnabled(); }
             @Override public boolean defaultResubmitOnExpiryEnabled() { return settingsDialog.appliedDefaultResubmitOnExpiryEnabled(); }
-            @Override public void cancelAndDeletePaperStrategy(String strategyId) { strategyServiceForMode(config.reentryMode()).delete(strategyId); }
+            @Override public void cancelAndDeletePaperStrategy(String strategyId) { strategyServiceForMode(mode).delete(strategyId); }
             @Override public void afterPlacement() {
-                syncStrategiesFromRepository();
-                refreshStrategyTableData();
-                updateStatusBar();
-                refreshPanels();
+                SwingUtilities.invokeLater(() -> {
+                    syncStrategiesFromRepository();
+                    refreshStrategyTableData();
+                    updateStatusBar();
+                    refreshPanels();
+                });
             }
             @Override public void log(String message) { TradingFrame.this.log(message); }
-        }, config.reentryMode());
+        }, mode);
         SmartPicksSimulationPlacementController.PlacementResult result = controller.place(selections);
-        log("[Portfolio Liquidation] Auto re-entry generated positions. created=" + result.created()
+        log(logTag + " Smart Picks generated positions. created=" + result.created()
                 + " replaced=" + result.replaced() + " skipped=" + result.skipped());
         return controller.summaryMessage(result).replace('\n', ' ');
-    }
-
-    private List<TrendingStock> portfolioCaptureSmartPicksStocks(
-            PortfolioCaptureConfig config,
-            String apiKey,
-            String apiSecret,
-            HttpAlpacaMarketDataApi marketDataApi
-    ) throws Exception {
-        if (config.reentrySmartPicksStrategy() == PortfolioCaptureSmartPicksStrategy.DIVERSIFIED_TOP_20) {
-            List<TrendingStock> stocks = SmartPicksTrendingStocksDialog.diversifiedTop20Stocks(
-                    symbol -> latestPriceForPortfolioCaptureAutomation(symbol, marketDataApi)
-            );
-            log("[Portfolio Liquidation] Auto re-entry using Diversified Leaders (Top 20). symbols="
-                    + stocks.stream().map(TrendingStock::symbol).toList());
-            return stocks;
-        }
-        if (config.reentrySmartPicksStrategy() == PortfolioCaptureSmartPicksStrategy.WEEKEND_REBOUND) {
-            TrendingStocksService trendingService = new TrendingStocksService(new HttpAlpacaScreenerClient(apiKey, apiSecret));
-            List<TrendingStock> stocks = new WeekendReboundScoreService().topStocks(trendingService, marketDataApi, 20);
-            log("[Portfolio Liquidation] Auto re-entry using Weekend Rebound. symbols="
-                    + stocks.stream().map(TrendingStock::symbol).toList());
-            return stocks;
-        }
-        TrendingStockGroups groups = new TrendingStocksService(new HttpAlpacaScreenerClient(apiKey, apiSecret)).topGainersAndLosers(10);
-        List<TrendingStock> stocks = new ArrayList<>();
-        stocks.addAll(groups.gainers());
-        stocks.addAll(groups.losers());
-        log("[Portfolio Liquidation] Auto re-entry using High Volatility Movers. gainers="
-                + groups.gainers().stream().map(TrendingStock::symbol).toList()
-                + " losers=" + groups.losers().stream().map(TrendingStock::symbol).toList());
-        return stocks;
-    }
-
-    private BigDecimal latestPriceForPortfolioCaptureAutomation(String symbol, HttpAlpacaMarketDataApi marketDataApi) {
-        try {
-            List<MarketBar> bars = marketDataApi.getIntradayBars(
-                    symbol,
-                    LocalDate.now().minusDays(5),
-                    LocalDate.now(),
-                    15
-            );
-            if (bars == null || bars.isEmpty()) {
-                return BigDecimal.ZERO;
-            }
-            return bars.get(bars.size() - 1).close();
-        } catch (Exception ex) {
-            log("[Portfolio Liquidation] Price fetch fallback used for " + symbol + ": " + ex.getMessage());
-            return BigDecimal.ZERO;
-        }
     }
 
     private void setCapturePortfolioBusy(PortfolioCaptureRuns.Scope scope, boolean busy) {
@@ -3533,22 +3531,6 @@ public class TradingFrame extends JFrame {
                 BorderFactory.createLineBorder(new Color(70, 76, 90), 1, true),
                 new EmptyBorder(4, 4, 4, 4)
         ));
-        smartPicksMenu.add(createStatusMenuHeader("Smart Picks"));
-        smartPicksMenu.add(createStatusMenuItem(
-                SMART_PICKS_MENU_VOLATILE,
-                "icons/smart-picks.svg",
-                () -> openSmartPicksTrendingStocksDialog(SmartPicksTrendingStocksDialog.StrategyUniverse.VOLATILE)
-        ));
-        smartPicksMenu.add(createStatusMenuItem(
-                SMART_PICKS_MENU_DIVERSIFIED,
-                "icons/portfolio.svg",
-                () -> openSmartPicksTrendingStocksDialog(SmartPicksTrendingStocksDialog.StrategyUniverse.DIVERSIFIED_TOP_20)
-        ));
-        smartPicksMenu.add(createStatusMenuItem(
-                SMART_PICKS_MENU_WEEKEND_REBOUND,
-                "icons/smart-picks.svg",
-                () -> openSmartPicksTrendingStocksDialog(SmartPicksTrendingStocksDialog.StrategyUniverse.WEEKEND_REBOUND)
-        ));
         // One-click strategy-workspace creation: clicking a template creates the workspace and its
         // tab immediately (no restart) and selects it.
         smartPicksMenu.add(createStatusMenuHeader("New Strategy Workspace"));
@@ -3567,8 +3549,12 @@ public class TradingFrame extends JFrame {
         }
     }
 
+    /**
+     * The Smart Picks strategies now live in their own workspaces, created from the "New Strategy
+     * Workspace" section like every other strategy; the menu no longer offers them as one-off runs.
+     */
     static List<String> smartPicksMenuLabels() {
-        return List.of(SMART_PICKS_MENU_VOLATILE, SMART_PICKS_MENU_DIVERSIFIED, SMART_PICKS_MENU_WEEKEND_REBOUND);
+        return StrategyWorkspaceTemplate.catalog().stream().map(StrategyWorkspaceTemplate::name).toList();
     }
 
     private void showSmartPicksMenu() {
@@ -5594,7 +5580,7 @@ public class TradingFrame extends JFrame {
         }
 
         ManagedStrategy entry = strategies.get(row);
-        reviewAndSaveStrategy(entry, entry.toConfig(), "Edit Strategy " + entry.strategy.symbol());
+        reviewAndSaveStrategy(entry, entry.toEditConfig(), "Edit Strategy " + entry.strategy.symbol());
     }
 
     /**
@@ -7079,6 +7065,9 @@ public class TradingFrame extends JFrame {
         strategiesGridCardPanel.add(
                 wrapEmptyStateWithScanHistory(new EarningsHunterPanel(this::openEarningsHunterAnalysisDialog, true),
                         earningsHunterScanHistoryPanel), EARNINGS_HUNTER_EMPTY_CARD);
+        strategiesGridCardPanel.add(
+                wrapEmptyStateWithScanHistory(smartPicksWorkspaceView().emptyState(), smartPicksScanHistoryPanel),
+                SMART_PICKS_EMPTY_CARD);
         strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
         return strategiesGridCardPanel;
     }
@@ -7232,6 +7221,7 @@ public class TradingFrame extends JFrame {
         actions.add(profitShieldCancelScheduleButton);
         actions.add(profitShieldAnalyzeButton);
         actions.add(earningsHunterAnalyzeButton);
+        smartPicksWorkspaceView().actionControls().forEach(actions::add);
         bottom.add(actions, BorderLayout.EAST);
         return bottom;
     }
@@ -7626,6 +7616,10 @@ public class TradingFrame extends JFrame {
         boolean showRangeRiderEmptyState = selectedRangeRider && selectedWorkspaceStrategyCount() == 0;
         boolean showProfitShieldEmptyState = selectedProfitShield && selectedWorkspaceStrategyCount() == 0;
         boolean showEarningsHunterEmptyState = selectedEarningsHunter && selectedWorkspaceStrategyCount() == 0;
+        Optional<SmartPicksWorkspaceKind> smartPicksKind = selectedSmartPicksKind();
+        boolean showSmartPicksEmptyState = smartPicksKind.isPresent() && selectedWorkspaceStrategyCount() == 0;
+        smartPicksWorkspaceView().refresh(smartPicksKind, showSmartPicksEmptyState,
+                smartPicksWorkspaceCoordinator == null ? Optional.empty() : smartPicksWorkspaceCoordinator.schedule(selectedWorkspaceId));
         gapRocketAnalyzeButton.setVisible(selectedGapRocket && !showGapRocketEmptyState);
         gapRocketPlaceOrdersButton.setVisible(selectedGapRocket && !showGapRocketEmptyState);
         orbAnalyzeButton.setVisible(selectedOrb && !showOrbEmptyState);
@@ -7687,6 +7681,9 @@ public class TradingFrame extends JFrame {
         } else if (showEarningsHunterEmptyState) {
             refreshScanHistoryPanel(earningsHunterScanHistoryPanel);
             strategiesGridCardLayout.show(strategiesGridCardPanel, EARNINGS_HUNTER_EMPTY_CARD);
+        } else if (showSmartPicksEmptyState) {
+            refreshScanHistoryPanel(smartPicksScanHistoryPanel);
+            strategiesGridCardLayout.show(strategiesGridCardPanel, SMART_PICKS_EMPTY_CARD);
         } else {
             strategiesGridCardLayout.show(strategiesGridCardPanel, STRATEGIES_GRID_CARD);
         }
@@ -7741,6 +7738,53 @@ public class TradingFrame extends JFrame {
                 .map(StrategyWorkspace::code)
                 .map(VWAP_WORKSPACE_CODE::equalsIgnoreCase)
                 .orElse(false);
+    }
+
+    /** The Smart Picks kind of the selected workspace, if it is one of the Smart Picks workspaces. */
+    private Optional<SmartPicksWorkspaceKind> selectedSmartPicksKind() {
+        if (selectedWorkspaceId == null) {
+            return Optional.empty();
+        }
+        return workspaceService.findById(selectedWorkspaceId)
+                .map(StrategyWorkspace::code)
+                .flatMap(SmartPicksWorkspaceKind::fromCode);
+    }
+
+    private SmartPicksWorkspaceView smartPicksWorkspaceView() {
+        if (smartPicksWorkspaceView == null) {
+            smartPicksWorkspaceView = new SmartPicksWorkspaceView(BASE_FONT.deriveFont(Font.BOLD, 11f),
+                    this::analyzeSelectedSmartPicksWorkspace,
+                    this::scheduleSelectedSmartPicksWorkspace,
+                    this::cancelSelectedSmartPicksSchedule);
+        }
+        return smartPicksWorkspaceView;
+    }
+
+    /** Opens the Smart Picks review for the selected workspace's strategy; placed picks land in this workspace. */
+    private void analyzeSelectedSmartPicksWorkspace() {
+        selectedSmartPicksKind().ifPresent(kind -> openSmartPicksTrendingStocksDialog(kind.universe()));
+    }
+
+    private void scheduleSelectedSmartPicksWorkspace() {
+        Optional<SmartPicksWorkspaceKind> kind = selectedSmartPicksKind();
+        if (kind.isEmpty()) {
+            return;
+        }
+        SmartPicksSchedule existing = smartPicksWorkspaceCoordinator.schedule(selectedWorkspaceId).orElse(null);
+        new SmartPicksScheduleDialog(this, kind.get(), selectedWorkspaceId, selectedViewMode, existing)
+                .showDialog()
+                .ifPresent(schedule -> {
+                    smartPicksWorkspaceCoordinator.save(schedule);
+                    userActionLog.completed("Schedule " + kind.get().title(), schedule.summary());
+                });
+    }
+
+    private void cancelSelectedSmartPicksSchedule() {
+        int choice = JOptionPane.showConfirmDialog(this, "Cancel this workspace's autonomous Smart Picks scan?",
+                "Cancel Schedule", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+        if (choice == JOptionPane.YES_OPTION) {
+            smartPicksWorkspaceCoordinator.cancelScheduleForWorkspace(selectedWorkspaceId);
+        }
     }
 
     private boolean isSelectedSwingWorkspace() {
@@ -8136,6 +8180,7 @@ public class TradingFrame extends JFrame {
     /** Load any persisted schedules and start the autonomous schedulers. */
     public void startBackgroundSchedulers() {
         gapAndGoCoordinator.start();
+        smartPicksWorkspaceCoordinator.start();
         orbCoordinator.start();
         dipHunterCoordinator.start();
         vwapCoordinator.start();
@@ -8873,6 +8918,7 @@ public class TradingFrame extends JFrame {
         if (result == WorkspaceService.DeleteResult.DELETED) {
             // A deleted workspace's Gap Rocket schedule must not keep scanning (and auto-executing) for it.
             gapAndGoCoordinator.cancelScheduleForWorkspace(workspaceId);
+            smartPicksWorkspaceCoordinator.cancelScheduleForWorkspace(workspaceId);
             log("[WORKSPACE] Deleted empty strategy workspace '" + currentName + "'.");
             userActionLog.completed("Delete Workspace", currentName);
         }
@@ -9020,6 +9066,7 @@ public class TradingFrame extends JFrame {
         }
         bottomStatusBars.shutdown();
         portfolioCaptureRuns.shutdown();
+        smartPicksWorkspaceCoordinator.shutdown();
         if (accountEquitySampleTimer != null) {
             accountEquitySampleTimer.stop();
         }

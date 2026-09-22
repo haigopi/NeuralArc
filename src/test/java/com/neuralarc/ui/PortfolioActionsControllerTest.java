@@ -308,6 +308,60 @@ class PortfolioActionsControllerTest {
         return managed;
     }
 
+    @Test
+    void aFailedClosedRowHasItsWorkingBuyCancelledBeforeItIsArchived() {
+        // DTSS and DLXY: FAILED, no shares, but a base buy still marked working at the broker.
+        CancelRecordingService service = new CancelRecordingService(StrategyService.LimitBuyCancelResult.success(1));
+        FakeGateway gateway = new FakeGateway(service);
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        PortfolioActionsSupport.BatchResult result = controller.archiveClosedTargets(List.of(managed("DTSS")), "test");
+
+        assertTrue(result.failures().isEmpty(), result.failures().toString());
+        assertEquals(List.of("DTSS-id"), service.cancelled);
+        assertEquals(List.of("DTSS-id"), gateway.archivedStrategyIds);
+    }
+
+    @Test
+    void aFailedRowWithNothingWorkingIsArchivedStraightAway() {
+        CancelRecordingService service = new CancelRecordingService(
+                StrategyService.LimitBuyCancelResult.failed(StrategyService.NO_PENDING_LIMIT_BUYS));
+        FakeGateway gateway = new FakeGateway(service);
+
+        new PortfolioActionsController(gateway).archiveClosedTargets(List.of(managed("BIAF")), "test");
+
+        assertEquals(List.of("BIAF-id"), gateway.archivedStrategyIds);
+    }
+
+    @Test
+    void aRowWhoseWorkingBuyCannotBeCancelledIsKept() {
+        CancelRecordingService service = new CancelRecordingService(
+                StrategyService.LimitBuyCancelResult.failed("Broker unreachable"));
+        FakeGateway gateway = new FakeGateway(service);
+
+        PortfolioActionsSupport.BatchResult result = new PortfolioActionsController(gateway)
+                .archiveClosedTargets(List.of(managed("DLXY")), "test");
+
+        assertTrue(gateway.archivedStrategyIds.isEmpty(), "never orphan a live order");
+        assertTrue(result.failures().get(0).contains("could not be cancelled"), result.failures().toString());
+    }
+
+    private static final class CancelRecordingService extends StrategyService {
+        private final StrategyService.LimitBuyCancelResult result;
+        private final List<String> cancelled = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+        private CancelRecordingService(StrategyService.LimitBuyCancelResult result) {
+            super(null, null, null, null, null, true, StrategyMode.PAPER);
+            this.result = result;
+        }
+
+        @Override
+        public LimitBuyCancelResult cancelPendingLimitBuys(String strategyId) {
+            cancelled.add(strategyId);
+            return result;
+        }
+    }
+
     private static final class BlockingRepositionService extends StrategyService {
         private final AtomicInteger active = new AtomicInteger();
         private final AtomicInteger maxConcurrent = new AtomicInteger();
@@ -426,7 +480,11 @@ class PortfolioActionsControllerTest {
         @Override public StrategyService strategyService() { return service; }
         @Override public StrategyService strategyServiceForMode(StrategyMode mode) { return service; }
         @Override public StrategyMode selectedViewMode() { return selectedViewMode; }
-        @Override public StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason) { return StrategyService.ArchiveResult.success(strategyId); }
+        private final java.util.List<String> archivedStrategyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        @Override public StrategyService.ArchiveResult archiveStrategy(String strategyId, String reason) {
+            archivedStrategyIds.add(strategyId);
+            return StrategyService.ArchiveResult.success(strategyId);
+        }
         @Override public StrategyService.ArchiveResult deleteLocalTradeHistoryStrategy(String strategyId) { return StrategyService.ArchiveResult.success(strategyId); }
         @Override public StrategyService.ArchiveResult deleteLocalPaperStrategy(String strategyId) {
             deletedPaperStrategyIds.add(strategyId);

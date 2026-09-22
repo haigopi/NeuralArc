@@ -87,14 +87,19 @@ final class PortfolioActionMatchers {
         if (status == StrategyStatus.ARCHIVED) {
             return false;
         }
-        if (entry.cachedPosition().getTotalShares() > 0) {
+        // Any shares at all, long or short, are open exposure: never "closed".
+        if (entry.cachedPosition().getTotalShares() != 0) {
             return false;
         }
         if (isPendingOrderState(entry.strategy.currentState())) {
             return false;
         }
+        // A failed strategy that holds nothing is shown as "Position Closed" in the grid and is just as
+        // finished; leaving it out made the action report "no closed positions" beside those rows.
+        // Any buy it still has working is cancelled before it is archived.
         return status == StrategyStatus.COMPLETED
                 || status == StrategyStatus.STOPPED
+                || status == StrategyStatus.FAILED
                 || entry.strategy.currentState() == StrategyLifecycleState.COMPLETED;
     }
 

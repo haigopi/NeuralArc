@@ -461,7 +461,7 @@ final class PortfolioActionsController {
         new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
             @Override
             protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return archiveTargets(targets, "Archived by Remove All Closed Positions portfolio action");
+                return archiveClosedTargets(targets, "Archived by Remove All Closed Positions portfolio action");
             }
 
             @Override
@@ -765,6 +765,31 @@ final class PortfolioActionsController {
             }
             modeAwareService.resume(entry.strategy.id());
             return TargetResult.success(entry.strategy.symbol());
+        });
+    }
+
+    /**
+     * Archives closed rows. A failed row can still have a base buy marked working — it failed while its
+     * order was open — and archiving it as-is would leave that order at the broker with nothing tracking
+     * it. So its working buys are cancelled first, and the row is archived only once that succeeds.
+     */
+    PortfolioActionsSupport.BatchResult archiveClosedTargets(List<ManagedStrategy> targets, String reason) {
+        return runTargetsInParallel(targets, entry -> {
+            if (entry.strategy.status() == com.neuralarc.model.StrategyStatus.FAILED) {
+                StrategyService modeAwareService = modeAwareService(entry);
+                if (modeAwareService == null) {
+                    return missingBrokerService(entry);
+                }
+                StrategyService.LimitBuyCancelResult cancel = modeAwareService.cancelPendingLimitBuys(entry.strategy.id());
+                if (!cancel.success() && !StrategyService.NO_PENDING_LIMIT_BUYS.equals(cancel.error())) {
+                    return TargetResult.failure(entry.strategy.symbol() + ": kept, its working buy could not be cancelled ("
+                            + cancel.error() + ")");
+                }
+            }
+            StrategyService.ArchiveResult result = gateway.archiveStrategy(entry.strategy.id(), reason);
+            return result.success()
+                    ? TargetResult.success(entry.strategy.symbol())
+                    : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
         });
     }
 
