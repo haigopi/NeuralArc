@@ -55,12 +55,20 @@ final class SharesAndTimeInForceDialog extends JDialog {
         JSpinner globalShares = new JSpinner(new SpinnerNumberModel(0, 0, 1_000_000, 1));
         globalShares.setToolTipText("0 keeps each row's current share count");
         JComboBox<Object> globalTif = new JComboBox<>(new Object[]{KEEP, TimeInForce.DAY, TimeInForce.GTC});
-        JButton applyGlobal = new JButton("Apply to Included Rows");
-        applyGlobal.addActionListener(event -> {
-            Object tif = globalTif.getSelectedItem();
-            plan.applyToIncluded((Integer) globalShares.getValue(), tif instanceof TimeInForce value ? value : null);
-            model.fireTableDataChanged();
-            refreshSummary();
+        // Global values reach the included rows as soon as they are chosen. A separate "apply" step was easy to
+        // miss: setting 5 shares / GTC and pressing Apply Changes then changed nothing at all.
+        globalShares.addChangeListener(event -> {
+            int shares = (Integer) globalShares.getValue();
+            if (shares > 0) {
+                plan.applyToIncluded(shares, null);
+                model.fireTableDataChanged();
+            }
+        });
+        globalTif.addActionListener(event -> {
+            if (globalTif.getSelectedItem() instanceof TimeInForce tif) {
+                plan.applyToIncluded(0, tif);
+                model.fireTableDataChanged();
+            }
         });
         JButton includeAll = new JButton("Include All");
         includeAll.addActionListener(event -> setAllIncluded(true));
@@ -71,7 +79,6 @@ final class SharesAndTimeInForceDialog extends JDialog {
         global.add(globalShares);
         global.add(new JLabel("Time in force:"));
         global.add(globalTif);
-        global.add(applyGlobal);
         global.add(includeAll);
         global.add(excludeAll);
         JPanel north = new JPanel(new BorderLayout(0, 8));
@@ -98,6 +105,12 @@ final class SharesAndTimeInForceDialog extends JDialog {
         apply.addActionListener(event -> {
             if (table.isEditing()) {
                 table.getCellEditor().stopCellEditing();
+            }
+            try {
+                // A number still being typed in the spinner is not its value until committed.
+                globalShares.commitEdit();
+            } catch (java.text.ParseException ignored) {
+                // An unparseable entry keeps the last committed value.
             }
             result = plan.changes();
             dispose();

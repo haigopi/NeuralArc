@@ -14,13 +14,13 @@ final class StrategyGridActionLayout {
     // which was clipping the Delete button.
     private static final int COLUMN_PADDING = 68;
     /**
-     * Left to right from least to most consequential: look at the chart, edit, pause or resume,
-     * sell, promote, delete. Delete stays last, furthest from a casual click.
+     * Left to right from least to most consequential: look at the chart, analyze, edit, pause or
+     * resume, sell, promote, delete. Delete stays last, furthest from a casual click.
      */
     private static final List<Action> ORDER_WITH_PROMOTE =
-            List.of(Action.CHART, Action.EDIT, Action.TOGGLE, Action.SELL, Action.PROMOTE, Action.DELETE);
+            List.of(Action.CHART, Action.ANALYZE, Action.EDIT, Action.TOGGLE, Action.SELL, Action.PROMOTE, Action.DELETE);
     private static final List<Action> ORDER_WITHOUT_PROMOTE =
-            List.of(Action.CHART, Action.EDIT, Action.TOGGLE, Action.SELL, Action.DELETE);
+            List.of(Action.CHART, Action.ANALYZE, Action.EDIT, Action.TOGGLE, Action.SELL, Action.DELETE);
 
     private StrategyGridActionLayout() {
     }
@@ -72,6 +72,7 @@ final class StrategyGridActionLayout {
 
     enum Action {
         CHART,
+        ANALYZE,
         EDIT,
         TOGGLE,
         SELL,

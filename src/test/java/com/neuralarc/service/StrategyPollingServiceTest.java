@@ -192,6 +192,29 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void reReadingAnUnchangedOrderWritesNoEventButARealChangeDoes() {
+        // An unchanged "new" order used to write "Order BASE_BUY is SUBMITTED" on every status check.
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        f.orders.save(new StrategyOrder(UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY,
+                "ord-base", "client-base", "AAPL", StrategyOrderSide.BUY, StrategyOrderType.LIMIT,
+                new BigDecimal("8.00"), BigDecimal.ZERO, new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO,
+                StrategyOrderStatus.SUBMITTED, Instant.now(), Instant.now(), null, "{}"));
+        AlpacaOrderData stillNew = new AlpacaOrderData("ord-base", "client-base", "AAPL", "buy", "limit",
+                new BigDecimal("8.00"), BigDecimal.ZERO, BigDecimal.ZERO, "new", "{}");
+        f.service.onTradeUpdate(new AlpacaTradeUpdateEvent("new", stillNew));
+        int afterFirst = f.events.findByStrategyId(strategy.id()).size();
+
+        f.service.onTradeUpdate(new AlpacaTradeUpdateEvent("new", stillNew));
+        f.service.onTradeUpdate(new AlpacaTradeUpdateEvent("new", stillNew));
+
+        assertEquals(afterFirst, f.events.findByStrategyId(strategy.id()).size(), "nothing changed, nothing recorded");
+        f.service.onTradeUpdate(new AlpacaTradeUpdateEvent("fill", new AlpacaOrderData("ord-base", "client-base", "AAPL",
+                "buy", "limit", new BigDecimal("8.00"), new BigDecimal("8.00"), new BigDecimal("10"), "filled", "{}")));
+        assertTrue(f.events.findByStrategyId(strategy.id()).size() > afterFirst, "a fill is recorded");
+    }
+
+    @Test
     void lossBuyLevelsDoNotTriggerWhenDisabled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);

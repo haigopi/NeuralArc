@@ -291,6 +291,32 @@ public class StrategyDialog extends JDialog {
         return result;
     }
 
+    /**
+     * Opens on the Auto Analyze tab for the seeded symbol and starts a fresh analysis straight away
+     * when connected, so the grid's Auto Analyze action lands on live results rather than an empty
+     * form. A saved result, if any, stays on screen while the new run loads.
+     */
+    public StrategyConfig showAutoAnalyze() {
+        if (prepareAutoAnalyze()) {
+            SwingUtilities.invokeLater(this::runAutoAnalyze);
+        }
+        return showDialog();
+    }
+
+    /** Selects the Auto Analyze tab; true when a run can start (connected, with a symbol). */
+    boolean prepareAutoAnalyze() {
+        tabs.setSelectedIndex(TAB_AUTO_ANALYZE);
+        return marketDataApi != null && aaRunButton.isEnabled() && !aaSymbolField.getText().isBlank();
+    }
+
+    int selectedTabIndex() {
+        return tabs.getSelectedIndex();
+    }
+
+    String autoAnalyzeSymbol() {
+        return aaSymbolField.getText();
+    }
+
     private JComponent buildCurrentStrategyTab() {
         JPanel content = new JPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));

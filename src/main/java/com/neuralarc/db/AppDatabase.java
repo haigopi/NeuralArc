@@ -212,6 +212,7 @@ public final class AppDatabase {
         applyMigration("021_workspace_value_samples", this::migration021);
         applyMigration("022_smart_picks_schedules", this::migration022);
         applyMigration("023_prune_routine_events", this::migration023);
+        applyMigration("024_prune_repeated_order_status_events", this::migration024);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -694,6 +695,23 @@ public final class AppDatabase {
                         GROUP BY strategy_id, substr(created_at, 1, 10))""");
             LOG.info("Pruned routine events: " + polls + " poll heartbeats, " + stops + " repeated stop-loss activations.");
             compactAfterMigrations = polls + stops > 0;
+        }
+    }
+
+    /**
+     * Removes the "Order X is STATUS" events re-written each time an unchanged order was re-read: one per
+     * strategy, message and day is kept, so every real status change is still in the timeline.
+     */
+    private void migration024() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            int removed = st.executeUpdate("""
+                    DELETE FROM strategy_events WHERE event_type='ORDER_SUBMITTED' AND message LIKE 'Order % is %'
+                    AND rowid NOT IN (
+                        SELECT MIN(rowid) FROM strategy_events
+                        WHERE event_type='ORDER_SUBMITTED' AND message LIKE 'Order % is %'
+                        GROUP BY strategy_id, message, substr(created_at, 1, 10))""");
+            LOG.info("Pruned " + removed + " repeated order status events.");
+            compactAfterMigrations |= removed > 0;
         }
     }
 

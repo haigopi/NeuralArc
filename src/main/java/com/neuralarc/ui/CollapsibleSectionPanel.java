@@ -66,6 +66,10 @@ final class CollapsibleSectionPanel extends JPanel {
         setCollapsed(false);
     }
 
+    boolean isCollapsed() {
+        return collapsed;
+    }
+
     void setCollapsed(boolean collapsed) {
         boolean oldValue = this.collapsed;
         this.collapsed = collapsed;

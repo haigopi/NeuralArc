@@ -564,6 +564,7 @@ public class StrategyEngine {
 
     private StrategyOrderStatus applyOrderUpdate(Strategy strategy, StrategyOrder order, AlpacaOrderData data) {
         StrategyOrderStatus previousStatus = order.status();
+        BigDecimal previousFilled = order.filledQuantity() == null ? BigDecimal.ZERO : order.filledQuantity();
         StrategyOrderStatus status = StrategyService.mapOrderStatus(data.status());
         if (data.orderId() != null && !data.orderId().isBlank() && (order.alpacaOrderId() == null || order.alpacaOrderId().isBlank())) {
             order.setAlpacaOrderId(data.orderId());
@@ -603,13 +604,30 @@ public class StrategyEngine {
             }
             return status;
         }
-        transitionForOrderUpdate(target, order, status);
+        BigDecimal filled = order.filledQuantity() == null ? BigDecimal.ZERO : order.filledQuantity();
+        boolean orderUnchanged = status == previousStatus && filled.compareTo(previousFilled) == 0;
+        if (!orderUnchanged || target.currentState() != lifecycleStateForOrder(target, order, status)) {
+            // Only a real change is recorded. Re-reading an unchanged order on every status check used to
+            // write "Order BASE_BUY is SUBMITTED" each time — about 58,000 identical events.
+            transitionForOrderUpdate(target, order, status);
+        }
         strategyRepository.save(target);
         return status;
     }
 
     private void transitionForOrderUpdate(Strategy strategy, StrategyOrder order, StrategyOrderStatus status) {
-        StrategyLifecycleState lifecycleState = switch (order.stage()) {
+        StrategyLifecycleState lifecycleState = lifecycleStateForOrder(strategy, order, status);
+        StrategyEventType type = status == StrategyOrderStatus.FILLED || status == StrategyOrderStatus.PARTIALLY_FILLED
+                ? StrategyEventType.ORDER_STATUS_UPDATED
+                : StrategyEventType.ORDER_SUBMITTED;
+        stateMachine.transition(strategy, lifecycleState, type,
+                "Order " + order.stage() + " is " + status.name(),
+                order.rawResponseJson());
+    }
+
+    /** The lifecycle state an order in {@code status} puts the strategy in. */
+    private static StrategyLifecycleState lifecycleStateForOrder(Strategy strategy, StrategyOrder order, StrategyOrderStatus status) {
+        return switch (order.stage()) {
             case BASE_BUY -> status == StrategyOrderStatus.FILLED
                     ? StrategyLifecycleState.BASE_BUY_FILLED
                     : status == StrategyOrderStatus.PARTIALLY_FILLED
@@ -633,12 +651,6 @@ public class StrategyEngine {
                     : StrategyLifecycleState.SELL_PLACED;
             default -> strategy.currentState() == null ? StrategyLifecycleState.VALIDATED : strategy.currentState();
         };
-        StrategyEventType type = status == StrategyOrderStatus.FILLED || status == StrategyOrderStatus.PARTIALLY_FILLED
-                ? StrategyEventType.ORDER_STATUS_UPDATED
-                : StrategyEventType.ORDER_SUBMITTED;
-        stateMachine.transition(strategy, lifecycleState, type,
-                "Order " + order.stage() + " is " + status.name(),
-                order.rawResponseJson());
     }
 
     private StrategyOrder submitBuyOrder(

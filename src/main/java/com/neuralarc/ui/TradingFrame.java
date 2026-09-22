@@ -272,6 +272,9 @@ public class TradingFrame extends JFrame {
     private static final Color HEADER_STATUS_LIVE_ACTIVE = new Color(46, 125, 50);
     private static final Color HEADER_STATUS_LIVE_ACTIVE_DIM = Color.WHITE;
     private final JTextPane eventLog = new JTextPane();
+    // Keeps 5,000 recent lines so a filter can reach past the 1,500 shown.
+    private final EventLogView eventLogView = new EventLogView(eventLog, MAX_EVENT_LOG_LINES, 5_000,
+            this::logEntryColor, EventLogSeverity::isFailure, LOG_LINE_FAILURE_BG);
     private final JButton addStrategyButton = new JButton("New Strategy");
     private final JButton smartPicksButton = new JButton("Smart Picks");
     private final JPopupMenu smartPicksMenu = new JPopupMenu();
@@ -466,6 +469,7 @@ public class TradingFrame extends JFrame {
     private final JRadioButton lossSellsFilterButton = new JRadioButton("Loss Sells");
     private final JRadioButton bothSellsFilterButton = new JRadioButton("Both", true);
     private final JButton tradeHistoryGroupByButton = new JButton("Group By Menu: Date");
+    private final JButton reenterHistoryButton = new JButton("Re-enter Inactive Stocks");
     private final JPanel currentStrategiesSearchPanel = createGridSearchPanel("Search stocks:", currentStrategiesSearchField);
     private final JPanel tradeHistorySearchPanel = createGridSearchPanel("Search stocks:", tradeHistorySearchField);
     private final JButton gapRocketAnalyzeButton = new JButton(GapRocketPanel.ANALYZE_BUTTON_TEXT);
@@ -555,7 +559,6 @@ public class TradingFrame extends JFrame {
     private Color liveBlinkPrimary = HEADER_STATUS_DEFAULT;
     private Color liveBlinkSecondary = HEADER_STATUS_DEFAULT;
     private boolean liveBlinkPrimaryActive;
-    private int logLineCount;
     private boolean promptedDefaultStrategyDialog;
     private StrategyService strategyService;
     private StrategyPollingService strategyPollingService;
@@ -1691,6 +1694,7 @@ public class TradingFrame extends JFrame {
                 SwingUtilities.invokeLater(() -> {
                     switch (capturedAction) {
                         case CHART -> openStockChart(capturedRow);
+                        case ANALYZE -> autoAnalyzeStrategy(capturedRow);
                         case EDIT -> editStrategy(capturedRow);
                         case TOGGLE -> togglePauseResume(capturedRow);
                         case SELL -> sellStrategy(capturedRow);
@@ -2068,8 +2072,14 @@ public class TradingFrame extends JFrame {
         eventLogScrollPane.setBackground(new Color(0, 0, 0, 0));
         eventLogScrollPane.getViewport().setOpaque(false);
         eventLogScrollPane.getViewport().setBackground(new Color(0, 0, 0, 0));
-        // Two columns: today's account equity on the left, the event log on the right.
-        JSplitPane logsColumns = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, accountEquityChart, eventLogScrollPane);
+        // Account Equity and Logs are separate sections side by side; the log has its own filter and clear.
+        CollapsibleSectionPanel equitySection = new CollapsibleSectionPanel("Account Equity", accountEquityChart);
+        JPanel logsContent = new JPanel(new BorderLayout(0, 4));
+        logsContent.setOpaque(false);
+        logsContent.add(createEventLogToolbar(), BorderLayout.NORTH);
+        logsContent.add(eventLogScrollPane, BorderLayout.CENTER);
+        CollapsibleSectionPanel logsSection = new CollapsibleSectionPanel("Logs", logsContent);
+        JSplitPane logsColumns = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, equitySection, logsSection);
         logsColumns.setResizeWeight(0.4);
         logsColumns.setContinuousLayout(true);
         logsColumns.setDividerSize(6);
@@ -2080,7 +2090,9 @@ public class TradingFrame extends JFrame {
             logsColumnsUi.getDivider().setBackground(
                     ThemeColors.color("NeuralArc.SplitPane.divider", new Color(189, 198, 210)));
         }
-        CollapsibleSectionPanel eventLogSection = new CollapsibleSectionPanel("Logs", logsColumns);
+        JPanel eventLogSection = new JPanel(new BorderLayout());
+        eventLogSection.setOpaque(false);
+        eventLogSection.add(logsColumns, BorderLayout.CENTER);
         accountEquitySampleTimer = new Timer(30_000, ignored -> {
             sampleAccountEquityAsync();
             recordWorkspaceValues();
@@ -2094,8 +2106,13 @@ public class TradingFrame extends JFrame {
         // Remember the expanded divider position so collapsing then expanding the Logs section
         // restores its previous height instead of leaving it stuck collapsed.
         final int[] expandedLogsDivider = { -1 };
-        eventLogSection.addPropertyChangeListener(CollapsibleSectionPanel.COLLAPSED_PROPERTY, event -> {
-            boolean nowCollapsed = Boolean.TRUE.equals(event.getNewValue());
+        // The top area shrinks only once both sections are collapsed; one open section keeps its height.
+        java.beans.PropertyChangeListener topSectionsCollapsed = event -> {
+            boolean nowCollapsed = equitySection.isCollapsed() && logsSection.isCollapsed();
+            if (nowCollapsed == Boolean.TRUE.equals(eventLogSection.getClientProperty("collapsed"))) {
+                return;
+            }
+            eventLogSection.putClientProperty("collapsed", nowCollapsed);
             if (nowCollapsed) {
                 expandedLogsDivider[0] = splitPane.getDividerLocation();
                 SwingUtilities.invokeLater(() -> {
@@ -2114,7 +2131,9 @@ public class TradingFrame extends JFrame {
                     }
                 });
             }
-        });
+        };
+        equitySection.addPropertyChangeListener(CollapsibleSectionPanel.COLLAPSED_PROPERTY, topSectionsCollapsed);
+        logsSection.addPropertyChangeListener(CollapsibleSectionPanel.COLLAPSED_PROPERTY, topSectionsCollapsed);
         splitPane.setResizeWeight(0.5);
         splitPane.setDividerSize(6);
         splitPane.setBorder(null);
@@ -5606,6 +5625,16 @@ public class TradingFrame extends JFrame {
         reviewAndSaveStrategy(entry, entry.toEditConfig(), "Edit Strategy " + entry.strategy.symbol());
     }
 
+    /** The grid's Auto Analyze action: the same editor as Edit, opened on its Auto Analyze tab. */
+    private void autoAnalyzeStrategy(int viewRow) {
+        int row = strategyTable.convertRowIndexToModel(viewRow);
+        if (row < 0 || row >= strategies.size()) {
+            return;
+        }
+        ManagedStrategy entry = strategies.get(row);
+        reviewAndSaveStrategy(entry, entry.toEditConfig(), "Auto Analyze " + entry.strategy.symbol(), true);
+    }
+
     /**
      * Opens the strategy editor seeded with {@code seed} and saves whatever comes back, so every path
      * that rewrites a strategy is reviewed on the same screen first. Edit seeds it with the strategy's
@@ -5613,11 +5642,16 @@ public class TradingFrame extends JFrame {
      * empty when the operator cancelled or the save was refused.
      */
     private Optional<Strategy> reviewAndSaveStrategy(ManagedStrategy entry, StrategyConfig seed, String action) {
+        return reviewAndSaveStrategy(entry, seed, action, false);
+    }
+
+    private Optional<Strategy> reviewAndSaveStrategy(ManagedStrategy entry, StrategyConfig seed, String action,
+                                                     boolean openOnAutoAnalyze) {
         userActionLog.started(action);
         HttpAlpacaMarketDataApi marketDataApi = connectionOk && !runtimeApiKey.isBlank()
                 ? new HttpAlpacaMarketDataApi(runtimeApiKey, runtimeApiSecret) : null;
         StrategyDialog dialog = new StrategyDialog(this, seed, marketDataApi, autoAnalyzeResultStore);
-        StrategyConfig updated = dialog.showDialog();
+        StrategyConfig updated = openOnAutoAnalyze ? dialog.showAutoAnalyze() : dialog.showDialog();
         if (updated == null) {
             userActionLog.canceled(action);
             return Optional.empty();
@@ -6516,6 +6550,7 @@ public class TradingFrame extends JFrame {
         ));
         filledOrdersTableModel.fireTableDataChanged();
         applyTradeHistoryRowFilter();
+        refreshReenterHistoryButton();
         refreshTradeHistoryHeading();
         refreshGridSearchVisibility();
     }
@@ -7022,6 +7057,10 @@ public class TradingFrame extends JFrame {
         groupPanel.setOpaque(false);
         styleTradeHistoryGroupByButton();
         groupPanel.add(tradeHistoryGroupByButton);
+        reenterHistoryButton.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+        reenterHistoryButton.setFocusPainted(false);
+        reenterHistoryButton.addActionListener(event -> reenterInactiveHistoryStocks());
+        groupPanel.add(reenterHistoryButton);
         return groupPanel;
     }
 
@@ -7044,6 +7083,129 @@ public class TradingFrame extends JFrame {
         filterPanel.add(lossSellsFilterButton);
         filterPanel.add(bothSellsFilterButton);
         return filterPanel;
+    }
+
+    /** Stocks in this mode's Trade History that no workspace is trading any more. */
+    private List<Strategy> inactiveHistoryStocks() {
+        return HistoryReentry.candidates(strategies.stream().map(entry -> entry.strategy).toList(),
+                selectedViewMode, strategyOrderRepository::findByStrategyId);
+    }
+
+    private void refreshReenterHistoryButton() {
+        int count = inactiveHistoryStocks().size();
+        reenterHistoryButton.setText("Re-enter Inactive Stocks (" + count + ")");
+        reenterHistoryButton.setEnabled(count > 0);
+        reenterHistoryButton.setToolTipText(TooltipStyler.text(count == 0
+                ? "Every stock in Trade History is already active in a workspace."
+                : count + " stock(s) in Trade History are not active in any workspace. Place them again at their"
+                        + " safe low (the lowest price traded this week) in a new workspace of their own.", 360));
+    }
+
+    /**
+     * Places every stock in Trade History that no workspace trades any more again, at its safe low, in a
+     * new workspace created for this run so the re-entries are easy to track together.
+     */
+    private void reenterInactiveHistoryStocks() {
+        String action = "Re-enter Inactive Stocks";
+        userActionLog.started(action);
+        if (!connectionOk) {
+            userActionLog.failed(action, "Broker is not connected.");
+            JOptionPane.showMessageDialog(this, "Connect to Alpaca before re-entering stocks.", action, JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        List<Strategy> sources = inactiveHistoryStocks();
+        if (sources.isEmpty()) {
+            userActionLog.skipped(action, "Nothing to re-enter.");
+            JOptionPane.showMessageDialog(this, "Every stock in Trade History is already active in a workspace.",
+                    action, JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        StrategyMode mode = selectedViewMode;
+        String workspaceName = uniqueWorkspaceName(HistoryReentry.workspaceName(LocalDate.now()), mode);
+        Optional<List<Strategy>> picked = new HistoryReentryPicker(this, sources, mode, workspaceName).showDialog();
+        if (picked.isEmpty() || picked.get().isEmpty()) {
+            userActionLog.canceled(action);
+            return;
+        }
+        List<Strategy> chosen = picked.get();
+        List<String> symbols = chosen.stream().map(Strategy::symbol).toList();
+        StrategyService service = strategyServiceForMode(mode);
+        ApplicationMode applicationMode = mode == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER;
+        if (service == null || settingsDialog.savedApiKey(applicationMode).isBlank()) {
+            userActionLog.failed(action, mode + " broker client is not configured.");
+            JOptionPane.showMessageDialog(this, "Alpaca credentials for this mode are required.", action, JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        StrategyWorkspace workspace = workspaceService.create(workspaceName, "COMEBACK", mode);
+        HttpAlpacaMarketDataApi marketData = new HttpAlpacaMarketDataApi(
+                settingsDialog.savedApiKey(applicationMode), settingsDialog.savedApiSecret(applicationMode));
+        HttpAlpacaClient broker = alpacaClientForMode(applicationMode);
+        log("[History Re-entry] Re-entering " + symbols.size() + " stock(s) into workspace '" + workspaceName + "'.");
+        new SwingWorker<List<String>, Void>() {
+            @Override
+            protected List<String> doInBackground() {
+                List<String> outcomes = new ArrayList<>();
+                LocalDate today = LocalDate.now(java.time.ZoneId.of("America/New_York"));
+                for (Strategy source : chosen) {
+                    try {
+                        // No workspace tracks it, but the broker may still hold it (an untracked position):
+                        // buying again would stack shares on top of it.
+                        if (broker != null && broker.getPosition(source.symbol())
+                                .map(position -> position.quantity().signum() != 0).orElse(false)) {
+                            outcomes.add(source.symbol() + ": skipped, still held at the broker");
+                            continue;
+                        }
+                        BigDecimal safeLow = HistoryReentry.safeLow(
+                                marketData.getDailyBars(source.symbol(), today.minusDays(14), today), today);
+                        if (safeLow.signum() <= 0) {
+                            outcomes.add(source.symbol() + ": skipped, no recent prices");
+                            continue;
+                        }
+                        StrategyService.StrategyCreationResult result =
+                                service.createAndActivate(HistoryReentry.reentry(source, safeLow, workspace.id()));
+                        outcomes.add(source.symbol() + (result.success()
+                                ? ": placed at $" + safeLow.toPlainString()
+                                : ": failed, " + result.error()));
+                    } catch (Exception ex) {
+                        outcomes.add(source.symbol() + ": failed, " + ex.getMessage());
+                    }
+                }
+                return outcomes;
+            }
+
+            @Override
+            protected void done() {
+                List<String> outcomes;
+                try {
+                    outcomes = get();
+                } catch (Exception ex) {
+                    outcomes = List.of("Failed: " + ex.getMessage());
+                }
+                outcomes.forEach(outcome -> log("[History Re-entry] " + outcome));
+                if (strategyWorkspaceTabs != null) {
+                    strategyWorkspaceTabs.rebuild();
+                }
+                onSmartPicksPlaced();
+                refreshFilledOrdersTableData();
+                long placed = outcomes.stream().filter(outcome -> outcome.contains(": placed")).count();
+                userActionLog.completed(action, placed + " of " + outcomes.size() + " placed in " + workspaceName + ".");
+                JOptionPane.showMessageDialog(TradingFrame.this, "<html>" + placed + " of " + outcomes.size()
+                                + " stock(s) placed in <b>" + workspaceName + "</b>.<br><br>"
+                                + String.join("<br>", outcomes) + "</html>",
+                        action, JOptionPane.INFORMATION_MESSAGE);
+            }
+        }.execute();
+    }
+
+    /** {@code base}, or "base (2)", "base (3)"… when a workspace of that name already exists in {@code mode}. */
+    private String uniqueWorkspaceName(String base, StrategyMode mode) {
+        java.util.Set<String> taken = workspaceService.activeWorkspaces(mode).stream()
+                .map(StrategyWorkspace::name).collect(java.util.stream.Collectors.toSet());
+        String name = base;
+        for (int n = 2; taken.contains(name); n++) {
+            name = base + " (" + n + ")";
+        }
+        return name;
     }
 
     private void styleTradeHistoryGroupByButton() {
@@ -9301,55 +9463,54 @@ public class TradingFrame extends JFrame {
         return value == null || value.isBlank() ? "-" : value.trim();
     }
 
-    private void appendLogEntry(String logEntry) {
-        StyledDocument document = eventLog.getStyledDocument();
-        SimpleAttributeSet attributes = new SimpleAttributeSet();
-        StyleConstants.setForeground(attributes, logEntryColor(logEntry));
-        if (isFailureLogEntry(logEntry)) {
-            StyleConstants.setBackground(attributes, LOG_LINE_FAILURE_BG);
-        }
-        StyleConstants.setFontFamily(attributes, eventLog.getFont().getFamily());
-        StyleConstants.setFontSize(attributes, eventLog.getFont().getSize());
-        try {
-            document.insertString(document.getLength(), logEntry, attributes);
-            logLineCount++;
-        } catch (BadLocationException e) {
-            throw new IllegalStateException("Failed to append log entry", e);
-        }
-        trimEventLog(document);
-        eventLog.setCaretPosition(document.getLength());
+    /** The log's filter field (applied on Enter) and a clear icon, in one row above the log. */
+    private JComponent createEventLogToolbar() {
+        JTextField filterField = new JTextField(22);
+        filterField.setFont(BASE_FONT.deriveFont(Font.PLAIN, 11f));
+        filterField.putClientProperty("JTextField.placeholderText", "Filter logs, then press Enter (e.g. Position)");
+        filterField.putClientProperty("JTextField.showClearButton", true);
+        filterField.setToolTipText(TooltipStyler.text("Shows only log lines containing this text. Press Enter to apply;"
+                + " clear the field and press Enter to show everything again.", 320));
+        filterField.addActionListener(event -> eventLogView.setFilter(filterField.getText()));
+        // The field's own clear button empties the text: show everything again straight away.
+        filterField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                if (filterField.getText().isEmpty() && !eventLogView.filter().isEmpty()) {
+                    SwingUtilities.invokeLater(() -> eventLogView.setFilter(""));
+                }
+            }
+        });
+        JButton clear = new JButton(SvgIconLoader.load("icons/delete.svg", 14));
+        clear.setFocusPainted(false);
+        clear.setToolTipText(TooltipStyler.text("Clear the log on screen. The log files on disk are kept.", 280));
+        clear.getAccessibleContext().setAccessibleName("Clear logs");
+        clear.putClientProperty("JButton.buttonType", "toolBarButton");
+        clear.addActionListener(event -> eventLogView.clear());
+        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        toolbar.setOpaque(false);
+        toolbar.add(filterField);
+        toolbar.add(clear);
+        return toolbar;
     }
 
-    private Color logEntryColor(String logEntry) {
+    private void appendLogEntry(String logEntry) {
+        eventLogView.append(logEntry);
+    }
+
+    private Color logEntryColor(String logEntry, int shownIndex) {
         return switch (EventLogSeverity.tone(logEntry)) {
             case FAILURE -> LOG_LINE_FAILURE;
             case WARNING -> LOG_LINE_WARNING;
             case SUCCESS -> LOG_LINE_SUCCESS;
             case PROCESSING -> LOG_LINE_PROCESSING;
-            case INFO -> (logLineCount % 2 == 0) ? LOG_LINE_EVEN : LOG_LINE_ODD;
+            case INFO -> (shownIndex % 2 == 0) ? LOG_LINE_EVEN : LOG_LINE_ODD;
         };
     }
 
     private boolean isFailureLogEntry(String logEntry) {
         return EventLogSeverity.isFailure(logEntry);
-    }
-
-    private void trimEventLog(StyledDocument document) {
-        javax.swing.text.Element root = document.getDefaultRootElement();
-        while (root.getElementCount() > MAX_EVENT_LOG_LINES) {
-            javax.swing.text.Element firstLine = root.getElement(0);
-            if (firstLine == null) {
-                break;
-            }
-            int removeLength = firstLine.getEndOffset();
-            try {
-                document.remove(0, removeLength);
-                logLineCount = Math.max(0, logLineCount - 1);
-            } catch (BadLocationException e) {
-                break;
-            }
-            root = document.getDefaultRootElement();
-        }
     }
 
     private void flushLogsToFile() {
@@ -9680,6 +9841,7 @@ public class TradingFrame extends JFrame {
 
     private final class ActionsRenderer extends JPanel implements TableCellRenderer {
         private final JButton chartButton = new JButton();
+        private final JButton analyzeButton = new JButton();
         private final JButton editButton = new JButton();
         private final JButton toggleButton = new JButton();
         private final JButton sellButton = new JButton();
@@ -9691,24 +9853,28 @@ public class TradingFrame extends JFrame {
             setOpaque(true);
             setBorder(new EmptyBorder(5, 0, 0, 0));
             applyButtonIcon(chartButton, "icons/chart.svg", 13);
+            applyButtonIcon(analyzeButton, "icons/actions.svg", 13);
             applyButtonIcon(editButton, "icons/edit.svg", 12);
             applyButtonIcon(toggleButton, "icons/pause.svg", 13);
             applyButtonIcon(sellButton, "icons/sell-position.svg", 13);
             applyButtonIcon(promoteButton, "icons/add-stock-strategy.svg", 13);
             applyButtonIcon(deleteButton, "icons/delete.svg", 13);
             styleIconOnlyActionButton(chartButton, new Color(38, 124, 128));
+            styleIconOnlyActionButton(analyzeButton, new Color(92, 84, 150));
             styleIconOnlyActionButton(editButton, new Color(82, 101, 132));
             styleIconOnlyActionButton(toggleButton, new Color(180, 122, 42));
             styleIconOnlyActionButton(sellButton, new Color(71, 85, 105));
             styleIconOnlyActionButton(promoteButton, new Color(37, 99, 235));
             styleIconOnlyActionButton(deleteButton, new Color(148, 62, 78));
             add(chartButton);
+            add(analyzeButton);
             add(editButton);
             add(toggleButton);
             add(sellButton);
             add(promoteButton);
             add(deleteButton);
             setActionButtonSize(chartButton, StrategyGridActionLayout.ICON_BUTTON_WIDTH);
+            setActionButtonSize(analyzeButton, StrategyGridActionLayout.ICON_BUTTON_WIDTH);
             setActionButtonSize(editButton, StrategyGridActionLayout.ICON_BUTTON_WIDTH);
             setActionButtonSize(toggleButton, StrategyGridActionLayout.ICON_BUTTON_WIDTH);
             setActionButtonSize(sellButton, StrategyGridActionLayout.ICON_BUTTON_WIDTH);
@@ -9723,6 +9889,7 @@ public class TradingFrame extends JFrame {
             StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = actionViewModelFor(strategy);
             removeAll();
             add(chartButton);
+            add(analyzeButton);
             add(editButton);
             add(toggleButton);
             add(sellButton);
@@ -9745,6 +9912,7 @@ public class TradingFrame extends JFrame {
             promoteButton.setVisible(actionsViewModel.promoteVisible());
             styleIconOnlyActionButton(promoteButton, actionsViewModel.promoteColor());
             chartButton.setToolTipText(TooltipStyler.text(CHART_ACTION_TOOLTIP));
+            analyzeButton.setToolTipText(TooltipStyler.text(ANALYZE_ACTION_TOOLTIP));
             editButton.setToolTipText(TooltipStyler.text("Edit strategy rules, limits, and settings."));
             toggleButton.setToolTipText(actionsViewModel.toggleEnabled()
                     ? TooltipStyler.text("Run the shown action for this strategy: " + actionsViewModel.toggleText() + ".")
@@ -9794,6 +9962,7 @@ public class TradingFrame extends JFrame {
         StrategyActionsPresenter.StrategyActionsViewModel actionsViewModel = actionViewModelFor(strategy);
         return switch (actionAtMousePoint(viewRow, mouseX)) {
             case CHART -> TooltipStyler.text(CHART_ACTION_TOOLTIP);
+            case ANALYZE -> TooltipStyler.text(ANALYZE_ACTION_TOOLTIP);
             case EDIT -> TooltipStyler.text("Edit strategy rules, limits, and settings.");
             case TOGGLE -> actionsViewModel.toggleEnabled()
                     ? TooltipStyler.text("Run the shown action for this strategy: " + actionsViewModel.toggleText() + ".")
@@ -9839,6 +10008,9 @@ public class TradingFrame extends JFrame {
         return row % 2 == 0 ? TABLE_ROW_BG_EVEN : TABLE_ROW_BG_ODD;
     }
 
+    private static final String ANALYZE_ACTION_TOOLTIP =
+            "Auto Analyze this stock: opens its strategy on the Auto Analyze tab and runs the analysis,"
+                    + " so you can apply a recommendation and save.";
     private static final String CHART_ACTION_TOOLTIP =
             "Open the price chart: moving averages, RSI, volume, MACD and this strategy's own levels, "
                     + "with a plain-language guide to each part.";

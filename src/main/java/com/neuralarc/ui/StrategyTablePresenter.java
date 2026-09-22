@@ -855,6 +855,9 @@ public final class StrategyTablePresenter {
         if (name.contains("earnings_hunter")) {
             return "Earnings Hunter strategy";
         }
+        if (name.contains("history_reentry")) {
+            return "Re-entry from History";
+        }
         if (isSmartPicksSource(combined)) {
             return smartPicksEntrySource(strategy, name, combined);
         }
