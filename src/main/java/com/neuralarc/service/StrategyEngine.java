@@ -1054,6 +1054,10 @@ public class StrategyEngine {
             return false;
         }
         StrategyLifecycleState state = strategy.currentState();
+        if (state == StrategyLifecycleState.STOP_LOSS_ACTIVE) {
+            // Already active: "activating" it again on every poll wrote ~97,000 identical events.
+            return false;
+        }
         if (state == StrategyLifecycleState.SELL_PLACED
                 || state == StrategyLifecycleState.SELL_PARTIALLY_FILLED
                 || state == StrategyLifecycleState.PROFIT_HOLD_ACTIVE) {

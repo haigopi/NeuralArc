@@ -73,6 +73,9 @@ public final class AppDatabase {
                 st.execute("PRAGMA synchronous=NORMAL");
             }
             applyMigrations();
+            if (compactAfterMigrations) {
+                compact();
+            }
             Runtime.getRuntime().addShutdownHook(new Thread(this::close, "neuralarc-db-shutdown"));
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to open AppDatabase at " + dbPath, ex);
@@ -208,6 +211,7 @@ public final class AppDatabase {
         applyMigration("020_account_equity_samples", this::migration020);
         applyMigration("021_workspace_value_samples", this::migration021);
         applyMigration("022_smart_picks_schedules", this::migration022);
+        applyMigration("023_prune_routine_events", this::migration023);
     }
 
     /** Apply a single named migration if not already recorded. */
@@ -668,6 +672,39 @@ public final class AppDatabase {
                         updated_at         TEXT NOT NULL
                     )""");
             st.execute("CREATE INDEX IF NOT EXISTS idx_smart_picks_schedules_workspace ON smart_picks_schedules(workspace_id)");
+        }
+    }
+
+    /** Set when a migration removed enough data that the file should be compacted once it commits. */
+    private boolean compactAfterMigrations;
+
+    /**
+     * Removes routine polling events: one POLL_SUCCESS per strategy per poll (the strategy's lastPolledAt
+     * already holds it; nothing reads them) and the STOP_LOSS_ACTIVATED event re-written on every poll
+     * while a stop was already active — one per strategy per day is kept. Orders, fills and every other
+     * event are untouched, so Trade History and the rules timeline are unchanged. Together these were
+     * ~90% of the events table, which is loaded into memory at startup.
+     */
+    private void migration023() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            int polls = st.executeUpdate("DELETE FROM strategy_events WHERE event_type='POLL_SUCCESS'");
+            int stops = st.executeUpdate("""
+                    DELETE FROM strategy_events WHERE event_type='STOP_LOSS_ACTIVATED' AND rowid NOT IN (
+                        SELECT MIN(rowid) FROM strategy_events WHERE event_type='STOP_LOSS_ACTIVATED'
+                        GROUP BY strategy_id, substr(created_at, 1, 10))""");
+            LOG.info("Pruned routine events: " + polls + " poll heartbeats, " + stops + " repeated stop-loss activations.");
+            compactAfterMigrations = polls + stops > 0;
+        }
+    }
+
+    /** Rewrites the file without the freed pages; must run outside a transaction. */
+    private void compact() {
+        try (Statement st = connection.createStatement()) {
+            st.execute("VACUUM");
+            LOG.info("Compacted the database after pruning.");
+        } catch (SQLException ex) {
+            // Compaction only reclaims disk space; the pruned data is already gone either way.
+            LOG.warning("Database compaction skipped: " + ex.getMessage());
         }
     }
 

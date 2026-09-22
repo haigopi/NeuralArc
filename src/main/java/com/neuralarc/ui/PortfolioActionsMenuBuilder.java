@@ -70,6 +70,10 @@ final class PortfolioActionsMenuBuilder {
                                 "Submit one extra buy per losing position to lower its average cost.",
                                 "icons/submit.svg",
                                 controller::handleAverageLosingPositions),
+                        new PortfolioActionsMenu.Entry("Change Shares & Time In Force",
+                                "Set the share count and DAY/GTC for unfilled entries, for all or each; working ones are re-placed.",
+                                "icons/submit.svg",
+                                controller::handleChangeSharesAndTimeInForce),
                         new PortfolioActionsMenu.Entry("Reposition Expired",
                                 "Reactivate expired strategies with a fresh base limit buy.",
                                 "icons/submit.svg",
@@ -148,6 +152,12 @@ final class PortfolioActionsMenuBuilder {
                                 controller::handleCleanInvalidStrategies)
                 )),
                 new PortfolioActionsMenu.Group("History & Local Data", "icons/delete.svg", List.of(
+                        new PortfolioActionsMenu.Entry(
+                                "Clean Archived Positions (" + controller.cleanableArchivedPositions().size() + ")",
+                                "Delete past positions cancelled or archived after a failure, across all workspaces;"
+                                        + " keeps Trade History and every row showing in the grids.",
+                                "icons/delete.svg",
+                                controller::handleCleanArchivedPositions),
                         new PortfolioActionsMenu.Entry("Clean Trade History",
                                 "Permanently delete archived, completed, failed, and stopped history records.",
                                 "icons/delete.svg",

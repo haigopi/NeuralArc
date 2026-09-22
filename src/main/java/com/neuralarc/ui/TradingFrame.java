@@ -751,6 +751,16 @@ public class TradingFrame extends JFrame {
                 }
                 return strategyService.archiveStrategy(strategyId, reason);
             }
+            @Override
+            public Optional<List<SharesAndTimeInForcePlan.Change>> chooseSharesAndTimeInForce(SharesAndTimeInForcePlan plan) {
+                return new SharesAndTimeInForceDialog(TradingFrame.this, plan, selectedScopeLabel()).showDialog();
+            }
+            @Override public List<StrategyOrder> ordersForStrategy(String strategyId) {
+                return strategyOrderRepository.findByStrategyId(strategyId);
+            }
+            @Override public StrategyService.ArchiveResult deleteArchivedPosition(String strategyId) {
+                return TradingFrame.this.deleteArchivedPosition(strategyId);
+            }
             @Override public StrategyService.ArchiveResult deleteLocalTradeHistoryStrategy(String strategyId) {
                 return TradingFrame.this.deleteLocalTradeHistoryStrategy(strategyId);
             }
@@ -4164,6 +4174,26 @@ public class TradingFrame extends JFrame {
         strategyRepository.deleteById(strategy.id());
         suppressRemoteSyncFor(strategy);
         log("[PORTFOLIO] Deleted trade history record for " + strategy.symbol() + ".");
+        return StrategyService.ArchiveResult.success(strategy.id());
+    }
+
+    /**
+     * Deletes an archived past position that never bought or sold a share. Checked again here rather than
+     * trusting the menu's list, so a row that has since filled or placed an order is never removed. No
+     * remote-sync suppression is recorded: the broker never held these, so there is nothing to keep out.
+     */
+    private StrategyService.ArchiveResult deleteArchivedPosition(String strategyId) {
+        Optional<Strategy> maybeStrategy = strategyId == null ? Optional.empty() : strategyRepository.findById(strategyId);
+        if (maybeStrategy.isEmpty()) {
+            return StrategyService.ArchiveResult.failed("Strategy not found");
+        }
+        Strategy strategy = maybeStrategy.get();
+        if (!ArchivedPositionCleanup.isCleanable(strategy, strategyOrderRepository.findByStrategyId(strategy.id()))) {
+            return StrategyService.ArchiveResult.failed("It has a fill or a working order now; kept");
+        }
+        strategyOrderRepository.deleteByStrategyId(strategy.id());
+        strategyEventRepository.deleteByStrategyId(strategy.id());
+        strategyRepository.deleteById(strategy.id());
         return StrategyService.ArchiveResult.success(strategy.id());
     }
 

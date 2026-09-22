@@ -523,8 +523,8 @@ public class StrategyPollingService {
                     strategyRepository.save(updated);
                 }
             });
-            eventRepository.save(event(strategyId, StrategyEventType.POLL_SUCCESS,
-                    "Market-closed order status refresh completed", "{\"strategyId\":\"" + strategyId + "\"}"));
+            // No POLL_SUCCESS event: the strategy's lastPolledAt already records it, and one event per
+            // poll per strategy grew the events table to ~480,000 rows that nothing reads.
             pollListener.onPollCompleted(strategyId);
             LOGGER.fine(() -> "[POLL][MARKET_CLOSED_STATUS][" + strategy.symbol()
                     + "] Refreshed tracked Alpaca order status while trading was suppressed");
@@ -605,8 +605,6 @@ public class StrategyPollingService {
 
         try {
             List<StrategyEngine.RuleOutcome> outcomes = strategyEngine.reconcileTracked(strategy, priceCache, snapshotBatch);
-            eventRepository.save(event(strategy.id(), StrategyEventType.POLL_SUCCESS,
-                    "Poll completed", "{\"strategyId\":\"" + strategy.id() + "\"}"));
             if (!outcomes.isEmpty()) {
                 pollListener.onRulesAnalyzed(strategy.id(), strategy.symbol(), outcomes);
             }

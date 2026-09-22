@@ -346,6 +346,46 @@ class PortfolioActionsControllerTest {
         assertTrue(result.failures().get(0).contains("could not be cancelled"), result.failures().toString());
     }
 
+    @Test
+    void cleanArchivedPositionsCountsOnlyTheSelectedModeAcrossEveryWorkspaceAndDeletesThem() {
+        FakeGateway gateway = new FakeGateway(new CancelRecordingService(StrategyService.LimitBuyCancelResult.success(0)));
+        ManagedStrategy archivedGrowth = managed("DTSS");
+        archivedGrowth.strategy.setStatus(StrategyStatus.ARCHIVED);
+        archivedGrowth.strategy.setWorkspaceId("growth");
+        ManagedStrategy archivedAllStocks = managed("DLXY");
+        archivedAllStocks.strategy.setStatus(StrategyStatus.ARCHIVED);
+        ManagedStrategy failedInGrid = managed("BIAF"); // FAILED: may still show in the grid
+        ManagedStrategy archivedLive = managed("NVDA");
+        archivedLive.strategy.setStatus(StrategyStatus.ARCHIVED);
+        archivedLive.strategy.setMode(StrategyMode.LIVE);
+        gateway.allStrategies = List.of(archivedGrowth, archivedAllStocks, failedInGrid, archivedLive);
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        List<ManagedStrategy> cleanable = controller.cleanableArchivedPositions();
+        controller.deleteArchivedPositionTargets(cleanable);
+
+        assertEquals(List.of("DTSS", "DLXY"), cleanable.stream().map(entry -> entry.strategy.symbol()).toList());
+        assertEquals(List.of("DTSS-id", "DLXY-id"), gateway.deletedArchivedIds.stream().sorted(java.util.Comparator.reverseOrder()).toList());
+    }
+
+    @Test
+    void changingSharesAndTimeInForceSavesEachChosenRowThroughTheStrategyEditor() {
+        FakeGateway gateway = new FakeGateway(new CancelRecordingService(StrategyService.LimitBuyCancelResult.success(0)));
+        ManagedStrategy aapl = managed("AAPL");
+        ManagedStrategy msft = managed("MSFT");
+        java.util.Map<String, SharesAndTimeInForcePlan.Change> changes = java.util.Map.of(
+                "AAPL-id", new SharesAndTimeInForcePlan.Change("AAPL-id", "AAPL", true, 7, com.neuralarc.model.TimeInForce.GTC));
+
+        PortfolioActionsSupport.BatchResult result = new PortfolioActionsController(gateway)
+                .changeSharesAndTimeInForceTargets(List.of(aapl), changes);
+
+        assertTrue(result.failures().isEmpty(), result.failures().toString());
+        assertEquals(List.of("AAPL-id"), gateway.updatedStrategyIds, "MSFT was not chosen and is not touched");
+        assertEquals(7, aapl.strategy.baseBuyQuantity());
+        assertEquals(com.neuralarc.model.TimeInForce.GTC, aapl.strategy.timeInForce());
+        assertEquals(msft.strategy.baseBuyQuantity(), managed("MSFT").strategy.baseBuyQuantity());
+    }
+
     private static final class CancelRecordingService extends StrategyService {
         private final StrategyService.LimitBuyCancelResult result;
         private final List<String> cancelled = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
@@ -474,7 +514,13 @@ class PortfolioActionsControllerTest {
             this.service = service;
         }
 
-        @Override public List<ManagedStrategy> strategies() { return List.of(); }
+        private List<ManagedStrategy> allStrategies = List.of();
+        private final java.util.List<String> deletedArchivedIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        @Override public List<ManagedStrategy> strategies() { return allStrategies; }
+        @Override public StrategyService.ArchiveResult deleteArchivedPosition(String strategyId) {
+            deletedArchivedIds.add(strategyId);
+            return StrategyService.ArchiveResult.success(strategyId);
+        }
         @Override public List<ManagedStrategy> currentStrategies() { return List.of(); }
         @Override public List<ManagedStrategy> scopedStrategies() { return List.of(); }
         @Override public StrategyService strategyService() { return service; }

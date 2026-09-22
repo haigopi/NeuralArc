@@ -21,6 +21,10 @@ import java.util.logging.LogManager;
 public class NeuralArc {
     public static void main(String[] args) {
         configureLogging();
+        // Uncaught exceptions — on the Swing event thread especially — otherwise go only to the console,
+        // which the app's logs do not capture: a failing menu then just silently does nothing.
+        Thread.setDefaultUncaughtExceptionHandler((thread, error) -> Logger.getLogger(NeuralArc.class.getName())
+                .log(java.util.logging.Level.SEVERE, "Uncaught exception on thread " + thread.getName(), error));
         installLookAndFeel();
         FontLoader.installSwingDefaults();
         configureTooltips();

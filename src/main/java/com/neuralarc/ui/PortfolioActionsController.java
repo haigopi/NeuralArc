@@ -31,6 +31,21 @@ import java.util.concurrent.TimeUnit;
 
 final class PortfolioActionsController {
     interface Gateway {
+        /** The strategy's orders, for checks the grid row alone cannot answer. */
+        default List<com.neuralarc.model.StrategyOrder> ordersForStrategy(String strategyId) {
+            return List.of();
+        }
+
+        /** Shows the Change Shares & Time In Force editor; empty when the operator cancels. */
+        default Optional<List<SharesAndTimeInForcePlan.Change>> chooseSharesAndTimeInForce(SharesAndTimeInForcePlan plan) {
+            return Optional.empty();
+        }
+
+        /** Permanently deletes an archived past position that never filled; re-checked before deleting. */
+        default StrategyService.ArchiveResult deleteArchivedPosition(String strategyId) {
+            return StrategyService.ArchiveResult.failed("Not supported");
+        }
+
         List<ManagedStrategy> strategies();
         List<ManagedStrategy> currentStrategies();
         List<ManagedStrategy> scopedStrategies();
@@ -983,6 +998,106 @@ final class PortfolioActionsController {
     private int parallelThreadCount(int targetCount) {
         int perBatch = Math.min(targetCount, BulkPlacementRunner.DEFAULT_BATCH_SIZE);
         return Math.max(1, Math.min(perBatch, Math.max(2, Math.min(6, Runtime.getRuntime().availableProcessors()))));
+    }
+
+    /**
+     * Archived past positions that never filled, across every workspace of the selected mode — what
+     * Clean Archived Positions would delete. Shown as the count on its menu entry.
+     */
+    List<ManagedStrategy> cleanableArchivedPositions() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CLEAN_ARCHIVED_POSITIONS;
+        StrategyMode mode = gateway.selectedViewMode();
+        return gateway.strategies().stream()
+                .filter(entry -> entry.strategy != null && entry.strategy.mode() == mode)
+                .filter(action::matches)
+                .filter(entry -> ArchivedPositionCleanup.isCleanable(entry.strategy, gateway.ordersForStrategy(entry.strategy.id())))
+                .toList();
+    }
+
+    void handleCleanArchivedPositions() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CLEAN_ARCHIVED_POSITIONS;
+        List<ManagedStrategy> targets = cleanableArchivedPositions();
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return deleteArchivedPositionTargets(targets);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    PortfolioActionsSupport.BatchResult deleteArchivedPositionTargets(List<ManagedStrategy> targets) {
+        return runTargetsInParallel(targets, entry -> {
+            StrategyService.ArchiveResult result = gateway.deleteArchivedPosition(entry.strategy.id());
+            return result.success()
+                    ? TargetResult.success(entry.strategy.symbol())
+                    : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+        });
+    }
+
+    /**
+     * Change Shares & Time In Force: edit the share count and DAY/GTC of every unfilled entry in view —
+     * globally, individually, or globally except a few — then cancel and re-place the working ones.
+     */
+    void handleChangeSharesAndTimeInForce() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CHANGE_SHARES_AND_TIME_IN_FORCE;
+        gateway.actionStarted(action.menuLabel());
+        List<ManagedStrategy> targets = support.filterTargets(gateway.currentStrategies(), action);
+        if (targets.isEmpty()) {
+            gateway.actionSkipped(action.menuLabel(), action.emptyMessage());
+            gateway.showMessage(action.emptyMessage(), action.dialogTitle(), JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        SharesAndTimeInForcePlan plan = new SharesAndTimeInForcePlan(targets.stream()
+                .map(entry -> SharesAndTimeInForcePlan.rowFor(entry.strategy, SharesAndTimeInForceTargets.isWorkingEntry(entry)))
+                .toList());
+        Optional<List<SharesAndTimeInForcePlan.Change>> chosen = gateway.chooseSharesAndTimeInForce(plan);
+        if (chosen.isEmpty()) {
+            gateway.actionCanceled(action.menuLabel());
+            return;
+        }
+        if (chosen.get().isEmpty()) {
+            gateway.actionSkipped(action.menuLabel(), "Nothing was changed.");
+            return;
+        }
+        java.util.Map<String, SharesAndTimeInForcePlan.Change> byId = new java.util.HashMap<>();
+        chosen.get().forEach(change -> byId.put(change.strategyId(), change));
+        List<ManagedStrategy> changing = targets.stream().filter(entry -> byId.containsKey(entry.strategy.id())).toList();
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return changeSharesAndTimeInForceTargets(changing, byId);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    /**
+     * Applies each change through the strategy editor's own save: for an entry working at the broker that
+     * save cancels the open order and places it again with the new share count and time in force.
+     */
+    PortfolioActionsSupport.BatchResult changeSharesAndTimeInForceTargets(
+            List<ManagedStrategy> targets, java.util.Map<String, SharesAndTimeInForcePlan.Change> changes) {
+        return runTargetsInParallel(targets, entry -> {
+            SharesAndTimeInForcePlan.Change change = changes.get(entry.strategy.id());
+            Strategy strategy = entry.strategy;
+            SharesAndTimeInForcePlan.apply(strategy, change.quantity(), change.timeInForce());
+            Optional<Strategy> updated = gateway.updateStrategy(strategy);
+            return updated.isPresent()
+                    ? TargetResult.success(strategy.symbol() + " " + change.quantity() + " sh " + change.timeInForce())
+                    : TargetResult.failure(strategy.symbol() + ": the strategy service rejected the change");
+        });
     }
 
     void handleCleanTradeHistory() {

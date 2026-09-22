@@ -317,6 +317,33 @@ final class PortfolioActionsSupport {
                 return "There are no strategies with cancelable pending limit buy orders.";
             }
         },
+        CHANGE_SHARES_AND_TIME_IN_FORCE("Change Shares & Time In Force") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return SharesAndTimeInForceTargets.isTarget(entry);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Change shares and time in force for " + count + " unfilled entry(ies)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Entries working at the broker are cancelled and placed again with the new values.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no unfilled entries in this view to change. Positions already holding shares"
+                        + " are not changed here.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Updated";
+            }
+        },
         CANCEL_UNFILLED_ENTRY_BUYS("Cancel Unfilled Entry Limit Buys") {
             @Override
             boolean matches(ManagedStrategy entry) {
@@ -713,6 +740,39 @@ final class PortfolioActionsSupport {
             @Override
             String emptyMessage() {
                 return "There are no invalid local strategy records to clean.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Deleted";
+            }
+        },
+        CLEAN_ARCHIVED_POSITIONS("Clean Archived Positions") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return entry != null && entry.strategy != null
+                        && (entry.strategy.status() == StrategyStatus.ARCHIVED
+                        || entry.strategy.status() == StrategyStatus.STOPPED);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Permanently delete " + count + " archived past position(s)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Deletes past positions that were cancelled or archived after a failure and never bought or"
+                        + " sold a share, with their orders and events.<br><b>Trade History is not deleted</b>: any"
+                        + " position with a fill is kept.<br><b>Nothing showing in the grids is deleted</b>: active,"
+                        + " paused and pending rows are untouched, as is anything with an order still working."
+                        + "<br>This clears these records across <b>all workspaces</b> of the current mode, which keeps"
+                        + " the database smaller and lookups faster.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no archived past positions to clean.";
             }
 
             @Override
