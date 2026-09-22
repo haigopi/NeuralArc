@@ -23,6 +23,35 @@ final class PendingLimitOrderCanceler {
         return cancelPendingLimitOrders(strategy, StrategyOrderSide.BUY);
     }
 
+    /**
+     * Cancels only this strategy's own working limit buys of the given stages — an unfilled entry buy
+     * without touching its loss-level buys, or the reverse. Unlike {@link #cancelPendingLimitBuys}, which
+     * clears every open buy for the symbol, it goes order by order, so other stages and other strategies
+     * trading the same symbol are left alone. An order the broker reports as already filled is not
+     * marked cancelled; reconciliation records the fill.
+     */
+    int cancelPendingLimitBuys(Strategy strategy, java.util.Set<com.neuralarc.model.StrategyStage> stages) {
+        int canceledCount = 0;
+        for (StrategyOrder localOrder : orderRepository.findByStrategyId(strategy.id())) {
+            if (!isPendingLimitOrder(localOrder, StrategyOrderSide.BUY) || !stages.contains(localOrder.stage())) {
+                continue;
+            }
+            String orderId = localOrder.alpacaOrderId();
+            if (orderId != null && !orderId.isBlank() && !alpacaClient.cancelOrder(orderId)) {
+                // Refused: it may have filled or already gone. Only mark it cancelled if it is not working.
+                java.util.Optional<com.neuralarc.api.AlpacaOrderData> remote = alpacaClient.getOrder(orderId);
+                if (remote.isEmpty() || isPendingLimitOrder(remote.get(), StrategyOrderSide.BUY)
+                        || "filled".equals(BrokerOrderStatusUtil.normalize(remote.get().status()))) {
+                    continue;
+                }
+            }
+            localOrder.setStatus(StrategyOrderStatus.CANCELED);
+            orderRepository.save(localOrder);
+            canceledCount++;
+        }
+        return canceledCount;
+    }
+
     int cancelPendingLimitSells(Strategy strategy) {
         return cancelPendingLimitOrders(strategy, StrategyOrderSide.SELL);
     }

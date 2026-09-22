@@ -529,16 +529,21 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
     }
 
     private String dialogDescriptionHtml() {
+        String purpose = "<b>" + SmartPicksWorkspaceKind.forUniverse(universe).purpose() + "</b><br>";
+        return dialogDescriptionHtml(purpose);
+    }
+
+    private String dialogDescriptionHtml(String purpose) {
         if (universe == StrategyUniverse.DIVERSIFIED_TOP_20) {
-            return "<html>Review curated diversified large-cap stocks, compare high-risk short-term and other recommendations, "
+            return "<html>" + purpose + "Review curated diversified large-cap stocks, compare high-risk short-term and other recommendations, "
                     + "then start selected choices as Alpaca " + modeLabel() + " strategies.</html>";
         }
         if (universe == StrategyUniverse.WEEKEND_REBOUND) {
-            return "<html>Ranks Friday selloff candidates for a Monday rebound using RSI, SMA20 distance, relative volume, "
+            return "<html>" + purpose + "Ranks Friday selloff candidates for a Monday rebound using RSI, SMA20 distance, relative volume, "
                     + "liquidity, historical Monday recovery, and market-strength guards. Intended after 3:30 PM ET Friday; "
                     + "max 20 picks, 5% per stock, 50% total exposure.</html>";
         }
-        return "<html>Review today's top gainers and losers, remove unwanted picks, then start the remaining choices as Alpaca "
+        return "<html>" + purpose + "Review today's top gainers and losers, remove unwanted picks, then start the remaining choices as Alpaca "
                 + modeLabel() + " strategies.</html>";
     }
 
@@ -611,7 +616,7 @@ public class SmartPicksTrendingStocksDialog extends JDialog {
                     JOptionPane.WARNING_MESSAGE);
             return;
         }
-        log("Paper monitoring placement started for " + selections.size() + " reviewed stock(s).");
+        log(modeLabel() + " monitoring placement started for " + selections.size() + " reviewed stock(s).");
         placementHandler.accept(selections);
         dispose();
     }

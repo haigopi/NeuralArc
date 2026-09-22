@@ -144,6 +144,45 @@ final class PortfolioActionsController {
         }.execute();
     }
 
+    /** Cancels only the entry buys, or only the loss-level buys, of the matching rows. */
+    void handleCancelStagedLimitBuys(PortfolioActionsSupport.BulkAction action) {
+        java.util.Set<com.neuralarc.model.StrategyStage> stages = action == PortfolioActionsSupport.BulkAction.CANCEL_LOSS_LEVEL_BUYS
+                ? StrategyService.LOSS_LEVEL_BUY_STAGES
+                : StrategyService.ENTRY_BUY_STAGES;
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return cancelStagedLimitBuyTargets(targets, stages);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    PortfolioActionsSupport.BatchResult cancelStagedLimitBuyTargets(
+            List<ManagedStrategy> targets, java.util.Set<com.neuralarc.model.StrategyStage> stages) {
+        return runTargetsInParallel(targets, entry -> {
+            StrategyService modeAwareService = modeAwareService(entry);
+            if (modeAwareService == null) {
+                return missingBrokerService(entry);
+            }
+            StrategyService.LimitBuyCancelResult result = modeAwareService.cancelPendingLimitBuys(entry.strategy.id(), stages);
+            if (!result.success()) {
+                return StrategyService.NO_PENDING_LIMIT_BUYS.equals(result.error())
+                        ? TargetResult.skipped(entry.strategy.symbol() + ": nothing of that kind was working")
+                        : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+            }
+            return TargetResult.success(entry.strategy.symbol() + " (" + result.canceledCount() + ")");
+        });
+    }
+
     void handleCleanPendingAndCanceled() {
         PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CLEAN_PENDING_AND_CANCELED;
         List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);

@@ -133,6 +133,7 @@ final class SmartPicksWorkspaceView {
                         + (schedule.executeAfterScan() ? ", placing orders automatically." : ", recommendation only.")
                 : "Not scheduled yet. Suggested: " + escape(kind.defaultScheduleText()) + ".";
         return "<html><div style='text-align:left; width:420px;'>"
+                + "<div style='font-size:10px; color:#ffffff;'><b>" + escape(kind.purpose()) + "</b></div><br>"
                 + "<div style='font-size:9px; color:#ffffff;'><b>Description:</b></div>"
                 + "<div style='margin-top:4px; font-size:9px; color:#ffccff;'>" + escape(description(kind)) + "</div>"
                 + "<br><div style='font-size:9px; color:#ffffff;'><b>Example:</b></div>"

@@ -653,18 +653,35 @@ public class StrategyEngine {
         if (!isAutoExecutionAllowed(strategy.id())) {
             return null;
         }
+        // Read fresh: a poll can decide to buy from an order list taken before another path (a reposition,
+        // a manual action) placed this very order. DTSS and DLXY failed that way, 0.2s after a reposition.
+        List<StrategyOrder> currentOrders = orderRepository.findByStrategyId(strategy.id());
+        if (hasPendingStage(currentOrders, stage)) {
+            LOGGER.info("[" + strategy.symbol() + "][" + stage + "] A " + stage
+                    + " order is already working; not placing a duplicate.");
+            return null;
+        }
         StrategyBuyRiskProjector.RiskProjection projection = projectedRisk(
                 strategy,
-                orderRepository.findByStrategyId(strategy.id()),
+                currentOrders,
                 BigDecimal.valueOf(quantity),
                 limitPrice
         );
         if (!projection.allowed()) {
             strategy.setLastError(projection.reason());
-            stateMachine.transition(strategy, StrategyLifecycleState.FAILED,
-                    StrategyEventType.STRATEGY_FAILED,
-                    projection.reason(),
-                    "{}");
+            if (hasLiveExposure(currentOrders)) {
+                // The limit only blocks this extra buy. Failing the strategy would abandon what it already has
+                // at the broker — a working buy, or shares whose stop loss must keep being watched — because
+                // nothing polls a failed strategy.
+                stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.ORDER_STATUS_UPDATED,
+                        stage + " not placed: " + projection.reason() + "; the strategy keeps managing its "
+                                + "existing order or position.", "{}");
+            } else {
+                stateMachine.transition(strategy, StrategyLifecycleState.FAILED,
+                        StrategyEventType.STRATEGY_FAILED,
+                        projection.reason(),
+                        "{}");
+            }
             strategyRepository.save(strategy);
             return null;
         }
@@ -1014,6 +1031,19 @@ public class StrategyEngine {
 
     private boolean isRetryableBrokerConnectivityFailure(String normalizedStatus) {
         return "failed_transport".equals(normalizedStatus);
+    }
+
+    /** A buy still working, or filled buys not yet sold: something at the broker this strategy owns. */
+    private static boolean hasLiveExposure(List<StrategyOrder> orders) {
+        BigDecimal held = BigDecimal.ZERO;
+        for (StrategyOrder order : orders) {
+            if (order.side() == StrategyOrderSide.BUY && order.isPending()) {
+                return true;
+            }
+            BigDecimal filled = order.filledQuantity() == null ? BigDecimal.ZERO : order.filledQuantity();
+            held = order.side() == StrategyOrderSide.BUY ? held.add(filled) : held.subtract(filled);
+        }
+        return held.signum() > 0;
     }
 
     private boolean hasPendingStage(List<StrategyOrder> orders, StrategyStage stage) {

@@ -97,11 +97,21 @@ final class PortfolioActionsMenuBuilder {
                                 "icons/submit.svg",
                                 controller::handleReadjustLosingPendingBaseBuys)
                 )),
-                new PortfolioActionsMenu.Group("Cancel Orders", "icons/close.svg", List.of(
-                        new PortfolioActionsMenu.Entry("Cancel All Pending Limit Buys",
-                                "Cancel working buy orders and pause those strategies; positions stay open.",
+                new PortfolioActionsMenu.Group("Cancel Buy Orders", "icons/close.svg", List.of(
+                        new PortfolioActionsMenu.Entry("Cancel Unfilled Entry Limit Buys",
+                                "Only positions you just added whose first limit buy has not filled; held positions and loss-level buys stay.",
                                 "icons/close.svg",
-                                controller::handleCancelAllPendingLimitBuys),
+                                () -> controller.handleCancelStagedLimitBuys(PortfolioActionsSupport.BulkAction.CANCEL_UNFILLED_ENTRY_BUYS)),
+                        new PortfolioActionsMenu.Entry("Cancel Loss-Level Limit Buys",
+                                "Only the averaging-down buys below held positions; the shares and their stops stay.",
+                                "icons/close.svg",
+                                () -> controller.handleCancelStagedLimitBuys(PortfolioActionsSupport.BulkAction.CANCEL_LOSS_LEVEL_BUYS)),
+                        new PortfolioActionsMenu.Entry("Cancel All Pending Limit Buys",
+                                "Every working buy, entry and loss-level alike; those strategies pause and positions stay open.",
+                                "icons/close.svg",
+                                controller::handleCancelAllPendingLimitBuys)
+                )),
+                new PortfolioActionsMenu.Group("Cancel Other Orders", "icons/close.svg", List.of(
                         new PortfolioActionsMenu.Entry("Cancel All Pending Limit Sells",
                                 "Cancel working sell orders; the positions stay open and keep evaluating rules.",
                                 "icons/close.svg",

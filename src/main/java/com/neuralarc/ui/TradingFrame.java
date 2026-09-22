@@ -644,6 +644,7 @@ public class TradingFrame extends JFrame {
         gapAndGoCoordinator = new GapAndGoCoordinator(
                 new GapAndGoCoordinatorUi(), appDatabase, strategyRepository,
                 appSettingsService, marketHoursService, scanHistoryRepository, uiPollingExecutor);
+        strategyTablePresenter.setWorkspaceNameLookup(this::workspaceNameOrNull);
         smartPicksWorkspaceCoordinator = new SmartPicksWorkspaceCoordinator(new SmartPicksWorkspaceCoordinator.Ui() {
             @Override public boolean connectionOk() { return connectionOk; }
             @Override public boolean workspaceExists(String workspaceId) {
@@ -3366,12 +3367,7 @@ public class TradingFrame extends JFrame {
             @Override public boolean defaultResubmitOnExpiryEnabled() { return settingsDialog.appliedDefaultResubmitOnExpiryEnabled(); }
             @Override public void cancelAndDeletePaperStrategy(String strategyId) { strategyServiceForMode(mode).delete(strategyId); }
             @Override public void afterPlacement() {
-                SwingUtilities.invokeLater(() -> {
-                    syncStrategiesFromRepository();
-                    refreshStrategyTableData();
-                    updateStatusBar();
-                    refreshPanels();
-                });
+                SwingUtilities.invokeLater(TradingFrame.this::onSmartPicksPlaced);
             }
             @Override public void log(String message) { TradingFrame.this.log(message); }
         }, mode);
@@ -5557,10 +5553,7 @@ public class TradingFrame extends JFrame {
             @Override public boolean defaultResubmitOnExpiryEnabled() { return settingsDialog.appliedDefaultResubmitOnExpiryEnabled(); }
             @Override public void cancelAndDeletePaperStrategy(String strategyId) { strategyServiceForMode(targetMode).delete(strategyId); }
             @Override public void afterPlacement() {
-                syncStrategiesFromRepository();
-                refreshStrategyTableData();
-                updateStatusBar();
-                refreshPanels();
+                onSmartPicksPlaced();
             }
             @Override public void log(String message) { TradingFrame.this.log(message); }
         }, targetMode);
@@ -7740,6 +7733,12 @@ public class TradingFrame extends JFrame {
                 .orElse(false);
     }
 
+    private String workspaceNameOrNull(String workspaceId) {
+        return workspaceService == null || workspaceId == null
+                ? null
+                : workspaceService.findById(workspaceId).map(StrategyWorkspace::name).orElse(null);
+    }
+
     /** The Smart Picks kind of the selected workspace, if it is one of the Smart Picks workspaces. */
     private Optional<SmartPicksWorkspaceKind> selectedSmartPicksKind() {
         if (selectedWorkspaceId == null) {
@@ -8266,6 +8265,21 @@ public class TradingFrame extends JFrame {
     }
 
     /** Refresh the grid after the coordinator applies Swing Vault recommendations (called on the EDT). */
+    /**
+     * Refreshes the grid after Smart Picks created rows — the same steps the other workspace types take.
+     * Without re-filtering and re-evaluating the empty state, a Smart Picks workspace that was empty kept
+     * showing its Analyze card over the rows just placed into it, which only appeared under All Stocks.
+     */
+    private void onSmartPicksPlaced() {
+        syncStrategiesFromRepository();
+        refreshStrategyTableData();
+        applyCurrentStrategiesRowFilter();
+        refreshWorkspaceSummary();
+        refreshStrategyWorkspaceEmptyState();
+        updateStatusBar();
+        refreshPanels();
+    }
+
     private void onSwingRecommendationsApplied(String workspaceId, String firstAddedStrategyId) {
         syncStrategiesFromRepository();
         refreshStrategyTableData();

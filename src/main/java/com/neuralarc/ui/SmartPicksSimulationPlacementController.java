@@ -77,7 +77,7 @@ public class SmartPicksSimulationPlacementController {
                 }
                 gateway.cancelAndDeletePaperStrategy(existing.id());
                 existingForReplace = existing;
-            } else if (existing != null && DuplicateSymbolPolicy.wouldBeDuplicate(
+            } else if (DuplicateSymbolPolicy.wouldBeDuplicate(
                     selection.stock().symbol(),
                     targetMode,
                     gateway.repository().findAll(),
@@ -120,6 +120,12 @@ public class SmartPicksSimulationPlacementController {
         StrategyConfig config = smartPicksSimulationConfig(selection, recommendation);
         Strategy strategy = Strategy.fromConfig(UUID.randomUUID().toString(), smartPicksStrategyName(selection), config, targetMode);
         strategy.setBaseBuyLimitPrice(effectiveBaseBuyPrice);
+        // Picks belong to the workspace they were placed from (or scheduled for). Without this every
+        // Smart Picks placement landed in All Stocks, whichever workspace ran it.
+        String workspaceId = gateway.targetWorkspaceId();
+        if (workspaceId != null && !workspaceId.isBlank()) {
+            strategy.setWorkspaceId(workspaceId);
+        }
         strategy.setStatus(StrategyStatus.CREATED);
         strategy.setCurrentState(StrategyLifecycleState.CREATED);
         String stockReason = selection.stock().reason() == null || selection.stock().reason().isBlank()
@@ -170,12 +176,23 @@ public class SmartPicksSimulationPlacementController {
         return recommendation == null ? null : recommendation.currentPrice();
     }
 
+    /**
+     * The strategy for {@code symbol} in the workspace the picks are going into. Only a row there may be
+     * replaced: a waiting row for the same symbol in another workspace belongs to that workspace, and
+     * whether a second one may exist is the duplicate-symbol policy's call.
+     */
     private Optional<Strategy> findExistingStrategy(String symbol) {
         String normalized = symbol == null ? "" : symbol.trim().toUpperCase(Locale.ROOT);
+        String workspace = workspaceKey(gateway.targetWorkspaceId());
         return gateway.repository().findAll().stream()
                 .filter(strategy -> strategy.mode() == targetMode)
                 .filter(strategy -> strategy.symbol().equalsIgnoreCase(normalized))
+                .filter(strategy -> workspaceKey(strategy.workspaceId()).equals(workspace))
                 .findFirst();
+    }
+
+    private static String workspaceKey(String workspaceId) {
+        return workspaceId == null ? "" : workspaceId.trim();
     }
 
     private boolean isWaitingForFill(Strategy strategy) {

@@ -17,6 +17,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class StrategyTablePresenter {
+    /** Resolves a workspace id to its name, or null; set by the frame so Smart Picks rows name their workspace. */
+    private java.util.function.Function<String, String> workspaceNames = ignored -> null;
+
+    public void setWorkspaceNameLookup(java.util.function.Function<String, String> lookup) {
+        this.workspaceNames = lookup == null ? ignored -> null : lookup;
+    }
     public String formatLifecycleStateForDisplay(StrategyLifecycleState state) {
         if (state == null) {
             return "";
@@ -850,7 +856,7 @@ public final class StrategyTablePresenter {
             return "Earnings Hunter strategy";
         }
         if (isSmartPicksSource(combined)) {
-            return smartPicksEntrySource(combined);
+            return smartPicksEntrySource(strategy, name, combined);
         }
         if (isBrokerSyncedSource(combined)) {
             return "Broker Synced";
@@ -871,6 +877,27 @@ public final class StrategyTablePresenter {
                 // Legacy strategies persisted before the Smart Picks rename.
                 || combined.contains("i_am_feeling_lucky")
                 || combined.contains("i am feeling lucky");
+    }
+
+    /**
+     * A Smart Picks row names the workspace it was placed into — "High Volatility Movers - Losers",
+     * "Diversified Leaders" — with the mover side appended when the pick came from the gainers or losers.
+     * The side is read from the strategy's name, which keeps it; the last event is overwritten as orders
+     * move. A row outside any workspace keeps the generic "Picks [...]" label.
+     */
+    private String smartPicksEntrySource(Strategy strategy, String name, String combined) {
+        String workspaceId = strategy.workspaceId();
+        String workspaceName = workspaceId == null || workspaceId.isBlank() ? null : workspaceNames.apply(workspaceId);
+        if (workspaceName == null || workspaceName.isBlank()) {
+            return smartPicksEntrySource(combined);
+        }
+        if (name.contains("smart_picks_gainers")) {
+            return workspaceName + " - Gainers";
+        }
+        if (name.contains("smart_picks_losers")) {
+            return workspaceName + " - Losers";
+        }
+        return workspaceName;
     }
 
     private String smartPicksEntrySource(String combined) {

@@ -54,6 +54,20 @@ enum SmartPicksWorkspaceKind {
     LocalTime defaultScanTimeEt() { return defaultScanTimeEt; }
     String defaultScheduleText() { return defaultScheduleText; }
 
+    /** One line on what the strategy is for, shown atop the Smart Picks dialog and the workspace. */
+    String purpose() {
+        return switch (this) {
+            case MOVERS -> "For short-term trades on today's biggest price swings: higher reward, higher risk.";
+            case LEADERS -> "For steadier core positions in 20 sector-leading large caps, spread across the market.";
+            case REBOUND -> "For buying Friday's controlled selloffs to catch the typical Monday bounce.";
+        };
+    }
+
+    /** The kind that reviews this Smart Picks universe. */
+    static SmartPicksWorkspaceKind forUniverse(SmartPicksTrendingStocksDialog.StrategyUniverse universe) {
+        return Arrays.stream(values()).filter(kind -> kind.universe == universe).findFirst().orElse(MOVERS);
+    }
+
     /** The kind for a workspace code, if the workspace is a Smart Picks one. */
     static Optional<SmartPicksWorkspaceKind> fromCode(String workspaceCode) {
         if (workspaceCode == null) {

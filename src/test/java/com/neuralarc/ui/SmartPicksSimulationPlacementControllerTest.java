@@ -31,6 +31,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SmartPicksSimulationPlacementControllerTest {
+    private String targetWorkspace;
+
     @Test
     void startsPaperMonitoringThroughPaperCreationPath() {
         InMemoryRepository repository = new InMemoryRepository();
@@ -144,15 +146,47 @@ class SmartPicksSimulationPlacementControllerTest {
 
     @Test
     void nonWaitingDuplicateAllowsSecondStrategyWhenPolicyAllows() {
+        // Allowed duplicates mean one row per symbol per workspace (DuplicateSymbolPolicy): the second
+        // NVDA goes into a different workspace. Two in one workspace would share one broker position.
         InMemoryRepository repository = new InMemoryRepository();
         SmartPicksSimulationPlacementController controller = controller(repository, true, true);
+        targetWorkspace = "growth";
         controller.place(List.of(selection("NVDA")));
 
+        targetWorkspace = "leaders";
         SmartPicksSimulationPlacementController.PlacementResult result = controller.place(List.of(selection("NVDA")));
 
         assertEquals(1, result.created());
         assertEquals(0, result.skipped());
         assertEquals(2, repository.findAll().size());
+    }
+
+    @Test
+    void picksAreCreatedInTheWorkspaceTheyWerePlacedFrom() {
+        // Regression guard: Diversified Leaders placed from its own workspace landed in All Stocks,
+        // because the target workspace was used for the duplicate check but never assigned.
+        InMemoryRepository repository = new InMemoryRepository();
+        targetWorkspace = "leaders-workspace";
+
+        controller(repository, true, false).place(List.of(selection("MSFT")));
+
+        assertEquals("leaders-workspace", repository.findAll().getFirst().workspaceId());
+    }
+
+    @Test
+    void aWaitingRowInAnotherWorkspaceIsNotReplacedByAPickHere() {
+        InMemoryRepository repository = new InMemoryRepository();
+        Strategy personalPlay = waitingPaperStrategy("AAPL", "personal-aapl");
+        personalPlay.setWorkspaceId("personal-play");
+        repository.save(personalPlay);
+        targetWorkspace = "leaders-workspace";
+
+        SmartPicksSimulationPlacementController.PlacementResult result =
+                controller(repository, true, false).place(List.of(selection("AAPL")));
+
+        assertTrue(repository.findById("personal-aapl").isPresent(), "Personal Play keeps its own AAPL row");
+        assertEquals(0, result.replaced());
+        assertEquals(1, result.skipped(), "the duplicate-symbol policy decides instead");
     }
 
     @Test
@@ -303,6 +337,7 @@ class SmartPicksSimulationPlacementControllerTest {
             }
             @Override public boolean confirmReplaceWaitingPaperStrategy(String symbol) { return replaceChoice; }
             @Override public boolean allowDuplicateSymbols() { return allowDuplicates; }
+            @Override public String targetWorkspaceId() { return targetWorkspace; }
             @Override public int defaultStrategyPollingSeconds() { return defaultPollingSeconds; }
             @Override public boolean defaultRepeatCycleAfterProfitExitEnabled() { return defaultRepeatCycleAfterProfitExit; }
             @Override public boolean defaultResubmitOnExpiryEnabled() { return defaultResubmitOnExpiry; }

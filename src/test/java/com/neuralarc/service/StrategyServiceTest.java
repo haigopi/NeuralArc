@@ -1398,6 +1398,60 @@ class StrategyServiceTest {
     }
 
     @Test
+    void cancellingLossLevelBuysLeavesTheEntryAndManualBuysWorking() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, new InMemoryEventRepository(), alpaca);
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("180.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BUY_LIMIT_1_PLACED);
+        strategies.save(strategy);
+        orders.save(order(strategy.id(), StrategyStage.BASE_BUY, "ord-base", "10", "10", StrategyOrderStatus.FILLED));
+        orders.save(order(strategy.id(), StrategyStage.BUY_LIMIT_1, "ord-loss", "5", "0", StrategyOrderStatus.SUBMITTED));
+        orders.save(order(strategy.id(), StrategyStage.MANUAL_BUY, "ord-manual", "2", "0", StrategyOrderStatus.SUBMITTED));
+
+        StrategyService.LimitBuyCancelResult result =
+                service.cancelPendingLimitBuys(strategy.id(), StrategyService.LOSS_LEVEL_BUY_STAGES);
+
+        assertTrue(result.success());
+        assertEquals(List.of("ord-loss"), alpaca.canceledOrderIds, "only the loss-level buy is cancelled at the broker");
+        assertEquals(StrategyOrderStatus.SUBMITTED, orders.findByAlpacaOrderId("ord-manual").orElseThrow().status());
+        assertEquals(StrategyStatus.ACTIVE, strategies.findById(strategy.id()).orElseThrow().status(),
+                "the held shares stay managed");
+    }
+
+    @Test
+    void cancellingAnUnfilledEntryBuyPausesTheStrategyForPlaceLimitBuyAgain() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, new InMemoryEventRepository(), alpaca);
+        Strategy strategy = baseStrategy("MSFT", 1, new BigDecimal("400.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
+        strategies.save(strategy);
+        orders.save(order(strategy.id(), StrategyStage.BASE_BUY, "ord-entry", "1", "0", StrategyOrderStatus.SUBMITTED));
+
+        StrategyService.LimitBuyCancelResult result =
+                service.cancelPendingLimitBuys(strategy.id(), StrategyService.ENTRY_BUY_STAGES);
+
+        assertTrue(result.success());
+        assertEquals(List.of("ord-entry"), alpaca.canceledOrderIds);
+        Strategy paused = strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.PAUSED, paused.status());
+        assertEquals(PauseReason.MANUAL_LIMIT_BUY_CANCELED, paused.pauseReason());
+    }
+
+    private static StrategyOrder order(String strategyId, StrategyStage stage, String orderId, String requested,
+                                       String filled, StrategyOrderStatus status) {
+        return new StrategyOrder(UUID.randomUUID().toString(), strategyId, stage, orderId, "client-" + orderId, "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("170.00"), BigDecimal.ZERO,
+                new BigDecimal(requested), new BigDecimal(filled), BigDecimal.ZERO, status,
+                Instant.now(), Instant.now(), null, "{}");
+    }
+
+    @Test
     void cancelPendingLimitBuyKeepsExistingPositionActive() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

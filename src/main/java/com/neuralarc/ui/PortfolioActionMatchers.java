@@ -13,6 +13,34 @@ final class PortfolioActionMatchers {
     private PortfolioActionMatchers() {
     }
 
+    /**
+     * A position just added whose entry limit buy has not filled at all: nothing held yet, its first buy
+     * still working. Cancelling it only withdraws that entry.
+     */
+    static boolean hasUnfilledEntryBuy(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null || entry.strategy.status() != StrategyStatus.ACTIVE) {
+            return false;
+        }
+        return entry.cachedPosition().getTotalShares() == 0
+                && entry.strategy.currentState() == StrategyLifecycleState.BASE_BUY_PLACED;
+    }
+
+    /**
+     * A position already held with a loss-level (averaging-down) buy working below it. Cancelling it
+     * keeps the shares and their stop loss; only the extra buy is withdrawn.
+     */
+    static boolean hasPendingLossLevelBuy(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null || entry.strategy.status() != StrategyStatus.ACTIVE
+                || entry.cachedPosition().getTotalShares() <= 0) {
+            return false;
+        }
+        StrategyLifecycleState state = entry.strategy.currentState();
+        return state == StrategyLifecycleState.BUY_LIMIT_1_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PLACED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED;
+    }
+
     static boolean hasCancelablePendingLimitBuy(ManagedStrategy entry) {
         if (entry == null || entry.strategy == null || entry.strategy.status() != StrategyStatus.ACTIVE) {
             return false;

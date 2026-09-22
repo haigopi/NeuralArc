@@ -155,6 +155,43 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void aLossBuyBlockedByTheQuantityLimitDoesNotFailAStrategyThatHoldsShares() {
+        // Failing it would stop all polling — and with it the stop loss on the shares it still holds.
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setMaxTotalQuantity(10);
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        f.alpaca.latestPrice = new BigDecimal("5.90");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("5.90"), "{}"));
+        strategy.setAutomatedStopLossEnabled(false);
+        f.strategies.save(strategy);
+
+        f.service.pollStrategy(strategy.id());
+
+        Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, updated.status(), "still managed");
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).isEmpty(),
+                "the extra buy is still refused");
+        assertEquals("Projected quantity exceeds maxTotalQuantity", updated.lastError());
+    }
+
+    @Test
+    void aQuantityLimitWithNothingHeldOrWorkingStillFailsTheStrategy() {
+        // A strategy whose very first buy breaks its own limit is misconfigured; failing it is right.
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setMaxTotalQuantity(5);
+        strategy.setCurrentState(StrategyLifecycleState.QUEUED_FOR_OPEN);
+        f.strategies.save(strategy);
+        f.alpaca.position = Optional.empty();
+
+        f.service.pollStrategy(strategy.id());
+
+        assertEquals(StrategyStatus.FAILED, f.strategies.findById(strategy.id()).orElseThrow().status());
+    }
+
+    @Test
     void lossBuyLevelsDoNotTriggerWhenDisabled() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
@@ -657,7 +694,11 @@ class StrategyPollingServiceTest {
         f.service.pollStrategy(strategy.id());
 
         assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).isEmpty());
-        assertEquals(StrategyStatus.FAILED, f.strategies.findById(strategy.id()).orElseThrow().status());
+        // The limits still block the buy, but the strategy holds 10 shares: it stays active so its stop loss
+        // keeps being watched, with the reason recorded instead of failing the whole strategy.
+        Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
+        assertEquals(StrategyStatus.ACTIVE, updated.status());
+        assertTrue(updated.lastError().startsWith("Projected"), updated.lastError());
     }
 
     @Test

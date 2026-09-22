@@ -617,6 +617,41 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void aSmartPicksRowInAWorkspaceIsLabelledWithTheWorkspaceAndItsMoverSide() {
+        presenter.setWorkspaceNameLookup(id -> "movers-id".equals(id) ? "High Volatility Movers" : null);
+        Strategy strategy = strategy();
+        strategy.setName("SMART_PICKS_LOSERS: NIO Live");
+        strategy.setLastEvent("Order BASE_BUY is SUBMITTED");
+        strategy.setWorkspaceId("movers-id");
+
+        assertEquals("High Volatility Movers - Losers", entrySource(strategy));
+    }
+
+    @Test
+    void aSmartPicksRowWithNoMoverSideShowsJustItsWorkspace() {
+        // Diversified Leaders showed "Picks [Reviewed]".
+        presenter.setWorkspaceNameLookup(id -> "Diversified Leaders");
+        Strategy strategy = strategy();
+        strategy.setName("SMART_PICKS_REVIEWED: MSFT Live");
+        strategy.setWorkspaceId("leaders-id");
+
+        assertEquals("Diversified Leaders", entrySource(strategy));
+    }
+
+    @Test
+    void aSmartPicksRowOutsideAnyWorkspaceKeepsTheGenericLabel() {
+        presenter.setWorkspaceNameLookup(id -> "Should not be used");
+        Strategy strategy = strategy();
+        strategy.setName("SMART_PICKS_GAINERS: AAPL Paper");
+
+        assertEquals("Picks [Gainers]", entrySource(strategy));
+    }
+
+    private Object entrySource(Strategy strategy) {
+        return presenter.valueAt(strategy, new Position(strategy.symbol()), BigDecimal.ZERO, BigDecimal.ZERO, 9, "Active", "Paper");
+    }
+
+    @Test
     void entrySourceRecognizesSmartPicksNameToken() {
         Strategy strategy = strategy();
         strategy.setName("SMART_PICKS_GAINERS: AAPL Paper");

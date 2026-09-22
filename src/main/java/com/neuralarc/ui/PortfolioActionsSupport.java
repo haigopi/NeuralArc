@@ -317,6 +317,51 @@ final class PortfolioActionsSupport {
                 return "There are no strategies with cancelable pending limit buy orders.";
             }
         },
+        CANCEL_UNFILLED_ENTRY_BUYS("Cancel Unfilled Entry Limit Buys") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return PortfolioActionMatchers.hasUnfilledEntryBuy(entry);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Cancel the unfilled entry limit buy for " + count + " position(s)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Only entry buys that have not filled at all are cancelled: positions you just added whose first"
+                        + " limit buy is still waiting.<br>Positions already holding shares, and their loss-level buys,"
+                        + " are not touched.<br>Matching strategies are paused and can be restarted with Place Limit Buy Again.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no positions waiting on an unfilled entry limit buy.";
+            }
+        },
+        CANCEL_LOSS_LEVEL_BUYS("Cancel Loss-Level Limit Buys") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return PortfolioActionMatchers.hasPendingLossLevelBuy(entry);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Cancel the working loss-level buy for " + count + " held position(s)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Only the averaging-down buys (loss buy levels 1 and 2) working below a held position are cancelled."
+                        + "<br>The shares stay open and keep their stop loss and profit rules; entry buys are not touched.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no held positions with a working loss-level buy.";
+            }
+        },
         PLACE_PENDING_BASE_BUYS("Place Pending Base Buys") {
             @Override
             boolean matches(ManagedStrategy entry) {

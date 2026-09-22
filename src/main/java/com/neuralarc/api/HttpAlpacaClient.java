@@ -536,6 +536,15 @@ public class HttpAlpacaClient implements AlpacaClient {
         try {
             logRequest("POST", endpoint, payload.toString());
             HttpResponse<String> response = sendTracked(request);
+            // A 429 means Alpaca refused the order without accepting it, so resending is safe (and the
+            // unique client_order_id would make the broker reject a true duplicate anyway). Sending a
+            // batch of picks back to back used to fail four of six with "Rate limit exceeded".
+            for (int attempt = 1; response.statusCode() == 429 && RateLimitBackoff.hasAttemptsLeft(attempt); attempt++) {
+                long delay = RateLimitBackoff.delayMillis(attempt);
+                LOGGER.info("Alpaca rate limited the " + side + " order for " + symbol + "; retrying in " + delay + "ms.");
+                orderRetrySleeper.sleep(delay);
+                response = sendTracked(request);
+            }
             recordRequestId("submitOrder", "POST", endpoint, response);
             String body = response.body() == null ? "{}" : response.body();
             logResponse("POST", endpoint, response.statusCode(), body);
@@ -573,8 +582,15 @@ public class HttpAlpacaClient implements AlpacaClient {
                 .header("APCA-API-SECRET-KEY", secretKey);
     }
 
+    /** Waits between order retries; replaceable so tests do not sleep. */
+    interface Sleeper {
+        void sleep(long millis) throws InterruptedException;
+    }
+
+    Sleeper orderRetrySleeper = Thread::sleep;
+
     /** Sends a request while recording it in {@link ApiCallMetrics} for the network-usage view. */
-    private HttpResponse<String> sendTracked(HttpRequest request) throws java.io.IOException, InterruptedException {
+    HttpResponse<String> sendTracked(HttpRequest request) throws java.io.IOException, InterruptedException {
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             ApiCallMetrics.record(response.statusCode() < 500);

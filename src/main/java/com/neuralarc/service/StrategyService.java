@@ -325,7 +325,23 @@ public class StrategyService {
     /** The cancel result's error when there was simply nothing working to cancel. */
     public static final String NO_PENDING_LIMIT_BUYS = "No pending limit buy orders found";
 
+    /** Entry buys: the base buy and manual limit buys — the orders that open or add to a position directly. */
+    public static final java.util.Set<StrategyStage> ENTRY_BUY_STAGES =
+            java.util.EnumSet.of(StrategyStage.BASE_BUY, StrategyStage.MANUAL_BUY);
+    /** Loss-level buys: the averaging-down levels placed below a position already held. */
+    public static final java.util.Set<StrategyStage> LOSS_LEVEL_BUY_STAGES =
+            java.util.EnumSet.of(StrategyStage.BUY_LIMIT_1, StrategyStage.BUY_LIMIT_2);
+
     public LimitBuyCancelResult cancelPendingLimitBuys(String strategyId) {
+        return cancelPendingLimitBuys(strategyId, null);
+    }
+
+    /**
+     * Cancels the strategy's working limit buys of {@code stages} only (all stages when null), then settles
+     * the strategy exactly as the all-buys cancel does: still active if it has exposure, else paused for
+     * Place Limit Buy Again.
+     */
+    public LimitBuyCancelResult cancelPendingLimitBuys(String strategyId, java.util.Set<StrategyStage> stages) {
         Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
         if (maybeStrategy.isEmpty()) {
             return LimitBuyCancelResult.failed("Strategy not found");
@@ -334,7 +350,9 @@ public class StrategyService {
         if (!serviceModeMatches(strategy)) {
             return LimitBuyCancelResult.failed(serviceModeMismatchMessage(strategy));
         }
-        int canceledCount = pendingLimitOrderCanceler.cancelPendingLimitBuys(strategy);
+        int canceledCount = stages == null
+                ? pendingLimitOrderCanceler.cancelPendingLimitBuys(strategy)
+                : pendingLimitOrderCanceler.cancelPendingLimitBuys(strategy, stages);
         if (canceledCount <= 0) {
             return LimitBuyCancelResult.failed(NO_PENDING_LIMIT_BUYS);
         }
