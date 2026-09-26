@@ -43,11 +43,25 @@ final class HistoryReentry {
     }
 
     /**
-     * One source strategy per stock that has traded in {@code mode} (has a fill) but has no live row —
-     * active, paused or awaiting placement — in any workspace. The most recently updated traded
-     * strategy is the source of its plan.
+     * One source strategy per stock that has traded in {@code mode} (has a fill) but is not being
+     * traded any more. A stock is excluded when any workspace holds a live row for it — active, paused
+     * or awaiting placement, which covers both an entry still pending a fill and a filled position —
+     * and when {@code heldSymbols} says shares are still held, which catches a position left behind by
+     * a stopped or failed strategy. The most recently updated traded strategy is the source of its plan.
      */
     static List<Strategy> candidates(List<Strategy> strategies, StrategyMode mode,
+                                     Function<String, List<StrategyOrder>> ordersByStrategyId,
+                                     java.util.Set<String> heldSymbols) {
+        java.util.Set<String> held = heldSymbols == null ? java.util.Set.of() : heldSymbols.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(symbol -> symbol.toUpperCase(Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet());
+        return candidates(strategies, mode, ordersByStrategyId).stream()
+                .filter(source -> !held.contains(source.symbol().toUpperCase(Locale.ROOT)))
+                .toList();
+    }
+
+    private static List<Strategy> candidates(List<Strategy> strategies, StrategyMode mode,
                                      Function<String, List<StrategyOrder>> ordersByStrategyId) {
         Map<String, List<Strategy>> bySymbol = new LinkedHashMap<>();
         for (Strategy strategy : strategies) {
@@ -63,6 +77,58 @@ final class HistoryReentry {
                 .flatMap(java.util.Optional::stream)
                 .sorted(Comparator.comparing(Strategy::symbol))
                 .toList();
+    }
+
+    /** Sessions in the two-week window the picker averages for context. */
+    static final int TWO_WEEK_SESSIONS = 10;
+
+    /**
+     * What the picker shows for one stock before the operator ticks it: the price it would go in at,
+     * and the range it has been trading in. Zero means the prices could not be read.
+     */
+    record Levels(BigDecimal entryPrice, BigDecimal averageLow, BigDecimal averageHigh) {
+        static Levels unknown() {
+            return new Levels(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        }
+
+        boolean known() {
+            return entryPrice != null && entryPrice.signum() > 0;
+        }
+    }
+
+    /**
+     * The entry price and the two-week averages for one stock, from its daily bars.
+     *
+     * <p>The entry price is the same {@link #safeLow} the placement uses, so the number the operator
+     * ticks is the number that gets placed. The averages are the mean of each session's low and each
+     * session's high over the last {@link #TWO_WEEK_SESSIONS} sessions: together they say whether the
+     * entry sits under the stock's recent range or inside it.
+     */
+    static Levels levels(List<MarketBar> dailyBars, LocalDate today) {
+        BigDecimal weekLow = safeLow(dailyBars, today);
+        BigDecimal twoWeekLow = lowestLow(dailyBars);
+        // Whichever of the two is lower. Going back a week alone put some re-entries above the price
+        // the stock traded at only days earlier, which is not a pullback — it is paying up for a stock
+        // that has already been cheaper this fortnight.
+        BigDecimal entry = twoWeekLow.signum() > 0 && (weekLow.signum() <= 0 || twoWeekLow.compareTo(weekLow) < 0)
+                ? twoWeekLow
+                : weekLow;
+        return new Levels(entry, average(dailyBars, MarketBar::low), average(dailyBars, MarketBar::high));
+    }
+
+    /** The lowest price traded over the last {@link #TWO_WEEK_SESSIONS} sessions, or zero when unknown. */
+    static BigDecimal lowestLow(List<MarketBar> dailyBars) {
+        if (dailyBars == null || dailyBars.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal lowest = null;
+        for (MarketBar bar : dailyBars.subList(Math.max(0, dailyBars.size() - TWO_WEEK_SESSIONS), dailyBars.size())) {
+            BigDecimal low = bar == null ? null : bar.low();
+            if (low != null && low.signum() > 0 && (lowest == null || low.compareTo(lowest) < 0)) {
+                lowest = low;
+            }
+        }
+        return lowest == null ? BigDecimal.ZERO : Monetary.round(lowest);
     }
 
     /** The safe low: the lowest traded price over the last week of sessions, or zero when unknown. */
@@ -125,6 +191,23 @@ final class HistoryReentry {
     /** "Comeback Picks · Sep 22" — the workspace a run's re-entries go into. */
     static String workspaceName(LocalDate day) {
         return "Comeback Picks · " + DAY.format(day);
+    }
+
+    /** The mean of one field over the last {@link #TWO_WEEK_SESSIONS} sessions, or zero when unknown. */
+    private static BigDecimal average(List<MarketBar> dailyBars, Function<MarketBar, BigDecimal> field) {
+        if (dailyBars == null || dailyBars.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal total = BigDecimal.ZERO;
+        int counted = 0;
+        for (MarketBar bar : dailyBars.subList(Math.max(0, dailyBars.size() - TWO_WEEK_SESSIONS), dailyBars.size())) {
+            BigDecimal value = bar == null ? null : field.apply(bar);
+            if (value != null && value.signum() > 0) {
+                total = total.add(value);
+                counted++;
+            }
+        }
+        return counted == 0 ? BigDecimal.ZERO : Monetary.round(total.divide(BigDecimal.valueOf(counted), 6, RoundingMode.HALF_UP));
     }
 
     private static boolean isLive(Strategy strategy) {

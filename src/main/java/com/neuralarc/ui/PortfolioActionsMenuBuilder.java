@@ -166,6 +166,20 @@ final class PortfolioActionsMenuBuilder {
                                 ? deletePaperEntries.disabledWith("Paper cleanup is disabled while viewing LIVE mode.")
                                 : deletePaperEntries
                 )),
+                new PortfolioActionsMenu.Group("Stop Losses", "icons/kill-switch.svg", List.of(
+                        new PortfolioActionsMenu.Entry("Cancel All Stop Losses",
+                                "Switch off stop-loss monitoring and cancel any stop-loss sell working at the broker."
+                                        + " Positions stay open with no automatic downside protection.",
+                                "icons/kill-switch.svg",
+                                controller::handleCancelAllStopLosses)
+                )),
+                new PortfolioActionsMenu.Group("AI Analyst", "icons/actions.svg", List.of(
+                        new PortfolioActionsMenu.Entry("Ask the Analyst",
+                                "Have Claude read your open positions, prices and news, then write what it sees."
+                                        + " Read-only: it cannot place or change any order.",
+                                "icons/actions.svg",
+                                controller::handleAskAnalyst)
+                )),
                 new PortfolioActionsMenu.Group("Lifecycle", "icons/submit.svg", List.of(
                         new PortfolioActionsMenu.Entry("Resume All",
                                 "Resume paused strategies so they monitor and execute again.",

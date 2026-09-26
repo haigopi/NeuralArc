@@ -31,16 +31,22 @@ final class PendingLimitOrderCanceler {
      * marked cancelled; reconciliation records the fill.
      */
     int cancelPendingLimitBuys(Strategy strategy, java.util.Set<com.neuralarc.model.StrategyStage> stages) {
+        return cancelPendingLocalOrders(strategy, StrategyOrderSide.BUY, stages);
+    }
+
+    /** Cancels this strategy's own working orders of one side and the given stages, one by one. */
+    private int cancelPendingLocalOrders(Strategy strategy, StrategyOrderSide side,
+                                         java.util.Set<com.neuralarc.model.StrategyStage> stages) {
         int canceledCount = 0;
         for (StrategyOrder localOrder : orderRepository.findByStrategyId(strategy.id())) {
-            if (!isPendingLimitOrder(localOrder, StrategyOrderSide.BUY) || !stages.contains(localOrder.stage())) {
+            if (!isPendingLimitOrder(localOrder, side) || !stages.contains(localOrder.stage())) {
                 continue;
             }
             String orderId = localOrder.alpacaOrderId();
             if (orderId != null && !orderId.isBlank() && !alpacaClient.cancelOrder(orderId)) {
                 // Refused: it may have filled or already gone. Only mark it cancelled if it is not working.
                 java.util.Optional<com.neuralarc.api.AlpacaOrderData> remote = alpacaClient.getOrder(orderId);
-                if (remote.isEmpty() || isPendingLimitOrder(remote.get(), StrategyOrderSide.BUY)
+                if (remote.isEmpty() || isPendingLimitOrder(remote.get(), side)
                         || "filled".equals(BrokerOrderStatusUtil.normalize(remote.get().status()))) {
                     continue;
                 }
@@ -54,6 +60,15 @@ final class PendingLimitOrderCanceler {
 
     int cancelPendingLimitSells(Strategy strategy) {
         return cancelPendingLimitOrders(strategy, StrategyOrderSide.SELL);
+    }
+
+    /**
+     * Cancels only this strategy's working limit sells of the given stages — a stop-loss sell without
+     * touching the target sell or a profit-hold exit. Order by order like the buy-side variant, so
+     * other stages and other strategies on the same symbol keep their orders.
+     */
+    int cancelPendingLimitSells(Strategy strategy, java.util.Set<com.neuralarc.model.StrategyStage> stages) {
+        return cancelPendingLocalOrders(strategy, StrategyOrderSide.SELL, stages);
     }
 
     private int cancelPendingLimitOrders(Strategy strategy, StrategyOrderSide side) {

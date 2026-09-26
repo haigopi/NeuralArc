@@ -2,6 +2,9 @@ package com.neuralarc.util;
 
 import com.neuralarc.model.StrategyMode;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -38,6 +41,8 @@ public final class ClientOrderId {
     private static final int MAX_SEGMENT = 16;
     private static final DateTimeFormatter TIMESTAMP =
             DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneOffset.UTC);
+    private static final DateTimeFormatter DAY =
+            DateTimeFormatter.ofPattern("yyyyMMdd").withZone(ZoneOffset.UTC);
 
     private ClientOrderId() {
     }
@@ -54,6 +59,52 @@ public final class ClientOrderId {
 
     public static String build(StrategyMode mode, String strategyCode, String symbol, String stage) {
         return build(mode, strategyCode, symbol, stage, Instant.now());
+    }
+
+    /**
+     * The same structure, but with nothing random or clock-precise in it: the id is a function of the
+     * strategy, the stage, which attempt this is, and the trading day.
+     *
+     * <p>Alpaca rejects a {@code client_order_id} it has already seen. That is the only duplicate
+     * guard that survives two app instances, a restart mid-submission, or a build that has lost its
+     * local record — all of which end with the same logical order being sent twice. With a random
+     * suffix the broker sees two different ids and fills both, which is how a position ends up
+     * holding twice what its timeline bought. With this, the second send is refused by the broker.
+     *
+     * <p>{@code attempt} is what makes a *deliberate* re-placement possible: re-posting an expired
+     * entry, or raising a trailing exit, passes the next attempt number and gets a new id. The day
+     * segment keeps ids unique across sessions, so the same attempt tomorrow is a new order.
+     */
+    public static String deterministic(StrategyMode mode, String strategyCode, String symbol, String stage,
+                                       String strategyId, int attempt, Instant when) {
+        String modeSegment = mode == null ? StrategyMode.PAPER.name() : mode.name();
+        String codeSegment = sanitize(strategyCode, UNASSIGNED_CODE);
+        String symbolSegment = sanitize(symbol, "NA");
+        String stageSegment = sanitizeStage(stage);
+        String day = DAY.format(when == null ? Instant.now() : when);
+        String fingerprint = fingerprint((strategyId == null ? "" : strategyId) + "|" + stageSegment
+                + "|" + Math.max(0, attempt) + "|" + day);
+        return String.join("_", PREFIX, modeSegment, codeSegment, symbolSegment, stageSegment, day, fingerprint);
+    }
+
+    public static String deterministic(StrategyMode mode, String strategyCode, String symbol, String stage,
+                                       String strategyId, int attempt) {
+        return deterministic(mode, strategyCode, symbol, stage, strategyId, attempt, Instant.now());
+    }
+
+    /** First 8 hex characters of the SHA-256 of {@code seed}, uppercase. */
+    private static String fingerprint(String seed) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(seed.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (int i = 0; i < 4; i++) {
+                hex.append(String.format("%02X", digest[i]));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException ex) {
+            // Every JVM ships SHA-256; if one somehow does not, a stable fallback still beats random.
+            return String.format("%08X", seed.hashCode());
+        }
     }
 
     /**

@@ -41,6 +41,10 @@ final class PortfolioActionsController {
             return Optional.empty();
         }
 
+        /** Opens the read-only AI analyst; does nothing where no analyst is wired. */
+        default void openAgentAnalyst() {
+        }
+
         /** Permanently deletes an archived past position that never filled; re-checked before deleting. */
         default StrategyService.ArchiveResult deleteArchivedPosition(String strategyId) {
             return StrategyService.ArchiveResult.failed("Not supported");
@@ -160,6 +164,47 @@ final class PortfolioActionsController {
     }
 
     /** Cancels only the entry buys, or only the loss-level buys, of the matching rows. */
+    /**
+     * Cancels every armed or working stop loss. Deliberately a separate action from the sell-order
+     * cancels: this one removes protection rather than an order the operator placed, so it confirms
+     * with the count and spells out what the positions are left without.
+     */
+    void handleCancelAllStopLosses() {
+        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CANCEL_STOP_LOSSES;
+        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
+        if (!confirmBulkAction(action, targets)) {
+            return;
+        }
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return cancelStopLossTargets(targets);
+            }
+
+            @Override
+            protected void done() {
+                handleBulkActionResult(action, this);
+            }
+        }.execute();
+    }
+
+    PortfolioActionsSupport.BatchResult cancelStopLossTargets(List<ManagedStrategy> targets) {
+        return runTargetsInParallel(targets, entry -> {
+            StrategyService modeAwareService = modeAwareService(entry);
+            if (modeAwareService == null) {
+                return missingBrokerService(entry);
+            }
+            StrategyService.LimitSellCancelResult result = modeAwareService.cancelStopLoss(entry.strategy.id());
+            if (!result.success()) {
+                return StrategyService.NO_STOP_LOSS_TO_CANCEL.equals(result.error())
+                        ? TargetResult.skipped(entry.strategy.symbol() + ": no stop loss was armed")
+                        : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+            }
+            return TargetResult.success(entry.strategy.symbol()
+                    + (result.canceledCount() > 0 ? " (" + result.canceledCount() + " order(s) canceled)" : ""));
+        });
+    }
+
     void handleCancelStagedLimitBuys(PortfolioActionsSupport.BulkAction action) {
         java.util.Set<com.neuralarc.model.StrategyStage> stages = action == PortfolioActionsSupport.BulkAction.CANCEL_LOSS_LEVEL_BUYS
                 ? StrategyService.LOSS_LEVEL_BUY_STAGES
@@ -1012,6 +1057,11 @@ final class PortfolioActionsController {
                 .filter(action::matches)
                 .filter(entry -> ArchivedPositionCleanup.isCleanable(entry.strategy, gateway.ordersForStrategy(entry.strategy.id())))
                 .toList();
+    }
+
+    /** Hands off to the frame's analyst dialog; nothing here trades, so there is nothing to confirm. */
+    void handleAskAnalyst() {
+        gateway.openAgentAnalyst();
     }
 
     void handleCleanArchivedPositions() {

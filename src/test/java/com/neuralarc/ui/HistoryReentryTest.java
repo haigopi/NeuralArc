@@ -37,10 +37,79 @@ class HistoryReentryTest {
 
         List<Strategy> candidates = HistoryReentry.candidates(
                 List.of(nioOld, nioNew, aaplDone, aaplLive, neverTraded, pendingPlacement, msftDone),
-                StrategyMode.PAPER, id -> orders.getOrDefault(id, List.of()));
+                StrategyMode.PAPER, id -> orders.getOrDefault(id, List.of()), java.util.Set.of());
 
         assertEquals(List.of("nio-2"), candidates.stream().map(Strategy::id).toList(),
                 "AAPL and MSFT are still live somewhere; DTSS never traded; NIO uses its latest plan");
+    }
+
+    @Test
+    void aSymbolWhoseSharesAreStillHeldIsNotOfferedEvenWhenItsStrategyStopped() {
+        Strategy stoppedButHolding = strategy("nvda-1", "NVDA", StrategyStatus.STOPPED, "2026-09-12T00:00:00Z");
+        Strategy closed = strategy("nio-1", "NIO", StrategyStatus.COMPLETED, "2026-09-10T00:00:00Z");
+        Map<String, List<StrategyOrder>> orders = Map.of("nvda-1", List.of(filled()), "nio-1", List.of(filled()));
+
+        List<Strategy> candidates = HistoryReentry.candidates(List.of(stoppedButHolding, closed),
+                StrategyMode.PAPER, id -> orders.getOrDefault(id, List.of()), java.util.Set.of("nvda"));
+
+        assertEquals(List.of("NIO"), candidates.stream().map(Strategy::symbol).toList(),
+                "buying again would stack shares on top of a position that is still open");
+    }
+
+    @Test
+    void theEntryNeverSitsAboveWhatTheStockTradedAtInTheLastFortnight() {
+        LocalDate today = LocalDate.of(2026, 9, 22);
+        List<MarketBar> bars = new java.util.ArrayList<>();
+        bars.add(bar("2026-09-08", "6.00", "9.00"));  // the fortnight's low, outside the last week
+        for (int day = 14; day <= 18; day++) {
+            bars.add(bar("2026-09-" + day, "9.00", "11.00"));
+        }
+        bars.add(bar("2026-09-22", "9.50", "11.00"));
+
+        HistoryReentry.Levels levels = HistoryReentry.levels(bars, today);
+
+        assertEquals(new BigDecimal("6.00"), levels.entryPrice(),
+                "re-entering above a price the stock traded at days ago is paying up, not buying a dip");
+        assertEquals(new BigDecimal("6.00"), HistoryReentry.lowestLow(bars));
+        assertEquals(new BigDecimal("9.00"), HistoryReentry.safeLow(bars, today), "the week low on its own is higher");
+    }
+
+    @Test
+    void theLevelsPairTheEntryPriceWithTheTwoWeekAverages() {
+        LocalDate today = LocalDate.of(2026, 9, 22);
+        List<MarketBar> bars = List.of(
+                bar("2026-09-21", "8.00", "12.00"),
+                bar("2026-09-22", "10.00", "14.00"));
+
+        HistoryReentry.Levels levels = HistoryReentry.levels(bars, today);
+
+        assertEquals(new BigDecimal("8.00"), levels.entryPrice(), "the entry is the lowest price actually traded");
+        assertEquals(new BigDecimal("9.00"), levels.averageLow());
+        assertEquals(new BigDecimal("13.00"), levels.averageHigh());
+        assertTrue(levels.known());
+    }
+
+    @Test
+    void levelsWithoutBarsAreUnknownRatherThanZeroPrices() {
+        HistoryReentry.Levels levels = HistoryReentry.levels(List.of(), LocalDate.of(2026, 9, 22));
+
+        assertTrue(!levels.known(), "a stock with no recent prices must not look like a free entry");
+        assertEquals(BigDecimal.ZERO, levels.averageLow());
+    }
+
+    @Test
+    void theAveragesOnlyReachBackTwoWeeks() {
+        LocalDate today = LocalDate.of(2026, 9, 22);
+        List<MarketBar> bars = new java.util.ArrayList<>();
+        bars.add(bar("2026-08-01", "100.00", "200.00")); // far older than the window
+        for (int day = 1; day <= HistoryReentry.TWO_WEEK_SESSIONS; day++) {
+            bars.add(bar(String.format("2026-09-%02d", day), "10.00", "20.00"));
+        }
+
+        HistoryReentry.Levels levels = HistoryReentry.levels(bars, today);
+
+        assertEquals(new BigDecimal("10.00"), levels.averageLow(), "the stale session must not drag the average up");
+        assertEquals(new BigDecimal("20.00"), levels.averageHigh());
     }
 
     @Test
@@ -94,7 +163,11 @@ class HistoryReentryTest {
     }
 
     private static MarketBar bar(String day, String low) {
-        return new MarketBar("NIO", day + "T04:00:00Z", new BigDecimal("10"), new BigDecimal("10.5"),
+        return bar(day, low, "10.5");
+    }
+
+    private static MarketBar bar(String day, String low, String high) {
+        return new MarketBar("NIO", day + "T04:00:00Z", new BigDecimal("10"), new BigDecimal(high),
                 new BigDecimal(low), new BigDecimal("10"), new BigDecimal("1000"));
     }
 }

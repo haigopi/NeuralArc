@@ -211,9 +211,6 @@ final class PortfolioCaptureController {
     }
 
     /** Pending base buy orders cancelled by cleanup, for the status line's counter. */
-    int pendingCanceledCount() {
-        return pendingCanceledCount;
-    }
 
     void excludeStrategyFromActiveCapture(String strategyId) {
         if (strategyId == null || strategyId.isBlank() || !executing.get()) {

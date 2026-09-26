@@ -19,6 +19,8 @@ import java.math.BigDecimal;
 final class ManagedStrategy {
     Strategy strategy;
     private Position cachedPosition;
+    /** Broker shares this strategy's own filled orders cannot account for; see {@link UntrackedShares}. */
+    private int untrackedShares;
     private BigDecimal cachedLastSellPrice = Monetary.zero();
     private BigDecimal cachedRealizedPnl = Monetary.zero();
     /** Actual executed fill price of the base buy — what we really paid to enter, not a configured limit. */
@@ -156,6 +158,14 @@ final class ManagedStrategy {
 
     Position cachedPosition() {
         return cachedPosition.copy();
+    }
+
+    int untrackedShares() {
+        return untrackedShares;
+    }
+
+    void setUntrackedShares(int untracked) {
+        this.untrackedShares = Math.max(0, untracked);
     }
 
     void setCachedPosition(Position position) {

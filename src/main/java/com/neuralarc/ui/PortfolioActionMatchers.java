@@ -41,6 +41,23 @@ final class PortfolioActionMatchers {
                 || state == StrategyLifecycleState.BUY_LIMIT_2_PARTIALLY_FILLED;
     }
 
+    /**
+     * A live strategy whose downside protection can still fire: stop-loss monitoring armed, or a
+     * stop-loss sell already working at the broker. Archived and completed rows have nothing to
+     * cancel, and a row with no position has nothing to protect.
+     */
+    static boolean hasCancelableStopLoss(ManagedStrategy entry) {
+        if (entry == null || entry.strategy == null) {
+            return false;
+        }
+        StrategyStatus status = entry.strategy.status();
+        if (status != StrategyStatus.ACTIVE && status != StrategyStatus.PAUSED) {
+            return false;
+        }
+        return entry.strategy.automatedStopLossEnabled()
+                || entry.strategy.currentState() == StrategyLifecycleState.STOP_LOSS_ACTIVE;
+    }
+
     static boolean hasCancelablePendingLimitBuy(ManagedStrategy entry) {
         if (entry == null || entry.strategy == null || entry.strategy.status() != StrategyStatus.ACTIVE) {
             return false;

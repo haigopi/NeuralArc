@@ -367,6 +367,35 @@ final class PortfolioActionsSupport {
                 return "There are no positions waiting on an unfilled entry limit buy.";
             }
         },
+        CANCEL_STOP_LOSSES("Cancel All Stop Losses") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                return PortfolioActionMatchers.hasCancelableStopLoss(entry);
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Cancel the stop loss on " + count + " strategy(ies)?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "Stop-loss monitoring is switched off and any stop-loss sell working at the broker is cancelled,"
+                        + " so these positions keep running with <b>no automatic downside protection</b>."
+                        + "<br>The shares, entry orders, target sells and profit holds are left exactly as they are."
+                        + "<br>Re-arm a stop loss by editing the strategy.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "No strategy currently has a stop loss armed or working.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Stop loss canceled";
+            }
+        },
         CANCEL_LOSS_LEVEL_BUYS("Cancel Loss-Level Limit Buys") {
             @Override
             boolean matches(ManagedStrategy entry) {

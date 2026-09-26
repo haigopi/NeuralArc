@@ -624,22 +624,51 @@ class StrategyPollingServiceTest {
     }
 
     @Test
-    void profitHoldSellsAfterPullbackFromHigh() {
+    void profitHoldRestsATrailingExitAtTheBrokerAndRaisesItWithTheStock() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(true);
-        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.00"), "{}"));
 
+        // Below the $10.00 threshold: nothing is armed and nothing rests at the broker.
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("9.50"), "{}"));
+        f.service.pollStrategy(strategy.id());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isEmpty());
+
+        // Threshold reached: the hold arms and rests a real limit sell 10% under the peak. That order
+        // fills between polls, which is what a spike-and-fall used to escape entirely.
         f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.50"), "{}"));
         f.service.pollStrategy(strategy.id());
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isEmpty());
+        assertEquals(new BigDecimal("9.45"),
+                f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).orElseThrow().limitPrice());
 
+        // A new high raises the resting exit.
         f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("11.00"), "{}"));
         f.service.pollStrategy(strategy.id());
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isEmpty());
+        assertEquals(new BigDecimal("9.90"),
+                f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).orElseThrow().limitPrice());
 
+        // A fall does not: the trail follows the stock up, never down.
         f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("9.85"), "{}"));
         f.service.pollStrategy(strategy.id());
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isPresent());
+        assertEquals(new BigDecimal("9.90"),
+                f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).orElseThrow().limitPrice());
+    }
+
+    @Test
+    void aPeakSeenOnlyInTheSessionHighStillArmsTheHold() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(true);
+        // The stock printed 12.00 between two polls; the app only ever sees 9.00 itself.
+        SessionHighCache.shared().record("AAPL",
+                java.time.LocalDate.now(java.time.ZoneId.of("America/New_York")), new BigDecimal("12.00"));
+
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("9.00"), "{}"));
+        f.service.pollStrategy(strategy.id());
+
+        assertEquals(new BigDecimal("12.00"),
+                f.strategies.findById(strategy.id()).orElseThrow().highestObservedPriceAfterTarget(),
+                "the day's high arms the hold even though no poll ever saw it");
+        assertEquals(new BigDecimal("10.80"),
+                f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).orElseThrow().limitPrice());
     }
 
     @Test
@@ -663,7 +692,8 @@ class StrategyPollingServiceTest {
         f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("10.50"), "{}"));
         f.service.pollStrategy(strategy.id());
         assertEquals(new BigDecimal("10.50"), f.strategies.findById(strategy.id()).orElseThrow().highestObservedPriceAfterTarget());
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).isEmpty());
+        StrategyOrder rested = f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.PROFIT_EXIT).orElseThrow();
+        assertEquals(new BigDecimal("9.45"), rested.limitPrice(), "10% under the 10.50 peak, and above the 8.00 cost");
 
         f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("9.40"), "{}"));
         f.service.pollStrategy(strategy.id());
@@ -1781,6 +1811,8 @@ class StrategyPollingServiceTest {
                         ApplicationMode.PAPER,
                         false
                 ));
+                // The session-high cache is process-wide, so one test's peak must not arm another's hold.
+                SessionHighCache.shared().clear();
                 service = new StrategyPollingService(strategies, orders, events, alpaca, settingsService, marketHoursService);
             } catch (Exception ex) {
                 throw new IllegalStateException(ex);

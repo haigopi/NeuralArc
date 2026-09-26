@@ -6,6 +6,7 @@ import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
+import com.neuralarc.service.ProfitHoldExitPricing;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.model.ThresholdType;
@@ -17,6 +18,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class StrategyTablePresenter {
+    /** Broker shares a strategy's own orders cannot explain; zero unless the frame wires it up. */
+    private final java.util.function.ToIntFunction<Strategy> untrackedSharesResolver;
+
+    public StrategyTablePresenter() {
+        this(strategy -> 0);
+    }
+
+    public StrategyTablePresenter(java.util.function.ToIntFunction<Strategy> untrackedSharesResolver) {
+        this.untrackedSharesResolver = untrackedSharesResolver == null ? strategy -> 0 : untrackedSharesResolver;
+    }
+
     /** Resolves a workspace id to its name, or null; set by the frame so Smart Picks rows name their workspace. */
     private java.util.function.Function<String, String> workspaceNames = ignored -> null;
 
@@ -283,7 +295,8 @@ public final class StrategyTablePresenter {
         if (strategy.status() == StrategyStatus.ACTIVE && isWaitingForNextRule(strategy.currentState())) {
             String activeRule = resolveActiveRuleLabel(strategy, position);
             String monitoring = activeRule.isBlank() ? lifecycle + " - Monitoring next configured rule" : activeRule;
-            return monitoring + averagedInDescription(strategy, position);
+            return monitoring + averagedInDescription(strategy, position)
+                    + UntrackedShares.note(untrackedSharesResolver.applyAsInt(strategy));
         }
         return lifecycle;
     }
@@ -515,10 +528,7 @@ public final class StrategyTablePresenter {
             return configuredActiveRuleLabel(strategy);
         }
         if (strategy.profitControlMode() == ProfitControlMode.PROFIT_HOLD && strategy.profitHoldEnabled()) {
-            return "Profit Hold active"
-                    + profitHoldDescription(strategy)
-                    + currentPriceDescription(position)
-                    + " - monitoring trailing protection";
+            return profitHoldStatusLabel(strategy, position) + currentPriceDescription(position);
         }
         if (isProfitablePosition(position) && strategy.targetSellEnabled()) {
             return "Sell trigger active"
@@ -555,7 +565,7 @@ public final class StrategyTablePresenter {
             return "Stop loss active" + stopLossDescription(strategy) + " - monitoring downside protection";
         }
         if (strategy.profitControlMode() == ProfitControlMode.PROFIT_HOLD && strategy.profitHoldEnabled()) {
-            return "Profit Hold active" + profitHoldDescription(strategy) + " - monitoring trailing protection";
+            return profitHoldStatusLabel(strategy, null);
         }
         if (strategy.profitControlMode() == ProfitControlMode.AUTOMATIC_STOP_SELL) {
             return "Automatic stop sell active"
@@ -619,6 +629,35 @@ public final class StrategyTablePresenter {
         return "Sell trigger active"
                 + priceDescription(" @ $", strategy.targetSellPrice())
                 + " - monitoring for sell trigger";
+    }
+
+    /**
+     * What the profit hold is actually doing, not just how it is configured.
+     *
+     * <p>"Profit Hold active by $2.00/$385.00" read the same whether the hold had armed or was still
+     * waiting, which is how a hold that never armed looked like one that was working. Armed rows now
+     * name the peak they are trailing and the price their resting sell sits at.
+     */
+    String profitHoldStatusLabel(Strategy strategy, Position position) {
+        String configured = "Profit Hold" + profitHoldDescription(strategy);
+        BigDecimal peak = strategy.highestObservedPriceAfterTarget();
+        boolean armed = strategy.currentState() == StrategyLifecycleState.PROFIT_HOLD_ACTIVE
+                || (peak != null && peak.compareTo(BigDecimal.ZERO) > 0);
+        if (!armed) {
+            return configured + " - waiting for the threshold, arms on the first print at or above it";
+        }
+        if (peak == null || peak.compareTo(BigDecimal.ZERO) <= 0) {
+            // Armed by an older build that never recorded a peak: the next price check sets one.
+            return configured + " ARMED - exit price set on the next price check";
+        }
+        BigDecimal averageCost = position == null ? BigDecimal.ZERO : position.getAverageCost();
+        ProfitHoldExitPricing.Plan plan = ProfitHoldExitPricing.plan(peak, strategy.profitHoldType(),
+                strategy.profitHoldAmount(), strategy.profitHoldPercent(), averageCost);
+        String exit = plan.limitPrice().compareTo(BigDecimal.ZERO) > 0
+                ? " - selling at $" + plan.limitPrice().toPlainString()
+                        + (plan.flooredToCost() ? " (held at average cost to stay in profit)" : "")
+                : " - working out the exit price";
+        return configured + " ARMED @ peak $" + Monetary.round(peak).toPlainString() + exit;
     }
 
     private String profitHoldDescription(Strategy strategy) {

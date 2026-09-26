@@ -84,6 +84,7 @@ public class SettingsDialog extends JDialog {
     private final JComboBox<BrokerType> brokerBox = new JComboBox<>(BrokerType.values());
     private final JComboBox<ApplicationMode> appModeBox = new JComboBox<>(ApplicationMode.values());
     private final AiRecommendationSettingsPanel aiRecommendationSettingsPanel = new AiRecommendationSettingsPanel();
+    private final AgentSettingsPanel agentSettingsPanel = new AgentSettingsPanel();
     private final PositionValidationSettingsPanel validationSettingsPanel = new PositionValidationSettingsPanel();
     private final AppSettingsService appSettingsService;
     private transient Function<ConnectionRequest, ConnectionResult> connectionVerifier;
@@ -296,6 +297,7 @@ public class SettingsDialog extends JDialog {
         content.add(apiPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(aiRecommendationSettingsPanel);
+        content.add(agentSettingsPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
         content.add(validationSettingsPanel);
         content.add(Box.createVerticalStrut(SECTION_GAP));
@@ -503,6 +505,7 @@ public class SettingsDialog extends JDialog {
             appSettingsService.saveVerboseApiJsonLoggingEnabled(verboseApiJsonLogging.isSelected());
             com.neuralarc.api.ApiRequestLogConfig.setVerboseJsonLogging(verboseApiJsonLogging.isSelected());
             appSettingsService.saveAiRecommendationSettings(aiRecommendationSettingsPanel.settings());
+            appSettingsService.saveAgentSettings(agentSettingsPanel.settings());
             appSettingsService.savePortfolioEmailSettings(communicationSettingsPanel.portfolioEmailSettings());
             for (ApplicationMode mode : ApplicationMode.values()) {
                 String[] creds = credentialCache.get(mode);
@@ -582,6 +585,7 @@ public class SettingsDialog extends JDialog {
         emailOnBuyExpected.setSelected(appliedSettings.emailOnBuyExpected());
         emailOnSellExecuted.setSelected(appliedSettings.emailOnSellExecuted());
         aiRecommendationSettingsPanel.populate(appSettingsService.loadAiRecommendationSettings());
+        agentSettingsPanel.populate(appSettingsService.loadAgentSettings());
         communicationSettingsPanel.populatePortfolioEmail(appSettingsService.loadPortfolioEmailSettings());
         saveCredentials.setSelected(true);
         brokerBox.setSelectedItem(appliedSettings.brokerType());
@@ -687,6 +691,7 @@ public class SettingsDialog extends JDialog {
             emailOnBuyExpected.setSelected(AppSettingsService.DEFAULT_EMAIL_ON_BUY_EXPECTED);
             emailOnSellExecuted.setSelected(AppSettingsService.DEFAULT_EMAIL_ON_SELL_EXECUTED);
             aiRecommendationSettingsPanel.populate(AiRecommendationSettings.defaults());
+            agentSettingsPanel.populate(com.neuralarc.model.AgentSettings.defaults());
             communicationSettingsPanel.populatePortfolioEmail(PortfolioEmailSettings.defaults());
             brokerBox.setSelectedItem(BrokerType.ALPACA);
             appModeBox.setSelectedItem(ApplicationMode.PAPER);
@@ -781,6 +786,11 @@ public class SettingsDialog extends JDialog {
 
     public AiRecommendationSettings aiRecommendationSettings() {
         return aiRecommendationSettingsPanel.settings();
+    }
+
+    /** The saved analyst-agent settings, for the frame that launches a run. */
+    public com.neuralarc.model.AgentSettings appliedAgentSettings() {
+        return appSettingsService.loadAgentSettings();
     }
 
     private void exportStrategies() {

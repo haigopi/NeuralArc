@@ -197,6 +197,11 @@ public class StrategyEngine {
                                         && position.get().marketPrice().compareTo(BigDecimal.ZERO) > 0)
                                 ? "batchCache" : "direct"));
 
+        // Every price the engine sees feeds the session high, so a profit hold can arm off the peak
+        // of the day rather than only off the instant a poll happened to land on.
+        SessionHighCache.shared().record(strategy.symbol(),
+                java.time.LocalDate.now(java.time.ZoneId.of("America/New_York")), latestPrice);
+
         if (ensureRemoteOrderPresence(strategy, orders, remoteOpenOrders, position)) {
             orders = orderRepository.findByStrategyId(strategy.id());
         }
@@ -698,7 +703,7 @@ public class StrategyEngine {
             return null;
         }
         // Broker should be the source of truth for whether off-hours orders are accepted.
-        String clientOrderId = StrategyService.buildClientOrderId(strategy, stage, workspaceCodeResolver);
+        String clientOrderId = idempotentClientOrderId(strategy, stage);
         TimeInForce timeInForce = strategy.timeInForce() == null ? TimeInForce.DAY : strategy.timeInForce();
         AlpacaOrderData submitted = alpacaClient.submitLimitBuyOrder(
                 strategy.symbol(),
@@ -707,6 +712,18 @@ public class StrategyEngine {
                 clientOrderId,
                 timeInForce
         );
+        if (submitted.duplicateClientOrderId()) {
+            // The broker already has this exact order. Sending another would be the double-fill this
+            // id exists to prevent, so record why nothing was sent and let reconciliation adopt it.
+            LOGGER.warning(() -> "Broker already holds " + stage + " order " + clientOrderId + " for "
+                    + strategy.symbol() + "; not submitting a duplicate.");
+            stateMachine.transition(strategy, strategy.currentState(),
+                    StrategyEventType.ORDER_STATUS_UPDATED,
+                    "Skipped a duplicate " + stage + " submission: the broker already has this order",
+                    submitted.rawJson());
+            strategyRepository.save(strategy);
+            return null;
+        }
         Instant submittedAt = submitted.submittedAt() == null ? Instant.now() : submitted.submittedAt();
         StrategyOrder order = new StrategyOrder(
                 UUID.randomUUID().toString(),
@@ -820,7 +837,7 @@ public class StrategyEngine {
         if (requestedQuantity <= 0) {
             return null;
         }
-        String clientOrderId = StrategyService.buildClientOrderId(strategy, stage, workspaceCodeResolver);
+        String clientOrderId = idempotentClientOrderId(strategy, stage);
         TimeInForce effectiveTimeInForce = timeInForce == null ? TimeInForce.DAY : timeInForce;
         AlpacaOrderData submitted = alpacaClient.submitLimitSellOrder(
                 strategy.symbol(), requestedQuantity, limitPrice, clientOrderId, effectiveTimeInForce);
@@ -908,7 +925,7 @@ public class StrategyEngine {
         if (requestedQuantity <= 0) {
             return null;
         }
-        String clientOrderId = StrategyService.buildClientOrderId(strategy, StrategyStage.PROFIT_EXIT, workspaceCodeResolver);
+        String clientOrderId = idempotentClientOrderId(strategy, StrategyStage.PROFIT_EXIT);
         boolean automaticStopSell = strategy.profitControlMode() == ProfitControlMode.AUTOMATIC_STOP_SELL;
         BigDecimal trailPercent = automaticStopSell
                 ? (strategy.automaticStopSellTrailingType() == TrailingType.PERCENTAGE
@@ -1061,6 +1078,19 @@ public class StrategyEngine {
     private boolean hasPendingStage(List<StrategyOrder> orders, StrategyStage stage) {
         return orders.stream().anyMatch(order -> order.stage() == stage && order.isPending());
     }
+    /**
+     * An id the broker will refuse a second time. The attempt number is how many orders this strategy
+     * already has at this stage, so a genuine re-placement (an expired entry re-posted, a trailing
+     * exit raised) gets a new id while a repeat of the same submission — from a second app instance,
+     * or a restart that lost the local record — collides and is rejected instead of filled twice.
+     */
+    private String idempotentClientOrderId(Strategy strategy, StrategyStage stage) {
+        int attempt = (int) orderRepository.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == stage)
+                .count();
+        return StrategyService.buildIdempotentClientOrderId(strategy, stage, workspaceCodeResolver, attempt);
+    }
+
     private boolean shouldActivateStopLossMonitoring(Strategy strategy, List<StrategyOrder> orders) {
         if (!strategy.automatedStopLossEnabled()) {
             return false;

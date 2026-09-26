@@ -231,7 +231,7 @@ class StrategyTablePresenterTest {
 
         String label = presenter.displayStatusLabel(strategy, position, false, false, false);
 
-        assertEquals("Profit Hold active by 5.00% | Current $125.00 - monitoring trailing protection", label);
+        assertEquals("Profit Hold by 5.00% ARMED - exit price set on the next price check | Current $125.00", label);
     }
 
     @Test
@@ -252,7 +252,7 @@ class StrategyTablePresenterTest {
 
         String label = presenter.displayStatusLabel(strategy, position, false, false, false);
 
-        assertEquals("Profit Hold active by 3.50% | Current $125.00 - monitoring trailing protection", label);
+        assertEquals("Profit Hold by 3.50% - waiting for the threshold, arms on the first print at or above it | Current $125.00", label);
     }
 
     @Test

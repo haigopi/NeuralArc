@@ -324,6 +324,8 @@ public class StrategyService {
 
     /** The cancel result's error when there was simply nothing working to cancel. */
     public static final String NO_PENDING_LIMIT_BUYS = "No pending limit buy orders found";
+    /** The cancel result's error when a strategy had no stop loss armed and none working. */
+    public static final String NO_STOP_LOSS_TO_CANCEL = "No stop loss to cancel";
 
     /** Entry buys: the base buy and manual limit buys — the orders that open or add to a position directly. */
     public static final java.util.Set<StrategyStage> ENTRY_BUY_STAGES =
@@ -407,6 +409,47 @@ public class StrategyService {
                 strategyEngine.refreshOrderStatuses(strategy, null);
             }
         });
+    }
+
+    /** Stop-loss sells: the protective exit, as opposed to a target sell or a profit-hold exit. */
+    public static final java.util.Set<StrategyStage> STOP_LOSS_STAGES =
+            java.util.EnumSet.of(StrategyStage.STOP_LOSS);
+
+    /**
+     * Cancels a strategy's working stop-loss sell and switches its stop-loss monitoring off, so the
+     * protection neither fires now nor re-arms on the next poll. The position itself is untouched.
+     */
+    public LimitSellCancelResult cancelStopLoss(String strategyId) {
+        Optional<Strategy> maybeStrategy = strategyRepository.findById(strategyId);
+        if (maybeStrategy.isEmpty()) {
+            return LimitSellCancelResult.failed("Strategy not found");
+        }
+        Strategy strategy = maybeStrategy.get();
+        if (!serviceModeMatches(strategy)) {
+            return LimitSellCancelResult.failed(serviceModeMismatchMessage(strategy));
+        }
+        int canceledCount = pendingLimitOrderCanceler.cancelPendingLimitSells(strategy, STOP_LOSS_STAGES);
+        boolean wasArmed = strategy.automatedStopLossEnabled();
+        if (canceledCount <= 0 && !wasArmed) {
+            return LimitSellCancelResult.failed(NO_STOP_LOSS_TO_CANCEL);
+        }
+        strategy.setAutomatedStopLossEnabled(false);
+        if (strategy.currentState() == StrategyLifecycleState.STOP_LOSS_ACTIVE) {
+            strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        }
+        strategy.clearLastError();
+        strategy.setLastEvent("Stop loss canceled by portfolio action");
+        strategyRepository.save(strategy);
+        stateMachine.transition(
+                strategy,
+                strategy.currentState(),
+                StrategyEventType.STRATEGY_UPDATED,
+                canceledCount > 0
+                        ? "Stop loss canceled by portfolio action (" + canceledCount + " working order(s) canceled)"
+                        : "Stop loss monitoring switched off by portfolio action",
+                "{}"
+        );
+        return LimitSellCancelResult.success(canceledCount);
     }
 
     public LimitSellCancelResult cancelPendingLimitSells(String strategyId) {
@@ -1043,6 +1086,20 @@ public class StrategyService {
                 ? ClientOrderId.UNASSIGNED_CODE
                 : resolver.codeForWorkspace(strategy.workspaceId());
         return ClientOrderId.build(strategy.mode(), code, strategy.symbol(), stage.name());
+    }
+
+    /**
+     * The same id, built so that sending the same logical order twice is refused by the broker rather
+     * than filled twice. {@code attempt} is the number of orders this strategy already has at this
+     * stage, so a deliberate re-placement gets a fresh id and an accidental repeat does not.
+     */
+    public static String buildIdempotentClientOrderId(Strategy strategy, StrategyStage stage,
+                                                      WorkspaceCodeResolver resolver, int attempt) {
+        String code = resolver == null
+                ? ClientOrderId.UNASSIGNED_CODE
+                : resolver.codeForWorkspace(strategy.workspaceId());
+        return ClientOrderId.deterministic(strategy.mode(), code, strategy.symbol(), stage.name(),
+                strategy.id(), attempt);
     }
 
     /** Sets the workspace-code resolver and propagates it to the order-submitting collaborators. */

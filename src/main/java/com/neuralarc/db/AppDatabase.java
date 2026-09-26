@@ -213,6 +213,49 @@ public final class AppDatabase {
         applyMigration("022_smart_picks_schedules", this::migration022);
         applyMigration("023_prune_routine_events", this::migration023);
         applyMigration("024_prune_repeated_order_status_events", this::migration024);
+        applyMigration("025_agent_tool_calls", this::migration025);
+        applyMigration("026_history_reentry_schedules", this::migration026);
+    }
+
+    /** One standing Trade History re-entry scan per trading mode. */
+    private void migration026() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS history_reentry_schedules (
+                        id            TEXT PRIMARY KEY,
+                        mode          TEXT NOT NULL UNIQUE,
+                        enabled       INTEGER NOT NULL DEFAULT 0,
+                        day_of_week   TEXT NOT NULL,
+                        scan_time_et  TEXT NOT NULL,
+                        cadence       TEXT NOT NULL,
+                        group_filter  TEXT NOT NULL,
+                        max_stocks    INTEGER NOT NULL DEFAULT 10,
+                        last_run_date TEXT,
+                        updated_at    TEXT NOT NULL
+                    )""");
+        }
+    }
+
+    /**
+     * Audit trail for AI agent runs: one row per tool call, so a run can be replayed and explained
+     * afterwards. Kept apart from {@code strategy_events} on purpose — those are scoped to one
+     * strategy and pruned with it, while an agent run spans many symbols and may touch none.
+     */
+    private void migration025() throws SQLException {
+        try (Statement st = connection.createStatement()) {
+            st.execute("""
+                    CREATE TABLE IF NOT EXISTS agent_tool_calls (
+                        id           TEXT PRIMARY KEY,
+                        run_id       TEXT NOT NULL,
+                        called_at    TEXT NOT NULL,
+                        tool         TEXT NOT NULL,
+                        ok           INTEGER NOT NULL,
+                        arguments    TEXT NOT NULL DEFAULT '{}',
+                        error        TEXT,
+                        elapsed_ms   INTEGER NOT NULL DEFAULT 0
+                    )""");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_agent_tool_calls_run ON agent_tool_calls(run_id, called_at)");
+        }
     }
 
     /** Apply a single named migration if not already recorded. */

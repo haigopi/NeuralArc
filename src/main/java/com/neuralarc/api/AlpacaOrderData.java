@@ -47,6 +47,17 @@ public record AlpacaOrderData(
         this(orderId, clientOrderId, symbol, side, type, limitPrice, filledAveragePrice, filledQuantity, status, rawJson, null);
     }
 
+    /**
+     * True when the broker refused this order because it had already seen its {@code client_order_id}.
+     * That refusal is the duplicate guard working: the order it names is already at the broker, so the
+     * right response is to leave it alone — not to retry, and not to fail the strategy.
+     */
+    public boolean duplicateClientOrderId() {
+        String haystack = (status + " " + rawJson).toLowerCase(java.util.Locale.ROOT);
+        return haystack.contains("client_order_id")
+                && (haystack.contains("exist") || haystack.contains("unique") || haystack.contains("duplicate"));
+    }
+
     public static AlpacaOrderData failed(String message) {
         return transportFailure(message);
     }

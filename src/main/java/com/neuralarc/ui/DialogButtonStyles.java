@@ -28,7 +28,7 @@ final class DialogButtonStyles {
     private DialogButtonStyles() {
     }
 
-    static void apply(JButton button) {
+    static void apply(AbstractButton button) {
         button.setFocusPainted(false);
         button.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
         button.setFont(FontLoader.ui(Font.BOLD, 10f));
@@ -38,7 +38,7 @@ final class DialogButtonStyles {
         button.setContentAreaFilled(true);
         button.setBorderPainted(true);
         button.putClientProperty("JButton.arc", 8);
-        button.setBorder(normalBorder());
+        restToNormal(button);
         button.setMargin(new java.awt.Insets(3, 10, 3, 10));
         button.setIconTextGap(6);
         button.setHorizontalTextPosition(SwingConstants.RIGHT);
@@ -57,8 +57,7 @@ final class DialogButtonStyles {
 
                 @Override
                 public void mouseExited(MouseEvent e) {
-                    button.setBackground(BUTTON_BG);
-                    button.setBorder(normalBorder());
+                    restToNormal(button);
                 }
 
                 @Override
@@ -76,16 +75,29 @@ final class DialogButtonStyles {
                         button.setBackground(BUTTON_BG_HOVER);
                         button.setBorder(hoverBorder());
                     } else {
-                        button.setBackground(BUTTON_BG);
-                        button.setBorder(normalBorder());
+                        restToNormal(button);
                     }
+                }
+            });
+            // A toggle has to look pressed while it is on, and the hover/exit handlers above would
+            // otherwise paint that state away the moment the pointer leaves.
+            button.addChangeListener(event -> {
+                if (!button.getModel().isRollover() && !button.getModel().isPressed()) {
+                    restToNormal(button);
                 }
             });
             button.putClientProperty("dialogButtonInteractInstalled", Boolean.TRUE);
         }
     }
 
-    static void apply(JButton button, String iconResourcePath) {
+    /** The look a button returns to when idle: the pressed palette while a toggle is on. */
+    private static void restToNormal(AbstractButton button) {
+        boolean on = button.isSelected();
+        button.setBackground(on ? BUTTON_BG_PRESSED : BUTTON_BG);
+        button.setBorder(on ? pressedBorder() : normalBorder());
+    }
+
+    static void apply(AbstractButton button, String iconResourcePath) {
         apply(button);
         button.setIcon(SvgIconLoader.load(iconResourcePath, 14, BUTTON_TEXT));
     }

@@ -2,6 +2,7 @@ package com.neuralarc.service;
 
 import com.neuralarc.db.AppDatabase;
 import com.neuralarc.model.AiProviderType;
+import com.neuralarc.model.AgentSettings;
 import com.neuralarc.model.AiRecommendationSettings;
 import com.neuralarc.model.ApplicationMode;
 import com.neuralarc.model.BrokerType;
@@ -69,6 +70,11 @@ public class AppSettingsService {
   private static final String KEY_AI_OPENAI_API_KEY = "ai.openai.apiKey";
   private static final String KEY_AI_OPENAI_MODEL = "ai.openai.model";
   private static final String KEY_AI_OPENAI_TIMEOUT = "ai.openai.timeout";
+  private static final String KEY_AGENT_ENABLED = "agent.enabled";
+  private static final String KEY_AGENT_API_KEY = "agent.anthropic.apiKey";
+  private static final String KEY_AGENT_MODEL = "agent.anthropic.model";
+  private static final String KEY_AGENT_MAX_TURNS = "agent.maxTurns";
+  private static final String KEY_AGENT_MAX_TOOL_CALLS = "agent.maxToolCalls";
   private static final String KEY_PORTFOLIO_EMAIL_ENABLED = "portfolioEmail.enabled";
   private static final String KEY_PORTFOLIO_EMAIL_SLOTS = "portfolioEmail.slots";
 
@@ -223,6 +229,31 @@ public class AppSettingsService {
       writeSetting(KEY_AI_OPENAI_TIMEOUT, safe.openAiTimeout().toString(), false);
     } catch (SQLException ex) {
       throw new IOException("Failed to persist AI recommendation settings", ex);
+    }
+  }
+
+  /** Settings for the read-only AI analyst agent. The API key is stored encrypted, like broker keys. */
+  public AgentSettings loadAgentSettings() {
+    AgentSettings defaults = AgentSettings.defaults();
+    return new AgentSettings(
+        parseBoolean(readSetting(KEY_AGENT_ENABLED, false), defaults.enabled()),
+        readSetting(KEY_AGENT_API_KEY, true),
+        fallback(readSetting(KEY_AGENT_MODEL, false), defaults.model()),
+        parseInt(readSetting(KEY_AGENT_MAX_TURNS, false), defaults.maxTurns()),
+        parseInt(readSetting(KEY_AGENT_MAX_TOOL_CALLS, false), defaults.maxToolCalls())
+    );
+  }
+
+  public void saveAgentSettings(AgentSettings settings) throws IOException {
+    AgentSettings safe = settings == null ? AgentSettings.defaults() : settings;
+    try {
+      writeSetting(KEY_AGENT_ENABLED, String.valueOf(safe.enabled()), false);
+      writeSetting(KEY_AGENT_API_KEY, safe.apiKey(), true);
+      writeSetting(KEY_AGENT_MODEL, safe.model(), false);
+      writeSetting(KEY_AGENT_MAX_TURNS, String.valueOf(safe.maxTurns()), false);
+      writeSetting(KEY_AGENT_MAX_TOOL_CALLS, String.valueOf(safe.maxToolCalls()), false);
+    } catch (SQLException ex) {
+      throw new IOException("Failed to persist AI analyst agent settings", ex);
     }
   }
 

@@ -1443,6 +1443,73 @@ class StrategyServiceTest {
         assertEquals(PauseReason.MANUAL_LIMIT_BUY_CANCELED, paused.pauseReason());
     }
 
+    @Test
+    void cancellingAStopLossTakesTheOrderAndTheMonitoringButLeavesTheOtherExits() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, new InMemoryEventRepository(), alpaca);
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("180.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.STOP_LOSS_ACTIVE);
+        strategy.setAutomatedStopLossEnabled(true);
+        strategies.save(strategy);
+        orders.save(sellOrder(strategy.id(), StrategyStage.STOP_LOSS, "ord-stop"));
+        orders.save(sellOrder(strategy.id(), StrategyStage.TARGET_SELL, "ord-target"));
+
+        StrategyService.LimitSellCancelResult result = service.cancelStopLoss(strategy.id());
+
+        assertTrue(result.success());
+        assertEquals(1, result.canceledCount());
+        assertEquals(List.of("ord-stop"), alpaca.canceledOrderIds, "the target sell keeps working");
+        Strategy saved = strategies.findById(strategy.id()).orElseThrow();
+        assertFalse(saved.automatedStopLossEnabled(), "monitoring must not re-arm on the next poll");
+        assertEquals(StrategyLifecycleState.BASE_BUY_FILLED, saved.currentState());
+        assertEquals(StrategyStatus.ACTIVE, saved.status(), "the position stays managed, just unprotected");
+    }
+
+    @Test
+    void cancellingAStopLossThatWasNeverArmedReportsNothingToDo() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        StrategyService service = service(strategies, orders, new InMemoryEventRepository(), new FakeAlpacaClient());
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("180.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategy.setAutomatedStopLossEnabled(false);
+        strategies.save(strategy);
+
+        StrategyService.LimitSellCancelResult result = service.cancelStopLoss(strategy.id());
+
+        assertFalse(result.success());
+        assertEquals(StrategyService.NO_STOP_LOSS_TO_CANCEL, result.error());
+    }
+
+    @Test
+    void cancellingAnArmedStopLossWithNoWorkingOrderStillSwitchesMonitoringOff() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        StrategyService service = service(strategies, new InMemoryOrderRepository(), new InMemoryEventRepository(),
+                new FakeAlpacaClient());
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("180.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategy.setAutomatedStopLossEnabled(true);
+        strategies.save(strategy);
+
+        StrategyService.LimitSellCancelResult result = service.cancelStopLoss(strategy.id());
+
+        assertTrue(result.success());
+        assertEquals(0, result.canceledCount());
+        assertFalse(strategies.findById(strategy.id()).orElseThrow().automatedStopLossEnabled());
+    }
+
+    private static StrategyOrder sellOrder(String strategyId, StrategyStage stage, String orderId) {
+        return new StrategyOrder(UUID.randomUUID().toString(), strategyId, stage, orderId, "client-" + orderId, "AAPL",
+                StrategyOrderSide.SELL, StrategyOrderType.LIMIT, new BigDecimal("170.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}");
+    }
+
     private static StrategyOrder order(String strategyId, StrategyStage stage, String orderId, String requested,
                                        String filled, StrategyOrderStatus status) {
         return new StrategyOrder(UUID.randomUUID().toString(), strategyId, stage, orderId, "client-" + orderId, "AAPL",

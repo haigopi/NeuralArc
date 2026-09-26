@@ -77,6 +77,15 @@
   - `src/main/java/com/neuralarc/service/OpenAiRecommendationProvider.java`
   - `src/main/java/com/neuralarc/service/AiRecommendationService.java`
   - `src/main/java/com/neuralarc/ui/AiRecommendationPanel.java`
+- Read-only AI analyst agent (separate from the recommendation providers above):
+  - `src/main/java/com/neuralarc/agent/` — tool layer, agent loop, Anthropic provider, audit
+  - `src/main/java/com/neuralarc/agent/tools/` — one class per read-only tool
+  - `src/main/java/com/neuralarc/ui/AgentAnalystDialog.java` / `AgentAnalystRunner.java` / `AgentSettingsPanel.java`
+  - `src/main/java/com/neuralarc/db/SqliteAgentToolCallRepository.java` — per-run tool-call audit trail
+  - Diagrams and extension rules: `docs/agent-layer.md`
+  - The agent may only read. Tools declare an `Effect`, and `ToolRegistry.readOnly()` refuses anything
+    above `READ_ONLY` at construction; giving the agent write access is a deliberate change to
+    `ReadOnlyToolset`, never a prompt change.
 - Strategy workspaces (tab-based grouping of strategies by desk/mode):
   - `src/main/java/com/neuralarc/model/StrategyWorkspace.java`
   - `src/main/java/com/neuralarc/service/WorkspaceService.java`

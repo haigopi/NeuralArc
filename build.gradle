@@ -17,6 +17,7 @@ repositories {
 }
 
 dependencies {
+    implementation 'com.anthropic:anthropic-java:2.34.0'
     implementation 'com.mailjet:mailjet-client:6.0.1'
     implementation 'net.jacobpeterson.alpaca:alpaca-java:10.0.1'
     implementation 'com.formdev:flatlaf:3.6'

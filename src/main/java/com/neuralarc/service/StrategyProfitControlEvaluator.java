@@ -24,6 +24,7 @@ import java.util.logging.Logger;
 
 final class StrategyProfitControlEvaluator {
     private static final Logger LOGGER = Logger.getLogger(StrategyProfitControlEvaluator.class.getName());
+    private static final java.time.ZoneId US_EASTERN = java.time.ZoneId.of("America/New_York");
 
     private final StrategyRepository strategyRepository;
     private final StrategyOrderRepository orderRepository;
@@ -32,6 +33,7 @@ final class StrategyProfitControlEvaluator {
     private final SellOrderSubmitter sellOrderSubmitter;
     private final TrailingStopSubmitter trailingStopSubmitter;
     private final ExitOrderCanceller exitOrderCanceller;
+    private final SessionHighCache sessionHighCache;
 
     StrategyProfitControlEvaluator(
             StrategyRepository strategyRepository,
@@ -41,6 +43,20 @@ final class StrategyProfitControlEvaluator {
             SellOrderSubmitter sellOrderSubmitter,
             TrailingStopSubmitter trailingStopSubmitter
     ) {
+        this(strategyRepository, orderRepository, stateMachine, alpacaClient, sellOrderSubmitter,
+                trailingStopSubmitter, SessionHighCache.shared());
+    }
+
+    StrategyProfitControlEvaluator(
+            StrategyRepository strategyRepository,
+            StrategyOrderRepository orderRepository,
+            StrategyStateMachine stateMachine,
+            AlpacaClient alpacaClient,
+            SellOrderSubmitter sellOrderSubmitter,
+            TrailingStopSubmitter trailingStopSubmitter,
+            SessionHighCache sessionHighCache
+    ) {
+        this.sessionHighCache = sessionHighCache == null ? SessionHighCache.shared() : sessionHighCache;
         this.strategyRepository = strategyRepository;
         this.orderRepository = orderRepository;
         this.stateMachine = stateMachine;
@@ -226,8 +242,14 @@ final class StrategyProfitControlEvaluator {
                 return;
             }
         }
+        // A resting profit-hold exit is this rule's own order, and it has to stay adjustable: bailing
+        // out here because "an exit order is present" is what would freeze the trail at the first
+        // price it armed on, so only a filled one — or somebody else's exit — stops the evaluation.
+        boolean restingTrailToManage = localOnlyProfitHold
+                && hasPendingExitOrder(orders, StrategyStage.PROFIT_EXIT)
+                && !hasFilledExitOrder(orders, StrategyStage.PROFIT_EXIT);
         if (hasPendingOrFilledExitOrder(orders, StrategyStage.TARGET_SELL)
-                || hasPendingOrFilledExitOrder(orders, StrategyStage.PROFIT_EXIT)) {
+                || (hasPendingOrFilledExitOrder(orders, StrategyStage.PROFIT_EXIT) && !restingTrailToManage)) {
             logRule(strategy, "TARGET_SELL", "SKIPPED", "Existing pending or filled exit order already present", outcomes);
             logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Existing pending or filled exit order already present", outcomes);
             return;
@@ -235,9 +257,14 @@ final class StrategyProfitControlEvaluator {
 
         boolean profitHoldActive = strategy.currentState() == StrategyLifecycleState.PROFIT_HOLD_ACTIVE
                 || strategy.highestObservedPriceAfterTarget().compareTo(BigDecimal.ZERO) > 0;
-        if (!profitHoldActive && latestPrice.compareTo(activationThreshold) < 0) {
+        // The engine only sees the price at the instant it polls. A stock that touches the threshold
+        // between two polls used to go unnoticed for good, so the session high arms the hold too.
+        BigDecimal sessionHigh = sessionHighCache.highFor(strategy.symbol(), java.time.LocalDate.now(US_EASTERN));
+        BigDecimal observedHigh = sessionHigh.compareTo(latestPrice) > 0 ? sessionHigh : latestPrice;
+        if (!profitHoldActive && observedHigh.compareTo(activationThreshold) < 0) {
             logRule(strategy, "TARGET_SELL", "NOT_SATISFIED",
                     "latestPrice=" + latestPrice.toPlainString()
+                            + ", sessionHigh=" + observedHigh.toPlainString()
                             + " < " + activationLabel + "=" + activationThreshold.toPlainString(), outcomes);
             logRule(strategy, "PROFIT_HOLD", "SKIPPED", "Profit activation threshold has not been reached", outcomes);
             return;
@@ -256,39 +283,106 @@ final class StrategyProfitControlEvaluator {
             return;
         }
 
+        logRule(strategy, "TARGET_SELL", "SATISFIED",
+                "latestPrice=" + latestPrice.toPlainString()
+                        + ", sessionHigh=" + observedHigh.toPlainString()
+                        + " >= " + activationLabel + "=" + activationThreshold.toPlainString(), outcomes);
         if (!profitHoldActive) {
-            strategy.setCurrentState(StrategyLifecycleState.PROFIT_HOLD_ACTIVE);
-            strategy.updateHighestObservedPriceAfterTarget(latestPrice);
+            strategy.updateHighestObservedPriceAfterTarget(observedHigh);
+            String armedAt = observedHigh.compareTo(latestPrice) > 0
+                    ? observedHigh.toPlainString() + " (today's high; the price came back to $" + latestPrice.toPlainString() + ")"
+                    : observedHigh.toPlainString();
+            logRule(strategy, "PROFIT_HOLD", "ARMED",
+                    "Threshold $" + activationThreshold.toPlainString() + " reached at $" + armedAt, outcomes);
             stateMachine.transition(strategy, StrategyLifecycleState.PROFIT_HOLD_ACTIVE,
                     StrategyEventType.PROFIT_HOLD_ARMED,
-                    "Profit hold armed",
+                    "Profit hold armed at $" + armedAt,
                     "{\"highest\":\"" + strategy.highestObservedPriceAfterTarget().toPlainString() + "\"}");
         } else {
-            strategy.updateHighestObservedPriceAfterTarget(latestPrice);
+            strategy.updateHighestObservedPriceAfterTarget(observedHigh);
         }
+        restProfitHoldExit(strategy, position, orders, latestPrice, outcomes);
+    }
 
-        BigDecimal threshold = trailingThreshold(strategy);
-        if (latestPrice.compareTo(threshold) > 0) {
-            logRule(strategy, "TARGET_SELL", "SATISFIED",
-                    "latestPrice=" + latestPrice.toPlainString()
-                            + " >= " + activationLabel + "=" + activationThreshold.toPlainString(), outcomes);
-            logRule(strategy, "PROFIT_HOLD", "NOT_SATISFIED",
-                    "latestPrice=" + latestPrice.toPlainString()
-                            + " > trailingThreshold=" + threshold.toPlainString()
-                            + ", highest=" + strategy.highestObservedPriceAfterTarget().toPlainString(), outcomes);
+    /**
+     * Keeps a resting limit sell at the broker for an armed profit hold, trailing it up as the stock
+     * makes new highs.
+     *
+     * <p>This is the whole point of the rework: a resting order fills between polls, so an exit no
+     * longer depends on the app watching at the right second. The order is raised when the trail
+     * moves up by at least a cent, and never lowered.
+     */
+    private void restProfitHoldExit(Strategy strategy, AlpacaPositionData position, List<StrategyOrder> orders,
+                                    BigDecimal latestPrice, List<StrategyEngine.RuleOutcome> outcomes) {
+        BigDecimal peak = strategy.highestObservedPriceAfterTarget();
+        BigDecimal averageCost = position != null && position.avgEntryPrice() != null
+                && position.avgEntryPrice().signum() > 0
+                ? position.avgEntryPrice()
+                : strategy.baseBuyLimitPrice();
+        ProfitHoldExitPricing.Plan plan = ProfitHoldExitPricing.plan(peak, strategy.profitHoldType(),
+                strategy.profitHoldAmount(), strategy.profitHoldPercent(), averageCost);
+        if (plan.limitPrice().signum() <= 0) {
+            logRule(strategy, "PROFIT_HOLD", "SKIPPED", "No usable trailing exit price yet", outcomes);
             strategyRepository.save(strategy);
             return;
         }
+        BigDecimal quantity = strategy.targetSellQuantity(position.quantity());
+        StrategyOrder resting = workingProfitExit(orders);
+        if (resting == null) {
+            logRule(strategy, "PROFIT_HOLD", "PLACED",
+                    "Resting limit sell " + quantity.toPlainString() + " @ $" + plan.limitPrice().toPlainString()
+                            + " — " + plan.describe(peak) + "; it fills at the broker even between polls", outcomes);
+            sellOrderSubmitter.submit(strategy, StrategyStage.PROFIT_EXIT, quantity, plan.limitPrice(),
+                    strategy.timeInForce(), StrategyLifecycleState.SELL_PLACED,
+                    "Profit hold resting exit at $" + plan.limitPrice().toPlainString()
+                            + " (" + plan.describe(peak) + ")",
+                    StrategyEventType.ORDER_SUBMITTED);
+            strategyRepository.save(strategy);
+            return;
+        }
+        if (!ProfitHoldExitPricing.shouldRaise(resting.limitPrice(), plan.limitPrice())) {
+            logRule(strategy, "PROFIT_HOLD", "NOT_SATISFIED",
+                    "Resting limit sell already at $" + Monetary.round(resting.limitPrice()).toPlainString()
+                            + "; " + plan.describe(peak) + ", latestPrice=" + latestPrice.toPlainString(), outcomes);
+            strategyRepository.save(strategy);
+            return;
+        }
+        ExitOrderCanceller.Outcome canceled = exitOrderCanceller.cancelAndConfirm(resting);
+        if (canceled == ExitOrderCanceller.Outcome.FILLED) {
+            logRule(strategy, "PROFIT_HOLD", "SATISFIED",
+                    "The resting exit filled at $" + Monetary.round(resting.limitPrice()).toPlainString()
+                            + " while it was being raised", outcomes);
+            return;
+        }
+        if (canceled == ExitOrderCanceller.Outcome.STILL_WORKING) {
+            logRule(strategy, "PROFIT_HOLD", "SKIPPED",
+                    "Waiting for the broker to confirm the cancel before raising the exit to $"
+                            + plan.limitPrice().toPlainString(), outcomes);
+            strategyRepository.save(strategy);
+            return;
+        }
+        logRule(strategy, "PROFIT_HOLD", "RAISED",
+                "Trailing exit up from $" + Monetary.round(resting.limitPrice()).toPlainString()
+                        + " to $" + plan.limitPrice().toPlainString() + " — " + plan.describe(peak), outcomes);
+        sellOrderSubmitter.submit(strategy, StrategyStage.PROFIT_EXIT, quantity, plan.limitPrice(),
+                strategy.timeInForce(), StrategyLifecycleState.SELL_PLACED,
+                "Profit hold exit raised to $" + plan.limitPrice().toPlainString() + " (" + plan.describe(peak) + ")",
+                StrategyEventType.ORDER_SUBMITTED);
+        strategyRepository.save(strategy);
+    }
 
-        logRule(strategy, "TARGET_SELL", "SATISFIED",
-                "latestPrice=" + latestPrice.toPlainString()
-                        + " >= " + activationLabel + "=" + activationThreshold.toPlainString(), outcomes);
-        logRule(strategy, "PROFIT_HOLD", "SATISFIED",
-                "latestPrice=" + latestPrice.toPlainString()
-                        + " <= trailingThreshold=" + threshold.toPlainString()
-                        + ", highest=" + strategy.highestObservedPriceAfterTarget().toPlainString(), outcomes);
-        sellOrderSubmitter.submit(strategy, StrategyStage.PROFIT_EXIT, strategy.targetSellQuantity(position.quantity()), latestPrice,
-                StrategyLifecycleState.SELL_PLACED, "Profit hold exit submitted", StrategyEventType.ORDER_SUBMITTED);
+    /** The profit-hold sell currently working at the broker, or null when none is. */
+    private static StrategyOrder workingProfitExit(List<StrategyOrder> orders) {
+        if (orders == null) {
+            return null;
+        }
+        return orders.stream()
+                .filter(order -> order.stage() == StrategyStage.PROFIT_EXIT)
+                .filter(order -> order.status() == StrategyOrderStatus.SUBMITTED
+                        || order.status() == StrategyOrderStatus.PARTIALLY_FILLED)
+                .max(java.util.Comparator.comparing(StrategyOrder::submittedAt,
+                        java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())))
+                .orElse(null);
     }
 
     private void submitLegacyProfitExit(Strategy strategy, AlpacaPositionData position, BigDecimal latestPrice,
@@ -546,6 +640,15 @@ final class StrategyProfitControlEvaluator {
         NONE,
         PRESENT,
         REPLACE_AND_SUBMIT_NOW
+    }
+
+    private boolean hasPendingExitOrder(List<StrategyOrder> orders, StrategyStage stage) {
+        return orders.stream().anyMatch(order -> order.stage() == stage && order.isPending());
+    }
+
+    private boolean hasFilledExitOrder(List<StrategyOrder> orders, StrategyStage stage) {
+        return orders.stream().anyMatch(order -> order.stage() == stage
+                && order.status() == com.neuralarc.model.StrategyOrderStatus.FILLED);
     }
 
     private boolean hasPendingOrFilledExitOrder(List<StrategyOrder> orders, StrategyStage stage) {
