@@ -120,6 +120,11 @@ final class PortfolioActionsMenuBuilder {
                                 "Cancel working sell orders; the positions stay open and keep evaluating rules.",
                                 "icons/close.svg",
                                 controller::handleCancelAllPendingLimitSells),
+                        new PortfolioActionsMenu.Entry("Cancel All Stop Losses",
+                                "Switch off stop-loss monitoring and cancel any stop-loss sell working at the broker."
+                                        + " Positions stay open with no automatic downside protection.",
+                                "icons/kill-switch.svg",
+                                controller::handleCancelAllStopLosses),
                         new PortfolioActionsMenu.Entry("Cancel all Amber Pending Buys (Losers)",
                                 "Drop amber recommendations that were never submitted to the broker.",
                                 "icons/delete.svg",
@@ -165,13 +170,6 @@ final class PortfolioActionsMenuBuilder {
                         liveView
                                 ? deletePaperEntries.disabledWith("Paper cleanup is disabled while viewing LIVE mode.")
                                 : deletePaperEntries
-                )),
-                new PortfolioActionsMenu.Group("Stop Losses", "icons/kill-switch.svg", List.of(
-                        new PortfolioActionsMenu.Entry("Cancel All Stop Losses",
-                                "Switch off stop-loss monitoring and cancel any stop-loss sell working at the broker."
-                                        + " Positions stay open with no automatic downside protection.",
-                                "icons/kill-switch.svg",
-                                controller::handleCancelAllStopLosses)
                 )),
                 new PortfolioActionsMenu.Group("AI Analyst", "icons/actions.svg", List.of(
                         new PortfolioActionsMenu.Entry("Ask the Analyst",
