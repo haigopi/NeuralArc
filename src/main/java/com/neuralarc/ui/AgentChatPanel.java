@@ -8,6 +8,7 @@ import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JProgressBar;
 import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.SwingWorker;
@@ -42,23 +43,31 @@ final class AgentChatPanel extends JPanel {
     private static final Color OPERATOR = ThemeColors.color("NeuralArc.pnlPositive", new Color(108, 203, 129));
     private static final Color WARNING = ThemeColors.color("NeuralArc.pnlNegative", new Color(240, 113, 120));
 
+    private static final java.util.logging.Logger LOGGER =
+            java.util.logging.Logger.getLogger(AgentChatPanel.class.getName());
+
     private final Supplier<AgentAnalystRunner> runners;
     private final java.util.function.Consumer<String> commands;
+    private final AnalystAnswerCache answers;
     private final JTextPane transcript = new JTextPane();
     private final JTextField input = new JTextField();
     private final JButton ask = new JButton("Ask");
     private final JButton reset = new JButton("New");
+    private final JButton expand = new JButton();
+    private final JProgressBar working = new JProgressBar();
     private final JLabel status = new JLabel(" ");
     private AgentAnalystRunner.Conversation conversation;
 
     AgentChatPanel(Supplier<AgentAnalystRunner> runners) {
-        this(runners, null);
+        this(runners, null, new AnalystAnswerCache());
     }
 
-    AgentChatPanel(Supplier<AgentAnalystRunner> runners, java.util.function.Consumer<String> commands) {
+    AgentChatPanel(Supplier<AgentAnalystRunner> runners, java.util.function.Consumer<String> commands,
+                   AnalystAnswerCache answers) {
         super(new BorderLayout(0, 6));
         this.runners = runners;
         this.commands = commands;
+        this.answers = answers == null ? new AnalystAnswerCache() : answers;
         setOpaque(false);
         setBorder(new EmptyBorder(2, 2, 2, 2));
 
@@ -80,10 +89,18 @@ final class AgentChatPanel extends JPanel {
                 + " the tool-call budget starts again.", 320));
         reset.addActionListener(event -> startOver());
 
+        DialogButtonStyles.apply(expand, "icons/chart.svg");
+        expand.setToolTipText(TooltipStyler.text("Open the latest answer full screen, where a long analysis can"
+                + " actually be read.", 320));
+        expand.addActionListener(event -> openLatestFullScreen());
         JPanel buttons = new JPanel(new BorderLayout(6, 0));
         buttons.setOpaque(false);
         buttons.add(ask, BorderLayout.CENTER);
-        buttons.add(reset, BorderLayout.EAST);
+        JPanel trailing = new JPanel(new BorderLayout(6, 0));
+        trailing.setOpaque(false);
+        trailing.add(expand, BorderLayout.CENTER);
+        trailing.add(reset, BorderLayout.EAST);
+        buttons.add(trailing, BorderLayout.EAST);
         JPanel entry = new JPanel(new BorderLayout(6, 0));
         entry.setOpaque(false);
         entry.add(input, BorderLayout.CENTER);
@@ -91,10 +108,17 @@ final class AgentChatPanel extends JPanel {
 
         status.setFont(FontLoader.ui(Font.PLAIN, 10f));
         status.setForeground(MUTED);
+        working.setIndeterminate(true);
+        working.setVisible(false);
+        working.setPreferredSize(new java.awt.Dimension(0, 3));
+        JPanel footer = new JPanel(new BorderLayout(0, 2));
+        footer.setOpaque(false);
+        footer.add(working, BorderLayout.NORTH);
+        footer.add(status, BorderLayout.SOUTH);
         JPanel south = new JPanel(new BorderLayout(0, 3));
         south.setOpaque(false);
         south.add(entry, BorderLayout.NORTH);
-        south.add(status, BorderLayout.SOUTH);
+        south.add(footer, BorderLayout.SOUTH);
         add(south, BorderLayout.SOUTH);
 
         append("The analyst reads your positions, live prices, NeuralArc's own levels, recent headlines and what the"
@@ -146,20 +170,36 @@ final class AgentChatPanel extends JPanel {
             commands.accept(asked);
             return;
         }
+        // The cache is checked before the analyst's own settings: repeating a question that has already
+        // been answered needs no key, no connection and no call.
+        java.util.Optional<AnalystAnswerCache.Answer> remembered = answers.find(asked);
         AgentAnalystRunner runner = runners == null ? null : runners.get();
-        if (runner == null) {
+        if (runner == null && remembered.isEmpty()) {
             setStatus("The AI analyst is off. Switch it on in Settings and add an Anthropic API key.", true);
+            return;
+        }
+        append("You", OPERATOR, Font.BOLD);
+        append(asked, TEXT, Font.PLAIN);
+        input.setText("");
+        if (remembered.isPresent()) {
+            AnalystAnswerCache.Answer answer = remembered.get();
+            LOGGER.info(() -> "[AGENT][CHAT][CACHE_HIT] Reusing the answer given "
+                    + answer.ageText(java.time.Instant.now()) + " instead of calling the model.");
+            append("Analyst", MUTED, Font.BOLD);
+            append(answer.outcome().text(), TEXT, Font.PLAIN);
+            setStatus("Answered " + answer.ageText(java.time.Instant.now())
+                    + " — repeated from the last " + AnalystAnswerCache.TTL.toMinutes()
+                    + " minutes, so nothing was billed. Press New to ask it fresh.", false);
             return;
         }
         if (conversation == null) {
             conversation = runner.newConversation();
         }
-        append("You", OPERATOR, Font.BOLD);
-        append(asked, TEXT, Font.PLAIN);
-        input.setText("");
         ask.setEnabled(false);
         input.setEnabled(false);
+        working.setVisible(true);
         setStatus("Thinking… reading prices, positions and news.", false);
+        LOGGER.info(() -> "[AGENT][CHAT][ASK] " + summarize(asked));
         AgentAnalystRunner.Conversation active = conversation;
         new SwingWorker<AgentAnalystRunner.Outcome, Void>() {
             @Override
@@ -171,15 +211,22 @@ final class AgentChatPanel extends JPanel {
             protected void done() {
                 ask.setEnabled(true);
                 input.setEnabled(true);
+                working.setVisible(false);
                 input.requestFocusInWindow();
                 try {
-                    show(get());
+                    AgentAnalystRunner.Outcome outcome = get();
+                    answers.remember(asked, outcome);
+                    LOGGER.info(() -> "[AGENT][CHAT][ANSWERED] run=" + outcome.runId()
+                            + " toolCalls=" + outcome.toolCalls() + " turns=" + outcome.turns()
+                            + " completed=" + outcome.completed() + " chars=" + outcome.text().length());
+                    show(outcome);
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() == null ? ex : ex.getCause();
                     String message = cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
                     append("Analyst", WARNING, Font.BOLD);
                     append(message, WARNING, Font.PLAIN);
                     setStatus("That question failed. Nothing was placed or changed.", true);
+                    LOGGER.log(java.util.logging.Level.WARNING, "[AGENT][CHAT][FAILED] " + message, cause);
                     // A failed start leaves no usable conversation; the next question builds a new one.
                     if (active.messageCount() <= 1) {
                         conversation = null;
@@ -206,6 +253,30 @@ final class AgentChatPanel extends JPanel {
         }
         setStatus(spend + " · " + remaining + " tool call" + (remaining == 1 ? "" : "s")
                 + " left in this conversation.", false);
+    }
+
+    /** Opens the most recent answer full screen; with none yet, says so rather than opening blank. */
+    void openLatestFullScreen() {
+        java.util.Optional<AnalystAnswerCache.Answer> latest = answers.mostRecent();
+        if (latest.isEmpty()) {
+            setStatus("Nothing to open yet — ask the analyst something first.", true);
+            return;
+        }
+        LOGGER.info("[AGENT][CHAT][EXPAND] Opening the latest answer full screen.");
+        new AnalystAnswerDialog(this, latest.get(), java.time.Instant.now()).setVisible(true);
+    }
+
+    JButton expandButton() {
+        return expand;
+    }
+
+    boolean isWorking() {
+        return working.isVisible();
+    }
+
+    /** A question, trimmed for the log: enough to identify it, not enough to fill the file. */
+    private static String summarize(String question) {
+        return question.length() <= 120 ? question : question.substring(0, 117) + "…";
     }
 
     private void append(String text, Color color, int style) {

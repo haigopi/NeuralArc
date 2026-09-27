@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.model.PauseReason;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.StopLossType;
 import com.neuralarc.model.Strategy;
@@ -68,6 +69,56 @@ class FailedStrategyExposureRecoveryTest {
         assertEquals(StrategyStatus.ACTIVE, strategy.status());
         assertEquals(StrategyLifecycleState.BASE_BUY_FILLED, strategy.currentState());
         assertEquals("filled", strategy.latestOrderStatus());
+    }
+
+    @Test
+    void aSystemErrorPauseIsLiftedWhenTheBrokerStillHoldsThePosition() {
+        // The PN / CURI case: a poll blew up, the row read "System Error", and the shares sat unwatched.
+        Strategy strategy = pausedStrategy(PauseReason.SYSTEM_ERROR);
+
+        assertTrue(FailedStrategyExposureRecovery.recover(strategy, true, false, "filled"));
+
+        assertEquals(StrategyStatus.ACTIVE, strategy.status());
+        assertEquals(PauseReason.NONE, strategy.pauseReason());
+        assertEquals(StrategyLifecycleState.BASE_BUY_FILLED, strategy.currentState());
+        assertTrue(strategy.lastEvent().contains("still holds this position"));
+        assertNull(strategy.lastError());
+    }
+
+    @Test
+    void aSystemErrorPauseWithOnlyAWorkingOrderResumesToo() {
+        Strategy strategy = pausedStrategy(PauseReason.SYSTEM_ERROR);
+
+        assertTrue(FailedStrategyExposureRecovery.recover(strategy, false, true, "new"));
+
+        assertEquals(StrategyLifecycleState.BASE_BUY_PLACED, strategy.currentState());
+        assertEquals("new", strategy.latestOrderStatus());
+    }
+
+    @Test
+    void anOperatorsOwnPauseIsNeverUndone() {
+        assertFalse(FailedStrategyExposureRecovery.recover(pausedStrategy(PauseReason.USER_PAUSED), true, false, "filled"),
+                "a strategy someone paused on purpose must stay paused");
+        assertFalse(FailedStrategyExposureRecovery.recover(
+                pausedStrategy(PauseReason.MANUAL_LIMIT_BUY_CANCELED), true, false, "filled"));
+    }
+
+    @Test
+    void aSystemErrorPauseWithNothingAtTheBrokerStaysPaused() {
+        Strategy strategy = pausedStrategy(PauseReason.SYSTEM_ERROR);
+
+        assertFalse(FailedStrategyExposureRecovery.recover(strategy, false, false, ""));
+
+        assertEquals(StrategyStatus.PAUSED, strategy.status());
+    }
+
+    private Strategy pausedStrategy(PauseReason reason) {
+        Strategy strategy = failedStrategy();
+        strategy.setStatus(StrategyStatus.PAUSED);
+        strategy.setCurrentState(StrategyLifecycleState.PAUSED);
+        strategy.setPauseReason(reason);
+        strategy.setLastError("Read timed out");
+        return strategy;
     }
 
     private Strategy failedStrategy() {

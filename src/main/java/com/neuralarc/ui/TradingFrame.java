@@ -610,8 +610,10 @@ public class TradingFrame extends JFrame {
       new com.neuralarc.service.HistoryReentryScheduleService(marketHoursService, java.time.Clock.systemUTC(),
           schedule -> SwingUtilities.invokeLater(() -> runScheduledHistoryReentry(schedule)), this::log);
   private AgentAnalystDialog agentAnalystDialog;
+  /** Shared by the tab and the Portfolio Actions dialog, so a repeated question is not billed twice. */
+  private final AnalystAnswerCache analystAnswers = new AnalystAnswerCache();
   private final AgentChatPanel agentChatPanel =
-      new AgentChatPanel(this::agentAnalystRunnerOrNull, this::openCommandPalette);
+      new AgentChatPanel(this::agentAnalystRunnerOrNull, this::openCommandPalette, analystAnswers);
   private final SqliteRemoteSyncSuppressionRepository remoteSyncSuppressionRepository;
   private final GapAndGoCoordinator gapAndGoCoordinator;
   private final SmartPicksWorkspaceCoordinator smartPicksWorkspaceCoordinator;
@@ -2573,7 +2575,10 @@ public class TradingFrame extends JFrame {
     JTabbedPane logsTabs = new JTabbedPane();
     logsTabs.setOpaque(false);
     logsTabs.addTab("Logs", logsContent);
-    logsTabs.addTab("Analyst", agentChatPanel);
+    logsTabs.addTab("AI Analyst", agentChatPanel);
+    // Yellow so the tab reads as something to look at, not another log pane.
+    logsTabs.setForegroundAt(logsTabs.getTabCount() - 1,
+        com.neuralarc.util.ThemeColors.color("NeuralArc.statusWarning", new Color(226, 178, 58)));
     CollapsibleSectionPanel logsSection = new CollapsibleSectionPanel("Logs", logsTabs);
     JSplitPane logsColumns = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, equitySection, logsSection);
     logsColumns.setResizeWeight(0.4);
@@ -8764,7 +8769,7 @@ public class TradingFrame extends JFrame {
       return;
     }
     userActionLog.started(action);
-    agentAnalystDialog = new AgentAnalystDialog(this, new AgentAnalystRunner(agentAnalystServices()));
+    agentAnalystDialog = new AgentAnalystDialog(this, new AgentAnalystRunner(agentAnalystServices()), analystAnswers);
     agentAnalystDialog.setVisible(true);
   }
 

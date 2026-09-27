@@ -20,6 +20,9 @@ import java.util.List;
  * as many tokens this way, and the header tells the model what each position means.
  */
 public final class DailyBarsTool implements AgentTool {
+    private static final java.util.logging.Logger LOGGER =
+            java.util.logging.Logger.getLogger(DailyBarsTool.class.getName());
+
     static final int MAX_LOOKBACK_DAYS = 365;
     static final int DEFAULT_LOOKBACK_DAYS = 60;
 
@@ -56,7 +59,9 @@ public final class DailyBarsTool implements AgentTool {
         String symbol = arguments.symbol("symbol");
         int lookbackDays = arguments.integer("lookback_days", 1, MAX_LOOKBACK_DAYS, DEFAULT_LOOKBACK_DAYS);
         LocalDate end = LocalDate.now(clock);
+        LOGGER.info(() -> "[AGENT][TOOL][daily_bars] " + symbol + " over " + lookbackDays + " day(s)");
         List<MarketBar> bars = marketDataApi.getDailyBars(symbol, end.minusDays(lookbackDays), end);
+        LOGGER.info(() -> "[AGENT][TOOL][daily_bars] " + symbol + " → " + bars.size() + " bar(s)");
         JSONArray rows = new JSONArray();
         for (MarketBar bar : bars) {
             rows.put(new JSONArray(List.of(

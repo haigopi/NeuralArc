@@ -26,6 +26,9 @@ import java.util.UUID;
  * effect on the next run without a restart.
  */
 final class AgentAnalystRunner {
+    private static final java.util.logging.Logger LOGGER =
+            java.util.logging.Logger.getLogger(AgentAnalystRunner.class.getName());
+
     /** What the frame lends the agent. Any of these may be null when the app is not connected. */
     interface Services {
         TradingApi tradingApi();
@@ -110,6 +113,9 @@ final class AgentAnalystRunner {
                 start();
             }
             messages++;
+            int message = messages;
+            LOGGER.info(() -> "[AGENT][RUN][MESSAGE " + message + "] run=" + runId
+                    + " budgetLeft=" + session.callsRemaining());
             AgentLoop.Result result = loop.run(question);
             return new Outcome(runId, result.text(), result.toolCalls(), result.turns(),
                     result.completed(), result.refused());
@@ -151,6 +157,9 @@ final class AgentAnalystRunner {
                 throw new IllegalStateException("The analyst has nothing to read. Connect to Alpaca in Settings first.");
             }
             runId = UUID.randomUUID().toString();
+            LOGGER.info(() -> "[AGENT][RUN][NEW] run=" + runId + " model=" + settings.model()
+                    + " maxTurns=" + settings.maxTurns() + " maxToolCalls=" + settings.maxToolCalls()
+                    + " tools=" + registry.all().size());
             session = new ToolSession(registry, settings.maxToolCalls(),
                     new AgentRunAudit(services.auditRepository(), runId, Clock.systemUTC()));
             loop = new AgentLoop(

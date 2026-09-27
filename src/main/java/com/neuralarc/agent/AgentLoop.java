@@ -16,7 +16,7 @@ import java.util.logging.Logger;
  * <p>Runs on a background executor. It blocks on network I/O and must never be called from the EDT.
  */
 public final class AgentLoop {
-    private static final Logger LOG = Logger.getLogger(AgentLoop.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(AgentLoop.class.getName());
 
     /** What a finished run produced. {@code completed} is false when a limit stopped it. */
     public record Result(String text, int turns, int toolCalls, boolean completed, boolean refused) {
@@ -33,12 +33,18 @@ public final class AgentLoop {
     }
 
     public Result run(String userPrompt) throws Exception {
+        LOGGER.info(() -> "[AGENT][LOOP][START] maxTurns=" + maxTurns
+                + " toolBudget=" + tools.callsRemaining() + " promptChars=" + userPrompt.length());
         AgentTurn turn = model.start(userPrompt);
         int turns = 1;
         int toolCalls = 0;
         while (turn.wantsTools()) {
+            int turnNumber = turns;
+            List<String> requested = turn.toolCalls().stream().map(AgentTurn.ToolCall::name).toList();
+            LOGGER.info(() -> "[AGENT][LOOP][TURN " + turnNumber + "] the model asked for "
+                    + requested.size() + " tool(s): " + requested);
             if (turns >= maxTurns) {
-                LOG.warning(() -> "Agent run stopped at the " + maxTurns + "-turn limit.");
+                LOGGER.warning(() -> "Agent run stopped at the " + maxTurns + "-turn limit.");
                 return new Result(turn.text(), turns, toolCalls, false, false);
             }
             List<AgentModel.ToolOutcome> outcomes = new ArrayList<>();
@@ -46,9 +52,16 @@ public final class AgentLoop {
                 outcomes.add(new AgentModel.ToolOutcome(call.id(), tools.call(call.name(), call.input())));
                 toolCalls++;
             }
+            LOGGER.info(() -> "[AGENT][LOOP][RESULTS] returning " + outcomes.size()
+                    + " tool result(s) in one message; " + tools.callsRemaining() + " call(s) left in budget");
             turn = model.respond(outcomes);
             turns++;
         }
+        int finalTurns = turns;
+        int finalToolCalls = toolCalls;
+        AgentTurn finalTurn = turn;
+        LOGGER.info(() -> "[AGENT][LOOP][" + (finalTurn.refused() ? "REFUSED" : "ANSWERED") + "] turns=" + finalTurns
+                + " toolCalls=" + finalToolCalls + " answerChars=" + finalTurn.text().length());
         return new Result(turn.text(), turns, toolCalls, !turn.refused(), turn.refused());
     }
 }

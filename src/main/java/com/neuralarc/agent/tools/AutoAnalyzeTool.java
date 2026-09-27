@@ -18,6 +18,9 @@ import java.math.BigDecimal;
  * looking at, and that disagreement is indistinguishable from a bug.
  */
 public final class AutoAnalyzeTool implements AgentTool {
+    private static final java.util.logging.Logger LOGGER =
+            java.util.logging.Logger.getLogger(AutoAnalyzeTool.class.getName());
+
     private final AutoAnalyzeService autoAnalyzeService;
 
     public AutoAnalyzeTool(AutoAnalyzeService autoAnalyzeService) {
@@ -49,6 +52,8 @@ public final class AutoAnalyzeTool implements AgentTool {
         String symbol = arguments.symbol("symbol");
         int monthsBack = arguments.integer("months_back", 1, 12, 3);
         int intervalMinutes = arguments.integer("interval_minutes", 1, 60, 15);
+        LOGGER.info(() -> "[AGENT][TOOL][auto_analyze] " + symbol + " monthsBack=" + monthsBack
+                + " intervalMinutes=" + intervalMinutes);
         AutoAnalyzeResult result = autoAnalyzeService.analyze(symbol, monthsBack, intervalMinutes);
         return new JSONObject()
                 .put("symbol", result.symbol())

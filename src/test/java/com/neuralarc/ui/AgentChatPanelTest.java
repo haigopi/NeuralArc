@@ -41,7 +41,7 @@ class AgentChatPanelTest {
     @Test
     void aSlashLineRunsACommandInsteadOfSpendingTokensOnIt() {
         java.util.List<String> opened = new java.util.ArrayList<>();
-        AgentChatPanel panel = new AgentChatPanel(() -> null, opened::add);
+        AgentChatPanel panel = new AgentChatPanel(() -> null, opened::add, new AnalystAnswerCache());
         panel.inputField().setText("/cancel staged");
 
         panel.send();
@@ -50,6 +50,32 @@ class AgentChatPanelTest {
         assertEquals("", panel.inputField().getText());
         assertTrue(panel.statusText().contains("cancel staged"));
         assertFalse(panel.transcriptText().contains("You"), "a command is not part of the conversation");
+    }
+
+    @Test
+    void aRepeatedQuestionIsAnsweredFromMemoryWithoutCallingTheModel() {
+        AnalystAnswerCache cache = new AnalystAnswerCache();
+        cache.remember("what should I watch?",
+                new AgentAnalystRunner.Outcome("run-1", "NVDA is holding its averages.", 4, 2, true, false));
+        AgentChatPanel panel = new AgentChatPanel(() -> new AgentAnalystRunner(services(
+                new com.neuralarc.model.AgentSettings(true, "sk-ant-test", "claude-opus-5", 4, 10))), null, cache);
+        panel.inputField().setText("What should I watch?");
+
+        panel.send();
+
+        assertTrue(panel.transcriptText().contains("NVDA is holding its averages."));
+        assertTrue(panel.statusText().contains("nothing was billed"));
+        assertFalse(panel.isWorking(), "no run started, so there is nothing to wait for");
+    }
+
+    @Test
+    void theFullScreenButtonSaysWhenThereIsNothingToOpen() {
+        AgentChatPanel panel = new AgentChatPanel(() -> null, null, new AnalystAnswerCache());
+
+        panel.openLatestFullScreen();
+
+        assertTrue(panel.statusText().contains("ask the analyst something first"));
+        assertTrue(panel.expandButton().isEnabled());
     }
 
     @Test

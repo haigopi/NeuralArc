@@ -16,6 +16,9 @@ import java.time.LocalDate;
  * not know today's date, the holiday calendar, or that this operator runs extended hours.
  */
 public final class MarketSessionTool implements AgentTool {
+    private static final java.util.logging.Logger LOGGER =
+            java.util.logging.Logger.getLogger(MarketSessionTool.class.getName());
+
     private final MarketHoursService marketHours;
     private final Clock clock;
 
@@ -46,6 +49,7 @@ public final class MarketSessionTool implements AgentTool {
     @Override
     public JSONObject call(ToolArguments arguments) {
         boolean extendedHours = arguments.bool("extended_hours", false);
+        LOGGER.info(() -> "[AGENT][TOOL][market_session] extendedHours=" + extendedHours);
         LocalDate today = LocalDate.now(clock);
         return new JSONObject()
                 .put("now", String.valueOf(clock.instant()))

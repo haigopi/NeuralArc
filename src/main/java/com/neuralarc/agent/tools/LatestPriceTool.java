@@ -11,6 +11,9 @@ import java.math.BigDecimal;
 
 /** The current price for one symbol, through the same broker boundary the app trades on. */
 public final class LatestPriceTool implements AgentTool {
+    private static final java.util.logging.Logger LOGGER =
+            java.util.logging.Logger.getLogger(LatestPriceTool.class.getName());
+
     private final TradingApi tradingApi;
 
     public LatestPriceTool(TradingApi tradingApi) {
@@ -38,6 +41,7 @@ public final class LatestPriceTool implements AgentTool {
     @Override
     public JSONObject call(ToolArguments arguments) throws Exception {
         String symbol = arguments.symbol("symbol");
+        LOGGER.info(() -> "[AGENT][TOOL][latest_price] asking the broker for " + symbol);
         BigDecimal price = tradingApi.getLatestPrice(symbol);
         if (price == null || price.signum() <= 0) {
             throw new ToolArgumentException("No price is available for " + symbol

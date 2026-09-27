@@ -4,6 +4,8 @@ import org.json.JSONObject;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * One agent run's use of the tools: dispatch, a hard call budget, and an audit hook.
@@ -16,6 +18,8 @@ import java.time.Instant;
  * <p>Not thread-safe by design: one session belongs to one run, on one background thread.
  */
 public final class ToolSession {
+    private static final Logger LOGGER = Logger.getLogger(ToolSession.class.getName());
+
     /** Notified after every call, successful or not. Wire it to the strategy event store. */
     public interface Audit {
         void toolCalled(ToolResult result, JSONObject arguments, Duration elapsed);
@@ -46,6 +50,8 @@ public final class ToolSession {
                     + " is used up. Stop calling tools and answer with what you have."), arguments, Duration.ZERO);
         }
         callCount++;
+        LOGGER.info(() -> "[AGENT][TOOL][CALL] " + toolName + " args=" + (arguments == null ? "{}" : arguments)
+                + " (" + callCount + " of " + maxCalls + ")");
         AgentTool tool = registry.find(toolName).orElse(null);
         if (tool == null) {
             return report(ToolResult.failed(toolName, "There is no tool named '" + toolName + "'. Available tools: "
@@ -65,6 +71,13 @@ public final class ToolSession {
     }
 
     private ToolResult report(ToolResult result, JSONObject arguments, Duration elapsed) {
+        if (result.ok()) {
+            LOGGER.info(() -> "[AGENT][TOOL][OK] " + result.tool() + " in " + elapsed.toMillis() + "ms → "
+                    + result.content().toString().length() + " chars");
+        } else {
+            LOGGER.log(Level.WARNING, "[AGENT][TOOL][FAILED] " + result.tool() + " in " + elapsed.toMillis()
+                    + "ms → " + result.error());
+        }
         audit.toolCalled(result, arguments == null ? new JSONObject() : arguments, elapsed);
         return result;
     }

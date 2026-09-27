@@ -38,6 +38,7 @@ public final class AgentRunAudit implements ToolSession.Audit {
     @Override
     public void toolCalled(ToolResult result, JSONObject arguments, Duration elapsed) {
         try {
+            LOG.fine(() -> "[AGENT][AUDIT] run=" + runId + " tool=" + result.tool() + " ok=" + result.ok());
             repository.save(new AgentToolCall(
                     UUID.randomUUID().toString(),
                     runId,

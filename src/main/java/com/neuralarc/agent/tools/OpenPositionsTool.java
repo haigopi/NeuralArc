@@ -17,6 +17,9 @@ import java.util.List;
  * a stock the operator already holds three times over.
  */
 public final class OpenPositionsTool implements AgentTool {
+    private static final java.util.logging.Logger LOGGER =
+            java.util.logging.Logger.getLogger(OpenPositionsTool.class.getName());
+
     private static final List<String> MODES = List.of("PAPER", "LIVE", "ALL");
 
     private final PositionSnapshots snapshots;
@@ -48,6 +51,7 @@ public final class OpenPositionsTool implements AgentTool {
     public JSONObject call(ToolArguments arguments) throws Exception {
         String mode = arguments.choice("mode", MODES, "ALL");
         String symbol = arguments.raw().has("symbol") ? arguments.symbol("symbol") : null;
+        LOGGER.info(() -> "[AGENT][TOOL][open_positions] reading the cached book, mode=" + mode);
         JSONArray rows = new JSONArray();
         for (PositionSnapshots.PositionView position : snapshots.current()) {
             if (!"ALL".equals(mode) && position.mode() != StrategyMode.valueOf(mode)) {

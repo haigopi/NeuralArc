@@ -54,6 +54,7 @@ public class StrategyPollingService {
     private final TradingSessionPolicy tradingSessionPolicy;
     private final ExecutorService pollExecutor;
     private final PositionValidationBatchCoordinator batchCoordinator;
+    private final PollFailureTracker pollFailureTracker;
     private final PositionValidationAttemptTracker attemptTracker = new PositionValidationAttemptTracker();
     private final AdaptivePollingPacer adaptivePollingPacer = new AdaptivePollingPacer();
     // strategyId -> epoch millis the poll was marked in flight. Timestamped (not a plain Set) so a
@@ -143,6 +144,7 @@ public class StrategyPollingService {
         this.alpacaClient = alpacaClient;
         this.strategyMode = strategyMode;
         this.batchCoordinator = new PositionValidationBatchCoordinator(alpacaClient);
+        this.pollFailureTracker = new PollFailureTracker();
         this.tradingSessionPolicy = new TradingSessionPolicy(marketHoursService, alpacaClient);
         StrategyEventBus eventBus = new StrategyEventBus();
         StrategyStateMachine stateMachine = new StrategyStateMachine(eventRepository, eventBus);
@@ -609,16 +611,29 @@ public class StrategyPollingService {
                 pollListener.onRulesAnalyzed(strategy.id(), strategy.symbol(), outcomes);
             }
             recordAdaptivePacingObservation(strategy, priceCache, snapshotBatch);
+            pollFailureTracker.recordSuccess(strategy.id());
             return PollExecutionResult.COMPLETED;
         } catch (Exception ex) {
+            int failures = pollFailureTracker.recordFailure(strategy.id());
+            String message = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+            strategy.setLastPolledAt(Instant.now());
+            strategy.setLastError(message);
+            eventRepository.save(event(strategy.id(), StrategyEventType.POLL_ERROR,
+                    message + " (failure " + failures + " of " + PollFailureTracker.FAILURES_BEFORE_PAUSE + ")", "{}"));
+            if (!PollFailureTracker.shouldPause(failures)) {
+                // One bad cycle is usually a rate limit or a dropped connection. Keep the strategy
+                // active so its stop loss and exits keep being evaluated, and try again next poll.
+                strategyRepository.save(strategy);
+                LOGGER.log(Level.WARNING, "[POLL][" + strategy.symbol() + "] Poll failed (" + failures + " of "
+                        + PollFailureTracker.FAILURES_BEFORE_PAUSE + "); retrying on the next cycle.", ex);
+                return PollExecutionResult.FAILED;
+            }
             strategy.setStatus(StrategyStatus.PAUSED);
             strategy.setCurrentState(StrategyLifecycleState.PAUSED);
             strategy.setPauseReason(PauseReason.SYSTEM_ERROR);
-            strategy.setLastPolledAt(Instant.now());
-            strategy.setLastError(ex.getMessage());
             strategyRepository.save(strategy);
-            eventRepository.save(event(strategy.id(), StrategyEventType.POLL_ERROR, ex.getMessage(), "{}"));
-            LOGGER.log(Level.WARNING, "Polling failed for strategy " + strategy.id(), ex);
+            LOGGER.log(Level.WARNING, "[POLL][" + strategy.symbol() + "] Paused after " + failures
+                    + " consecutive failed polls.", ex);
             return PollExecutionResult.FAILED;
         }
     }

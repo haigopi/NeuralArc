@@ -237,7 +237,10 @@ public final class StrategyTablePresenter {
             return "Cancelled by user. Waiting for manual restart.";
         }
         if (strategy.status() == StrategyStatus.PAUSED && strategy.pauseReason() == PauseReason.SYSTEM_ERROR) {
-            return "Canceled (System Error)";
+            // Naming the error is the difference between "something went wrong" and knowing whether to
+            // wait for a rate limit to pass or to go and look at the symbol.
+            String reason = strategy.lastError() == null ? "" : strategy.lastError().trim();
+            return reason.isEmpty() ? "Paused (System Error)" : "Paused (System Error: " + reason + ")";
         }
         if (strategy.status() == StrategyStatus.FAILED && queueableSessionError) {
             return "Queued For Open";

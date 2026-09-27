@@ -17,6 +17,9 @@ import java.util.List;
  * action's full match list, which is how "cancel the staged buys" turns into "these seven".
  */
 public final class PortfolioActionsTool implements AgentTool {
+    private static final java.util.logging.Logger LOGGER =
+            java.util.logging.Logger.getLogger(PortfolioActionsTool.class.getName());
+
     /** Enough symbols to be useful in a list; the single-action view returns them all. */
     static final int SYMBOL_PREVIEW_LIMIT = 8;
 
@@ -52,6 +55,8 @@ public final class PortfolioActionsTool implements AgentTool {
     @Override
     public JSONObject call(ToolArguments arguments) throws Exception {
         String requested = arguments.raw().optString("action", "").trim();
+        LOGGER.info(() -> "[AGENT][TOOL][portfolio_actions] " + (requested.isEmpty()
+                ? "listing what applies now" : "previewing \"" + requested + "\""));
         if (!requested.isEmpty()) {
             PortfolioActionCatalog.ActionPreview preview = catalog.preview(requested)
                     .orElseThrow(() -> new ToolArgumentException("There is no Portfolio Action called '" + requested

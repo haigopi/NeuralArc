@@ -32,6 +32,9 @@ import java.util.Map;
  * if it invented the name. Blocks HTTP-long; call it from a background executor, never the EDT.
  */
 public final class AnthropicAgentModel implements AgentModel {
+    private static final java.util.logging.Logger LOGGER =
+            java.util.logging.Logger.getLogger(AnthropicAgentModel.class.getName());
+
     public static final String DEFAULT_MODEL = "claude-opus-5";
     /** Comfortably above a long analysis, below the SDK's non-streaming timeout. */
     public static final long DEFAULT_MAX_TOKENS = 16_000L;
@@ -78,6 +81,9 @@ public final class AnthropicAgentModel implements AgentModel {
 
     @Override
     public AgentTurn respond(List<ToolOutcome> results) {
+        LOGGER.info(() -> "[AGENT][MODEL][TOOL_RESULTS] sending " + results.size() + " result(s): "
+                + results.stream().map(outcome -> outcome.result().tool()
+                        + (outcome.result().ok() ? "" : " (error)")).toList());
         List<ContentBlockParam> blocks = new ArrayList<>();
         for (ToolOutcome outcome : results) {
             ToolResult result = outcome.result();
@@ -95,6 +101,8 @@ public final class AnthropicAgentModel implements AgentModel {
     }
 
     private AgentTurn send() {
+        LOGGER.info(() -> "[AGENT][MODEL][REQUEST] model=" + model + " messages=" + conversation.size()
+                + " tools=" + tools.size() + " maxTokens=" + maxTokens);
         MessageCreateParams.Builder params = MessageCreateParams.builder()
                 .model(model)
                 .maxTokens(maxTokens)
@@ -106,9 +114,17 @@ public final class AnthropicAgentModel implements AgentModel {
         for (Tool tool : tools) {
             params.addTool(tool);
         }
+        long startedAt = System.currentTimeMillis();
         Message response = client.messages().create(params.build());
+        long elapsed = System.currentTimeMillis() - startedAt;
         conversation.add(response.toParam());
-        return toTurn(response);
+        AgentTurn turn = toTurn(response);
+        LOGGER.info(() -> "[AGENT][MODEL][RESPONSE] in " + elapsed + "ms stop=" + response.stopReason()
+                .map(Object::toString).orElse("none") + " textChars=" + turn.text().length()
+                + " toolCalls=" + turn.toolCalls().size()
+                + " inputTokens=" + response.usage().inputTokens()
+                + " outputTokens=" + response.usage().outputTokens());
+        return turn;
     }
 
     private static AgentTurn toTurn(Message response) {
@@ -139,6 +155,8 @@ public final class AnthropicAgentModel implements AgentModel {
 
     /** Turns our own tool schemas into the SDK's tool definitions, once per run. */
     static List<Tool> declarations(ToolRegistry registry) {
+        LOGGER.info(() -> "[AGENT][MODEL][TOOLS] offering " + registry.all().size() + " read-only tool(s): "
+                + registry.all().stream().map(AgentTool::name).toList());
         List<Tool> declared = new ArrayList<>();
         for (AgentTool tool : registry.all()) {
             JSONObject schema = tool.parameters().jsonSchema();

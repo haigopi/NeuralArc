@@ -17,6 +17,9 @@ import java.util.List;
  * move has a catalyst and say which one, not to have it read and paraphrase the press.
  */
 public final class LatestNewsTool implements AgentTool {
+    private static final java.util.logging.Logger LOGGER =
+            java.util.logging.Logger.getLogger(LatestNewsTool.class.getName());
+
     static final int MAX_ARTICLES = 20;
     static final int DEFAULT_ARTICLES = 5;
 
@@ -50,6 +53,7 @@ public final class LatestNewsTool implements AgentTool {
     public JSONObject call(ToolArguments arguments) throws Exception {
         String symbol = arguments.symbol("symbol");
         int limit = arguments.integer("limit", 1, MAX_ARTICLES, DEFAULT_ARTICLES);
+        LOGGER.info(() -> "[AGENT][TOOL][latest_news] " + symbol + " limit=" + limit);
         List<NewsArticle> articles = newsClient.latestNews(symbol, limit);
         JSONArray rows = new JSONArray();
         for (NewsArticle article : articles) {
