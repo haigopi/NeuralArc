@@ -610,6 +610,8 @@ public class TradingFrame extends JFrame {
       new com.neuralarc.service.HistoryReentryScheduleService(marketHoursService, java.time.Clock.systemUTC(),
           schedule -> SwingUtilities.invokeLater(() -> runScheduledHistoryReentry(schedule)), this::log);
   private AgentAnalystDialog agentAnalystDialog;
+  private final AgentChatPanel agentChatPanel =
+      new AgentChatPanel(this::agentAnalystRunnerOrNull, this::openCommandPalette);
   private final SqliteRemoteSyncSuppressionRepository remoteSyncSuppressionRepository;
   private final GapAndGoCoordinator gapAndGoCoordinator;
   private final SmartPicksWorkspaceCoordinator smartPicksWorkspaceCoordinator;
@@ -2566,7 +2568,13 @@ public class TradingFrame extends JFrame {
     logsContent.setOpaque(false);
     logsContent.add(createEventLogToolbar(), BorderLayout.NORTH);
     logsContent.add(eventLogScrollPane, BorderLayout.CENTER);
-    CollapsibleSectionPanel logsSection = new CollapsibleSectionPanel("Logs", logsContent);
+    // The log column is the one full-height text area in the window, which makes it the right home
+    // for the analyst too: a chat needs reading width and room, not a fifth column at 200px.
+    JTabbedPane logsTabs = new JTabbedPane();
+    logsTabs.setOpaque(false);
+    logsTabs.addTab("Logs", logsContent);
+    logsTabs.addTab("Analyst", agentChatPanel);
+    CollapsibleSectionPanel logsSection = new CollapsibleSectionPanel("Logs", logsTabs);
     JSplitPane logsColumns = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, equitySection, logsSection);
     logsColumns.setResizeWeight(0.4);
     logsColumns.setContinuousLayout(true);
@@ -4049,6 +4057,17 @@ public class TradingFrame extends JFrame {
     configureButtonShortcut(settingsButton, KeyEvent.VK_T,
         KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.CTRL_DOWN_MASK | InputEvent.ALT_DOWN_MASK),
         "settings");
+    // The palette has no button of its own: it is the keyboard's way into the same actions, on the
+    // platform's usual "find a command" chord.
+    KeyStroke paletteKey = KeyStroke.getKeyStroke(KeyEvent.VK_K,
+        java.awt.Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx());
+    getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(paletteKey, "commandPalette");
+    getRootPane().getActionMap().put("commandPalette", new AbstractAction() {
+      @Override
+      public void actionPerformed(java.awt.event.ActionEvent event) {
+        openCommandPalette("");
+      }
+    });
   }
 
   private void configureButtonShortcut(JButton button, int mnemonic, KeyStroke accelerator, String actionKey) {
@@ -5432,6 +5451,21 @@ public class TradingFrame extends JFrame {
         }
       }
     }
+  }
+
+  /** The rows the Current Strategies tab is showing, as the Portfolio Actions menu scopes them. */
+  private List<ManagedStrategy> currentStrategiesForActions() {
+    return strategies.stream()
+        .filter(this::includeInCurrentStrategiesTab)
+        .filter(entry -> matchesPortfolioActionScope(entry.strategy, selectedViewMode, selectedWorkspaceId))
+        .toList();
+  }
+
+  /** Every row in the selected mode and workspace, including Trade History. */
+  private List<ManagedStrategy> scopedStrategiesForActions() {
+    return strategies.stream()
+        .filter(entry -> matchesPortfolioActionScope(entry.strategy, selectedViewMode, selectedWorkspaceId))
+        .toList();
   }
 
   /** Broker shares this row cannot account for, for the grid and the status line. */
@@ -8735,6 +8769,26 @@ public class TradingFrame extends JFrame {
   }
 
   /**
+   * Opens the command palette, optionally pre-filled. Typing is the fast path to an action: it never
+   * calls the model, and the action it runs still asks for its own confirmation.
+   */
+  private void openCommandPalette(String initialQuery) {
+    if (portfolioActionsController == null) {
+      return;
+    }
+    userActionLog.started("Command Palette");
+    new CommandPalette(this, portfolioActionsController.commands(), agentAnalystServices().actionCatalog(),
+        initialQuery).setVisible(true);
+    userActionLog.completed("Command Palette", "Closed.");
+  }
+
+  /** A runner for the chat tab, or null while the analyst is switched off or has no key. */
+  private AgentAnalystRunner agentAnalystRunnerOrNull() {
+    AgentAnalystRunner runner = new AgentAnalystRunner(agentAnalystServices());
+    return runner.ready() ? runner : null;
+  }
+
+  /**
    * What the analyst may read. Null services simply become tools the model is never offered.
    */
   private AgentAnalystRunner.Services agentAnalystServices() {
@@ -8764,6 +8818,14 @@ public class TradingFrame extends JFrame {
       @Override
       public com.neuralarc.agent.tools.PositionSnapshots positions() {
         return TradingFrame.this::agentPositionViews;
+      }
+
+      @Override
+      public com.neuralarc.agent.tools.PortfolioActionCatalog actionCatalog() {
+        // The same two scopes the menu itself acts on, so a preview can never describe different rows.
+        return new PortfolioActionPreviews(
+            TradingFrame.this::currentStrategiesForActions,
+            TradingFrame.this::scopedStrategiesForActions);
       }
 
       @Override

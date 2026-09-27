@@ -6,6 +6,8 @@ import com.neuralarc.agent.tools.LatestNewsTool;
 import com.neuralarc.agent.tools.LatestPriceTool;
 import com.neuralarc.agent.tools.MarketSessionTool;
 import com.neuralarc.agent.tools.OpenPositionsTool;
+import com.neuralarc.agent.tools.PortfolioActionCatalog;
+import com.neuralarc.agent.tools.PortfolioActionsTool;
 import com.neuralarc.agent.tools.PositionSnapshots;
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.api.TradingApi;
@@ -37,6 +39,7 @@ public final class ReadOnlyToolset {
             AlpacaNewsClient newsClient,
             MarketHoursService marketHours,
             PositionSnapshots positionSnapshots,
+            PortfolioActionCatalog actionCatalog,
             Clock clock
     ) {
         List<AgentTool> tools = new ArrayList<>();
@@ -55,6 +58,9 @@ public final class ReadOnlyToolset {
         }
         if (positionSnapshots != null) {
             tools.add(new OpenPositionsTool(positionSnapshots));
+        }
+        if (actionCatalog != null) {
+            tools.add(new PortfolioActionsTool(actionCatalog));
         }
         return ToolRegistry.readOnly(tools);
     }

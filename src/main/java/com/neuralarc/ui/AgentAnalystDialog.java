@@ -4,7 +4,9 @@ import com.neuralarc.util.FontLoader;
 import com.neuralarc.util.ThemeColors;
 
 import javax.swing.BorderFactory;
+import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -40,10 +42,13 @@ final class AgentAnalystDialog extends JDialog {
     private static final Color WARNING = ThemeColors.color("NeuralArc.pnlNegative", new Color(166, 45, 45));
 
     private final AgentAnalystRunner runner;
+    private final AgentAnalystHistory history = new AgentAnalystHistory();
     private final JTextField question = new JTextField(DEFAULT_QUESTION, 48);
     private final JTextArea answer = new JTextArea(16, 60);
     private final JLabel status = new JLabel(" ");
     private final JButton ask = new JButton("Ask the Analyst");
+    private final JPanel historyList = new JPanel();
+    private final CollapsibleSectionPanel historySection;
 
     AgentAnalystDialog(Frame owner, AgentAnalystRunner runner) {
         super(owner, "AI Analyst", false);
@@ -80,6 +85,20 @@ final class AgentAnalystDialog extends JDialog {
         answerScroll.setBorder(BorderFactory.createLineBorder(
                 ThemeColors.color("NeuralArc.Input.border", new Color(190, 190, 200))));
 
+        historyList.setOpaque(false);
+        historyList.setLayout(new BoxLayout(historyList, BoxLayout.Y_AXIS));
+        JScrollPane historyScroll = new JScrollPane(historyList);
+        historyScroll.setBorder(BorderFactory.createEmptyBorder());
+        historyScroll.setPreferredSize(new Dimension(600, 160));
+        historySection = new CollapsibleSectionPanel("History", historyScroll);
+        historySection.setCollapsed(true);
+        refreshHistoryList();
+
+        JPanel centerColumn = new JPanel(new BorderLayout(8, 8));
+        centerColumn.setOpaque(false);
+        centerColumn.add(answerScroll, BorderLayout.CENTER);
+        centerColumn.add(historySection, BorderLayout.SOUTH);
+
         status.setFont(FontLoader.ui(Font.PLAIN, 10.5f));
         status.setForeground(TEXT_MUTED);
         JButton close = new JButton("Close");
@@ -94,7 +113,7 @@ final class AgentAnalystDialog extends JDialog {
         actions.add(right, BorderLayout.EAST);
 
         add(top, BorderLayout.NORTH);
-        add(answerScroll, BorderLayout.CENTER);
+        add(centerColumn, BorderLayout.CENTER);
         add(actions, BorderLayout.SOUTH);
 
         ask.addActionListener(event -> start());
@@ -145,11 +164,14 @@ final class AgentAnalystDialog extends JDialog {
             protected void done() {
                 ask.setEnabled(true);
                 try {
-                    show(get());
+                    AgentAnalystRunner.Outcome outcome = get();
+                    show(outcome);
+                    recordHistory(asked, outcome.text(), status.getText(), outcome.refused() || !outcome.completed());
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause() == null ? ex : ex.getCause();
                     String message = cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
                     setStatus("The run failed: " + message, true);
+                    recordHistory(asked, "The run failed: " + message, "Failed", true);
                 }
             }
         }.execute();
@@ -170,6 +192,67 @@ final class AgentAnalystDialog extends JDialog {
             return;
         }
         setStatus("Done: " + spend + ".", false);
+    }
+
+    /** Records one AI Analyst question/answer into the closed History accordion, newest first. */
+    void recordHistory(String askedQuestion, String answerText, String statusSummary, boolean warning) {
+        history.record(askedQuestion, answerText, statusSummary, warning);
+        refreshHistoryList();
+    }
+
+    int historyEntryCount() {
+        return history.entries().size();
+    }
+
+    boolean historySectionCollapsed() {
+        return historySection.isCollapsed();
+    }
+
+    private void refreshHistoryList() {
+        historyList.removeAll();
+        if (history.isEmpty()) {
+            JLabel empty = new JLabel("No questions asked yet.");
+            empty.setForeground(TEXT_MUTED);
+            empty.setFont(FontLoader.ui(Font.PLAIN, 11f));
+            empty.setBorder(new EmptyBorder(6, 6, 6, 6));
+            historyList.add(empty);
+        } else {
+            for (AgentAnalystHistory.Entry entry : history.entries()) {
+                historyList.add(buildHistoryEntry(entry));
+            }
+        }
+        historyList.revalidate();
+        historyList.repaint();
+    }
+
+    private JComponent buildHistoryEntry(AgentAnalystHistory.Entry entry) {
+        JLabel meta = new JLabel(entry.timestamp() + " · " + entry.statusSummary());
+        meta.setFont(FontLoader.ui(Font.PLAIN, 10f));
+        meta.setForeground(TEXT_MUTED);
+        meta.setBorder(new EmptyBorder(0, 4, 4, 4));
+
+        JTextArea entryAnswer = new JTextArea(entry.answer());
+        entryAnswer.setEditable(false);
+        entryAnswer.setLineWrap(true);
+        entryAnswer.setWrapStyleWord(true);
+        entryAnswer.setOpaque(false);
+        entryAnswer.setFont(FontLoader.ui(Font.PLAIN, 11.5f));
+        entryAnswer.setForeground(entry.warning() ? WARNING : UIManager.getColor("TextArea.foreground"));
+        entryAnswer.setBorder(new EmptyBorder(0, 4, 4, 4));
+
+        JPanel body = new JPanel(new BorderLayout());
+        body.setOpaque(false);
+        body.add(meta, BorderLayout.NORTH);
+        body.add(entryAnswer, BorderLayout.CENTER);
+
+        CollapsibleSectionPanel item = new CollapsibleSectionPanel(truncate(entry.question(), 70), body);
+        item.setCollapsed(true);
+        return item;
+    }
+
+    private static String truncate(String text, int maxLength) {
+        String oneLine = text.replaceAll("\\s+", " ").trim();
+        return oneLine.length() <= maxLength ? oneLine : oneLine.substring(0, maxLength - 1) + "…";
     }
 
     private void setStatus(String text, boolean warning) {

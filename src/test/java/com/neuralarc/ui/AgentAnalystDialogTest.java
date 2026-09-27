@@ -38,6 +38,22 @@ class AgentAnalystDialogTest {
     }
 
     @Test
+    void historyStartsClosedAndKeepsOnlyTheTenMostRecentQuestions() {
+        AgentAnalystDialog dialog = new AgentAnalystDialog(null, new AgentAnalystRunner(services(AgentSettings.defaults())));
+
+        assertTrue(dialog.historySectionCollapsed(), "the history accordion opens closed");
+        assertEquals(0, dialog.historyEntryCount());
+
+        for (int i = 0; i < 12; i++) {
+            dialog.recordHistory("Question " + i, "Answer " + i, "Done", false);
+        }
+
+        assertEquals(10, dialog.historyEntryCount(), "older questions beyond the cap are dropped");
+        assertTrue(dialog.historySectionCollapsed(), "recording an answer does not pop the accordion open");
+        dialog.dispose();
+    }
+
+    @Test
     void aRunWithoutAKeySaysWhatToDoInsteadOfCallingTheApi() {
         AgentAnalystRunner runner = new AgentAnalystRunner(services(AgentSettings.defaults()));
 
@@ -65,6 +81,7 @@ class AgentAnalystDialogTest {
             @Override public AlpacaNewsClient newsClient() { return null; }
             @Override public MarketHoursService marketHours() { return null; }
             @Override public PositionSnapshots positions() { return List::of; }
+            @Override public com.neuralarc.agent.tools.PortfolioActionCatalog actionCatalog() { return null; }
             @Override public SqliteAgentToolCallRepository auditRepository() { return null; }
             @Override public AgentSettings settings() { return settings; }
         };

@@ -117,6 +117,22 @@ final class PortfolioActionsController {
         return PortfolioActionsMenuBuilder.groups(this, gateway.selectedViewMode() == StrategyMode.LIVE);
     }
 
+    /** The same menu, flattened for the command palette: every entry keeps its group and its action. */
+    List<CommandMatcher.Command> commands() {
+        List<CommandMatcher.Command> commands = new java.util.ArrayList<>();
+        for (PortfolioActionsMenu.Group group : menuGroups()) {
+            for (PortfolioActionsMenu.Entry entry : group.entries()) {
+                commands.add(new CommandMatcher.Command(
+                        entry.label(),
+                        group.title(),
+                        entry.enabled() ? entry.description() : entry.disabledTooltip(),
+                        entry.enabled(),
+                        entry.action()));
+            }
+        }
+        return commands;
+    }
+
     void showMenu(AbstractButton anchor) {
         gateway.actionStarted("Portfolio Actions");
         JPopupMenu menu = new JPopupMenu();

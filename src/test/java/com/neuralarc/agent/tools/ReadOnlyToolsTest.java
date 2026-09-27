@@ -88,7 +88,7 @@ class ReadOnlyToolsTest {
     @Test
     void theToolsetIsReadOnlyAndSkipsServicesThatAreNotConfigured() {
         ToolRegistry registry = ReadOnlyToolset.create(
-                null, new RecordingMarketData(), null, new MarketHoursService(), List::of, CLOCK);
+                null, new RecordingMarketData(), null, new MarketHoursService(), List::of, null, CLOCK);
 
         List<String> names = registry.all().stream().map(AgentTool::name).toList();
         assertEquals(List.of("market_session", "daily_bars", "auto_analyze", "open_positions"), names);
