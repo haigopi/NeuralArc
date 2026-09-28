@@ -101,7 +101,7 @@ public final class HistoryRowStyler {
             case SELL_NEUTRAL -> palette.sellNeutralBackground();
             case FAILED -> palette.failedBackground();
             case COMPLETED -> palette.completedBackground();
-            case SUBTOTAL -> palette.subtotalBackground();
+            case SUBTOTAL, GROUP_HEADER -> palette.subtotalBackground();
         };
     }
 
@@ -113,7 +113,7 @@ public final class HistoryRowStyler {
             case SELL_NEUTRAL -> palette.sellNeutralForeground();
             case FAILED -> palette.failedForeground();
             case COMPLETED -> palette.completedForeground();
-            case SUBTOTAL -> palette.subtotalForeground();
+            case SUBTOTAL, GROUP_HEADER -> palette.subtotalForeground();
         };
     }
 

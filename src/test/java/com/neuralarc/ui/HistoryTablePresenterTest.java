@@ -360,7 +360,8 @@ class HistoryTablePresenterTest {
                         instant -> "t",
                         TradeHistoryGroupBy.DATE
                 ).stream()
-                .filter(row -> row.style() != HistoryTablePresenter.HistoryRowStyle.SUBTOTAL)
+                .filter(row -> row.style() != HistoryTablePresenter.HistoryRowStyle.SUBTOTAL
+                        && row.style() != HistoryTablePresenter.HistoryRowStyle.GROUP_HEADER)
                 .toList();
 
         // Newest first, regardless of side: ZZZ sell 16:00, ZZZ buy 15:00, AAA sell 11:00, AAA buy 09:00.
@@ -390,10 +391,37 @@ class HistoryTablePresenterTest {
                         instant -> "t",
                         TradeHistoryGroupBy.SYMBOL
                 ).stream()
-                .filter(row -> row.style() != HistoryTablePresenter.HistoryRowStyle.SUBTOTAL)
+                .filter(row -> row.style() != HistoryTablePresenter.HistoryRowStyle.SUBTOTAL
+                        && row.style() != HistoryTablePresenter.HistoryRowStyle.GROUP_HEADER)
                 .toList();
 
         assertEquals(List.of("SELL", "BUY"), rows.stream().map(HistoryTablePresenter.HistoryRow::side).toList());
+    }
+
+    @Test
+    void everyGroupOpensWithALineThatCanFoldItAndSaysWhatIsInside() {
+        HistoryTablePresenter.HistorySource source = new HistoryTablePresenter.HistorySource(
+                "AAPL",
+                "Paper",
+                "Completed",
+                "Completed",
+                "",
+                Instant.now(),
+                StrategyStatus.COMPLETED,
+                List.of(
+                        filledOrderAt("AAPL", StrategyStage.BASE_BUY, StrategyOrderSide.BUY, "1", "100.00", "100.00", "2026-05-06T09:00:00Z"),
+                        filledOrderAt("AAPL", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL, "1", "110.00", "110.00", "2026-05-06T11:00:00Z")
+                )
+        );
+
+        List<HistoryTablePresenter.HistoryRow> rows =
+                presenter.buildRows(List.of(source), instant -> "t", TradeHistoryGroupBy.SYMBOL);
+
+        HistoryTablePresenter.HistoryRow header = rows.get(0);
+        assertEquals(HistoryTablePresenter.HistoryRowStyle.GROUP_HEADER, header.style(),
+                "the group's own line comes first so it can be folded from the top");
+        assertEquals("AAPL", header.symbol());
+        assertEquals("1 sell · 1 buy", header.stage(), "a folded group still says how much it is hiding");
     }
 
     @Test

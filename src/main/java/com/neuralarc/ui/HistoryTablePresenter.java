@@ -218,6 +218,7 @@ public final class HistoryTablePresenter {
         for (HistoryRow row : rows) {
             if (!row.groupKey().equalsIgnoreCase(currentGroupKey)) {
                 if (currentGroupKey != null) {
+                    withSubtotals.add(buildGroupHeaderRow(currentGroupKey, currentGroupRows));
                     withSubtotals.addAll(currentGroupRows);
                     if (groupHasNumericPnl) {
                         BigDecimal roundedGroupPnl = Monetary.round(groupPnl);
@@ -250,6 +251,7 @@ public final class HistoryTablePresenter {
         }
 
         if (currentGroupKey != null) {
+            withSubtotals.add(buildGroupHeaderRow(currentGroupKey, currentGroupRows));
             withSubtotals.addAll(currentGroupRows);
             if (groupHasNumericPnl) {
                 BigDecimal roundedGroupPnl = Monetary.round(groupPnl);
@@ -290,6 +292,43 @@ public final class HistoryTablePresenter {
         } catch (NumberFormatException ignored) {
             return HistoryRowStyle.SELL_NEUTRAL;
         }
+    }
+
+    /**
+     * The line that opens a group and can fold it away.
+     *
+     * <p>A day or a symbol can run to dozens of fills, and the buys are the part an operator scrolls
+     * past to reach what a trade actually made. The header counts what is in the group so a folded
+     * one still says how much it is hiding.
+     */
+    private HistoryRow buildGroupHeaderRow(String groupKey, List<HistoryRow> groupRows) {
+        long sells = groupRows.stream().filter(row -> isSellStyle(row.style())).count();
+        long buys = groupRows.stream().filter(row -> row.style() == HistoryRowStyle.BUY).count();
+        String counts = sells + (sells == 1 ? " sell" : " sells") + " · " + buys + (buys == 1 ? " buy" : " buys");
+        return new HistoryRow(
+                groupKey,
+                groupKey,
+                "",
+                "",
+                counts,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                null,
+                0,
+                HistoryRowStyle.GROUP_HEADER
+        );
+    }
+
+    /** True for the rows that record what a trade made, which is what a folded group keeps showing. */
+    public static boolean isSellStyle(HistoryRowStyle style) {
+        return style == HistoryRowStyle.SELL_GAIN
+                || style == HistoryRowStyle.SELL_LOSS
+                || style == HistoryRowStyle.SELL_NEUTRAL;
     }
 
     private HistoryRow buildSubtotalRow(String groupKey, BigDecimal total) {
@@ -475,6 +514,8 @@ public final class HistoryTablePresenter {
     }
 
     public enum HistoryRowStyle {
+        /** The clickable line that opens a group and folds it away. */
+        GROUP_HEADER,
         BUY,
         SELL_GAIN,
         SELL_LOSS,

@@ -216,11 +216,21 @@ public final class StrategyActionsController {
         ActionEntry entry = gateway.entryAt(row);
         Strategy strategy = entry.strategy();
         if (!isManualBuyAllowed(strategy.status(), type)) {
-            actionLog.skipped("Buy More " + strategy.symbol(), "Strategy is not active or paused.");
+            // Returning quietly here is why the menu item looked broken: the operator clicked, no
+            // dialog opened, and the only trace was a log line they had no reason to go and read.
+            String reason = "Buy More is available while a strategy is active or paused"
+                    + (type == BuyMoreType.LIMIT ? ", or completed" : "") + ".\n"
+                    + strategy.symbol() + " is " + strategy.status() + "."
+                    + (strategy.status() == StrategyStatus.PAUSED ? "" : " Resume it first to buy more.");
+            actionLog.skipped("Buy More " + strategy.symbol(), "Status is " + strategy.status() + ".");
+            gateway.showMessage(reason, "Buy More " + strategy.symbol(), JOptionPane.WARNING_MESSAGE);
             return;
         }
         if (type == BuyMoreType.MARKET && !gateway.marketOpenForUi()) {
             actionLog.skipped("Buy More " + strategy.symbol(), "Market buy is unavailable while the market is closed.");
+            gateway.showMessage("A market buy needs an open session. Use Buy More at Limit Price to place an order"
+                            + " that waits for the next one.",
+                    "Buy More " + strategy.symbol(), JOptionPane.WARNING_MESSAGE);
             return;
         }
 

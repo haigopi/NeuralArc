@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.analytics.ExpectedRange;
 import com.neuralarc.analytics.SwingPoints;
 import com.neuralarc.util.FontLoader;
 import com.neuralarc.util.ThemeColors;
@@ -70,18 +71,27 @@ final class StockChartPanel extends JComponent {
     /** Room kept above the highest high and below the lowest low, so their labels are never cut off. */
     private static final int TOP_HEADROOM = LEGEND_BAND + 18;
     private static final int BOTTOM_HEADROOM = 18;
+    private static final Color PROJECTION_INNER = ThemeColors.color("NeuralArc.Chart.projectionInner", new Color(120, 160, 220, 46));
+    private static final Color PROJECTION_OUTER = ThemeColors.color("NeuralArc.Chart.projectionOuter", new Color(120, 160, 220, 24));
+    private static final Color PROJECTION_EDGE = ThemeColors.color("NeuralArc.Chart.projectionEdge", new Color(150, 176, 214, 150));
     private static final Stroke THIN = new BasicStroke(1f);
     private static final Stroke LINE = new BasicStroke(1.3f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
     private static final Stroke DASHED = new BasicStroke(1.1f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10f,
             new float[]{6f, 4f}, 0f);
 
+    /** Sessions of projection drawn to the right of the last bar; about a trading month. */
+    static final int PROJECTION_SESSIONS = 21;
+
     private final StockChartData data;
+    private final ExpectedRange.Projection projection;
+    private boolean projectionVisible = true;
     private int visibleBars;
     private int hoverIndex = -1;
 
     StockChartPanel(StockChartData data) {
         this.data = data;
         this.visibleBars = Math.min(data.size(), ONE_YEAR);
+        this.projection = ExpectedRange.project(data.closes(), PROJECTION_SESSIONS);
         setOpaque(true);
         setPreferredSize(new Dimension(820, 640));
         HoverTracker hover = new HoverTracker();
@@ -167,7 +177,26 @@ final class StockChartPanel extends JComponent {
     }
 
     private double slot(Rectangle pane) {
-        return pane.getWidth() / visibleBars;
+        return pane.getWidth() / (visibleBars + projectionSlots());
+    }
+
+    /** Future slots reserved at the right edge; none when there is nothing to project. */
+    private int projectionSlots() {
+        return projectionVisible && projection.known() ? PROJECTION_SESSIONS : 0;
+    }
+
+    ExpectedRange.Projection projection() {
+        return projection;
+    }
+
+    /** Hides the cone, for an operator who wants the bars to fill the whole width. */
+    void setProjectionVisible(boolean visible) {
+        this.projectionVisible = visible;
+        repaint();
+    }
+
+    boolean isProjectionVisible() {
+        return projectionVisible && projection.known();
     }
 
     private double xCenter(Rectangle pane, int index) {
@@ -209,6 +238,12 @@ final class StockChartPanel extends JComponent {
                 }
             }
         }
+        if (isProjectionVisible()) {
+            // The one-sigma edges join the scale so the cone is drawn in full; two sigma may clip,
+            // which is the right trade — a rare outcome should not squash every candle.
+            min = Math.min(min, projection.oneSigmaLow().doubleValue());
+            max = Math.max(max, projection.oneSigmaHigh().doubleValue());
+        }
         // A level close to the price range is brought into view; a far-off one becomes an edge label
         // instead, so a distant target does not squash the candles into a thin strip.
         double span = Math.max(max - min, max * 0.02);
@@ -223,6 +258,7 @@ final class StockChartPanel extends JComponent {
         Scale scale = new Scale(pane, min - BOTTOM_HEADROOM * pricePerPixel, max + TOP_HEADROOM * pricePerPixel);
 
         paintGrid(g, pane, scale, StockChartFormat::price);
+        paintProjection(g, pane, scale);
         paintCandles(g, pane, scale, from, to);
         for (int period : StockChartData.EMA_PERIODS) {
             paintSeries(g, pane, scale, data.emas().get(period), emaColor(period), LINE);
@@ -232,6 +268,63 @@ final class StockChartPanel extends JComponent {
         gutterRows.add(paintLastPriceTag(g, pane, scale));
         paintLevels(g, pane, scale, gutterRows);
         paintPriceLegend(g, pane);
+    }
+
+    /**
+     * The cone: how far this stock could travel from here at the pace it has actually been moving.
+     *
+     * <p>It is drawn behind the candles, widening with the square root of time rather than in a
+     * straight line, because that is how a random walk spreads. The shading says two thirds of
+     * outcomes historically land in the inner band and about 95% in the outer one — a statement about
+     * spread, never about direction, which is why nothing here points up or down.
+     */
+    private void paintProjection(Graphics2D g, Rectangle pane, Scale scale) {
+        if (!isProjectionVisible()) {
+            return;
+        }
+        double last = projection.lastPrice().doubleValue();
+        double sigma = projection.dailySigma();
+        int lastIndex = data.lastIndex();
+        // Clipped to the plot: the cone's last slot sits half a slot past the edge, and without this
+        // the shading runs under the price axis and its labels.
+        Graphics2D cone = (Graphics2D) g.create();
+        try {
+            cone.clip(pane);
+            cone.setColor(PROJECTION_OUTER);
+            cone.fill(cone(pane, scale, last, sigma, 2));
+            cone.setColor(PROJECTION_INNER);
+            cone.fill(cone(pane, scale, last, sigma, 1));
+            cone.setColor(PROJECTION_EDGE);
+            cone.setStroke(DASHED);
+            double y = scale.y(last);
+            cone.draw(new Line2D.Double(xCenter(pane, lastIndex), y,
+                    xCenter(pane, lastIndex + PROJECTION_SESSIONS), y));
+
+            cone.setFont(LABEL_FONT);
+            String label = "±" + StockChartFormat.price(projection.oneSigmaHigh().doubleValue() - last)
+                    + " in " + PROJECTION_SESSIONS + "d (68%)";
+            // Just right of the last candle rather than at the far edge, where the last-price tag sits.
+            cone.drawString(label, (float) (xCenter(pane, lastIndex) + 6), (float) (y - 5));
+        } finally {
+            cone.dispose();
+        }
+    }
+
+    /** One filled cone: up one edge, back along the other, closed at today's price. */
+    private Path2D.Double cone(Rectangle pane, Scale scale, double last, double sigma, double sigmas) {
+        int lastIndex = data.lastIndex();
+        Path2D.Double path = new Path2D.Double();
+        path.moveTo(xCenter(pane, lastIndex), scale.y(last));
+        for (int session = 1; session <= PROJECTION_SESSIONS; session++) {
+            path.lineTo(xCenter(pane, lastIndex + session),
+                    scale.y(ExpectedRange.edge(last, sigma, session, sigmas)));
+        }
+        for (int session = PROJECTION_SESSIONS; session >= 1; session--) {
+            path.lineTo(xCenter(pane, lastIndex + session),
+                    scale.y(ExpectedRange.edge(last, sigma, session, -sigmas)));
+        }
+        path.closePath();
+        return path;
     }
 
     private void paintCandles(Graphics2D g, Rectangle pane, Scale scale, int from, int to) {

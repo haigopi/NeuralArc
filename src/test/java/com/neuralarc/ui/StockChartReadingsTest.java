@@ -101,7 +101,7 @@ class StockChartReadingsTest {
                 StockChartData.from("NIO", StockChartTestBars.fromCloses(StockChartTestBars.swings()), List.of(
                         new StockChartLevels.Level(StockChartLevels.Kind.AVERAGE_COST, "Your avg cost", 10.0, ""))));
 
-        assertEquals(7, readings.size());
+        assertEquals(8, readings.size(), "the projected range joins the seven panel readings");
         for (StockChartReadings.Reading reading : readings) {
             assertTrue(reading.whatItIs().length() > 80, reading.title());
             assertTrue(!reading.now().isBlank(), reading.title());

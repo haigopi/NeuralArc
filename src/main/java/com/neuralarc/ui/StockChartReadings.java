@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.analytics.ExpectedRange;
 import com.neuralarc.analytics.SwingPoints;
 
 import java.time.format.DateTimeFormatter;
@@ -20,6 +21,7 @@ final class StockChartReadings {
     static final String VOLUME = "Volume – how much conviction";
     static final String MACD = "MACD (12, 26, 9) – momentum";
     static final String ACCUMULATION = "Accumulation / Distribution – who is in control";
+    static final String PROJECTION = "Projected range – how far it usually travels";
 
     private static final DateTimeFormatter MONTH_YEAR = DateTimeFormatter.ofPattern("MMM yyyy", Locale.US);
     private static final int LOOKBACK = 20;
@@ -52,6 +54,7 @@ final class StockChartReadings {
         readings.add(volume(data));
         readings.add(macd(data));
         readings.add(accumulation(data));
+        readings.add(projection(data));
         return readings;
     }
 
@@ -124,6 +127,21 @@ final class StockChartReadings {
                     .append(StockChartFormat.money(nearestBelow)).append(", which can act as a floor.");
         }
         return new Reading(TREND, now.toString(), tone, what);
+    }
+
+    /**
+     * The shaded cone to the right of the last candle. Deliberately toneless: a range says how far,
+     * never which way, and colouring it would invite reading a forecast into it.
+     */
+    private static Reading projection(StockChartData data) {
+        ExpectedRange.Projection projection =
+                ExpectedRange.project(data.closes(), StockChartPanel.PROJECTION_SESSIONS);
+        String what = "The shaded cone past the last candle is not a forecast. It takes how much this stock has "
+                + "varied day to day over the last month and spreads that forward: the inner band is where about two "
+                + "thirds of outcomes have historically landed, the outer where about 95% have. It widens with the "
+                + "square root of time because a series of independent moves spreads that way, not in a straight "
+                + "line. It says nothing about direction, and a company's news can leave it behind entirely.";
+        return new Reading(PROJECTION, projection.describe(), Tone.NEUTRAL, what);
     }
 
     private static Reading turningPoints(StockChartData data) {

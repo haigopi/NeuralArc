@@ -432,6 +432,8 @@ public class TradingFrame extends JFrame {
       strategyTablePresenter
   );
   private final HistoryGridTableModel filledOrdersTableModel = new HistoryGridTableModel(filledOrderRows);
+  /** Trade History groups start folded to their sells; clicking a group line opens its buys. */
+  private final HistoryGroupCollapse historyGroupCollapse = new HistoryGroupCollapse();
   private final JTable strategyTable = new JTable(strategyTableModel) {
     @Override
     public String getToolTipText(java.awt.event.MouseEvent event) {
@@ -2303,6 +2305,11 @@ public class TradingFrame extends JFrame {
     applyTradeHistoryRowFilter();
     filledOrdersTable.setRowSorter(filledOrdersSorter);
     filledOrdersTable.addMouseListener(new MouseAdapter() {
+      @Override
+      public void mouseClicked(MouseEvent event) {
+        toggleTradeHistoryGroupAt(event);
+      }
+
       @Override
       public void mousePressed(MouseEvent event) {
         maybeShowTradeHistoryRowPopup(event);
@@ -5851,6 +5858,11 @@ public class TradingFrame extends JFrame {
       if (connectionOk) {
         rebindRuntimeToSelectedMode();
       }
+      // Workspaces are mode-scoped, so the tabs built for the Paper default belong to the wrong mode
+      // once startup lands on Live. The manual switch rebuilds them for exactly this reason.
+      if (strategyWorkspaceTabs != null) {
+        strategyWorkspaceTabs.rebuild();
+      }
     }
     syncModeToggleSelection();
     applyViewModeTheme();
@@ -7859,6 +7871,31 @@ public class TradingFrame extends JFrame {
     return held;
   }
 
+  /**
+   * Folds or opens the Trade History group whose line was clicked. Everything else in the table is
+   * left alone, so a click on an order row still selects it as it always did.
+   */
+  private void toggleTradeHistoryGroupAt(MouseEvent event) {
+    if (event.getButton() != MouseEvent.BUTTON1 || event.isPopupTrigger()) {
+      return;
+    }
+    int viewRow = filledOrdersTable.rowAtPoint(event.getPoint());
+    if (viewRow < 0) {
+      return;
+    }
+    int modelRow = filledOrdersTable.convertRowIndexToModel(viewRow);
+    if (modelRow < 0 || modelRow >= filledOrderRows.size()) {
+      return;
+    }
+    HistoryTablePresenter.HistoryRow row = filledOrderRows.get(modelRow);
+    if (row.style() != HistoryTablePresenter.HistoryRowStyle.GROUP_HEADER) {
+      return;
+    }
+    historyGroupCollapse.toggle(row.groupKey());
+    applyTradeHistoryRowFilter();
+    filledOrdersTable.repaint();
+  }
+
   private void refreshReenterHistoryButton() {
     int count = inactiveHistoryStocks().size();
     reenterHistoryButton.setText("Re-enter Inactive Stocks (" + count + ")");
@@ -8403,6 +8440,9 @@ public class TradingFrame extends JFrame {
           return false;
         }
         HistoryTablePresenter.HistoryRow row = filledOrderRows.get(modelRow);
+        if (!historyGroupCollapse.isVisible(row)) {
+          return false;
+        }
         if (query.isBlank()) {
           return true;
         }
@@ -10953,6 +10993,10 @@ public class TradingFrame extends JFrame {
         return this;
       }
       HistoryTablePresenter.HistoryRow rowData = filledOrderRows.get(modelRow);
+      if (column == 0 && rowData.style() == HistoryTablePresenter.HistoryRowStyle.GROUP_HEADER) {
+        setText(HistoryGroupCollapse.marker(historyGroupCollapse.isExpanded(rowData.groupKey()))
+            + (value == null ? "" : value));
+      }
       HistoryRowStyler.CellStyle cellStyle = historyRowStyler.style(
           table,
           row,

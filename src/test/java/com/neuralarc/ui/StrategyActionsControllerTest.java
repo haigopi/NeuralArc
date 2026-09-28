@@ -327,6 +327,36 @@ class StrategyActionsControllerTest {
     }
 
     @Test
+    void buyMoreOnAStrategyThatCannotBuySaysWhyInsteadOfDoingNothing() {
+        // Clicking the menu item and getting no dialog and no message read as a broken button.
+        Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.FAILED);
+        FakeGateway gateway = new FakeGateway(strategy);
+        gateway.limitBuySelection = Optional.of(new ManualLimitBuySelection(5, new BigDecimal("9.25")));
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.buyMoreAtLimitPrice(0);
+
+        assertEquals(0, gateway.backgroundTasksRun, "nothing is placed");
+        assertEquals("Buy More " + strategy.symbol(), gateway.lastMessageTitle);
+        assertTrue(gateway.lastMessage.contains("FAILED"), "the message names the status that blocked it");
+        assertTrue(gateway.lastMessage.contains("Resume it first"));
+        assertEquals(JOptionPane.WARNING_MESSAGE, gateway.lastMessageType);
+    }
+
+    @Test
+    void buyMoreAtMarketWithTheMarketClosedPointsAtTheLimitOrderInstead() {
+        Strategy strategy = baseStrategy(StrategyMode.PAPER, StrategyStatus.ACTIVE);
+        FakeGateway gateway = new FakeGateway(strategy);
+        gateway.marketOpen = false;
+        StrategyActionsController controller = new StrategyActionsController(gateway);
+
+        controller.buyMoreAtMarketPrice(0);
+
+        assertEquals(0, gateway.backgroundTasksRun);
+        assertTrue(gateway.lastMessage.contains("Buy More at Limit Price"));
+    }
+
+    @Test
     void buyMoreAtMarketRemainsUnavailableForCompletedStrategy() {
         FakeGateway gateway = new FakeGateway(baseStrategy(StrategyMode.PAPER, StrategyStatus.COMPLETED));
         gateway.marketBuyQuantity = Optional.of(5);
