@@ -101,6 +101,19 @@ final class PortfolioActionsController {
         void actionSkipped(String actionName, String reason);
         void actionCanceled(String actionName);
         void actionFailed(String actionName, String reason);
+
+        /** A passing note that needs no click; the default falls back to the dialog where none exists. */
+        default void showToast(String text, boolean warning) {
+            showMessage(text, "Portfolio Actions", warning ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE);
+        }
+
+        /**
+         * Opens the progress window for a run of {@code total} items. The default is a silent handle,
+         * which is what a headless test gets and what a one-item run deserves.
+         */
+        default BulkProgressHandle beginBulkProgress(String title, int total) {
+            return BulkProgressHandle.NONE;
+        }
     }
 
     private static final Color MENU_BACKGROUND = new Color(46, 49, 60);
@@ -108,6 +121,13 @@ final class PortfolioActionsController {
 
     private final PortfolioActionsSupport support = new PortfolioActionsSupport();
     private final Gateway gateway;
+    /**
+     * The window watching the run that is in flight, so the parallel runner can report each stock as
+     * it lands without every operation having to carry a progress argument. Bulk actions are started
+     * one at a time from the menu; if two ever overlapped, the later one's window would collect both
+     * runs' lines, which is untidy but harmless.
+     */
+    private volatile BulkProgressHandle activeProgress = BulkProgressHandle.NONE;
 
     PortfolioActionsController(Gateway gateway) {
         this.gateway = gateway;
@@ -166,17 +186,7 @@ final class PortfolioActionsController {
             return;
         }
 
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return cancelPendingLimitBuyTargets(targets);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> cancelPendingLimitBuyTargets(targets));
     }
 
     /** Cancels only the entry buys, or only the loss-level buys, of the matching rows. */
@@ -191,17 +201,7 @@ final class PortfolioActionsController {
         if (!confirmBulkAction(action, targets)) {
             return;
         }
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return cancelStopLossTargets(targets);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> cancelStopLossTargets(targets));
     }
 
     PortfolioActionsSupport.BatchResult cancelStopLossTargets(List<ManagedStrategy> targets) {
@@ -229,17 +229,7 @@ final class PortfolioActionsController {
         if (!confirmBulkAction(action, targets)) {
             return;
         }
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return cancelStagedLimitBuyTargets(targets, stages);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> cancelStagedLimitBuyTargets(targets, stages));
     }
 
     PortfolioActionsSupport.BatchResult cancelStagedLimitBuyTargets(
@@ -268,17 +258,7 @@ final class PortfolioActionsController {
 
         gateway.log(action.logPrefix() + " preparing to delete " + targets.size()
                 + " pending and cancelled row(s).");
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return deleteCleanableGridTargets(targets);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> deleteCleanableGridTargets(targets));
     }
 
     void handleCancelColoredPendingBuys(PortfolioActionsSupport.BulkAction action) {
@@ -289,17 +269,7 @@ final class PortfolioActionsController {
 
         gateway.log(action.logPrefix() + " preparing to remove " + targets.size()
                 + " pending buy recommendation(s).");
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return deletePendingBaseBuyTargets(targets, action.logPrefix());
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> deletePendingBaseBuyTargets(targets, action.logPrefix()));
     }
 
     void handlePlacePendingBaseBuys() {
@@ -371,17 +341,7 @@ final class PortfolioActionsController {
 
         gateway.log(action.logPrefix() + " preparing " + targets.size()
                 + " losing position(s) for averaging.");
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return averageLosingPositionTargets(targets, selection.get());
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> averageLosingPositionTargets(targets, selection.get()));
     }
 
     void handlePlacePendingBaseBuys(PortfolioActionsSupport.BulkAction action) {
@@ -392,17 +352,7 @@ final class PortfolioActionsController {
 
         gateway.log(action.logPrefix() + " preparing " + targets.size()
                 + " pending base-buy recommendation(s) for placement.");
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return placePendingBaseBuyTargets(targets);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> placePendingBaseBuyTargets(targets));
     }
 
     void handleReadjustLosingPendingBaseBuys() {
@@ -414,17 +364,7 @@ final class PortfolioActionsController {
 
         gateway.log(action.logPrefix() + " preparing to readjust " + targets.size()
                 + " losing pending base-buy recommendation(s).");
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return readjustLosingPendingBaseBuyTargets(targets);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> readjustLosingPendingBaseBuyTargets(targets));
     }
 
     void handleCancelAllPendingLimitSells() {
@@ -434,17 +374,7 @@ final class PortfolioActionsController {
             return;
         }
 
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return cancelPendingLimitSellTargets(targets);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> cancelPendingLimitSellTargets(targets));
     }
 
     void handlePromoteAllToLive() {
@@ -460,17 +390,7 @@ final class PortfolioActionsController {
             return;
         }
 
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return promoteAllToLiveTargets(targets);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> promoteAllToLiveTargets(targets));
     }
 
     void handlePositionAllSellTriggers() {
@@ -491,17 +411,7 @@ final class PortfolioActionsController {
             gateway.actionCanceled(scope.menuLabel());
             return;
         }
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return placeSellTriggerTargets(targets);
-            }
-
-            @Override
-            protected void done() {
-                handleSellActionResult(scope, this);
-            }
-        }.execute();
+        runSellAction(scope, targets, () -> placeSellTriggerTargets(targets));
     }
 
     void handlePositionAllSellProfitThresholdPercentage() {
@@ -531,17 +441,7 @@ final class PortfolioActionsController {
             gateway.actionCanceled(action.menuLabel());
             return;
         }
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return positionSellProfitThresholdTargets(targets, trailingPercent.get());
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> positionSellProfitThresholdTargets(targets, trailingPercent.get()));
     }
 
     void handleResumeAll() {
@@ -551,17 +451,7 @@ final class PortfolioActionsController {
             return;
         }
 
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return resumeTargets(targets);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> resumeTargets(targets));
     }
 
     void handleRemoveClosedPositions() {
@@ -573,17 +463,7 @@ final class PortfolioActionsController {
 
         gateway.log(action.logPrefix() + " archiving " + targets.size()
                 + " closed position(s) out of the active grids; trade history is kept.");
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return archiveClosedTargets(targets, "Archived by Remove All Closed Positions portfolio action");
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> archiveClosedTargets(targets, "Archived by Remove All Closed Positions portfolio action"));
     }
 
     void handleRemoveInactiveList() {
@@ -593,17 +473,7 @@ final class PortfolioActionsController {
             return;
         }
 
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return archiveTargets(targets, "Archived by Remove Inactive List portfolio action");
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> archiveTargets(targets, "Archived by Remove Inactive List portfolio action"));
     }
 
     void handleCleanAllExpired() {
@@ -613,17 +483,7 @@ final class PortfolioActionsController {
             return;
         }
 
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return archiveTargets(targets, "Archived by Clean All Expired portfolio action");
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> archiveTargets(targets, "Archived by Clean All Expired portfolio action"));
     }
 
     void handleCleanInvalidStrategies() {
@@ -633,17 +493,7 @@ final class PortfolioActionsController {
             return;
         }
 
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return deleteLocalTradeHistoryTargets(targets);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> deleteLocalTradeHistoryTargets(targets));
     }
 
     void handleDeleteAllPaperModeEntries() {
@@ -659,17 +509,7 @@ final class PortfolioActionsController {
             return;
         }
 
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return deleteAllPaperModeTargets(targets);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> deleteAllPaperModeTargets(targets));
     }
 
     void handleRepositionExpired() {
@@ -679,17 +519,7 @@ final class PortfolioActionsController {
             return;
         }
 
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return repositionExpiredTargets(targets);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> repositionExpiredTargets(targets));
     }
 
     PortfolioActionsSupport.BatchResult repositionExpiredTargets(List<ManagedStrategy> targets) {
@@ -981,6 +811,8 @@ final class PortfolioActionsController {
         if (targets == null || targets.isEmpty()) {
             return new PortfolioActionsSupport.BatchResult(List.of(), List.of());
         }
+        // Read once: the run reports to the window that was open when it started.
+        BulkProgressHandle progress = activeProgress;
         int threadCount = parallelThreadCount(targets.size());
         ExecutorService executor = Executors.newFixedThreadPool(threadCount, runnable -> {
             Thread thread = new Thread(runnable, "neuralarc-portfolio-action");
@@ -1008,6 +840,11 @@ final class PortfolioActionsController {
                         case FAILURE -> failures.add(result.message());
                         case SKIPPED -> skipped.add(result.message());
                     }
+                    progress.advance(result.message(), switch (result.status()) {
+                        case SUCCESS -> BulkProgress.Outcome.DONE;
+                        case FAILURE -> BulkProgress.Outcome.FAILED;
+                        case SKIPPED -> BulkProgress.Outcome.SKIPPED;
+                    });
                 }
                 completed += batch.size();
                 if (completed < targets.size()) {
@@ -1086,17 +923,7 @@ final class PortfolioActionsController {
         if (!confirmBulkAction(action, targets)) {
             return;
         }
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return deleteArchivedPositionTargets(targets);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> deleteArchivedPositionTargets(targets));
     }
 
     PortfolioActionsSupport.BatchResult deleteArchivedPositionTargets(List<ManagedStrategy> targets) {
@@ -1136,17 +963,7 @@ final class PortfolioActionsController {
         java.util.Map<String, SharesAndTimeInForcePlan.Change> byId = new java.util.HashMap<>();
         chosen.get().forEach(change -> byId.put(change.strategyId(), change));
         List<ManagedStrategy> changing = targets.stream().filter(entry -> byId.containsKey(entry.strategy.id())).toList();
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return changeSharesAndTimeInForceTargets(changing, byId);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, changing, () -> changeSharesAndTimeInForceTargets(changing, byId));
     }
 
     /**
@@ -1173,17 +990,7 @@ final class PortfolioActionsController {
             return;
         }
 
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return deleteLocalTradeHistoryTargets(targets);
-            }
-
-            @Override
-            protected void done() {
-                handleBulkActionResult(action, this);
-            }
-        }.execute();
+        runBulkAction(action, targets, () -> deleteLocalTradeHistoryTargets(targets));
     }
 
     private boolean confirmBulkAction(PortfolioActionsSupport.BulkAction action, List<ManagedStrategy> targets) {
@@ -1205,9 +1012,68 @@ final class PortfolioActionsController {
         return confirmed;
     }
 
+    /**
+     * Runs one bulk action off the EDT behind the shared progress window.
+     *
+     * <p>The window is what the operator watches instead of a frozen grid, and it closes itself when
+     * every target went through. Only a run with failures ends in something to read.
+     */
+    private void runBulkAction(
+            PortfolioActionsSupport.BulkAction action,
+            List<ManagedStrategy> targets,
+            java.util.function.Supplier<PortfolioActionsSupport.BatchResult> work
+    ) {
+        BulkProgressHandle handle = progressWindowFor(action.dialogTitle(), targets);
+        activeProgress = handle;
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return work.get();
+            }
+
+            @Override
+            protected void done() {
+                activeProgress = BulkProgressHandle.NONE;
+                handleBulkActionResult(action, this, handle);
+            }
+        }.execute();
+    }
+
+    /** The sell actions, which report under their scope's wording rather than a bulk action's. */
+    private void runSellAction(
+            PortfolioActionsSupport.Scope scope,
+            List<ManagedStrategy> targets,
+            java.util.function.Supplier<PortfolioActionsSupport.BatchResult> work
+    ) {
+        BulkProgressHandle handle = progressWindowFor(scope.dialogTitle(), targets);
+        activeProgress = handle;
+        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
+            @Override
+            protected PortfolioActionsSupport.BatchResult doInBackground() {
+                return work.get();
+            }
+
+            @Override
+            protected void done() {
+                activeProgress = BulkProgressHandle.NONE;
+                handleSellActionResult(scope, this, handle);
+            }
+        }.execute();
+    }
+
+    /**
+     * A window for a run worth watching. One row finishes before a window could be read, so it gets a
+     * toast at the end instead.
+     */
+    private BulkProgressHandle progressWindowFor(String title, List<ManagedStrategy> targets) {
+        int total = targets == null ? 0 : targets.size();
+        return total > 1 ? gateway.beginBulkProgress(title, total) : BulkProgressHandle.NONE;
+    }
+
     private void handleBulkActionResult(
             PortfolioActionsSupport.BulkAction action,
-            SwingWorker<PortfolioActionsSupport.BatchResult, Void> worker
+            SwingWorker<PortfolioActionsSupport.BatchResult, Void> worker,
+            BulkProgressHandle progress
     ) {
         try {
             PortfolioActionsSupport.BatchResult result = worker.get();
@@ -1218,18 +1084,13 @@ final class PortfolioActionsController {
             }
             gateway.actionCompleted(action.menuLabel(), "Succeeded=" + result.successes().size()
                     + ", failed=" + result.failures().size() + ".");
-            gateway.showMessage(
-                    support.buildResultMessage(action, result),
-                    action.dialogTitle(),
-                    result.failures().isEmpty() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE
-            );
+            progress.finish(result.successes(), result.skipped(), result.failures());
+            reportWithoutAWindow(progress, action.dialogTitle(),
+                    action.resultSuccessLabel() + ": " + result.successes().size(),
+                    support.buildResultMessage(action, result), result);
         } catch (Exception ex) {
             gateway.actionFailed(action.menuLabel(), ex.getMessage());
-            gateway.showMessage(
-                    "Failed to complete portfolio action: " + ex.getMessage(),
-                    action.dialogTitle(),
-                    JOptionPane.ERROR_MESSAGE
-            );
+            progress.abort("Failed to complete portfolio action: " + ex.getMessage());
         }
     }
 
@@ -1252,22 +1113,29 @@ final class PortfolioActionsController {
             return;
         }
 
-        new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
-            @Override
-            protected PortfolioActionsSupport.BatchResult doInBackground() {
-                return sellTargets(targets, submissionType);
-            }
+        runSellAction(scope, targets, () -> sellTargets(targets, submissionType));
+    }
 
-            @Override
-            protected void done() {
-                handleSellActionResult(scope, this);
-            }
-        }.execute();
+    /**
+     * A one-row action opens no progress window, and leaving it silent would be worse than the dialog
+     * it replaced. So it still reports: a toast when it worked, and the full message when it did not.
+     */
+    private void reportWithoutAWindow(BulkProgressHandle progress, String title, String shortText,
+                                      String fullMessage, PortfolioActionsSupport.BatchResult result) {
+        if (progress != BulkProgressHandle.NONE) {
+            return;
+        }
+        if (result.failures().isEmpty()) {
+            gateway.showToast(title + " — " + shortText, false);
+        } else {
+            gateway.showMessage(fullMessage, title, JOptionPane.WARNING_MESSAGE);
+        }
     }
 
     private void handleSellActionResult(
             PortfolioActionsSupport.Scope scope,
-            SwingWorker<PortfolioActionsSupport.BatchResult, Void> worker
+            SwingWorker<PortfolioActionsSupport.BatchResult, Void> worker,
+            BulkProgressHandle progress
     ) {
         try {
             PortfolioActionsSupport.BatchResult result = worker.get();
@@ -1278,18 +1146,13 @@ final class PortfolioActionsController {
             }
             gateway.actionCompleted(scope.menuLabel(), "Submitted=" + result.successes().size()
                     + ", failed=" + result.failures().size() + ".");
-            gateway.showMessage(
-                    support.buildResultMessage(scope, result),
-                    scope.dialogTitle(),
-                    result.failures().isEmpty() ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE
-            );
+            progress.finish(result.successes(), result.skipped(), result.failures());
+            reportWithoutAWindow(progress, scope.dialogTitle(),
+                    "Submitted: " + result.successes().size(),
+                    support.buildResultMessage(scope, result), result);
         } catch (Exception ex) {
             gateway.actionFailed(scope.menuLabel(), ex.getMessage());
-            gateway.showMessage(
-                    "Failed to submit the requested sell orders: " + ex.getMessage(),
-                    scope.dialogTitle(),
-                    JOptionPane.ERROR_MESSAGE
-            );
+            progress.abort("Failed to submit the requested sell orders: " + ex.getMessage());
         }
     }
 

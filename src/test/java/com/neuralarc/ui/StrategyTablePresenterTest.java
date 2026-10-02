@@ -16,6 +16,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class StrategyTablePresenterTest {
     @Test
@@ -82,6 +84,77 @@ class StrategyTablePresenterTest {
         String label = presenter.displayStatusLabel(strategy, false, false, false);
 
         assertEquals("Automatic stop sell active after $10.00 profit - monitoring profit threshold", label);
+    }
+
+    @Test
+    void aRowHoldingNothingDoesNotShowAnAverageEntryItNoLongerHas() {
+        // The HVIIU case: shares 0, yet Avg Entry showed the old base-buy fill, so a sold-out row
+        // read as a position held at that price.
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        StrategyTablePresenter.DayPrices prices = new StrategyTablePresenter.DayPrices(
+                new BigDecimal("12.40"), new BigDecimal("12.00"), new BigDecimal("11.80"), new BigDecimal("12.60"));
+
+        Object avgEntry = presenter.valueAt(strategy, new Position("HVIIU"), null, null, 3, "", prices);
+
+        assertEquals("-", avgEntry);
+        assertEquals(0, presenter.valueAt(strategy, new Position("HVIIU"), null, null, 2, "", prices));
+    }
+
+    @Test
+    void aWorkingEntryStillShowsThePriceItFilledAt() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PARTIALLY_FILLED);
+        StrategyTablePresenter.DayPrices prices = new StrategyTablePresenter.DayPrices(
+                new BigDecimal("12.40"), new BigDecimal("12.00"), new BigDecimal("11.80"), new BigDecimal("12.60"));
+
+        assertEquals("12.40", presenter.valueAt(strategy, new Position("HVIIU"), null, null, 3, "", prices),
+                "an entry on its way in is exactly when the executed price is worth standing in");
+    }
+
+    @Test
+    void anExitRuleWatchingNothingSaysSo() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategy.setLossBuyLevelsEnabled(false);
+        strategy.setAutomatedStopLossEnabled(false);
+
+        String empty = presenter.displayStatusLabel(strategy, new Position("HVIIU"), false, false, false);
+
+        assertEquals("Sell trigger active @ $120.00 (no shares held) - monitoring for sell trigger", empty,
+                "a sell trigger with nothing to sell must not read like a live position");
+    }
+
+    @Test
+    void anExitRuleWatchingSharesIsLeftAlone() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategy.setLossBuyLevelsEnabled(false);
+        strategy.setAutomatedStopLossEnabled(false);
+        Position held = new Position("HVIIU");
+        held.applyBuy(10, new BigDecimal("11.90"));
+
+        String label = presenter.displayStatusLabel(strategy, held, false, false, false);
+
+        assertTrue(label.startsWith("Sell trigger active"));
+        assertFalse(label.contains("no shares held"));
+    }
+
+    @Test
+    void anEntryOnItsWayInIsNotCalledEmpty() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BUY_LIMIT_1_PLACED);
+        strategy.setLossBuyLevelsEnabled(false);
+        strategy.setAutomatedStopLossEnabled(false);
+
+        String label = presenter.displayStatusLabel(strategy, new Position("HVIIU"), false, false, false);
+
+        assertFalse(label.contains("no shares held"), "a working entry is on its way into a position");
     }
 
     @Test

@@ -42,15 +42,15 @@ class HistoryReentryPickerTest {
     void pricesFillInAsTheyLoadAndACellSaysWhichStateItIsIn() {
         HistoryReentryPicker picker = picker();
 
-        assertEquals("…", picker.valueAt(0, 3), "a price that has not loaded yet is not shown as zero");
+        assertEquals("…", picker.valueAt(0, 7), "a price that has not loaded yet is not shown as zero");
         picker.applyLevels("NIO", new HistoryReentry.Levels(
                 new BigDecimal("4.10"), new BigDecimal("4.60"), new BigDecimal("5.20")));
         picker.applyLevels("MRVL", HistoryReentry.Levels.unknown());
 
-        assertEquals("$4.10", picker.valueAt(0, 3));
-        assertEquals("$4.60", picker.valueAt(0, 4));
-        assertEquals("$5.20", picker.valueAt(0, 5));
-        assertEquals("—", picker.valueAt(2, 3), "a stock with no recent prices is marked, not blank");
+        assertEquals("$4.10", picker.valueAt(0, 5));
+        assertEquals("$4.60", picker.valueAt(0, 6));
+        assertEquals("$5.20", picker.valueAt(0, 7));
+        assertEquals("—", picker.valueAt(2, 5), "a stock with no recent prices is marked, not blank");
         assertEquals("Loading prices… 1 of 3.", picker.statusText());
         picker.dispose();
     }
@@ -79,7 +79,7 @@ class HistoryReentryPickerTest {
         picker.setEntryPriceOverride("NIO", "$3.85");
         picker.setPicked(0, true);
 
-        assertEquals("$3.85", picker.valueAt(0, 3), "the cell shows the operator's number, not the calculated one");
+        assertEquals("$3.85", picker.valueAt(0, 5), "the cell shows the operator's number, not the calculated one");
         assertEquals(new BigDecimal("3.85"), picker.selected().get(0).entryPrice());
         assertTrue(picker.hasOverride("NIO"));
         picker.dispose();
@@ -112,7 +112,7 @@ class HistoryReentryPickerTest {
 
         assertEquals("Closed in profit (1)", picker.gainsToggle().getText());
         assertTrue(picker.lossesToggle().getText().contains("1 with no closed result"));
-        assertEquals("no closed result", picker.valueAt(2, 2));
+        assertEquals("no closed result", picker.valueAt(2, 4));
         picker.dispose();
     }
 
@@ -125,8 +125,8 @@ class HistoryReentryPickerTest {
         assertEquals(List.of("NIO", "QQQ", "MRVL"),
                 List.of(picker.valueAt(0, 1), picker.valueAt(1, 1), picker.valueAt(2, 1)),
                 "gains first, then the losses that deserve a second look");
-        assertEquals("-$120.00 loss", picker.valueAt(2, 2));
-        assertEquals("+$40.00 gain", picker.valueAt(0, 2));
+        assertEquals("-$120.00 loss", picker.valueAt(2, 4));
+        assertEquals("+$40.00 gain", picker.valueAt(0, 4));
         picker.dispose();
     }
 
@@ -142,6 +142,67 @@ class HistoryReentryPickerTest {
         picker.setPicked(2, true); // the hidden loser keeps whatever tick it had
         picker.lossesToggle().doClick();
         assertEquals(3, picker.shownRowCount());
+        picker.dispose();
+    }
+
+    @Test
+    void whatTheStockLastTradedAtIsShownBeforeHowItTurnedOut() {
+        Map<String, BigDecimal> pnl = Map.of("NIO", new BigDecimal("40"), "MRVL", new BigDecimal("-120"),
+                "QQQ", new BigDecimal("15"));
+        Map<String, HistoryReentryPicker.TradePrices> traded = Map.of(
+                "NIO", new HistoryReentryPicker.TradePrices(new BigDecimal("3.80"), new BigDecimal("4.20")),
+                "MRVL", new HistoryReentryPicker.TradePrices(new BigDecimal("238.00"), BigDecimal.ZERO),
+                "QQQ", HistoryReentryPicker.TradePrices.unknown());
+        HistoryReentryPicker picker = new HistoryReentryPicker(null, List.of(position("NIO", 0, "0", "4").strategy,
+                position("MRVL", 0, "0", "238").strategy, position("QQQ", 0, "0", "500").strategy),
+                StrategyMode.LIVE, "Comeback Picks · Sep 30", null, source -> pnl.get(source.symbol()),
+                source -> traded.get(source.symbol()));
+
+        assertEquals("Entry", picker.columnName(2));
+        assertEquals("Exit", picker.columnName(3));
+        assertEquals("Past Result", picker.columnName(4));
+        assertEquals("$3.80", picker.valueAt(0, 2), "the price the last buy actually filled at");
+        assertEquals("$4.20", picker.valueAt(0, 3));
+        assertEquals("—", picker.valueAt(2, 3), "a position that never sold has no exit to show");
+        assertEquals(9, picker.columnCount());
+        picker.dispose();
+    }
+
+    @Test
+    void theStripeFollowsTheThemeRatherThanAFixedColour() {
+        java.awt.Color darkStripe = HistoryReentryPicker.stripe(new java.awt.Color(30, 33, 40));
+        java.awt.Color lightStripe = HistoryReentryPicker.stripe(new java.awt.Color(250, 250, 250));
+
+        assertTrue(darkStripe.getRed() > 30, "on a dark table the stripe lifts, so text keeps its contrast");
+        assertTrue(lightStripe.getRed() < 250, "on a light table it drops instead");
+        assertEquals(new java.awt.Color(245, 245, 245), HistoryReentryPicker.stripe(null),
+                "an unknown background is treated as white and still gets its stripe");
+    }
+
+    @Test
+    void eachRowsFilledPricesAreReadOnceHoweverOftenTheTableAsksForThem() {
+        Map<String, BigDecimal> pnl = Map.of(
+                "NIO", new BigDecimal("40"), "MRVL", new BigDecimal("-120"), "QQQ", new BigDecimal("15"));
+        java.util.concurrent.atomic.AtomicInteger reads = new java.util.concurrent.atomic.AtomicInteger();
+        HistoryReentryPicker picker = new HistoryReentryPicker(null, List.of(position("NIO", 0, "0", "4").strategy,
+                position("MRVL", 0, "0", "238").strategy, position("QQQ", 0, "0", "500").strategy),
+                StrategyMode.LIVE, "Comeback Picks · Sep 30", null, source -> pnl.get(source.symbol()),
+                source -> {
+                    reads.incrementAndGet();
+                    return new HistoryReentryPicker.TradePrices(new BigDecimal("3.80"), new BigDecimal("4.10"));
+                });
+
+        // A repaint reads every cell of every row; the scan behind these prices walks every strategy's
+        // orders, so doing it per cell is what made a fifty-stock list feel frozen.
+        for (int pass = 0; pass < 4; pass++) {
+            for (int row = 0; row < 3; row++) {
+                for (int column = 0; column < picker.columnCount(); column++) {
+                    picker.valueAt(row, column);
+                }
+            }
+        }
+
+        assertEquals(3, reads.get(), "once per row, not once per cell read");
         picker.dispose();
     }
 

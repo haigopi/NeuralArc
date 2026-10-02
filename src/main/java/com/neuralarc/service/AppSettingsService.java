@@ -8,6 +8,7 @@ import com.neuralarc.model.ApplicationMode;
 import com.neuralarc.model.BrokerType;
 import com.neuralarc.model.TimeInForce;
 import com.neuralarc.model.PortfolioEmailSettings;
+import com.neuralarc.model.PreOpenRepositionSettings;
 import com.neuralarc.security.CredentialManager;
 import com.neuralarc.util.AppMetadata;
 
@@ -70,6 +71,9 @@ public class AppSettingsService {
   private static final String KEY_AI_OPENAI_API_KEY = "ai.openai.apiKey";
   private static final String KEY_AI_OPENAI_MODEL = "ai.openai.model";
   private static final String KEY_AI_OPENAI_TIMEOUT = "ai.openai.timeout";
+  private static final String KEY_PREOPEN_REPOSITION_ENABLED = "preOpenReposition.enabled";
+  private static final String KEY_PREOPEN_REPOSITION_MINUTES = "preOpenReposition.minutesBeforeOpen";
+  private static final String KEY_PREOPEN_REPOSITION_DAY_ONLY = "preOpenReposition.dayOrdersOnly";
   private static final String KEY_AGENT_ENABLED = "agent.enabled";
   private static final String KEY_AGENT_API_KEY = "agent.anthropic.apiKey";
   private static final String KEY_AGENT_MODEL = "agent.anthropic.model";
@@ -229,6 +233,27 @@ public class AppSettingsService {
       writeSetting(KEY_AI_OPENAI_TIMEOUT, safe.openAiTimeout().toString(), false);
     } catch (SQLException ex) {
       throw new IOException("Failed to persist AI recommendation settings", ex);
+    }
+  }
+
+  /** When expired day entries are re-posted before the bell, and whether they are at all. */
+  public PreOpenRepositionSettings loadPreOpenRepositionSettings() {
+    PreOpenRepositionSettings defaults = PreOpenRepositionSettings.defaults();
+    return new PreOpenRepositionSettings(
+        parseBoolean(readSetting(KEY_PREOPEN_REPOSITION_ENABLED, false), defaults.enabled()),
+        parseInt(readSetting(KEY_PREOPEN_REPOSITION_MINUTES, false), defaults.minutesBeforeOpen()),
+        parseBoolean(readSetting(KEY_PREOPEN_REPOSITION_DAY_ONLY, false), defaults.dayOrdersOnly())
+    );
+  }
+
+  public void savePreOpenRepositionSettings(PreOpenRepositionSettings settings) throws IOException {
+    PreOpenRepositionSettings safe = settings == null ? PreOpenRepositionSettings.defaults() : settings;
+    try {
+      writeSetting(KEY_PREOPEN_REPOSITION_ENABLED, String.valueOf(safe.enabled()), false);
+      writeSetting(KEY_PREOPEN_REPOSITION_MINUTES, String.valueOf(safe.minutesBeforeOpen()), false);
+      writeSetting(KEY_PREOPEN_REPOSITION_DAY_ONLY, String.valueOf(safe.dayOrdersOnly()), false);
+    } catch (SQLException ex) {
+      throw new IOException("Failed to persist pre-open reposition settings", ex);
     }
   }
 

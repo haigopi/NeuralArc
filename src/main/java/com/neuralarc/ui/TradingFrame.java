@@ -608,6 +608,11 @@ public class TradingFrame extends JFrame {
   private final SqliteScanHistoryRepository scanHistoryRepository;
   private final com.neuralarc.db.SqliteAgentToolCallRepository agentToolCallRepository;
   private final com.neuralarc.db.SqliteHistoryReentryScheduleRepository historyReentryScheduleRepository;
+  /** The window watching a Smart Picks placement, so the placement gateway can report each stock. */
+  private volatile BulkProgressHandle smartPicksProgress = BulkProgressHandle.NONE;
+  private final com.neuralarc.service.PreOpenRepositionService preOpenRepositionService =
+      new com.neuralarc.service.PreOpenRepositionService(marketHoursService, java.time.Clock.systemUTC(),
+          settings -> SwingUtilities.invokeLater(() -> runPreOpenReposition(settings)), this::log);
   private final com.neuralarc.service.HistoryReentryScheduleService historyReentryScheduleService =
       new com.neuralarc.service.HistoryReentryScheduleService(marketHoursService, java.time.Clock.systemUTC(),
           schedule -> SwingUtilities.invokeLater(() -> runScheduledHistoryReentry(schedule)), this::log);
@@ -890,6 +895,17 @@ public class TradingFrame extends JFrame {
         }
     );
     portfolioActionsController = new PortfolioActionsController(new PortfolioActionsController.Gateway() {
+      @Override
+      public void showToast(String text, boolean warning) {
+        toastNotifier.show(new TradeEventToastFormatter.ToastMessage(text,
+            warning ? TradeEventToastFormatter.Severity.WARNING : TradeEventToastFormatter.Severity.SUCCESS));
+      }
+
+      @Override
+      public BulkProgressHandle beginBulkProgress(String title, int total) {
+        return BulkProgressDialog.open(TradingFrame.this, title, total);
+      }
+
       @Override
       public void openAgentAnalyst() {
         TradingFrame.this.openAgentAnalyst();
@@ -4711,6 +4727,7 @@ public class TradingFrame extends JFrame {
       return;
     }
     portfolioEmailScheduler.setSettings(settingsDialog.portfolioEmailSettings());
+    applyPreOpenRepositionSettings();
     // Only a change of account, mode or broker needs a new session. Reconnecting for an email time
     // or a polling interval costs a stream restart and a full resync, and during market hours that
     // is a gap in the one thing that must not have gaps.
@@ -6235,15 +6252,15 @@ public class TradingFrame extends JFrame {
 
       @Override
       public boolean confirmReplaceWaitingPaperStrategy(String symbol) {
-        int choice = JOptionPane.showConfirmDialog(
+        // Placement runs on a worker now, and a question may only be asked from the EDT.
+        return askOnEventThread(() -> JOptionPane.showConfirmDialog(
             TradingFrame.this,
             "A " + selectedModeLabel().toLowerCase(Locale.ROOT) + " strategy already exists for " + symbol
                 + " with a limit buy waiting to fill.\n\nReplace it with the new one?",
             selectedModeLabel() + " Strategy Exists",
             JOptionPane.YES_NO_OPTION,
             JOptionPane.WARNING_MESSAGE
-        );
-        return choice == JOptionPane.YES_OPTION;
+        ) == JOptionPane.YES_OPTION);
       }
 
       @Override
@@ -6277,8 +6294,13 @@ public class TradingFrame extends JFrame {
       }
 
       @Override
+      public void progressed(String line, BulkProgress.Outcome outcome) {
+        smartPicksProgress.advance(line, outcome);
+      }
+
+      @Override
       public void afterPlacement() {
-        onSmartPicksPlaced();
+        SwingUtilities.invokeLater(TradingFrame.this::onSmartPicksPlaced);
       }
 
       @Override
@@ -6286,13 +6308,56 @@ public class TradingFrame extends JFrame {
         TradingFrame.this.log(message);
       }
     }, targetMode);
-    SmartPicksSimulationPlacementController.PlacementResult result = controller.place(selections);
-    if (result.canceled()) {
-      return;
+    // Twenty picks is twenty broker calls. On the EDT that froze the window until the last one came
+    // back; the progress window is what the operator watches instead, and it closes itself.
+    smartPicksProgress = BulkProgressDialog.open(this, "Smart Picks", selections.size());
+    BulkProgressHandle progress = smartPicksProgress;
+    new SwingWorker<SmartPicksSimulationPlacementController.PlacementResult, Void>() {
+      @Override
+      protected SmartPicksSimulationPlacementController.PlacementResult doInBackground() {
+        return controller.place(selections);
+      }
+
+      @Override
+      protected void done() {
+        smartPicksProgress = BulkProgressHandle.NONE;
+        SmartPicksSimulationPlacementController.PlacementResult result;
+        try {
+          result = get();
+        } catch (Exception ex) {
+          log("[Smart Picks] Placement failed: " + ex.getMessage());
+          progress.abort("Smart Picks placement failed: " + ex.getMessage());
+          return;
+        }
+        if (result.canceled()) {
+          progress.finish(List.of(), List.of("Stopped before the remaining picks were placed"), List.of());
+          return;
+        }
+        String message = controller.summaryMessage(result);
+        // Skips are listed as they happen and kept in the event log; only a failure is worth a window
+        // that waits to be closed.
+        progress.finish(java.util.Collections.nCopies(result.created() + result.replaced(), "placed"),
+            result.skippedReasons(), List.of());
+        toastNotifier.show(new TradeEventToastFormatter.ToastMessage(
+            message.replace('\n', ' '), TradeEventToastFormatter.Severity.INFO));
+        userActionLog.completed("Smart Picks", message.replace('\n', ' '));
+      }
+    }.execute();
+  }
+
+  /** Asks the operator a question from a worker thread and waits for the answer. */
+  private boolean askOnEventThread(java.util.function.Supplier<Boolean> question) {
+    if (SwingUtilities.isEventDispatchThread()) {
+      return Boolean.TRUE.equals(question.get());
     }
-    String message = controller.summaryMessage(result);
-    JOptionPane.showMessageDialog(this, message, "Smart Picks", JOptionPane.INFORMATION_MESSAGE);
-    userActionLog.completed("Smart Picks", message.replace('\n', ' '));
+    boolean[] answer = new boolean[1];
+    try {
+      SwingUtilities.invokeAndWait(() -> answer[0] = Boolean.TRUE.equals(question.get()));
+    } catch (Exception ex) {
+      Thread.currentThread().interrupt();
+      return false;
+    }
+    return answer[0];
   }
 
   private void editStrategy(int viewRow) {
@@ -7784,6 +7849,110 @@ public class TradingFrame extends JFrame {
         mode, strategyOrderRepository::findByStrategyId, heldSymbols());
   }
 
+  /** Applies the saved pre-open reposition settings and starts its ticker. */
+  private void applyPreOpenRepositionSettings() {
+    preOpenRepositionService.setSettings(appSettingsService.loadPreOpenRepositionSettings());
+    preOpenRepositionService.start();
+  }
+
+  /**
+   * Re-posts the expired day entries before the bell, each at a price worked out from the session
+   * that just closed rather than the one the market already walked away from.
+   */
+  private void runPreOpenReposition(com.neuralarc.model.PreOpenRepositionSettings settings) {
+    String action = "Pre-open Reposition";
+    if (!connectionOk) {
+      log("[Pre-open Reposition] Broker is not connected; the run will retry on a later tick.");
+      preOpenRepositionService.deferToday();
+      return;
+    }
+    List<ManagedStrategy> targets = List.copyOf(strategies).stream()
+        .filter(PortfolioActionMatchers::isExpired)
+        .filter(entry -> ModeActivity.runsFor(entry.strategy.mode(), selectedViewMode))
+        .filter(entry -> !settings.dayOrdersOnly() || entry.strategy.timeInForce() == TimeInForce.DAY)
+        .toList();
+    if (targets.isEmpty()) {
+      log("[Pre-open Reposition] Nothing expired to re-post this morning.");
+      return;
+    }
+    userActionLog.started(action);
+    log("[Pre-open Reposition] Re-posting " + targets.size() + " expired entry(ies): " + settings.summary() + ".");
+    BulkProgressHandle progress = BulkProgressDialog.open(this, action, targets.size());
+    new SwingWorker<List<String>, String>() {
+      @Override
+      protected List<String> doInBackground() {
+        List<String> outcomes = new ArrayList<>();
+        for (ManagedStrategy entry : targets) {
+          String outcome = repositionExpiredFromPreviousSession(entry);
+          outcomes.add(outcome);
+          publish(outcome);
+        }
+        return outcomes;
+      }
+
+      @Override
+      protected void process(List<String> reposted) {
+        reposted.forEach(outcome -> progress.advance(outcome, BulkProgress.classify(outcome)));
+      }
+
+      @Override
+      protected void done() {
+        List<String> outcomes;
+        try {
+          outcomes = get();
+        } catch (Exception ex) {
+          outcomes = List.of("Failed: " + ex.getMessage());
+        }
+        outcomes.forEach(outcome -> log("[Pre-open Reposition] " + outcome));
+        long placed = outcomes.stream().filter(outcome -> outcome.contains(": re-posted")).count();
+        progress.finish(BulkProgress.only(outcomes, BulkProgress.Outcome.DONE),
+            BulkProgress.only(outcomes, BulkProgress.Outcome.SKIPPED),
+            BulkProgress.only(outcomes, BulkProgress.Outcome.FAILED));
+        syncStrategiesFromRepository();
+        refreshStrategyTableData();
+        userActionLog.completed(action, placed + " of " + outcomes.size() + " re-posted.");
+        toastNotifier.show(new TradeEventToastFormatter.ToastMessage(
+            placed + " of " + outcomes.size() + " expired entry(ies) re-posted before the open.",
+            TradeEventToastFormatter.Severity.INFO));
+      }
+    }.execute();
+  }
+
+  /** One strategy: price it from yesterday's bars, store the new base buy, then re-post it. */
+  private String repositionExpiredFromPreviousSession(ManagedStrategy entry) {
+    Strategy strategy = entry.strategy;
+    String symbol = strategy.symbol();
+    try {
+      ApplicationMode applicationMode =
+          strategy.mode() == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER;
+      StrategyService service = strategyServiceForMode(strategy.mode());
+      if (service == null || settingsDialog.savedApiKey(applicationMode).isBlank()) {
+        return symbol + ": skipped, " + strategy.mode() + " broker client is not configured";
+      }
+      HttpAlpacaMarketDataApi marketData = new HttpAlpacaMarketDataApi(
+          settingsDialog.savedApiKey(applicationMode), settingsDialog.savedApiSecret(applicationMode));
+      LocalDate today = LocalDate.now(java.time.ZoneId.of("America/New_York"));
+      com.neuralarc.analytics.PreOpenEntryPrice.Plan plan = com.neuralarc.analytics.PreOpenEntryPrice
+          .fromPreviousSession(marketData.getDailyBars(symbol, today.minusDays(14), today));
+      if (!plan.known()) {
+        return symbol + ": skipped, " + plan.describe();
+      }
+      Strategy stored = strategyRepository.findById(strategy.id()).orElse(strategy);
+      BigDecimal previousLimit = Monetary.round(stored.baseBuyLimitPrice());
+      stored.setBaseBuyLimitPrice(plan.price());
+      stored.setLastEvent("Base buy recalculated before the open: " + plan.describe()
+          + " (was $" + previousLimit.toPlainString() + ")");
+      strategyRepository.save(stored);
+      StrategyService.StrategyCreationResult result = service.repositionExpiredStrategy(
+          stored.id(), RepositionSubmissionType.LIMIT_BUY, TimeInForce.DAY);
+      return result.success()
+          ? symbol + ": re-posted at " + plan.describe() + " (was $" + previousLimit.toPlainString() + ")"
+          : symbol + ": failed, " + result.error();
+    } catch (Exception ex) {
+      return symbol + ": failed, " + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
+    }
+  }
+
   /**
    * Loads the saved schedule for the selected mode and starts the ticker; called on startup and mode switches.
    */
@@ -7939,7 +8108,8 @@ public class TradingFrame extends JFrame {
     HttpAlpacaMarketDataApi marketData = new HttpAlpacaMarketDataApi(
         settingsDialog.savedApiKey(applicationMode), settingsDialog.savedApiSecret(applicationMode));
     Optional<List<HistoryReentryPicker.Pick>> picked = new HistoryReentryPicker(this, sources, mode, workspaceName,
-        symbol -> historyReentryLevels(marketData, symbol), this::realizedPnlForSymbolHistory).showDialog();
+        symbol -> historyReentryLevels(marketData, symbol), this::realizedPnlForSymbolHistory,
+        this::historyTradePrices).showDialog();
     if (picked.isEmpty() || picked.get().isEmpty()) {
       userActionLog.canceled(action);
       return;
@@ -7966,13 +8136,17 @@ public class TradingFrame extends JFrame {
     StrategyWorkspace workspace = workspaceService.create(workspaceName, "COMEBACK", mode);
     HttpAlpacaClient broker = alpacaClientForMode(applicationMode);
     log("[History Re-entry] Re-entering " + chosen.size() + " stock(s) into workspace '" + workspaceName + "'.");
-    new SwingWorker<List<String>, Void>() {
+    BulkProgressHandle progress = announce
+        ? BulkProgressDialog.open(this, action, chosen.size())
+        : BulkProgressHandle.NONE;
+    new SwingWorker<List<String>, String>() {
       @Override
       protected List<String> doInBackground() {
         List<String> outcomes = new ArrayList<>();
         LocalDate today = LocalDate.now(java.time.ZoneId.of("America/New_York"));
         for (HistoryReentryPicker.Pick pick : chosen) {
           Strategy source = pick.source();
+          int before = outcomes.size();
           try {
             // No workspace tracks it, but the broker may still hold it (an untracked position):
             // buying again would stack shares on top of it.
@@ -7999,8 +8173,18 @@ public class TradingFrame extends JFrame {
           } catch (Exception ex) {
             outcomes.add(source.symbol() + ": failed, " + ex.getMessage());
           }
+          // Every path above adds exactly one line; publishing it keeps the window a stock ahead of
+          // the operator's patience rather than a batch behind it.
+          for (String outcome : outcomes.subList(before, outcomes.size())) {
+            publish(outcome);
+          }
         }
         return outcomes;
+      }
+
+      @Override
+      protected void process(List<String> placed) {
+        placed.forEach(outcome -> progress.advance(outcome, BulkProgress.classify(outcome)));
       }
 
       @Override
@@ -8019,16 +8203,14 @@ public class TradingFrame extends JFrame {
         refreshFilledOrdersTableData();
         long placed = outcomes.stream().filter(outcome -> outcome.contains(": placed")).count();
         userActionLog.completed(action, placed + " of " + outcomes.size() + " placed in " + workspaceName + ".");
-        if (announce) {
-          JOptionPane.showMessageDialog(TradingFrame.this, "<html>" + placed + " of " + outcomes.size()
-                  + " stock(s) placed in <b>" + workspaceName + "</b>.<br><br>"
-                  + String.join("<br>", outcomes) + "</html>",
-              action, JOptionPane.INFORMATION_MESSAGE);
-        } else {
-          toastNotifier.show(new TradeEventToastFormatter.ToastMessage(
-              placed + " of " + outcomes.size() + " stock(s) re-entered in " + workspaceName + ".",
-              TradeEventToastFormatter.Severity.INFO));
-        }
+        // The window closes itself unless something failed; either way the toast is the record, so
+        // nobody has to dismiss a dialog to get back to the grid.
+        progress.finish(BulkProgress.only(outcomes, BulkProgress.Outcome.DONE),
+            BulkProgress.only(outcomes, BulkProgress.Outcome.SKIPPED),
+            BulkProgress.only(outcomes, BulkProgress.Outcome.FAILED));
+        toastNotifier.show(new TradeEventToastFormatter.ToastMessage(
+            placed + " of " + outcomes.size() + " stock(s) re-entered in " + workspaceName + ".",
+            TradeEventToastFormatter.Severity.INFO));
       }
     }.execute();
   }
@@ -8039,6 +8221,43 @@ public class TradingFrame extends JFrame {
   private HistoryReentry.Levels historyReentryLevels(HttpAlpacaMarketDataApi marketData, String symbol) throws Exception {
     LocalDate today = LocalDate.now(java.time.ZoneId.of("America/New_York"));
     return HistoryReentry.levels(marketData.getDailyBars(symbol, today.minusDays(21), today), today);
+  }
+
+  /**
+   * What this stock's last round trip actually filled at: the most recent filled buy and the most
+   * recent filled sell across every strategy on that symbol in this mode. The plan's limit price is
+   * what was asked for; these are what the broker gave.
+   */
+  private HistoryReentryPicker.TradePrices historyTradePrices(Strategy source) {
+    Instant latestBuy = null;
+    Instant latestSell = null;
+    BigDecimal entry = BigDecimal.ZERO;
+    BigDecimal exit = BigDecimal.ZERO;
+    for (ManagedStrategy entryRow : List.copyOf(strategies)) {
+      if (entryRow.strategy.mode() != source.mode()
+          || entryRow.strategy.symbol() == null
+          || !entryRow.strategy.symbol().equalsIgnoreCase(source.symbol())) {
+        continue;
+      }
+      for (StrategyOrder order : strategyOrderRepository.findByStrategyId(entryRow.strategy.id())) {
+        BigDecimal fillPrice = StrategyOrderFillSupport.resolvedFillPrice(order);
+        if (fillPrice == null || fillPrice.signum() <= 0
+            || StrategyOrderFillSupport.resolvedFilledQuantity(order).signum() <= 0) {
+          continue;
+        }
+        Instant filledAt = order.filledAt() == null ? order.submittedAt() : order.filledAt();
+        if (order.side() == StrategyOrderSide.BUY) {
+          if (latestBuy == null || (filledAt != null && filledAt.isAfter(latestBuy))) {
+            latestBuy = filledAt;
+            entry = fillPrice;
+          }
+        } else if (latestSell == null || (filledAt != null && filledAt.isAfter(latestSell))) {
+          latestSell = filledAt;
+          exit = fillPrice;
+        }
+      }
+    }
+    return new HistoryReentryPicker.TradePrices(entry, exit);
   }
 
   /**
@@ -9093,16 +9312,23 @@ public class TradingFrame extends JFrame {
         updateStatusBar();
         setStatus("Gap Rocket limit buys placed: " + progress.placed() + " of " + progress.total() + ".",
             progress.failed() > 0 ? STATUS_WARN : STATUS_OK);
-        JOptionPane.showMessageDialog(TradingFrame.this,
-            "Submitted " + progress.placed() + " Gap Rocket limit buy order"
-                + (progress.placed() == 1 ? "" : "s") + "."
-                + (progress.failed() > 0
-                ? "\nSkipped " + progress.failed() + " row" + (progress.failed() == 1 ? "" : "s")
-                  + " due to validation or broker errors." : "")
-                + (progress.remaining() > 0
-                ? "\nStopped with " + progress.remaining() + " row(s) not attempted." : ""),
-            "Gap Rocket Orders",
-            progress.failed() > 0 ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE);
+        String summary = "Submitted " + progress.placed() + " Gap Rocket limit buy order"
+            + (progress.placed() == 1 ? "" : "s") + "."
+            + (progress.failed() > 0
+            ? "\nSkipped " + progress.failed() + " row" + (progress.failed() == 1 ? "" : "s")
+              + " due to validation or broker errors." : "")
+            + (progress.remaining() > 0
+            ? "\nStopped with " + progress.remaining() + " row(s) not attempted." : "");
+        log("[Gap Rocket] " + summary.replace('\n', ' '));
+        // A clean run is already written in the status bar; only orders that did not go in are worth
+        // stopping the operator for.
+        if (progress.failed() > 0 || progress.remaining() > 0) {
+          JOptionPane.showMessageDialog(TradingFrame.this, summary, "Gap Rocket Orders",
+              JOptionPane.WARNING_MESSAGE);
+        } else {
+          toastNotifier.show(new TradeEventToastFormatter.ToastMessage(
+              summary, TradeEventToastFormatter.Severity.SUCCESS));
+        }
       }
     }.execute();
   }
@@ -9364,6 +9590,7 @@ public class TradingFrame extends JFrame {
     gapAndGoCoordinator.start();
     smartPicksWorkspaceCoordinator.start();
     applyHistoryReentrySchedule();
+    applyPreOpenRepositionSettings();
     orbCoordinator.start();
     dipHunterCoordinator.start();
     vwapCoordinator.start();

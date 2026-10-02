@@ -32,6 +32,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SmartPicksSimulationPlacementControllerTest {
     private String targetWorkspace;
+    private final List<String> progressLines = new ArrayList<>();
+
+    @Test
+    void everyPickIsReportedAsItLandsSoTheRunCanBeWatched() {
+        InMemoryRepository repository = new InMemoryRepository();
+        SmartPicksSimulationPlacementController controller = controller(repository, true, false);
+
+        controller.place(List.of(selection("NVDA"), unpriced("GOEV"), selection("AMD")));
+
+        assertEquals(3, progressLines.size(), "one line per pick, as it happens");
+        assertTrue(progressLines.get(0).startsWith("NVDA: placed at $"), progressLines.get(0));
+        assertEquals("GOEV: skipped, missing valid base limit buy price", progressLines.get(1));
+        assertTrue(progressLines.get(2).startsWith("AMD: placed at $"), progressLines.get(2));
+    }
 
     @Test
     void startsPaperMonitoringThroughPaperCreationPath() {
@@ -342,6 +356,9 @@ class SmartPicksSimulationPlacementControllerTest {
             @Override public boolean defaultRepeatCycleAfterProfitExitEnabled() { return defaultRepeatCycleAfterProfitExit; }
             @Override public boolean defaultResubmitOnExpiryEnabled() { return defaultResubmitOnExpiry; }
             @Override public void cancelAndDeletePaperStrategy(String strategyId) { repository.deleteById(strategyId); }
+            @Override public void progressed(String line, BulkProgress.Outcome outcome) {
+                progressLines.add(line);
+            }
             @Override public void afterPlacement() {}
             @Override public void log(String message) {}
         }, targetMode);
@@ -391,6 +408,11 @@ class SmartPicksSimulationPlacementControllerTest {
                 RecommendationType.SHORT_TERM,
                 quantity
         );
+    }
+
+    /** A pick with no usable base limit buy price, which is what the placement skips. */
+    private SmartPicksSimulationSelection unpriced(String symbol) {
+        return selectionWithBaseAndCurrent(symbol, 10, BigDecimal.ZERO, new BigDecimal("120.00"));
     }
 
     private SmartPicksSimulationSelection selectionWithBaseAboveCurrent(String symbol, int quantity) {

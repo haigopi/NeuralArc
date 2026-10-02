@@ -48,6 +48,9 @@ class StrategyGridTableModelTest {
     @Test
     void dayPriceColumnsRenderCachedFillAndDailyBar() {
         Strategy strategy = strategy("NVDA");
+        // An entry that is working: no shares yet, but a price the buy has already filled part of.
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PARTIALLY_FILLED);
         ManagedStrategy managed = new ManagedStrategy(strategy);
         managed.setCachedBaseBuyExecutedPrice(new BigDecimal("179.31"));
         managed.setCachedDailyBar(new com.neuralarc.model.MarketBar(
@@ -56,7 +59,7 @@ class StrategyGridTableModelTest {
         StrategyGridTableModel model = new StrategyGridTableModel(
                 List.of(managed), ignored -> "Base buy pending", new StrategyTablePresenter());
 
-        // Avg Entry falls back to the base buy executed price when the position has no shares yet.
+        // Avg Entry falls back to the base buy executed price while the entry is still working.
         assertEquals("179.31", model.getValueAt(0, columnIndex("Avg Entry")));
         assertEquals("180.10", model.getValueAt(0, columnIndex("Open")));
         assertEquals("178.20", model.getValueAt(0, columnIndex("Today's Low")));

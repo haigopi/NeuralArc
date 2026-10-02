@@ -65,6 +65,8 @@ public class SmartPicksSimulationPlacementController {
                 skipped++;
                 skippedReasons.add(selection.stock().symbol() + ": missing valid base limit buy price");
                 gateway.log("[Smart Picks] Skipped " + selection.stock().symbol() + ": missing valid base limit buy price.");
+                gateway.progressed(selection.stock().symbol() + ": skipped, missing valid base limit buy price",
+                        BulkProgress.Outcome.SKIPPED);
                 continue;
             }
             Strategy existing = findExistingStrategy(selection.stock().symbol()).orElse(null);
@@ -91,6 +93,8 @@ public class SmartPicksSimulationPlacementController {
                 gateway.log("[Smart Picks] Skipped " + selection.stock().symbol()
                         + ": duplicate symbol policy blocked a new " + modeLabel().toLowerCase(Locale.ROOT)
                         + " strategy in this workspace.");
+                gateway.progressed(selection.stock().symbol() + ": skipped, already in this workspace",
+                        BulkProgress.Outcome.SKIPPED);
                 continue;
             }
             BigDecimal effectiveBaseBuyPrice = effectiveBaseBuyPrice(selection, recommendation);
@@ -100,6 +104,8 @@ public class SmartPicksSimulationPlacementController {
                 skipped++;
                 skippedReasons.add(selection.stock().symbol() + ": " + creationResult.error());
                 gateway.log("[Smart Picks] Skipped " + selection.stock().symbol() + ": " + creationResult.error());
+                gateway.progressed(selection.stock().symbol() + ": failed, " + creationResult.error(),
+                        BulkProgress.Outcome.FAILED);
                 continue;
             }
             if (existingForReplace == null) created++; else replaced++;
@@ -107,6 +113,8 @@ public class SmartPicksSimulationPlacementController {
                     + " at base limit $" + strategy.baseBuyLimitPrice().toPlainString()
                     + " qty=" + strategy.baseBuyQuantity()
                     + ". Alpaca " + modeLabel().toLowerCase(Locale.ROOT) + " order id=" + creationResult.alpacaOrderId());
+            gateway.progressed(strategy.symbol() + ": placed at $" + strategy.baseBuyLimitPrice().toPlainString(),
+                    BulkProgress.Outcome.DONE);
         }
         gateway.afterPlacement();
         return new PlacementResult(created, replaced, skipped, skippedReasons, canceled);
@@ -301,6 +309,13 @@ public class SmartPicksSimulationPlacementController {
         boolean confirmReplaceWaitingPaperStrategy(String symbol);
 
         boolean allowDuplicateSymbols();
+
+        /**
+         * One stock is done with. Placing twenty picks is twenty broker calls, so whatever is watching
+         * the run gets told as each one lands rather than at the end.
+         */
+        default void progressed(String line, BulkProgress.Outcome outcome) {
+        }
 
         default String targetWorkspaceId() {
             return null;

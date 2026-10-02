@@ -528,7 +528,7 @@ public final class StrategyTablePresenter {
 
     private String resolveActiveRuleLabel(Strategy strategy, Position position) {
         if (!isProfitablePosition(position) && (position == null || position.getTotalShares() <= 0)) {
-            return configuredActiveRuleLabel(strategy);
+            return configuredActiveRuleLabel(strategy, position);
         }
         if (strategy.profitControlMode() == ProfitControlMode.PROFIT_HOLD && strategy.profitHoldEnabled()) {
             return profitHoldStatusLabel(strategy, position) + currentPriceDescription(position);
@@ -543,10 +543,28 @@ public final class StrategyTablePresenter {
                     + priceDescription(" @ $", strategy.stopLossPrice())
                     + " - monitoring downside protection";
         }
-        return configuredActiveRuleLabel(strategy);
+        return configuredActiveRuleLabel(strategy, position);
     }
 
-    private String configuredActiveRuleLabel(Strategy strategy) {
+    private String configuredActiveRuleLabel(Strategy strategy, Position position) {
+        String configured = configuredRuleLabel(strategy);
+        if (configured.isBlank()) {
+            return configured;
+        }
+        // An exit rule with nothing to exit is worth saying out loud: a row that sold out, or whose
+        // shares sit on another row for the same symbol, otherwise reads as a live position being
+        // watched. The rule is still set, so the label keeps it and names what is missing.
+        //
+        // Only when a position was actually supplied: callers that ask for a label without one (the
+        // strategy dialog, the tooltips) know nothing about holdings, and must not be made to claim
+        // there are none.
+        boolean knownEmpty = position != null && position.getTotalShares() <= 0;
+        return isExitRuleLabel(configured) && knownEmpty && !isOpeningPosition(strategy)
+                ? configured.replace(" - monitoring", " (no shares held) - monitoring")
+                : configured;
+    }
+
+    private String configuredRuleLabel(Strategy strategy) {
         String sellTriggerOnly = sellTriggerOnlyLabel(strategy);
         if (!sellTriggerOnly.isBlank()) {
             return sellTriggerOnly;
@@ -560,6 +578,32 @@ public final class StrategyTablePresenter {
                     : configuredExitRuleLabel(strategy);
             case BUY_LIMIT_2_FILLED, STOP_LOSS_ACTIVE, PROFIT_HOLD_ACTIVE -> configuredExitRuleLabel(strategy);
             default -> "";
+        };
+    }
+
+    /** True for the labels that describe getting out of a position rather than into one. */
+    private static boolean isExitRuleLabel(String label) {
+        return label.startsWith("Sell trigger active")
+                || label.startsWith("Stop loss active")
+                || label.startsWith("Automatic stop sell active")
+                || label.startsWith("Profit Hold");
+    }
+
+    /**
+     * An entry that is working or queued: the row is on its way into a position, not out of one.
+     *
+     * <p>Keyed on the lifecycle state rather than the status, because an entry can be working while
+     * the strategy is paused — a manual cancel awaiting restart still has a price worth showing.
+     */
+    private static boolean isOpeningPosition(Strategy strategy) {
+        if (strategy == null) {
+            return false;
+        }
+        return switch (strategy.currentState()) {
+            case BASE_BUY_PLACED, BASE_BUY_PARTIALLY_FILLED, QUEUED_FOR_OPEN,
+                 BUY_LIMIT_1_PLACED, BUY_LIMIT_1_PARTIALLY_FILLED,
+                 BUY_LIMIT_2_PLACED, BUY_LIMIT_2_PARTIALLY_FILLED -> true;
+            default -> false;
         };
     }
 
@@ -820,13 +864,17 @@ public final class StrategyTablePresenter {
             return switch (columnIndex) {
                 case 2 -> displayQuantity(strategy, position);
                 case 3 -> {
-                    // Avg Entry: show position average cost when shares are held; fall back to the
-                    // base-buy executed price so the column is useful before a position opens.
+                    // Avg Entry: the average cost of shares actually held. Before a position opens, the
+                    // executed base-buy price stands in so the column is not blank while an entry works.
+                    // Once the shares are gone that price is history, and showing it beside a share count
+                    // of 0 read as a position held at that price — which is how a sold-out row looked open.
                     BigDecimal avgCost = position.getAverageCost();
                     if (avgCost != null && avgCost.compareTo(java.math.BigDecimal.ZERO) > 0) {
                         yield avgCost.toPlainString();
                     }
-                    yield positivePriceOrDash(prices.baseBuyExecutedPrice());
+                    yield isOpeningPosition(strategy)
+                            ? positivePriceOrDash(prices.baseBuyExecutedPrice())
+                            : "-";
                 }
                 case 4 -> displayPrice(position, lastSellPrice);
                 case 5 -> position.getTotalShares() != 0 ? position.marketValue().toPlainString() : "-";

@@ -39,9 +39,21 @@ import java.util.Optional;
  * be ticked — its entry price is then worked out at placement.
  */
 final class HistoryReentryPicker extends JDialog {
+
     /** Reads one stock's levels; called off the EDT, once per stock. */
     interface LevelsLoader {
         HistoryReentry.Levels load(String symbol) throws Exception;
+    }
+
+    /**
+     * What this stock actually traded at last time: the price its last buy filled at and the price its
+     * last sell filled at. Zero means the fill is not recorded, which reads as an em dash rather than
+     * a free entry.
+     */
+    record TradePrices(BigDecimal entry, BigDecimal exit) {
+        static TradePrices unknown() {
+            return new TradePrices(BigDecimal.ZERO, BigDecimal.ZERO);
+        }
     }
 
     /** A ticked stock and the entry price the operator saw; a zero price means "work it out now". */
@@ -68,6 +80,13 @@ final class HistoryReentryPicker extends JDialog {
 
     private final List<Strategy> sources;
     private final List<BigDecimal> realized = new ArrayList<>();
+    private final java.util.function.Function<Strategy, TradePrices> tradePrices;
+    /**
+     * What each row actually filled at, worked out once. Reading it means walking every strategy's
+     * orders, and the table asks for it on every cell read — fifty rows repainting would otherwise
+     * run that scan hundreds of times a repaint, on the EDT, which is what made this dialog feel hung.
+     */
+    private final Map<String, TradePrices> tradePriceCache = new HashMap<>();
     private final boolean[] picked;
     private final Map<String, HistoryReentry.Levels> levels = new HashMap<>();
     /** Prices typed over the calculated one, by symbol; these are what gets placed. */
@@ -75,6 +94,8 @@ final class HistoryReentryPicker extends JDialog {
     private final List<Integer> visible = new ArrayList<>();
     private final JButton place = new JButton();
     private final JLabel status = new JLabel(" ");
+    /** Fifty symbols is fifty price calls; the bar is what says the dialog is working, not wedged. */
+    private final javax.swing.JProgressBar loadProgress = new javax.swing.JProgressBar();
     private final JToggleButton showGains = new JToggleButton();
     private final JToggleButton showLosses = new JToggleButton();
     private final PickModel model = new PickModel();
@@ -83,9 +104,16 @@ final class HistoryReentryPicker extends JDialog {
 
     HistoryReentryPicker(Component parent, List<Strategy> sources, StrategyMode mode, String workspaceName,
                          LevelsLoader levelsLoader, java.util.function.Function<Strategy, BigDecimal> realizedPnl) {
+        this(parent, sources, mode, workspaceName, levelsLoader, realizedPnl, null);
+    }
+
+    HistoryReentryPicker(Component parent, List<Strategy> sources, StrategyMode mode, String workspaceName,
+                         LevelsLoader levelsLoader, java.util.function.Function<Strategy, BigDecimal> realizedPnl,
+                         java.util.function.Function<Strategy, TradePrices> tradePrices) {
         super(parent == null ? null : javax.swing.SwingUtilities.getWindowAncestor(parent),
                 "Re-enter Inactive Stocks", ModalityType.APPLICATION_MODAL);
         DialogCloseActions.bindEscapeToClose(this);
+        this.tradePrices = tradePrices == null ? source -> TradePrices.unknown() : tradePrices;
         java.util.function.Function<Strategy, BigDecimal> pnl =
                 realizedPnl == null ? source -> BigDecimal.ZERO : realizedPnl;
         // Gains first, then losses: the two groups are what the operator is choosing between, and a
@@ -126,18 +154,36 @@ final class HistoryReentryPicker extends JDialog {
         heading.add(method, BorderLayout.CENTER);
         content.add(heading, BorderLayout.NORTH);
 
-        JTable table = new JTable(model);
+        // Striped rows: nine columns of prices are hard to read across, and a row that changes shade
+        // keeps the eye on one stock. prepareRenderer paints whatever renderer a column uses, so the
+        // tick box stripes with the rest instead of sitting on a white square.
+        JTable table = new JTable(model) {
+            @Override
+            public java.awt.Component prepareRenderer(javax.swing.table.TableCellRenderer renderer, int row, int column) {
+                java.awt.Component component = super.prepareRenderer(renderer, row, column);
+                if (!isRowSelected(row)) {
+                    // Shaded from the table's own background rather than fixed colours: a stripe hard-coded
+                    // light turns this dialog into grey text on near-white under the dark theme.
+                    component.setBackground(row % 2 == 0 ? getBackground() : stripe(getBackground()));
+                }
+                return component;
+            }
+        };
         table.setRowHeight(22);
+        table.setShowGrid(false);
+        table.setIntercellSpacing(new java.awt.Dimension(0, 0));
         table.getColumnModel().getColumn(0).setMaxWidth(60);
-        table.getColumnModel().getColumn(1).setPreferredWidth(80);
-        table.getColumnModel().getColumn(2).setPreferredWidth(130);
-        table.getColumnModel().getColumn(3).setPreferredWidth(110);
-        table.getColumnModel().getColumn(4).setPreferredWidth(110);
+        table.getColumnModel().getColumn(1).setPreferredWidth(78);
+        table.getColumnModel().getColumn(2).setPreferredWidth(92);
+        table.getColumnModel().getColumn(3).setPreferredWidth(92);
+        table.getColumnModel().getColumn(4).setPreferredWidth(132);
         table.getColumnModel().getColumn(5).setPreferredWidth(110);
-        table.getColumnModel().getColumn(6).setPreferredWidth(110);
-        table.getColumnModel().getColumn(7).setPreferredWidth(90);
+        table.getColumnModel().getColumn(6).setPreferredWidth(104);
+        table.getColumnModel().getColumn(7).setPreferredWidth(104);
+        table.getColumnModel().getColumn(8).setPreferredWidth(86);
         JTableHeader header = table.getTableHeader();
-        header.setToolTipText(TooltipStyler.text("Re-entry price: the lowest price traded over the last "
+        header.setToolTipText(TooltipStyler.text("Entry and Exit: what this stock's last trade actually filled at."
+                + " Re-entry price: the lowest price traded over the last "
                 + com.neuralarc.analytics.RecentLow.WEEK_SESSIONS + " sessions. 2-week averages: the mean session low"
                 + " and high over the last " + HistoryReentry.TWO_WEEK_SESSIONS + " sessions.", 360));
         JScrollPane scroll = new JScrollPane(table);
@@ -169,6 +215,8 @@ final class HistoryReentryPicker extends JDialog {
             dispose();
         });
         status.setFont(FontLoader.ui(Font.PLAIN, 10.5f));
+        loadProgress.setMaximum(Math.max(1, sources.size()));
+        loadProgress.setPreferredSize(new java.awt.Dimension(160, 10));
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         left.add(showGains);
         left.add(showLosses);
@@ -180,8 +228,11 @@ final class HistoryReentryPicker extends JDialog {
         JPanel buttons = new JPanel(new BorderLayout());
         buttons.add(left, BorderLayout.WEST);
         buttons.add(right, BorderLayout.EAST);
+        JPanel statusRow = new JPanel(new BorderLayout(8, 0));
+        statusRow.add(status, BorderLayout.CENTER);
+        statusRow.add(loadProgress, BorderLayout.EAST);
         JPanel south = new JPanel(new BorderLayout(0, 4));
-        south.add(status, BorderLayout.NORTH);
+        south.add(statusRow, BorderLayout.NORTH);
         south.add(buttons, BorderLayout.CENTER);
         content.add(south, BorderLayout.SOUTH);
         setContentPane(content);
@@ -190,6 +241,17 @@ final class HistoryReentryPicker extends JDialog {
         startLoading(levelsLoader);
         pack();
         setLocationRelativeTo(parent);
+    }
+
+    /** The alternating row shade: a touch lighter on a dark theme, a touch darker on a light one. */
+    static java.awt.Color stripe(java.awt.Color background) {
+        java.awt.Color base = background == null ? java.awt.Color.WHITE : background;
+        double luminance = (0.299 * base.getRed() + 0.587 * base.getGreen() + 0.114 * base.getBlue()) / 255;
+        int shift = luminance < 0.5 ? 14 : -10;
+        return new java.awt.Color(
+                Math.max(0, Math.min(255, base.getRed() + shift)),
+                Math.max(0, Math.min(255, base.getGreen() + shift)),
+                Math.max(0, Math.min(255, base.getBlue() + shift)));
     }
 
     /** Wrapped HTML that keeps its own markup, for text with emphasis the escaping wrapper would show. */
@@ -255,6 +317,10 @@ final class HistoryReentryPicker extends JDialog {
             loader.cancel(true);
         }
         super.dispose();
+    }
+
+    private TradePrices tradePricesFor(Strategy source) {
+        return tradePriceCache.computeIfAbsent(source.id(), id -> tradePrices.apply(source));
     }
 
     private BigDecimal entryPriceFor(Strategy source) {
@@ -334,9 +400,12 @@ final class HistoryReentryPicker extends JDialog {
                 known++;
             }
         }
-        status.setText(known == sources.size()
+        boolean loaded = known == sources.size();
+        status.setText(loaded
                 ? "Prices loaded for all " + sources.size() + " stocks."
                 : "Loading prices… " + known + " of " + sources.size() + ".");
+        loadProgress.setValue(known);
+        loadProgress.setVisible(!loaded && !sources.isEmpty());
     }
 
     /** Ticks or clears only the rows currently listed, so a hidden group is never placed by accident. */
@@ -421,33 +490,37 @@ final class HistoryReentryPicker extends JDialog {
     }
 
     private final class PickModel extends AbstractTableModel {
-        private final String[] columns = {"Place", "Symbol", "Past Result", "Re-entry Price", "2-Wk Avg Low",
-                "2-Wk Avg High", "Last Entry Price", "Last Shares"};
+        private final String[] columns = {"Place", "Symbol", "Entry", "Exit", "Past Result", "Re-entry Price",
+                "2-Wk Avg Low", "2-Wk Avg High", "Last Shares"};
 
         @Override public int getRowCount() { return visible.size(); }
         @Override public int getColumnCount() { return columns.length; }
         @Override public String getColumnName(int column) { return columns[column]; }
         @Override public Class<?> getColumnClass(int column) {
-            return column == 0 ? Boolean.class : column == 7 ? Integer.class : String.class;
+            return column == 0 ? Boolean.class : column == 8 ? Integer.class : String.class;
         }
-        @Override public boolean isCellEditable(int row, int column) { return column == 0 || column == 3; }
+        @Override public boolean isCellEditable(int row, int column) { return column == 0 || column == 5; }
 
         @Override
         public Object getValueAt(int row, int column) {
             int index = visible.get(row);
             Strategy source = sources.get(index);
             HistoryReentry.Levels loaded = levels.get(source.symbol());
+            TradePrices traded = tradePricesFor(source);
             return switch (column) {
                 case 0 -> picked[index];
                 case 1 -> source.symbol();
-                case 2 -> pastResult(index);
-                case 3 -> {
+                case 2 -> traded.entry().signum() > 0
+                        ? money(traded.entry())
+                        : money(source.baseBuyLimitPrice());
+                case 3 -> money(traded.exit());
+                case 4 -> pastResult(index);
+                case 5 -> {
                     BigDecimal typed = overrides.get(source.symbol());
                     yield typed != null ? "$" + typed.toPlainString() : money(loaded == null ? null : loaded.entryPrice());
                 }
-                case 4 -> money(loaded == null ? null : loaded.averageLow());
-                case 5 -> money(loaded == null ? null : loaded.averageHigh());
-                case 6 -> "$" + Monetary.round(source.baseBuyLimitPrice()).toPlainString();
+                case 6 -> money(loaded == null ? null : loaded.averageLow());
+                case 7 -> money(loaded == null ? null : loaded.averageHigh());
                 default -> source.baseBuyQuantity();
             };
         }
@@ -460,7 +533,7 @@ final class HistoryReentryPicker extends JDialog {
                 fireTableRowsUpdated(row, row);
                 return;
             }
-            if (column == 3) {
+            if (column == 5) {
                 setEntryPriceOverride(sources.get(index).symbol(), value == null ? "" : value.toString());
                 fireTableRowsUpdated(row, row);
             }

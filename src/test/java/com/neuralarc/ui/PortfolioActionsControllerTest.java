@@ -487,6 +487,137 @@ class PortfolioActionsControllerTest {
         disabled.forEach(entry -> assertFalse(entry.disabledTooltip().isBlank()));
     }
 
+    /** Stands in for the progress window: what it was told, and when the run ended. */
+    private static final class RecordingProgress implements BulkProgressHandle {
+        private final java.util.List<String> advanced =
+                java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        private final CountDownLatch finished = new CountDownLatch(1);
+        private String title;
+        private int total;
+        private java.util.List<String> successes = java.util.List.of();
+        private java.util.List<String> failures = java.util.List.of();
+
+        @Override
+        public void advance(String item, BulkProgress.Outcome outcome) {
+            advanced.add(item);
+        }
+
+        @Override
+        public void finish(java.util.List<String> successes, java.util.List<String> skipped,
+                           java.util.List<String> failures) {
+            this.successes = successes;
+            this.failures = failures;
+            finished.countDown();
+        }
+
+        private boolean awaitFinish() throws InterruptedException {
+            return finished.await(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void aBulkRunTellsTheProgressWindowAboutEveryStockAsItLands() throws Exception {
+        FakeGateway gateway = new FakeGateway(new ResumeRecordingService());
+        gateway.current = List.of(paused("AAPL"), paused("MSFT"), paused("TSLA"));
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handleResumeAll();
+
+        assertTrue(gateway.progress.awaitFinish(), "the run must end by telling the window it is over");
+        assertEquals("Resume All", gateway.progress.title);
+        assertEquals(3, gateway.progress.total, "the window is sized by the run, not guessed at");
+        assertEquals(List.of("AAPL", "MSFT", "TSLA"), gateway.progress.advanced);
+        assertEquals(3, gateway.progress.successes.size());
+        assertTrue(gateway.progress.failures.isEmpty());
+    }
+
+    @Test
+    void aOneRowActionStillSaysWhatHappenedWithoutStoppingForAClick() throws Exception {
+        FakeGateway gateway = new FakeGateway(new ResumeRecordingService());
+        gateway.current = List.of(paused("AAPL"));
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handleResumeAll();
+
+        assertTrue(awaitUntil(() -> !gateway.toasts.isEmpty()),
+                "no window for one row, so the toast is the whole report");
+        assertEquals(0, gateway.progress.total, "one row is not worth a window");
+        assertTrue(gateway.shownMessages.isEmpty(), "nothing failed, so nothing to dismiss");
+    }
+
+    @Test
+    void aOneRowFailureIsStillPutInFrontOfTheOperator() throws Exception {
+        ResumeRecordingService service = new ResumeRecordingService();
+        service.failing = "AAPL-id";
+        FakeGateway gateway = new FakeGateway(service);
+        gateway.current = List.of(paused("AAPL"));
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handleResumeAll();
+
+        assertTrue(awaitUntil(() -> !gateway.shownMessages.isEmpty()),
+                "an order that did not go in is worth a dialog");
+        assertTrue(gateway.toasts.isEmpty());
+    }
+
+    @Test
+    void aRunWithNothingToDoNeverOpensAWindow() throws Exception {
+        FakeGateway gateway = new FakeGateway(new ResumeRecordingService());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handleResumeAll();
+
+        assertEquals(0, gateway.progress.total, "no targets, no window");
+        assertTrue(gateway.progress.advanced.isEmpty());
+    }
+
+    @Test
+    void whatFailedReachesTheWindowSoItStaysOpen() throws Exception {
+        ResumeRecordingService service = new ResumeRecordingService();
+        service.failing = "MSFT-id";
+        FakeGateway gateway = new FakeGateway(service);
+        gateway.current = List.of(paused("AAPL"), paused("MSFT"));
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handleResumeAll();
+
+        assertTrue(gateway.progress.awaitFinish());
+        assertEquals(1, gateway.progress.failures.size());
+        assertTrue(gateway.progress.failures.getFirst().startsWith("MSFT"));
+    }
+
+    private static boolean awaitUntil(java.util.function.BooleanSupplier condition) throws InterruptedException {
+        for (int attempt = 0; attempt < 100; attempt++) {
+            if (condition.getAsBoolean()) {
+                return true;
+            }
+            Thread.sleep(50L);
+        }
+        return false;
+    }
+
+    private static ManagedStrategy paused(String symbol) {
+        ManagedStrategy entry = managed(symbol);
+        entry.strategy.setStatus(StrategyStatus.PAUSED);
+        return entry;
+    }
+
+    /** Resumes without a broker behind it, and can be told to throw for one strategy. */
+    private static final class ResumeRecordingService extends StrategyService {
+        private String failing;
+
+        private ResumeRecordingService() {
+            super(null, null, null, null, null, true, StrategyMode.PAPER);
+        }
+
+        @Override
+        public void resume(String strategyId) {
+            if (strategyId.equals(failing)) {
+                throw new IllegalStateException("broker unreachable");
+            }
+        }
+    }
+
     private static final class FakeGateway implements PortfolioActionsController.Gateway {
         private final StrategyService service;
         private final AtomicInteger activeSells = new AtomicInteger();
@@ -521,7 +652,14 @@ class PortfolioActionsControllerTest {
             deletedArchivedIds.add(strategyId);
             return StrategyService.ArchiveResult.success(strategyId);
         }
-        @Override public List<ManagedStrategy> currentStrategies() { return List.of(); }
+        private List<ManagedStrategy> current = List.of();
+        private final RecordingProgress progress = new RecordingProgress();
+        @Override public List<ManagedStrategy> currentStrategies() { return current; }
+        @Override public BulkProgressHandle beginBulkProgress(String title, int total) {
+            progress.title = title;
+            progress.total = total;
+            return progress;
+        }
         @Override public List<ManagedStrategy> scopedStrategies() { return List.of(); }
         @Override public StrategyService strategyService() { return service; }
         @Override public StrategyService strategyServiceForMode(StrategyMode mode) { return service; }
@@ -642,7 +780,14 @@ class PortfolioActionsControllerTest {
             return new javax.swing.JMenu(label);
         }
         @Override public int confirm(Object message, String title, int optionType, int messageType) { return 0; }
-        @Override public void showMessage(Object message, String title, int messageType) { }
+        private final java.util.List<String> shownMessages =
+                java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        private final java.util.List<String> toasts =
+                java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        @Override public void showMessage(Object message, String title, int messageType) {
+            shownMessages.add(String.valueOf(message));
+        }
+        @Override public void showToast(String text, boolean warning) { toasts.add(text); }
         @Override public void syncStrategiesFromRepository() { }
         @Override public void refreshStrategyTableData() { }
         @Override public void updateSelectedStrategy() { }
