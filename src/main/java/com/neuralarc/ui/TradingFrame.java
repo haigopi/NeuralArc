@@ -1028,6 +1028,11 @@ public class TradingFrame extends JFrame {
       }
 
       @Override
+      public Optional<ThresholdSellSelection> chooseThresholdSell(List<ManagedStrategy> scope) {
+        return TradingFrame.this.chooseThresholdSell(scope);
+      }
+
+      @Override
       public Optional<BigDecimal> chooseSellProfitThresholdPercent(List<ManagedStrategy> targets) {
         return TradingFrame.this.chooseSellProfitThresholdPercent(targets);
       }
@@ -4608,6 +4613,19 @@ public class TradingFrame extends JFrame {
             ? "Unassigned"
             : workspaceService.findById(workspaceId).map(StrategyWorkspace::name).orElse("Unassigned"));
     return AverageLosingPositionsDialog.show(this, candidates, scopeLabel, settingsDialog.appliedManualBuyTimeInForce());
+  }
+
+  private Optional<ThresholdSellSelection> chooseThresholdSell(List<ManagedStrategy> scope) {
+    String scopeLabel = (selectedWorkspaceId == null
+        ? "All Stocks"
+        : workspaceService.findById(selectedWorkspaceId).map(StrategyWorkspace::name).orElse("This Tab"))
+        + " · " + selectedModeLabel();
+    return ThresholdSellDialog.show(this, ThresholdSellCandidates.collect(
+        scope,
+        workspaceId -> workspaceId == null || workspaceId.isBlank()
+            ? "Unassigned"
+            : workspaceService.findById(workspaceId).map(StrategyWorkspace::name).orElse("Unassigned")),
+        scopeLabel);
   }
 
   private Optional<BigDecimal> chooseSellProfitThresholdPercent(List<ManagedStrategy> targets) {

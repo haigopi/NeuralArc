@@ -440,7 +440,7 @@ class PortfolioActionsControllerTest {
         for (PortfolioActionsMenu.Group group : groups) {
             assertFalse(group.title().isBlank(), "every group needs a title");
             assertFalse(group.entries().isEmpty(), group.title() + " has no actions");
-            assertTrue(group.entries().size() <= 5,
+            assertTrue(group.entries().size() <= 6,
                     group.title() + " has " + group.entries().size() + " actions; keep groups small enough to scan");
             for (PortfolioActionsMenu.Entry entry : group.entries()) {
                 assertFalse(entry.label().isBlank());
@@ -618,6 +618,52 @@ class PortfolioActionsControllerTest {
         }
     }
 
+    @Test
+    void thresholdSellSellsOnlyTheTickedRowsAndReportsUnderItsOwnName() throws Exception {
+        FakeGateway gateway = new FakeGateway(new ResumeRecordingService());
+        ManagedStrategy winner = AverageDownTestEntries.position("WIN", 10, "10", "12");
+        ManagedStrategy second = AverageDownTestEntries.position("TWO", 10, "10", "12");
+        ManagedStrategy kept = AverageDownTestEntries.position("KEEP", 10, "10", "13");
+        ManagedStrategy loser = AverageDownTestEntries.position("LOSE", 10, "10", "8");
+        gateway.current = List.of(winner, second, kept, loser);
+        ThresholdSellRule rule = new ThresholdSellRule(ThresholdSellRule.Side.PROFIT,
+                ThresholdSellRule.Comparison.MORE_THAN, ThresholdSellRule.Unit.PERCENT, new BigDecimal("5"));
+        gateway.thresholdChoice = Optional.of(new ThresholdSellSelection(
+                rule, SellSubmissionType.MARKET, java.util.Set.of("WIN-id", "TWO-id", "LOSE-id")));
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handleSellByThreshold();
+
+        assertTrue(gateway.progress.awaitFinish());
+        assertEquals("Sell by Profit / Loss Threshold", gateway.progress.title);
+        assertEquals(java.util.Set.of("WIN-id", "TWO-id"), new java.util.HashSet<>(gateway.soldStrategyIds),
+                "KEEP was unticked and LOSE no longer matches the rule, so neither is sold");
+        assertEquals(List.of(SellSubmissionType.MARKET, SellSubmissionType.MARKET), gateway.soldTypes);
+    }
+
+    @Test
+    void thresholdSellDoesNothingWhenTheOperatorCancels() {
+        FakeGateway gateway = new FakeGateway(new ResumeRecordingService());
+        gateway.current = List.of(AverageDownTestEntries.position("WIN", 10, "10", "12"));
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handleSellByThreshold();
+
+        assertTrue(gateway.soldStrategyIds.isEmpty());
+    }
+
+    @Test
+    void thresholdSellExplainsWhenThereIsNothingToSell() {
+        FakeGateway gateway = new FakeGateway(new ResumeRecordingService());
+        gateway.current = List.of(AverageDownTestEntries.withWorkingSell(AverageDownTestEntries.position("BUSY", 10, "10", "12")));
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handleSellByThreshold();
+
+        assertEquals(1, gateway.shownMessages.size());
+        assertTrue(gateway.soldStrategyIds.isEmpty());
+    }
+
     private static final class FakeGateway implements PortfolioActionsController.Gateway {
         private final StrategyService service;
         private final AtomicInteger activeSells = new AtomicInteger();
@@ -632,6 +678,9 @@ class PortfolioActionsControllerTest {
         private final AtomicInteger maxConcurrentSellTriggers = new AtomicInteger();
         private final CountDownLatch sellTriggersEntered = new CountDownLatch(2);
         private final java.util.List<String> updatedStrategyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        private Optional<ThresholdSellSelection> thresholdChoice = Optional.empty();
+        private final java.util.List<String> soldStrategyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        private final java.util.List<SellSubmissionType> soldTypes = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private String marketBuyStrategyId;
         private int marketBuyQuantity;
         private String limitBuyStrategyId;
@@ -680,6 +729,8 @@ class PortfolioActionsControllerTest {
                 SellSubmissionType submissionType,
                 StrategyService.SellExecutionSource executionSource
         ) {
+            soldStrategyIds.add(strategy.id());
+            soldTypes.add(submissionType);
             if (blockSell) {
                 int current = activeSells.incrementAndGet();
                 maxConcurrentSells.accumulateAndGet(current, Math::max);
@@ -724,6 +775,9 @@ class PortfolioActionsControllerTest {
         public StrategyService.StrategyCreationResult readjustLosingPendingBaseBuy(ManagedStrategy entry) {
             readjustedPendingStrategyIds.add(entry.strategy.id());
             return StrategyService.StrategyCreationResult.success(entry.strategy.id(), "order", "alpaca", "client");
+        }
+        @Override public Optional<ThresholdSellSelection> chooseThresholdSell(List<ManagedStrategy> scope) {
+            return thresholdChoice;
         }
         @Override public java.util.Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets) {
             return java.util.Optional.empty();

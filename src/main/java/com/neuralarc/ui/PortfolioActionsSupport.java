@@ -61,7 +61,7 @@ final class PortfolioActionsSupport {
         return buildResultMessage(action.menuLabel(), action.resultSuccessLabel(), result);
     }
 
-    private String buildResultMessage(String label, String successLabel, BatchResult result) {
+    String buildResultMessage(String label, String successLabel, BatchResult result) {
         StringBuilder sb = new StringBuilder("<html><body style='width:360px'>");
         sb.append("<b>").append(label).append("</b><br><br>");
         sb.append(successLabel).append(": ").append(result.successes().size());

@@ -75,6 +75,12 @@ final class PortfolioActionsController {
         Optional<BigDecimal> chooseSellProfitThresholdPercent(List<ManagedStrategy> targets);
         Optional<Strategy> updateStrategy(Strategy strategy);
         Optional<AverageLosingPositionsSelection> chooseAverageLosingPositions(List<ManagedStrategy> targets);
+
+        /** Reviews the positions a profit/loss threshold would sell; empty when the operator cancels. */
+        default Optional<ThresholdSellSelection> chooseThresholdSell(List<ManagedStrategy> scope) {
+            return Optional.empty();
+        }
+
         StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity);
         StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice, TimeInForce timeInForce);
         ManualPortfolioImportService.ImportResult importManualStocks(List<PortfolioStockImportDialog.ImportedStockDraft> drafts);
@@ -411,7 +417,7 @@ final class PortfolioActionsController {
             gateway.actionCanceled(scope.menuLabel());
             return;
         }
-        runSellAction(scope, targets, () -> placeSellTriggerTargets(targets));
+        runSellAction(SellReport.of(scope), targets, () -> placeSellTriggerTargets(targets));
     }
 
     void handlePositionAllSellProfitThresholdPercentage() {
@@ -1039,13 +1045,13 @@ final class PortfolioActionsController {
         }.execute();
     }
 
-    /** The sell actions, which report under their scope's wording rather than a bulk action's. */
+    /** The sell actions, which report under their own wording rather than a bulk action's. */
     private void runSellAction(
-            PortfolioActionsSupport.Scope scope,
+            SellReport report,
             List<ManagedStrategy> targets,
             java.util.function.Supplier<PortfolioActionsSupport.BatchResult> work
     ) {
-        BulkProgressHandle handle = progressWindowFor(scope.dialogTitle(), targets);
+        BulkProgressHandle handle = progressWindowFor(report.dialogTitle(), targets);
         activeProgress = handle;
         new SwingWorker<PortfolioActionsSupport.BatchResult, Void>() {
             @Override
@@ -1056,7 +1062,7 @@ final class PortfolioActionsController {
             @Override
             protected void done() {
                 activeProgress = BulkProgressHandle.NONE;
-                handleSellActionResult(scope, this, handle);
+                handleSellActionResult(report, this, handle);
             }
         }.execute();
     }
@@ -1094,6 +1100,38 @@ final class PortfolioActionsController {
         }
     }
 
+    /**
+     * Sell by Profit / Loss Threshold: the operator sets a cut-off, reviews the positions it picks in a
+     * grid (all ticked, each one skippable), and only the ticked rows are sold.
+     */
+    void handleSellByThreshold() {
+        SellReport report = SellReport.named("Sell by Profit / Loss Threshold");
+        List<ManagedStrategy> scope = gateway.currentStrategies();
+        String empty = "There are no open positions to sell.";
+        if (scope.stream().noneMatch(ThresholdSellCandidates::isSellable)) {
+            gateway.actionSkipped(report.menuLabel(), empty);
+            gateway.showMessage(empty, report.dialogTitle(), JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        Optional<ThresholdSellSelection> selection = gateway.chooseThresholdSell(scope);
+        if (selection.isEmpty()) {
+            gateway.actionCanceled(report.menuLabel());
+            return;
+        }
+        ThresholdSellSelection chosen = selection.get();
+        List<ManagedStrategy> targets = chosen.selectedFrom(scope,
+                entry -> ThresholdSellCandidates.isSellable(entry) && chosen.rule().matches(entry.cachedPosition()));
+        if (targets.isEmpty()) {
+            gateway.actionSkipped(report.menuLabel(), "No selected position is still sellable.");
+            gateway.showMessage("None of the selected positions can be sold any more.",
+                    report.dialogTitle(), JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        gateway.log(report.logPrefix() + " selling " + targets.size() + " position(s) with "
+                + chosen.rule().describe() + " (" + chosen.submissionType() + ").");
+        runSellAction(report, targets, () -> sellTargets(targets, chosen.submissionType()));
+    }
+
     void handleSellAction(PortfolioActionsSupport.Scope scope, SellSubmissionType submissionType) {
         List<ManagedStrategy> targets = support.filterTargets(gateway.currentStrategies(), scope);
         if (targets.isEmpty()) {
@@ -1113,7 +1151,7 @@ final class PortfolioActionsController {
             return;
         }
 
-        runSellAction(scope, targets, () -> sellTargets(targets, submissionType));
+        runSellAction(SellReport.of(scope), targets, () -> sellTargets(targets, submissionType));
     }
 
     /**
@@ -1133,25 +1171,25 @@ final class PortfolioActionsController {
     }
 
     private void handleSellActionResult(
-            PortfolioActionsSupport.Scope scope,
+            SellReport report,
             SwingWorker<PortfolioActionsSupport.BatchResult, Void> worker,
             BulkProgressHandle progress
     ) {
         try {
             PortfolioActionsSupport.BatchResult result = worker.get();
             refreshAfterAction();
-            gateway.log(scope.logPrefix() + " submitted for " + result.successes().size() + " strategy(ies).");
+            gateway.log(report.logPrefix() + " submitted for " + result.successes().size() + " strategy(ies).");
             if (!result.failures().isEmpty()) {
-                gateway.log(scope.logPrefix() + " failures: " + String.join(" | ", result.failures()));
+                gateway.log(report.logPrefix() + " failures: " + String.join(" | ", result.failures()));
             }
-            gateway.actionCompleted(scope.menuLabel(), "Submitted=" + result.successes().size()
+            gateway.actionCompleted(report.menuLabel(), "Submitted=" + result.successes().size()
                     + ", failed=" + result.failures().size() + ".");
             progress.finish(result.successes(), result.skipped(), result.failures());
-            reportWithoutAWindow(progress, scope.dialogTitle(),
+            reportWithoutAWindow(progress, report.dialogTitle(),
                     "Submitted: " + result.successes().size(),
-                    support.buildResultMessage(scope, result), result);
+                    support.buildResultMessage(report.menuLabel(), "Submitted", result), result);
         } catch (Exception ex) {
-            gateway.actionFailed(scope.menuLabel(), ex.getMessage());
+            gateway.actionFailed(report.menuLabel(), ex.getMessage());
             progress.abort("Failed to submit the requested sell orders: " + ex.getMessage());
         }
     }
