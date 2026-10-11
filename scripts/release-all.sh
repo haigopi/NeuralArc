@@ -23,7 +23,7 @@ Options:
   --draft           Create or keep release as draft (default publishes)
   --publish         Publish release (default; kept for compatibility)
   --skip-build      Skip build step and only publish existing artifacts
-  --submit-macos-scan  Submit latest macOS artifact for malware scanning before release publish
+  --submit-macos-scan  Submit the macOS artifacts (Apple Silicon and Intel) for malware scanning before release publish
   --skip-macos-scan    Skip malware scan submission even when MALWARE_SCAN_AUTO_SUBMIT=true
   --dry-run         Print commands without executing
   --help            Show this help
@@ -77,38 +77,6 @@ run_cmd() {
     echo "[dry-run] $*"
   else
     "$@"
-  fi
-}
-
-file_mtime_epoch() {
-  local file="$1"
-  if stat -f "%m" "$file" >/dev/null 2>&1; then
-    stat -f "%m" "$file"
-  else
-    stat -c "%Y" "$file"
-  fi
-}
-
-resolve_latest_macos_artifact_for_version() {
-  local version="$1"
-  local latest=""
-  local latest_mtime=0
-  local candidate=""
-  local mtime=0
-
-  shopt -s nullglob
-  for candidate in "$PROJECT_DIR"/artifacts/macos/NeuralArc-"$version"*.dmg; do
-    [[ -f "$candidate" ]] || continue
-    mtime="$(file_mtime_epoch "$candidate")"
-    if [[ -z "$latest" || "$mtime" -gt "$latest_mtime" ]]; then
-      latest="$candidate"
-      latest_mtime="$mtime"
-    fi
-  done
-  shopt -u nullglob
-
-  if [[ -n "$latest" ]]; then
-    printf '%s\n' "$latest"
   fi
 }
 
@@ -325,6 +293,11 @@ verify_download_links_point_to_latest_release() {
     echo "docs/index.html must use /releases/latest as the download fallback URL." >&2
     exit 1
   fi
+  if ! grep -q 'data-download-platform="mac-arm64"' "$index_file" \
+      || ! grep -q 'data-download-platform="mac-x64"' "$index_file"; then
+    echo "docs/index.html must offer both Mac downloads (mac-arm64 and mac-x64)." >&2
+    exit 1
+  fi
 }
 
 if [[ -n "$EXPLICIT_VERSION" ]]; then
@@ -345,20 +318,19 @@ if [[ "$SKIP_BUILD" == false ]]; then
   run_cmd "$SCRIPT_DIR/build-all.sh" --version "$VERSION"
 fi
 
-MAC_DMG="$(resolve_latest_macos_artifact_for_version "$VERSION")"
-if [[ -z "$MAC_DMG" ]]; then
-  MAC_DMG="$PROJECT_DIR/artifacts/macos/NeuralArc-$VERSION.dmg"
-fi
+# The architecture is part of the file name so the website and the in-app updater can pick the
+# installer that matches the visitor's or the running app's CPU.
+MAC_DMG_ARM64="$PROJECT_DIR/artifacts/macos/NeuralArc-$VERSION-arm64.dmg"
+MAC_DMG_X64="$PROJECT_DIR/artifacts/macos/NeuralArc-$VERSION-x64.dmg"
 WIN_EXE="$PROJECT_DIR/artifacts/windows/NeuralArc-$VERSION.exe"
 LINUX_DEB="$PROJECT_DIR/artifacts/linux/NeuralArc-$VERSION.deb"
 MAC_README="$PROJECT_DIR/artifacts/macos/README-$VERSION.md"
 WIN_README="$PROJECT_DIR/artifacts/windows/README-$VERSION.md"
 LINUX_README="$PROJECT_DIR/artifacts/linux/README-$VERSION.md"
-MAC_ARTIFACT_NAME="$(basename "$MAC_DMG")"
 
 ASSETS=()
 MISSING_ASSETS=()
-for candidate in "$MAC_DMG" "$WIN_EXE" "$LINUX_DEB"; do
+for candidate in "$MAC_DMG_ARM64" "$MAC_DMG_X64" "$WIN_EXE" "$LINUX_DEB"; do
   if [[ -f "$candidate" ]]; then
     ASSETS+=("$candidate")
   else
@@ -383,11 +355,17 @@ if [[ ${#MISSING_ASSETS[@]} -gt 0 ]]; then
 fi
 
 if [[ "$SUBMIT_MACOS_SCAN" == true ]]; then
-  if [[ ! -f "$MAC_DMG" ]]; then
-    echo "--submit-macos-scan is enabled but macOS artifact is missing: $MAC_DMG" >&2
+  SCANNED=0
+  for mac_dmg in "$MAC_DMG_ARM64" "$MAC_DMG_X64"; do
+    if [[ -f "$mac_dmg" ]]; then
+      submit_macos_artifact_for_malware_scan "$mac_dmg" "$VERSION" "$TAG"
+      SCANNED=$((SCANNED + 1))
+    fi
+  done
+  if [[ "$SCANNED" -eq 0 ]]; then
+    echo "--submit-macos-scan is enabled but no macOS artifact exists for $TAG." >&2
     exit 1
   fi
-  submit_macos_artifact_for_malware_scan "$MAC_DMG" "$VERSION" "$TAG"
 fi
 
 RELEASE_NOTES_FILE="$(generate_release_notes "$VERSION" "$TAG")"
@@ -400,22 +378,33 @@ fi
 
 mkdir -p "$PROJECT_DIR/artifacts/macos" "$PROJECT_DIR/artifacts/windows" "$PROJECT_DIR/artifacts/linux"
 
+MAC_ARTIFACT_LINES=""
+for mac_dmg in "$MAC_DMG_ARM64" "$MAC_DMG_X64"; do
+  if [[ -f "$mac_dmg" ]]; then
+    MAC_ARTIFACT_LINES="$MAC_ARTIFACT_LINES- $(basename "$mac_dmg")
+"
+  fi
+done
+
 cat > "$MAC_README" <<EOF
 # NeuralArc macOS Release $VERSION
 
-## Artifact
-- File: $MAC_ARTIFACT_NAME
-- Path: artifacts/macos/$MAC_ARTIFACT_NAME
+## Artifacts
+$MAC_ARTIFACT_LINES
+- NeuralArc-$VERSION-arm64.dmg is for Apple Silicon Macs (M1 and later).
+- NeuralArc-$VERSION-x64.dmg is for Intel Macs.
+- Not sure which you have? Apple menu > About This Mac: "Chip: Apple M..." is Apple Silicon,
+  "Processor: Intel..." is Intel.
 
 ## Install
-1. Open the DMG file.
+1. Open the DMG file that matches your Mac.
 2. Drag NeuralArc.app to Applications.
 3. Launch from Applications.
 
 ## Verify checksum (optional)
 zsh:
   cd $PROJECT_DIR
-  shasum -a 256 artifacts/macos/$MAC_ARTIFACT_NAME
+  shasum -a 256 artifacts/macos/NeuralArc-$VERSION-arm64.dmg artifacts/macos/NeuralArc-$VERSION-x64.dmg
 
 ## Changes
 $COMMIT_LINES

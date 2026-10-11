@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 EXPLICIT_VERSION=""
+MAC_ARCH="all"
 DRY_RUN=false
 
 usage() {
@@ -13,6 +14,8 @@ Usage: ./scripts/build-all.sh [options]
 
 Options:
   --version X.Y.Z   Use explicit version (otherwise derived from Gradle)
+  --mac-arch ARCH   macOS only: arm64, x64, native or all (default all = Apple Silicon + Intel,
+                    skipping with a warning an architecture this Mac has no JDK for)
   --dry-run         Print commands without executing
   --help            Show this help
 USAGE
@@ -22,6 +25,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --version)
       EXPLICIT_VERSION="${2:-}"
+      shift 2
+      ;;
+    --mac-arch)
+      MAC_ARCH="${2:-}"
       shift 2
       ;;
     --dry-run)
@@ -65,8 +72,8 @@ echo "Building NeuralArc artifacts for version $VERSION"
 OS_NAME="$(uname -s)"
 case "$OS_NAME" in
   Darwin)
-    run_cmd "$SCRIPT_DIR/package-macos.sh" "$VERSION"
-    echo "macOS artifact done."
+    run_cmd "$SCRIPT_DIR/package-macos.sh" "$VERSION" --arch "$MAC_ARCH"
+    echo "macOS artifact(s) done."
     echo "Windows EXE must be built on Windows: ./scripts/package-windows.ps1 $VERSION"
     echo "Linux DEB must be built on Linux: ./scripts/package-linux.sh $VERSION"
     ;;

@@ -5636,6 +5636,16 @@ public class TradingFrame extends JFrame {
     return true;
   }
 
+  private final RulesLogBatch rulesLogBatch = new RulesLogBatch();
+  private final javax.swing.Timer rulesLogFlush = createRulesLogFlushTimer();
+  private final RepeatedLogFilter exposureAuditLog = new RepeatedLogFilter();
+
+  private javax.swing.Timer createRulesLogFlushTimer() {
+    javax.swing.Timer timer = new javax.swing.Timer(1500, event -> flushRulesLog());
+    timer.setRepeats(false);
+    return timer;
+  }
+
   private void logExposureStateMismatches(String phase) {
     List<String> mismatches = new ArrayList<>();
     for (ManagedStrategy entry : strategies) {
@@ -5660,8 +5670,14 @@ public class TradingFrame extends JFrame {
           + " shares=" + shares
           + " pendingOrders=" + pendingOrders);
     }
-    if (!mismatches.isEmpty()) {
-      log("[STATE AUDIT][" + phase + "] Open exposure still marked failed/closed: " + String.join(" | ", mismatches));
+    if (mismatches.isEmpty()) {
+      exposureAuditLog.clear(phase);
+      return;
+    }
+    // The same mismatch is found on every refresh until it is fixed; say so once, not each time.
+    String message = "[STATE AUDIT][" + phase + "] Open exposure still marked failed/closed: " + String.join(" | ", mismatches);
+    if (exposureAuditLog.shouldLog(phase, message)) {
+      log(message);
     }
   }
 
@@ -11118,14 +11134,19 @@ public class TradingFrame extends JFrame {
         + detail);
   }
 
+  /**
+   * Strategies finish a poll cycle one by one, so their rule results are held briefly and logged as one
+   * line per distinct result, listing the symbols that share it, rather than one near-identical line each.
+   */
   private void logRulesAnalyzed(String symbol, List<StrategyEngine.RuleOutcome> outcomes) {
-    if (outcomes == null || outcomes.isEmpty()) {
-      return;
+    rulesLogBatch.add(symbol, outcomes);
+    if (!rulesLogFlush.isRunning() && !rulesLogBatch.isEmpty()) {
+      rulesLogFlush.start();
     }
-    String summary = outcomes.stream()
-        .map(StrategyEngine.RuleOutcome::toString)
-        .collect(Collectors.joining(" | "));
-    log("[RULES][" + safeLogToken(symbol) + "] analyzed=" + summary);
+  }
+
+  private void flushRulesLog() {
+    rulesLogBatch.drain().forEach(this::log);
   }
 
   private String safeLogToken(String value) {

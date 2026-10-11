@@ -657,7 +657,7 @@ public class HttpAlpacaClient implements AlpacaClient {
         String suffix = ApiRequestLogConfig.isVerboseJsonLogging() && body != null && !body.isBlank()
                 ? System.lineSeparator() + "body=" + formatBodyForLog(body)
                 : "";
-        LOGGER.info(() -> "Request: " + method + " " + endpoint + suffix);
+        LOGGER.info(() -> "Request: " + method + " " + ApiLogUrls.readable(endpoint) + suffix);
     }
 
     private void logResponse(String method, String endpoint, int statusCode, String body) {
@@ -667,7 +667,7 @@ public class HttpAlpacaClient implements AlpacaClient {
         String suffix = ApiRequestLogConfig.isVerboseJsonLogging() && body != null && !body.isBlank()
                 ? System.lineSeparator() + "body=" + formatBodyForLog(body)
                 : "";
-        LOGGER.info(() -> " -> Response: " + method + " " + endpoint + " status=" + statusCode + suffix);
+        LOGGER.info(() -> " -> Response: " + method + " " + ApiLogUrls.readable(endpoint) + " status=" + statusCode + suffix);
     }
 
     private String formatBodyForLog(String body) {
@@ -697,7 +697,7 @@ public class HttpAlpacaClient implements AlpacaClient {
     private void recordRequestId(String source, String method, String endpoint, HttpResponse<String> response) {
         String requestId = response.headers().firstValue(REQUEST_ID_HEADER).orElse("");
         if (!requestId.isBlank()) {
-            LOGGER.info(() -> "Alpaca Request ID [" + source + "]: " + requestId + " (" + method + " " + endpoint + ")");
+            LOGGER.info(() -> "Alpaca Request ID [" + source + "]: " + requestId + " (" + method + " " + ApiLogUrls.readable(endpoint) + ")");
             requestIdStore.record(source, method, endpoint, requestId);
         }
     }

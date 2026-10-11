@@ -364,6 +364,334 @@
 
     .download-options {
       position: absolute;
+      top: calc(100% + 12px);
+      left: 0;
+      z-index: 10000;
+      width: min(380px, calc(100vw - 32px));
+      padding: 14px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background:
+        radial-gradient(120% 90% at 0% 0%, rgba(72, 202, 228, 0.12), transparent 55%),
+        rgba(7, 18, 29, 0.97);
+      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(-6px) scale(0.98);
+      transform-origin: top left;
+      transition: opacity .18s ease, transform .18s ease, visibility .18s ease;
+      backdrop-filter: blur(16px);
+    }
+
+    .download-options::before {
+      content: "";
+      position: absolute;
+      top: -6px;
+      left: 28px;
+      width: 12px;
+      height: 12px;
+      border-top: 1px solid var(--line);
+      border-left: 1px solid var(--line);
+      background: rgba(10, 24, 37, 0.98);
+      transform: rotate(45deg);
+    }
+
+    .download-menu.is-open .download-options,
+    .download-menu:focus-within .download-options {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0) scale(1);
+    }
+
+    .download-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 2px 6px 10px;
+    }
+
+    .download-head strong {
+      font-size: 1rem;
+      letter-spacing: -0.01em;
+    }
+
+    .download-version {
+      font-size: .74rem;
+      font-weight: 700;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .download-group {
+      margin: 10px 6px 6px;
+      font-size: .68rem;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      opacity: .8;
+    }
+
+    .download-option {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 12px;
+      margin-top: 6px;
+      border-radius: 14px;
+      border: 1px solid rgba(134, 170, 203, 0.14);
+      background: rgba(255, 255, 255, 0.025);
+      text-decoration: none;
+      color: var(--text);
+      transition: background .16s ease, border-color .16s ease, transform .16s ease;
+    }
+
+    .download-option:hover {
+      background: rgba(124, 246, 196, 0.09);
+      border-color: rgba(124, 246, 196, 0.4);
+      transform: translateY(-1px);
+    }
+
+    .download-option:active {
+      transform: translateY(0);
+    }
+
+    .download-option .opt-icon {
+      flex: none;
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 11px;
+      color: #04141f;
+      background: linear-gradient(135deg, #48cae4, #7cf6c4);
+    }
+
+    .download-option[data-download-platform="mac-x64"] .opt-icon {
+      background: linear-gradient(135deg, #78b9ff, #48cae4);
+    }
+
+    .download-option .opt-icon svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .download-option .opt-text {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .download-option .opt-title {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      font-weight: 800;
+      font-size: .95rem;
+    }
+
+    .download-option .opt-sub {
+      font-size: .76rem;
+      color: var(--muted);
+    }
+
+    .download-option .opt-meta {
+      flex: none;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+      font-size: .72rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .download-option small {
+      font-size: .72rem;
+      font-weight: 800;
+      letter-spacing: .06em;
+      color: var(--text);
+    }
+
+    .download-option .opt-go {
+      flex: none;
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      color: var(--accent);
+      background: rgba(124, 246, 196, 0.12);
+      transition: background .16s ease, color .16s ease;
+    }
+
+    .download-option:hover .opt-go {
+      color: #04141f;
+      background: var(--accent);
+    }
+
+    .download-option .opt-go svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .download-option.is-detected {
+      border-color: rgba(124, 246, 196, 0.55);
+      background: linear-gradient(135deg, rgba(124, 246, 196, 0.14), rgba(72, 202, 228, 0.08));
+      box-shadow: 0 0 0 3px rgba(124, 246, 196, 0.08);
+    }
+
+    .download-option .detected-badge {
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: .62rem;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: #04141f;
+      background: var(--accent);
+    }
+
+    .download-option.is-upcoming {
+      cursor: not-allowed;
+      padding: 9px 12px;
+      background: transparent;
+      border-style: dashed;
+      color: var(--muted);
+    }
+
+    .download-option.is-upcoming:hover {
+      background: transparent;
+      border-color: rgba(134, 170, 203, 0.14);
+      transform: none;
+    }
+
+    .download-option.is-upcoming .opt-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .download-option.is-upcoming .opt-icon svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .download-option.is-upcoming .opt-title {
+      font-size: .86rem;
+      font-weight: 700;
+    }
+
+    .download-option.is-upcoming small {
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      font-size: .62rem;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .download-foot {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 12px 6px 2px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(134, 170, 203, 0.14);
+      font-size: .74rem;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    .download-foot a {
+      color: var(--accent-blue);
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .download-foot a:hover {
+      text-decoration: underline;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .download-options,
+      .download-option {
+        transition: none;
+      }
+    }
+
+    .button-secondary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 18px;
+      border-radius: 12px;
+      text-decoration: none;
+      font-weight: 700;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease;
+    }
+
+    button.button,
+    button.button-secondary {
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .button:hover,
+    .button-secondary:hover {
+      transform: translateY(-1px);
+    }
+
+    .button {
+      background: rgba(124, 246, 196, 0.14);
+      color: var(--accent);
+      border: 1px solid rgba(124, 246, 196, 0.24);
+    }
+
+    .button:hover {
+      background: linear-gradient(90deg, #7cf6c4 0%, #8fd9ff 20%, #bba8ff 46%, #ff9ec7 72%, #ffd27a 100%);
+      color: #06101a;
+      border-color: rgba(255, 255, 255, 0.26);
+    }
+
+    .download-menu {
+      position: relative;
+      display: inline-flex;
+      z-index: 12;
+    }
+
+    .download-menu.is-open {
+      z-index: 9999;
+    }
+
+    .download-toggle {
+      gap: 10px;
+    }
+
+    .download-toggle::after {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(45deg) translateY(-2px);
+      transition: transform .16s ease;
+    }
+
+    .download-menu.is-open .download-toggle::after {
+      transform: rotate(225deg) translateY(-2px);
+    }
+
+    .download-options {
+      position: absolute;
       top: calc(100% + 10px);
       left: 0;
       z-index: 10000;
@@ -403,6 +731,30 @@
     .download-option:hover {
       background: rgba(124, 246, 196, 0.12);
       color: var(--accent);
+    }
+
+    .download-option.is-detected {
+      background: rgba(124, 246, 196, 0.10);
+      box-shadow: inset 0 0 0 1px rgba(124, 246, 196, 0.32);
+    }
+
+    .download-option .detected-badge {
+      margin-left: 8px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #04141f;
+      background: var(--accent);
+    }
+
+    .download-hint {
+      margin: 6px 12px 4px;
+      font-size: 0.74rem;
+      line-height: 1.4;
+      color: var(--muted);
     }
 
     .download-option.is-upcoming {
@@ -1414,10 +1766,36 @@
           <div class="hero-actions">
             <div class="download-menu">
               <button class="button download-toggle" type="button" aria-haspopup="true" aria-expanded="false">Download App</button>
-              <div class="download-options" role="menu" aria-label="Download NeuralArc">
-                <a class="download-option is-upcoming" href="#" aria-disabled="true" role="menuitem" data-download-platform="windows">Windows <small>Upcoming</small></a>
-                <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" role="menuitem" data-download-platform="mac">Mac <small>DMG</small></a>
-                <a class="download-option is-upcoming" href="#" aria-disabled="true" role="menuitem" data-download-platform="linux">Linux <small>Upcoming</small></a>
+              <div class="download-options" role="group" aria-label="Download NeuralArc">
+                <div class="download-head"><strong>Download NeuralArc</strong><span class="download-version" data-release-version></span></div>
+                <div class="download-group">macOS</div>
+                <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" data-download-platform="mac-arm64">
+                  <span class="opt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg></span>
+                  <span class="opt-text"><span class="opt-title">Apple Silicon</span><span class="opt-sub">M1, M2, M3, M4 and later</span></span>
+                  <span class="opt-meta"><small>DMG</small><span class="opt-size"></span></span>
+                  <span class="opt-go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 11l6 6 6-6M5 21h14"/></svg></span>
+                </a>
+                <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" data-download-platform="mac-x64">
+                  <span class="opt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg></span>
+                  <span class="opt-text"><span class="opt-title">Intel</span><span class="opt-sub">Intel-based Macs</span></span>
+                  <span class="opt-meta"><small>DMG</small><span class="opt-size"></span></span>
+                  <span class="opt-go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 11l6 6 6-6M5 21h14"/></svg></span>
+                </a>
+                <div class="download-group">Other platforms</div>
+                <a class="download-option is-upcoming" href="#" aria-disabled="true" data-download-platform="windows">
+                  <span class="opt-icon"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5l7.5-1v7H3zM12 4.3L21 3v8.5h-9zM3 12.5h7.5v7L3 18.5zM12 12.5h9V21l-9-1.3z"/></svg></span>
+                  <span class="opt-text"><span class="opt-title">Windows</span></span>
+                  <small>Soon</small>
+                </a>
+                <a class="download-option is-upcoming" href="#" aria-disabled="true" data-download-platform="linux">
+                  <span class="opt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 10l3 2-3 2M12 15h5"/></svg></span>
+                  <span class="opt-text"><span class="opt-title">Linux</span></span>
+                  <small>Soon</small>
+                </a>
+                <div class="download-foot">
+                  <span>Not sure which Mac you have? Open the Apple menu &rarr; <b>About This Mac</b>. &ldquo;Chip: Apple M&hellip;&rdquo; means Apple Silicon; &ldquo;Processor: Intel&hellip;&rdquo; means Intel.</span>
+                  <a href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer">All releases &amp; notes &rarr;</a>
+                </div>
               </div>
             </div>
             <a class="button-secondary" href="#get-started">Get Started</a>
@@ -1673,10 +2051,36 @@ live: manual promotion only</pre>
             <div class="card-action">
               <div class="download-menu">
                 <button class="button download-toggle" type="button" aria-haspopup="true" aria-expanded="false">Download NeuralArc</button>
-                <div class="download-options" role="menu" aria-label="Download NeuralArc">
-                  <a class="download-option is-upcoming" href="#" aria-disabled="true" role="menuitem" data-download-platform="windows">Windows <small>Upcoming</small></a>
-                  <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" role="menuitem" data-download-platform="mac">Mac <small>DMG</small></a>
-                  <a class="download-option is-upcoming" href="#" aria-disabled="true" role="menuitem" data-download-platform="linux">Linux <small>Upcoming</small></a>
+                <div class="download-options" role="group" aria-label="Download NeuralArc">
+                  <div class="download-head"><strong>Download NeuralArc</strong><span class="download-version" data-release-version></span></div>
+                  <div class="download-group">macOS</div>
+                  <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" data-download-platform="mac-arm64">
+                    <span class="opt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg></span>
+                    <span class="opt-text"><span class="opt-title">Apple Silicon</span><span class="opt-sub">M1, M2, M3, M4 and later</span></span>
+                    <span class="opt-meta"><small>DMG</small><span class="opt-size"></span></span>
+                    <span class="opt-go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 11l6 6 6-6M5 21h14"/></svg></span>
+                  </a>
+                  <a class="download-option" href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer" data-download-platform="mac-x64">
+                    <span class="opt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg></span>
+                    <span class="opt-text"><span class="opt-title">Intel</span><span class="opt-sub">Intel-based Macs</span></span>
+                    <span class="opt-meta"><small>DMG</small><span class="opt-size"></span></span>
+                    <span class="opt-go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 11l6 6 6-6M5 21h14"/></svg></span>
+                  </a>
+                  <div class="download-group">Other platforms</div>
+                  <a class="download-option is-upcoming" href="#" aria-disabled="true" data-download-platform="windows">
+                    <span class="opt-icon"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5l7.5-1v7H3zM12 4.3L21 3v8.5h-9zM3 12.5h7.5v7L3 18.5zM12 12.5h9V21l-9-1.3z"/></svg></span>
+                    <span class="opt-text"><span class="opt-title">Windows</span></span>
+                    <small>Soon</small>
+                  </a>
+                  <a class="download-option is-upcoming" href="#" aria-disabled="true" data-download-platform="linux">
+                    <span class="opt-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 10l3 2-3 2M12 15h5"/></svg></span>
+                    <span class="opt-text"><span class="opt-title">Linux</span></span>
+                    <small>Soon</small>
+                  </a>
+                  <div class="download-foot">
+                    <span>Not sure which Mac you have? Open the Apple menu &rarr; <b>About This Mac</b>. &ldquo;Chip: Apple M&hellip;&rdquo; means Apple Silicon; &ldquo;Processor: Intel&hellip;&rdquo; means Intel.</span>
+                    <a href="https://github.com/haigopi/NeuralArc/releases/latest" target="_blank" rel="noopener noreferrer">All releases &amp; notes &rarr;</a>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1799,7 +2203,8 @@ live: manual promotion only</pre>
       const toggles = document.querySelectorAll(".download-toggle");
       const platformMatchers = {
         windows: [/\.exe$/i, /\.msi$/i],
-        mac: [/\.dmg$/i, /\.pkg$/i],
+        "mac-arm64": [/\.dmg$/i, /\.pkg$/i],
+        "mac-x64": [/\.dmg$/i, /\.pkg$/i],
         linux: [/\.deb$/i, /\.appimage$/i, /\.tar\.gz$/i, /\.tgz$/i, /\.zip$/i, /\.jar$/i]
       };
 
@@ -1848,16 +2253,87 @@ live: manual promotion only</pre>
         }
       });
 
+      // Which CPU an installer was built for, from the tag in its file name
+      // (NeuralArc-1.2.3-arm64.dmg); null for an untagged name such as an older release's single DMG.
+      const assetArch = (name) => {
+        const lower = (name || "").toLowerCase();
+        if (/(^|[^a-z0-9])(arm64|aarch64)([^a-z0-9]|$)/.test(lower)) return "arm64";
+        if (/(^|[^a-z0-9])(x64|x86_64|amd64|intel)([^a-z0-9]|$)/.test(lower)) return "x64";
+        return null;
+      };
+
+      // An installer tagged for the other CPU is never offered; an untagged one still is.
       const selectAsset = (assets, platform) => {
         const matchers = platformMatchers[platform] || [];
+        const wanted = platform.startsWith("mac-") ? platform.slice(4) : null;
+        const usable = assets.filter((candidate) => {
+          const built = assetArch(candidate.name);
+          return !wanted || !built || built === wanted;
+        });
         for (const matcher of matchers) {
-          const asset = assets.find((candidate) => matcher.test(candidate.name || ""));
-          if (asset) {
-            return asset;
+          const matching = usable.filter((candidate) => matcher.test(candidate.name || ""));
+          const exact = matching.find((candidate) => wanted && assetArch(candidate.name) === wanted);
+          if (exact || matching.length) {
+            return exact || matching[0];
           }
         }
         return null;
       };
+
+      // Best guess at the visitor's OS and, on a Mac, its CPU. Browsers report an Apple Silicon Mac
+      // as Intel in the user agent, so ask for the real architecture (Chromium), then fall back to
+      // the GPU name (Apple Silicon reports an Apple GPU; Intel Macs report Intel/AMD/NVIDIA).
+      // null means unknown, and then neither Mac option is singled out.
+      const detectDownloadPlatform = async () => {
+        const nav = navigator;
+        const hint = (nav.userAgentData && nav.userAgentData.platform) || nav.platform || "";
+        const ua = nav.userAgent || "";
+        if (/win/i.test(hint)) return "windows";
+        const isTouchDevice = /iphone|ipad|ipod|android/i.test(ua) || nav.maxTouchPoints > 1;
+        if (/linux|cros/i.test(hint) && !isTouchDevice) return "linux";
+        if (!/mac/i.test(hint) || isTouchDevice) return null;
+        try {
+          if (nav.userAgentData && nav.userAgentData.getHighEntropyValues) {
+            const values = await nav.userAgentData.getHighEntropyValues(["architecture"]);
+            if (/arm/i.test(values.architecture || "")) return "mac-arm64";
+            if (/x86/i.test(values.architecture || "")) return "mac-x64";
+          }
+        } catch (error) {
+          // fall through to the GPU check
+        }
+        try {
+          const gl = document.createElement("canvas").getContext("webgl");
+          const info = gl && gl.getExtension("WEBGL_debug_renderer_info");
+          const renderer = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL) || "") : "";
+          if (/apple/i.test(renderer)) return "mac-arm64";
+          if (/intel|amd|radeon|nvidia|geforce/i.test(renderer)) return "mac-x64";
+        } catch (error) {
+          // unknown
+        }
+        return null;
+      };
+
+      // Flags the detected Mac option and lists it first in every download menu.
+      detectDownloadPlatform().then((detected) => {
+        if (!detected || !detected.startsWith("mac-")) {
+          return;
+        }
+        document.querySelectorAll('[data-download-platform="' + detected + '"]').forEach((link) => {
+          link.classList.add("is-detected");
+          const badge = document.createElement("span");
+          badge.className = "detected-badge";
+          badge.textContent = "Recommended";
+          const title = link.querySelector(".opt-title");
+          if (title) {
+            title.appendChild(badge);
+          }
+          const container = link.parentElement;
+          const firstMac = container.querySelector('[data-download-platform^="mac-"]');
+          if (firstMac && firstMac !== link) {
+            container.insertBefore(link, firstMac);
+          }
+        });
+      });
 
       fetch(latestReleaseApiUrl, {
         headers: { "Accept": "application/vnd.github+json" }
@@ -1876,7 +2352,15 @@ live: manual promotion only</pre>
               if (meta) {
                 meta.textContent = asset.name.split(".").pop().toUpperCase();
               }
+              const size = link.querySelector(".opt-size");
+              if (size && asset.size) {
+                size.textContent = Math.round(asset.size / (1024 * 1024)) + " MB";
+              }
             }
+          });
+          const tag = release.tag_name || release.name || "";
+          document.querySelectorAll("[data-release-version]").forEach((el) => {
+            el.textContent = tag ? "Latest " + (/^v/i.test(tag) ? tag : "v" + tag) : "";
           });
         })
         .catch(() => {

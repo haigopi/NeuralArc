@@ -56,6 +56,58 @@ class GitHubReleaseUpdateServiceTest {
         assertEquals("https://example.com/a.exe", match.downloadUrl());
     }
 
+    private static JSONArray macRelease() {
+        return new JSONArray()
+                .put(new JSONObject().put("name", "NeuralArc-1.2.3-x64.dmg").put("browser_download_url", "https://example.com/x64.dmg"))
+                .put(new JSONObject().put("name", "NeuralArc-1.2.3-arm64.dmg").put("browser_download_url", "https://example.com/arm64.dmg"))
+                .put(new JSONObject().put("name", "NeuralArc-1.2.3.exe").put("browser_download_url", "https://example.com/a.exe"));
+    }
+
+    @Test
+    void selectAssetPicksTheMacInstallerBuiltForThisCpu() {
+        assertEquals("NeuralArc-1.2.3-arm64.dmg", GitHubReleaseUpdateService.selectAsset(
+                macRelease(), GitHubReleaseUpdateService.Platform.MAC, GitHubReleaseUpdateService.Arch.ARM64).assetName());
+        assertEquals("NeuralArc-1.2.3-x64.dmg", GitHubReleaseUpdateService.selectAsset(
+                macRelease(), GitHubReleaseUpdateService.Platform.MAC, GitHubReleaseUpdateService.Arch.X64).assetName());
+    }
+
+    @Test
+    void selectAssetFallsBackToAnUntaggedDmgFromAnOlderRelease() {
+        JSONArray legacy = new JSONArray()
+                .put(new JSONObject().put("name", "NeuralArc-1.0.1.dmg").put("browser_download_url", "https://example.com/a.dmg"));
+
+        assertEquals("NeuralArc-1.0.1.dmg", GitHubReleaseUpdateService.selectAsset(
+                legacy, GitHubReleaseUpdateService.Platform.MAC, GitHubReleaseUpdateService.Arch.ARM64).assetName());
+    }
+
+    @Test
+    void selectAssetNeverOffersAnInstallerBuiltForTheOtherCpu() {
+        JSONArray intelOnly = new JSONArray()
+                .put(new JSONObject().put("name", "NeuralArc-1.2.3-x64.dmg").put("browser_download_url", "https://example.com/x64.dmg"));
+
+        GitHubReleaseUpdateService.AssetMatch match = GitHubReleaseUpdateService.selectAsset(
+                intelOnly, GitHubReleaseUpdateService.Platform.MAC, GitHubReleaseUpdateService.Arch.ARM64);
+
+        assertEquals("", match.downloadUrl(), "the caller then falls back to the release page");
+    }
+
+    @Test
+    void selectAssetWithAnUnknownCpuStillReturnsAMacInstaller() {
+        assertEquals("NeuralArc-1.2.3-x64.dmg", GitHubReleaseUpdateService.selectAsset(
+                macRelease(), GitHubReleaseUpdateService.Platform.MAC, GitHubReleaseUpdateService.Arch.UNKNOWN).assetName());
+    }
+
+    @Test
+    void readsTheCpuFromTheJvmArchitectureAndTheAssetName() {
+        assertEquals(GitHubReleaseUpdateService.Arch.ARM64, GitHubReleaseUpdateService.archOf("aarch64"));
+        assertEquals(GitHubReleaseUpdateService.Arch.X64, GitHubReleaseUpdateService.archOf("x86_64"));
+        assertEquals(GitHubReleaseUpdateService.Arch.X64, GitHubReleaseUpdateService.archOf("amd64"));
+        assertEquals(GitHubReleaseUpdateService.Arch.UNKNOWN, GitHubReleaseUpdateService.archOf("riscv64"));
+        assertEquals(GitHubReleaseUpdateService.Arch.ARM64, GitHubReleaseUpdateService.assetArch("NeuralArc-1.2.3-arm64.dmg"));
+        assertEquals(GitHubReleaseUpdateService.Arch.X64, GitHubReleaseUpdateService.assetArch("NeuralArc-1.2.3-x64.dmg"));
+        assertEquals(GitHubReleaseUpdateService.Arch.UNKNOWN, GitHubReleaseUpdateService.assetArch("NeuralArc-1.2.3.dmg"));
+    }
+
     @Test
     void detectsDataCompatibilityWarningsFromReleaseNotes() {
         assertEquals(true, GitHubReleaseUpdateService.hasDataCompatibilityWarning(

@@ -9,6 +9,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 public class GitHubReleaseUpdateService {
     private static final String USER_AGENT = "NeuralArc-Desktop";
@@ -57,7 +59,7 @@ public class GitHubReleaseUpdateService {
         String releaseNotes = json.optString("body", "");
         String releasePageUrl = json.optString("html_url", "");
         String publishedAt = json.optString("published_at", "");
-        AssetMatch asset = selectAsset(json.optJSONArray("assets"), detectPlatform());
+        AssetMatch asset = selectAsset(json.optJSONArray("assets"), detectPlatform(), detectArch());
         boolean updateAvailable = !developmentBuild
                 && compareVersions(latestVersion, normalizedCurrentVersion) > 0;
         boolean dataCompatibilityWarning = hasDataCompatibilityWarning(releaseNotes);
@@ -93,7 +95,47 @@ public class GitHubReleaseUpdateService {
         return Platform.OTHER;
     }
 
+    /** The CPU this JVM runs on, which is the build the operator installed (a Rosetta JVM means the Intel build). */
+    static Arch detectArch() {
+        return archOf(System.getProperty("os.arch", ""));
+    }
+
+    static Arch archOf(String osArch) {
+        String arch = osArch == null ? "" : osArch.toLowerCase();
+        if (arch.equals("aarch64") || arch.equals("arm64")) {
+            return Arch.ARM64;
+        }
+        if (arch.equals("x86_64") || arch.equals("amd64") || arch.equals("x64")) {
+            return Arch.X64;
+        }
+        return Arch.UNKNOWN;
+    }
+
+    /**
+     * Which CPU an installer was built for, from the architecture tag in its file name
+     * ({@code NeuralArc-1.2.3-arm64.dmg}); {@link Arch#UNKNOWN} for an untagged name such as the
+     * single {@code NeuralArc-1.2.3.dmg} older releases shipped.
+     */
+    static Arch assetArch(String assetName) {
+        String name = assetName == null ? "" : assetName.toLowerCase();
+        if (name.matches(".*(^|[^a-z0-9])(arm64|aarch64)([^a-z0-9].*|$)")) {
+            return Arch.ARM64;
+        }
+        if (name.matches(".*(^|[^a-z0-9])(x64|x86_64|amd64|intel)([^a-z0-9].*|$)")) {
+            return Arch.X64;
+        }
+        return Arch.UNKNOWN;
+    }
+
     static AssetMatch selectAsset(JSONArray assets, Platform platform) {
+        return selectAsset(assets, platform, Arch.UNKNOWN);
+    }
+
+    /**
+     * Picks the installer for this platform and CPU. An installer tagged for the other CPU is never
+     * offered, since it would not run here; an untagged one (an older release) still is.
+     */
+    static AssetMatch selectAsset(JSONArray assets, Platform platform, Arch arch) {
         if (assets == null || assets.isEmpty()) {
             return new AssetMatch("", "");
         }
@@ -104,23 +146,41 @@ public class GitHubReleaseUpdateService {
             case OTHER -> new String[]{".zip", ".tar.gz", ".tgz"};
         };
 
-        for (String extension : preferredExtensions) {
-            for (int i = 0; i < assets.length(); i++) {
-                JSONObject asset = assets.optJSONObject(i);
-                if (asset == null) {
-                    continue;
-                }
-                String name = asset.optString("name", "");
-                if (name.toLowerCase().endsWith(extension)) {
-                    return new AssetMatch(name, asset.optString("browser_download_url", ""));
-                }
+        List<JSONObject> usable = new ArrayList<>();
+        for (int i = 0; i < assets.length(); i++) {
+            JSONObject asset = assets.optJSONObject(i);
+            if (asset == null) {
+                continue;
+            }
+            Arch built = assetArch(asset.optString("name", ""));
+            if (arch == Arch.UNKNOWN || built == Arch.UNKNOWN || built == arch) {
+                usable.add(asset);
             }
         }
 
-        JSONObject first = assets.optJSONObject(0);
-        if (first == null) {
+        for (String extension : preferredExtensions) {
+            JSONObject untagged = null;
+            for (JSONObject asset : usable) {
+                String name = asset.optString("name", "");
+                if (!name.toLowerCase().endsWith(extension)) {
+                    continue;
+                }
+                if (arch != Arch.UNKNOWN && assetArch(name) == arch) {
+                    return new AssetMatch(name, asset.optString("browser_download_url", ""));
+                }
+                if (untagged == null) {
+                    untagged = asset;
+                }
+            }
+            if (untagged != null) {
+                return new AssetMatch(untagged.optString("name", ""), untagged.optString("browser_download_url", ""));
+            }
+        }
+
+        if (usable.isEmpty()) {
             return new AssetMatch("", "");
         }
+        JSONObject first = usable.get(0);
         return new AssetMatch(first.optString("name", ""), first.optString("browser_download_url", ""));
     }
 
@@ -180,6 +240,12 @@ public class GitHubReleaseUpdateService {
                 || normalized.contains("incompatible with local data")
                 || normalized.contains("incompatible with existing data")
                 || normalized.contains("breaking data migration");
+    }
+
+    enum Arch {
+        ARM64,
+        X64,
+        UNKNOWN
     }
 
     enum Platform {
