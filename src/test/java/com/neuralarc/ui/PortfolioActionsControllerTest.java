@@ -664,6 +664,53 @@ class PortfolioActionsControllerTest {
         assertTrue(gateway.soldStrategyIds.isEmpty());
     }
 
+    @Test
+    void reconcileAddsTheMissingBrokerFillAfterTheOperatorApproves() throws Exception {
+        FakeGateway gateway = new FakeGateway(new ResumeRecordingService());
+        ManagedStrategy rdw = AverageDownTestEntries.position("RDW", 4, "10", "11");
+        rdw.setUntrackedShares(4);
+        gateway.current = List.of(rdw);
+        gateway.brokerHistory = List.of(new com.neuralarc.api.AlpacaOrderData("b1", "", "RDW", "buy", "market",
+                BigDecimal.ZERO, new BigDecimal("10.50"), new BigDecimal("4"), "filled", "{}", java.time.Instant.now()));
+        gateway.reconcileChoice = Optional.of(List.of());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handleReconcileFromBrokerFills();
+
+        assertTrue(awaitUntil(() -> !gateway.savedOrders.isEmpty()), "the approved fix must be saved");
+        assertEquals("b1", gateway.savedOrders.get(0).alpacaOrderId());
+        assertEquals("RDW-id", gateway.savedOrders.get(0).strategyId());
+        assertEquals(1, gateway.reconcileOffered.size());
+    }
+
+    @Test
+    void reconcileSavesNothingWhenTheOperatorCancels() throws Exception {
+        FakeGateway gateway = new FakeGateway(new ResumeRecordingService());
+        ManagedStrategy rdw = AverageDownTestEntries.position("RDW", 4, "10", "11");
+        rdw.setUntrackedShares(4);
+        gateway.current = List.of(rdw);
+        gateway.brokerHistory = List.of(new com.neuralarc.api.AlpacaOrderData("b1", "", "RDW", "buy", "market",
+                BigDecimal.ZERO, new BigDecimal("10.50"), new BigDecimal("4"), "filled", "{}", java.time.Instant.now()));
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handleReconcileFromBrokerFills();
+
+        assertTrue(awaitUntil(() -> !gateway.reconcileOffered.isEmpty()), "the review should have been offered");
+        assertTrue(gateway.savedOrders.isEmpty());
+    }
+
+    @Test
+    void reconcileTellsTheOperatorWhenEveryPositionIsAlreadyExplained() {
+        FakeGateway gateway = new FakeGateway(new ResumeRecordingService());
+        gateway.current = List.of(AverageDownTestEntries.position("AAPL", 3, "10", "11"));
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handleReconcileFromBrokerFills();
+
+        assertEquals(1, gateway.shownMessages.size());
+        assertTrue(gateway.savedOrders.isEmpty());
+    }
+
     private static final class FakeGateway implements PortfolioActionsController.Gateway {
         private final StrategyService service;
         private final AtomicInteger activeSells = new AtomicInteger();
@@ -679,6 +726,10 @@ class PortfolioActionsControllerTest {
         private final CountDownLatch sellTriggersEntered = new CountDownLatch(2);
         private final java.util.List<String> updatedStrategyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private Optional<ThresholdSellSelection> thresholdChoice = Optional.empty();
+        private java.util.List<com.neuralarc.api.AlpacaOrderData> brokerHistory = java.util.List.of();
+        private final java.util.List<com.neuralarc.model.StrategyOrder> savedOrders = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        private Optional<List<BrokerFillReconciler.Proposal>> reconcileChoice = Optional.empty();
+        private List<BrokerFillReconciler.Proposal> reconcileOffered = List.of();
         private final java.util.List<String> soldStrategyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private final java.util.List<SellSubmissionType> soldTypes = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private String marketBuyStrategyId;
@@ -775,6 +826,14 @@ class PortfolioActionsControllerTest {
         public StrategyService.StrategyCreationResult readjustLosingPendingBaseBuy(ManagedStrategy entry) {
             readjustedPendingStrategyIds.add(entry.strategy.id());
             return StrategyService.StrategyCreationResult.success(entry.strategy.id(), "order", "alpaca", "client");
+        }
+        @Override public java.util.List<com.neuralarc.api.AlpacaOrderData> brokerOrderHistory(StrategyMode mode, String symbol, java.time.Instant after) {
+            return brokerHistory;
+        }
+        @Override public void saveStrategyOrder(com.neuralarc.model.StrategyOrder order) { savedOrders.add(order); }
+        @Override public Optional<List<BrokerFillReconciler.Proposal>> chooseBrokerFillFixes(List<BrokerFillReconciler.Proposal> proposals) {
+            reconcileOffered = proposals;
+            return reconcileChoice.isPresent() ? Optional.of(proposals) : Optional.empty();
         }
         @Override public Optional<ThresholdSellSelection> chooseThresholdSell(List<ManagedStrategy> scope) {
             return thresholdChoice;

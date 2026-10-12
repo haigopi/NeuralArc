@@ -172,6 +172,17 @@ public class HttpAlpacaClient implements AlpacaClient {
     }
 
     @Override
+    public List<AlpacaOrderData> getOrderHistory(String symbol, Instant after) {
+        if (symbol == null || symbol.isBlank()) {
+            return List.of();
+        }
+        String endpoint = tradingBaseUrl + "/v2/orders?status=all&limit=500&direction=desc&symbols="
+                + URLEncoder.encode(symbol.trim().toUpperCase(), StandardCharsets.UTF_8)
+                + (after == null ? "" : "&after=" + URLEncoder.encode(after.toString(), StandardCharsets.UTF_8));
+        return fetchOpenOrders(endpoint);
+    }
+
+    @Override
     public boolean cancelOrder(String orderId) {
         if (orderId == null || orderId.isBlank()) {
             return false;

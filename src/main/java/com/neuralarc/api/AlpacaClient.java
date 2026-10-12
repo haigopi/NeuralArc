@@ -55,6 +55,15 @@ public interface AlpacaClient {
 
     List<AlpacaOrderData> getOpenOrders();
 
+    /**
+     * Every order the broker has for {@code symbol} since {@code after}, open or closed, newest first.
+     * Used only to compare the broker's fills with the app's own records, so a client that cannot
+     * answer returns an empty list rather than guessing.
+     */
+    default List<AlpacaOrderData> getOrderHistory(String symbol, java.time.Instant after) {
+        return List.of();
+    }
+
     boolean cancelOrder(String orderId);
 
     Optional<AlpacaPositionData> getPosition(String symbol);

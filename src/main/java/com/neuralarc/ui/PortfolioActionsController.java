@@ -41,6 +41,24 @@ final class PortfolioActionsController {
             return Optional.empty();
         }
 
+        /** The broker's orders for a symbol since {@code after}; empty where no broker client is wired. */
+        default List<com.neuralarc.api.AlpacaOrderData> brokerOrderHistory(StrategyMode mode, String symbol, java.time.Instant after) {
+            return List.of();
+        }
+
+        /** The local record, from any strategy, of a broker order. */
+        default Optional<com.neuralarc.model.StrategyOrder> findOrderByBrokerId(String brokerOrderId) {
+            return Optional.empty();
+        }
+
+        default void saveStrategyOrder(com.neuralarc.model.StrategyOrder order) {
+        }
+
+        /** Shows the Reconcile from Broker Fills review; the ticked fixes, or empty when cancelled. */
+        default Optional<List<BrokerFillReconciler.Proposal>> chooseBrokerFillFixes(List<BrokerFillReconciler.Proposal> proposals) {
+            return Optional.empty();
+        }
+
         /** Opens the read-only AI analyst; does nothing where no analyst is wired. */
         default void openAgentAnalyst() {
         }
@@ -987,6 +1005,11 @@ final class PortfolioActionsController {
                     ? TargetResult.success(strategy.symbol() + " " + change.quantity() + " sh " + change.timeInForce())
                     : TargetResult.failure(strategy.symbol() + ": the strategy service rejected the change");
         });
+    }
+
+    /** Reconcile from Broker Fills: see {@link BrokerFillReconcileFlow}. */
+    void handleReconcileFromBrokerFills() {
+        new BrokerFillReconcileFlow(gateway, this::refreshAfterAction).run();
     }
 
     void handleCleanTradeHistory() {

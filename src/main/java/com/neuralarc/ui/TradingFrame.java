@@ -960,6 +960,27 @@ public class TradingFrame extends JFrame {
       }
 
       @Override
+      public List<com.neuralarc.api.AlpacaOrderData> brokerOrderHistory(StrategyMode mode, String symbol, Instant after) {
+        HttpAlpacaClient client = alpacaClientForStrategyMode(mode);
+        return client == null ? List.of() : client.getOrderHistory(symbol, after);
+      }
+
+      @Override
+      public Optional<StrategyOrder> findOrderByBrokerId(String brokerOrderId) {
+        return strategyOrderRepository.findByAlpacaOrderId(brokerOrderId);
+      }
+
+      @Override
+      public void saveStrategyOrder(StrategyOrder order) {
+        strategyOrderRepository.save(order);
+      }
+
+      @Override
+      public Optional<List<BrokerFillReconciler.Proposal>> chooseBrokerFillFixes(List<BrokerFillReconciler.Proposal> proposals) {
+        return BrokerFillReconcileDialog.show(TradingFrame.this, proposals, selectedScopeLabel());
+      }
+
+      @Override
       public List<StrategyOrder> ordersForStrategy(String strategyId) {
         return strategyOrderRepository.findByStrategyId(strategyId);
       }

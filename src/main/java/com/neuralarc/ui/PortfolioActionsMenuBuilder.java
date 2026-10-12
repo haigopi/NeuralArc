@@ -161,6 +161,10 @@ final class PortfolioActionsMenuBuilder {
                                 controller::handleCleanInvalidStrategies)
                 )),
                 new PortfolioActionsMenu.Group("History & Local Data", "icons/delete.svg", List.of(
+                        new PortfolioActionsMenu.Entry("Reconcile from Broker Fills",
+                                "Fix positions whose shares their own orders do not explain, using the broker's order history.",
+                                "icons/actions.svg",
+                                controller::handleReconcileFromBrokerFills),
                         new PortfolioActionsMenu.Entry(
                                 "Clean Archived Positions (" + controller.cleanableArchivedPositions().size() + ")",
                                 "Delete past positions cancelled or archived after a failure, across all workspaces;"

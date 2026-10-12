@@ -35,13 +35,19 @@ final class StrategyOrderFillSupport {
             if (order == null || order.side() == null) {
                 continue;
             }
-            if (order.status() != StrategyOrderStatus.FILLED && order.status() != StrategyOrderStatus.PARTIALLY_FILLED) {
+            if (!countsAsFilled(order)) {
                 continue;
             }
             BigDecimal quantity = resolvedFilledQuantity(order);
             net = order.side() == StrategyOrderSide.BUY ? net.add(quantity) : net.subtract(quantity);
         }
         return Math.max(0, net.setScale(0, RoundingMode.DOWN).intValue());
+    }
+
+    /** Whether the order's fills count towards the strategy's shares: filled, or partly filled and still working. */
+    static boolean countsAsFilled(StrategyOrder order) {
+        return order != null
+                && (order.status() == StrategyOrderStatus.FILLED || order.status() == StrategyOrderStatus.PARTIALLY_FILLED);
     }
 
     static BigDecimal resolvedFilledQuantity(StrategyOrder order) {
