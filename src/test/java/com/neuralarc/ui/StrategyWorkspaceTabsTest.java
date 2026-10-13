@@ -44,6 +44,70 @@ class StrategyWorkspaceTabsTest {
     }
 
     @Test
+    void tabsWithARunningLiquidationShowABlinkingDotAndLoseItWhenItStops() throws Exception {
+        InMemoryWorkspaceRepository workspaceRepository = new InMemoryWorkspaceRepository();
+        workspaceRepository.save(new StrategyWorkspace("a", "Alpha", "CODE1", StrategyMode.PAPER, false, Instant.now(), Instant.now()));
+        workspaceRepository.save(new StrategyWorkspace("b", "Beta", "CODE2", StrategyMode.PAPER, false, Instant.now(), Instant.now()));
+        WorkspaceService service = new WorkspaceService(workspaceRepository, new EmptyStrategyRepository());
+        JTabbedPane tabs = new JTabbedPane();
+        java.util.Set<String> running = new java.util.HashSet<>();
+        final StrategyWorkspaceTabs[] coordinator = new StrategyWorkspaceTabs[1];
+        SwingUtilities.invokeAndWait(() -> {
+            coordinator[0] = new StrategyWorkspaceTabs(tabs, new JPanel(), new JPanel(), service,
+                    () -> StrategyMode.PAPER, ignored -> { }, () -> "All Stocks", w -> w.name(), () -> "Trade History");
+            coordinator[0].setRunningLiquidations(() -> running);
+        });
+        // Tabs: 0 All Stocks, 1 Alpha, 2 Beta, 3 Trade History. All Stocks (0) is selected.
+        for (int i = 0; i < 4; i++) {
+            assertNull(tabs.getIconAt(i));
+        }
+        assertFalse(coordinator[0].pulsing(), "nothing blinks while nothing runs");
+
+        running.add("b");
+        running.add(StrategyWorkspaceTabs.ALL_STOCKS);
+        SwingUtilities.invokeAndWait(() -> coordinator[0].refreshRunningHighlight());
+
+        assertNotNull(tabs.getIconAt(2));
+        assertTrue(tabs.getToolTipTextAt(2).contains(StrategyWorkspaceTabs.RUNNING_TOOLTIP), "the dot explains itself");
+        assertNull(tabs.getIconAt(0), "the selected tab is never marked");
+        assertNull(tabs.getIconAt(1), "Alpha is not running");
+        assertNull(tabs.getIconAt(3), "Trade History is never marked");
+        assertTrue(coordinator[0].pulsing());
+
+        SwingUtilities.invokeAndWait(() -> coordinator[0].rebuild());
+        assertNotNull(tabs.getIconAt(2), "survives a tab rebuild");
+
+        SwingUtilities.invokeAndWait(() -> tabs.setSelectedIndex(2));
+        assertNull(tabs.getIconAt(2), "viewing the tab clears its dot");
+        assertFalse(tabs.getToolTipTextAt(2).contains(StrategyWorkspaceTabs.RUNNING_TOOLTIP), "and its tooltip note");
+        assertNotNull(tabs.getIconAt(0), "All Stocks is now hidden behind it");
+        SwingUtilities.invokeAndWait(() -> tabs.setSelectedIndex(0));
+        assertNotNull(tabs.getIconAt(2), "leaving the tab marks it again");
+
+        running.clear();
+        SwingUtilities.invokeAndWait(() -> coordinator[0].refreshRunningHighlight());
+        assertNull(tabs.getIconAt(2));
+        assertNull(tabs.getIconAt(0));
+        assertFalse(coordinator[0].pulsing(), "the blink stops with the last dot");
+    }
+
+    @Test
+    void theDotBlinksBetweenTheLiquidateButtonsTwoColours() {
+        LiquidationPulse.DotIcon dot = new LiquidationPulse.DotIcon();
+        java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(20, 20, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        java.awt.Graphics g = image.getGraphics();
+        dot.paintIcon(null, g, 4, 4);
+        int first = image.getRGB(8, 10);
+        dot.setAlternate(true);
+        dot.paintIcon(null, g, 4, 4);
+        int second = image.getRGB(8, 10);
+        g.dispose();
+
+        assertEquals(LiquidationPulse.PRIMARY.getRGB(), first);
+        assertEquals(LiquidationPulse.ALTERNATE.getRGB(), second);
+    }
+
+    @Test
     void liquidateTabIdsUseStableWorkspaceIdsAndExcludeHistory() throws Exception {
         InMemoryWorkspaceRepository workspaceRepository = new InMemoryWorkspaceRepository();
         workspaceRepository.save(new StrategyWorkspace("paper-a", "Duplicated", "CODE1", StrategyMode.PAPER, false, Instant.now(), Instant.now()));
@@ -97,16 +161,16 @@ class StrategyWorkspaceTabsTest {
                 () -> StrategyMode.PAPER,
                 ignored -> { },
                 () -> "All Stocks - Paper (5)",
-                workspace -> workspace.name() + " [ " + count[0] + " ]",
+                workspace -> workspace.name() + " (" + count[0] + ")",
                 () -> "Trade History"
         ));
 
-        assertEquals("ORB Engine [ 2 ]", tabs.getTitleAt(1));
+        assertEquals("ORB Engine (2)", tabs.getTitleAt(1));
 
         count[0] = 3;
         SwingUtilities.invokeAndWait(() -> coordinator[0].refreshStrategyTitles());
 
-        assertEquals("ORB Engine [ 3 ]", tabs.getTitleAt(1));
+        assertEquals("ORB Engine (3)", tabs.getTitleAt(1));
     }
 
     private static final class InMemoryWorkspaceRepository implements WorkspaceRepository {

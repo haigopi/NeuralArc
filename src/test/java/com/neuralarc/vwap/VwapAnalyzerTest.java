@@ -88,10 +88,10 @@ class VwapAnalyzerTest {
         VwapAnalyzer analyzer = new VwapAnalyzer(FIXED, null);
         VwapRecommendation rec = analyzer.analyze(List.of(strong("NVDA")),
                 VwapConfig.defaults(StrategyMode.PAPER)).getFirst();
-        assertEquals(new BigDecimal("99.75"), rec.plannedEntryPrice());   // 0.25% under the market
-        assertEquals(new BigDecimal("95.76"), rec.stopLossPrice());   // 4% stop
+        assertEquals(new BigDecimal("92.00"), rec.plannedEntryPrice());   // 8% under the market
+        assertEquals(new BigDecimal("88.32"), rec.stopLossPrice());   // 4% stop
         assertEquals(new BigDecimal("101.20"), rec.targetPrice());    // target = VWAP
-        assertEquals(new BigDecimal("1.45"), rec.reversionUpsidePercent());
+        assertEquals(new BigDecimal("10.00"), rec.reversionUpsidePercent());
         assertEquals(VwapStatus.RECOMMENDED, rec.status());
     }
 
@@ -145,7 +145,7 @@ class VwapAnalyzerTest {
 
         assertTrue(rec.plannedEntryPrice().compareTo(awkwardPrice.currentPrice()) <= 0,
                 "planned " + rec.plannedEntryPrice() + " must not sit above the market");
-        assertEquals(new BigDecimal("215.15"), rec.plannedEntryPrice());
+        assertEquals(new BigDecimal("198.43"), rec.plannedEntryPrice());
     }
 
     private VwapCandidate strong(String symbol) {
@@ -167,5 +167,19 @@ class VwapAnalyzerTest {
         return new VwapCandidate(symbol, symbol + " Inc", new BigDecimal("50"), new BigDecimal("52"),
                 discount, new BigDecimal("50.5"), new BigDecimal("-1.0"), 2_000_000L, relVol,
                 new BigDecimal("48"), new BigDecimal("45"), aboveMa50, aboveMa200, new BigDecimal("0.6"));
+    }
+
+    @Test
+    void plannedEntryIsEightPercentUnderTheLowestOfOpenLowAndCurrent() {
+        VwapCandidate c = strong("NVDA");
+        VwapCandidate withSession = new VwapCandidate(c.symbol(), c.companyName(), c.currentPrice(), c.vwap(),
+                c.discountPercent(), c.previousClose(), c.dayChangePercent(), c.averageVolume(), c.relativeVolume(),
+                c.movingAverage50(), c.movingAverage200(), c.aboveMa50(), c.aboveMa200(), c.intradayRangePercent(),
+                c.weekLow(), new BigDecimal("98"), new BigDecimal("90"));
+
+        VwapRecommendation rec = new VwapAnalyzer(FIXED, null).analyze(List.of(withSession),
+                VwapConfig.defaults(StrategyMode.PAPER)).getFirst();
+
+        assertEquals(new BigDecimal("82.80"), rec.plannedEntryPrice());   // 8% under today's low of 90
     }
 }

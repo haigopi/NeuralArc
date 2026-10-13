@@ -3,6 +3,7 @@ package com.neuralarc.vwap;
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.api.AlpacaMarketDataException;
 import com.neuralarc.analytics.RecentLow;
+import com.neuralarc.analytics.TodaySession;
 import com.neuralarc.model.MarketBar;
 import com.neuralarc.util.IntradayVolumeSupport;
 import com.neuralarc.util.Monetary;
@@ -100,6 +101,7 @@ public final class VwapLiveScanner {
                 ? intradayHigh.subtract(intradayLow).multiply(BigDecimal.valueOf(100)).divide(current, 2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
         BigDecimal weekLow = RecentLow.weekLow(history, intradayLow);
+        MarketBar todayDaily = todayDailyBar(dailyBars, today);
         return Optional.of(new VwapCandidate(
                 symbol,
                 symbol,
@@ -115,7 +117,9 @@ public final class VwapLiveScanner {
                 valid(ma50) && current.compareTo(ma50) > 0,
                 valid(ma200) && current.compareTo(ma200) > 0,
                 intradayRangePercent,
-                Monetary.round(weekLow)
+                Monetary.round(weekLow),
+                Monetary.round(TodaySession.open(todayDaily, intradayBars)),
+                Monetary.round(TodaySession.low(todayDaily, intradayBars))
         ));
     }
 
@@ -137,6 +141,10 @@ public final class VwapLiveScanner {
             return BigDecimal.ZERO;
         }
         return pvSum.divide(volSum, 4, RoundingMode.HALF_UP);
+    }
+
+    private MarketBar todayDailyBar(List<MarketBar> bars, LocalDate today) {
+        return bars == null ? null : bars.stream().filter(bar -> barDate(bar).isEqual(today)).findFirst().orElse(null);
     }
 
     private List<MarketBar> priorDailyBars(List<MarketBar> bars, LocalDate today) {

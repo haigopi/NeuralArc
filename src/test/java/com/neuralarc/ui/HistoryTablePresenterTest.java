@@ -79,6 +79,23 @@ class HistoryTablePresenterTest {
     }
 
     @Test
+    void sellRowsNameTheWorkspaceTheyWereFulfilledFrom() {
+        HistoryTablePresenter.HistorySource inWorkspace = new HistoryTablePresenter.HistorySource(
+                "AAPL", "Paper", "Completed", "Completed", "", Instant.now(), StrategyStatus.COMPLETED,
+                List.of(filledOrder("AAPL", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL, "10", "110.00", "110.00")),
+                "Gap Rocket");
+        HistoryTablePresenter.HistorySource unassigned = new HistoryTablePresenter.HistorySource(
+                "MSFT", "Paper", "Completed", "Completed", "", Instant.now(), StrategyStatus.COMPLETED,
+                List.of(filledOrder("MSFT", StrategyStage.TARGET_SELL, StrategyOrderSide.SELL, "10", "110.00", "110.00")));
+
+        List<HistoryTablePresenter.HistoryRow> rows = presenter.buildRows(List.of(inWorkspace, unassigned), instant -> "t");
+
+        assertEquals("Gap Rocket", rows.stream().filter(r -> "AAPL".equals(r.symbol()) && "SELL".equals(r.side())).findFirst().orElseThrow().workspace());
+        assertEquals("", rows.stream().filter(r -> "MSFT".equals(r.symbol()) && "SELL".equals(r.side())).findFirst().orElseThrow().workspace());
+        assertEquals("Workspace", HistoryGridTableModel.COLUMNS[2]);
+    }
+
+    @Test
     void sellStageLabelsDifferentiatePortfolioCaptureAutonomousAndManualOrigins() {
         String captureJson = "{\"" + StrategyService.EXIT_SOURCE_JSON_KEY + "\":\""
                 + StrategyService.SellExecutionSource.PORTFOLIO_CAPTURE.name() + "\"}";

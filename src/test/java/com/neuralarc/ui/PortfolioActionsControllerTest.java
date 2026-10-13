@@ -219,7 +219,7 @@ class PortfolioActionsControllerTest {
         PortfolioActionsController controller = new PortfolioActionsController(gateway);
 
         PortfolioActionsSupport.BatchResult result = controller.deletePendingBaseBuyTargets(
-                List.of(managed("AAPL")), "[Cancel Amber Pending Buys]");
+                List.of(managed("AAPL")), "[Cancel Red Pending Buys]");
 
         assertEquals(List.of("AAPL"), result.successes());
         assertTrue(result.failures().isEmpty());

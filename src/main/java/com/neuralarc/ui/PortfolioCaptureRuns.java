@@ -41,6 +41,12 @@ final class PortfolioCaptureRuns {
             return mode.name() + ":" + (workspaceId == null ? "All Stocks" : workspaceId);
         }
 
+        /** What the operator reads: the workspace's name (All Stocks when there is none) and the trading mode. */
+        String displayLabel(String workspaceName) {
+            String name = workspaceName == null || workspaceName.isBlank() ? "All Stocks" : workspaceName.trim();
+            return name + " · " + mode.name();
+        }
+
         String fileName() {
             String workspace = workspaceId == null ? "all-stocks" : workspaceId.replaceAll("[^A-Za-z0-9._-]", "_");
             return STATE_FILE_PREFIX + mode.name() + "-" + workspace + ".json";

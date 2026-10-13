@@ -155,6 +155,7 @@ public final class HistoryTablePresenter {
                     source.symbol(),
                     groupKeyFor(source, rowTime, groupBy),
                     source.brokerMode(),
+                    source.workspaceName(),
                     source.strategyStatus(),
                     formatStageForHistory(order),
                     order.side().name(),
@@ -189,6 +190,7 @@ public final class HistoryTablePresenter {
                 source.symbol(),
                 groupKeyFor(source, source.lastPolledAt(), groupBy),
                 source.brokerMode(),
+                source.workspaceName(),
                 source.strategyStatus(),
                 source.currentStateLabel(),
                 "-",
@@ -310,6 +312,7 @@ public final class HistoryTablePresenter {
                 groupKey,
                 "",
                 "",
+                "",
                 counts,
                 "",
                 "",
@@ -335,6 +338,7 @@ public final class HistoryTablePresenter {
         return new HistoryRow(
                 groupKey,
                 groupKey,
+                "",
                 "",
                 "",
                 "Subtotal",
@@ -364,6 +368,7 @@ public final class HistoryTablePresenter {
         return new HistoryRow(
                 "TOTAL",
                 "TOTAL",
+                "",
                 "",
                 "",
                 "Total Value",
@@ -490,14 +495,34 @@ public final class HistoryTablePresenter {
             String latestOrderStatus,
             Instant lastPolledAt,
             StrategyStatus strategyStatusEnum,
-            List<StrategyOrder> orders
+            List<StrategyOrder> orders,
+            String workspaceName
     ) {
+        public HistorySource {
+            workspaceName = workspaceName == null ? "" : workspaceName;
+        }
+
+        /** A source whose workspace is unknown or unassigned: the Workspace column is left blank. */
+        public HistorySource(
+                String symbol,
+                String brokerMode,
+                String strategyStatus,
+                String currentStateLabel,
+                String latestOrderStatus,
+                Instant lastPolledAt,
+                StrategyStatus strategyStatusEnum,
+                List<StrategyOrder> orders
+        ) {
+            this(symbol, brokerMode, strategyStatus, currentStateLabel, latestOrderStatus, lastPolledAt,
+                    strategyStatusEnum, orders, "");
+        }
     }
 
     public record HistoryRow(
             String symbol,
             String groupKey,
             String brokerMode,
+            String workspace,
             String strategyStatus,
             String stage,
             String side,

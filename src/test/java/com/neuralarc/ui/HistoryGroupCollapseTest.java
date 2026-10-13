@@ -71,6 +71,6 @@ class HistoryGroupCollapseTest {
     }
 
     private static HistoryRow row(String groupKey, HistoryRowStyle style) {
-        return new HistoryRow(groupKey, groupKey, "", "", "", "", "", "", "", "", "", "", null, 1, style);
+        return new HistoryRow(groupKey, groupKey, "", "", "", "", "", "", "", "", "", "", "", null, 1, style);
     }
 }

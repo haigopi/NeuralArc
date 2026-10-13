@@ -35,6 +35,8 @@ class SwingLiveScannerTest {
         assertTrue(c.aboveMa50(), "current 100 should be above the ~96 MA50");
         assertTrue(c.relativeVolume().compareTo(BigDecimal.ZERO) > 0);
         assertEquals(new BigDecimal("96.00"), c.previousClose());
+        assertEquals(new BigDecimal("99.00"), c.todayOpen());
+        assertEquals(new BigDecimal("98.00"), c.todayLow());
     }
 
     @Test

@@ -87,6 +87,40 @@ class ThresholdSellRuleTest {
         assertEquals("profit less than $50", rule(PROFIT, LESS_THAN, DOLLARS, "50").describe());
     }
 
+    @Test
+    void anySideMatchesEveryPositionNotAtBreakEven() {
+        ThresholdSellRule rule = rule(ThresholdSellRule.Side.ANY, MORE_THAN, PERCENT, "0");
+
+        assertTrue(rule.matches(held(10, "10", "10.01")));
+        assertTrue(rule.matches(held(10, "10", "9.99")));
+        assertFalse(rule.matches(held(10, "10", "10")));
+        assertEquals("profit or loss more than 0%", rule.describe());
+    }
+
+    @Test
+    void positionValueCapKeepsOnlySmallHoldings() {
+        ThresholdSellRule losers = capped(LOSS, ThresholdSellRule.ValueBasis.POSITION_VALUE, "10");
+
+        assertTrue(losers.matches(held(2, "5", "4")), "$8 position, down");
+        assertFalse(losers.matches(held(10, "5", "4")), "$40 position, down");
+        assertFalse(losers.matches(held(2, "3", "4")), "$8 position but a winner");
+        assertFalse(losers.matches(held(2, "6", "5")), "exactly $10 is not under $10");
+        assertEquals("loss more than 0% and position value under $10", losers.describe());
+    }
+
+    @Test
+    void sharePriceCapLooksAtOneShareNotTheHolding() {
+        ThresholdSellRule winners = capped(PROFIT, ThresholdSellRule.ValueBasis.SHARE_PRICE, "10");
+
+        assertTrue(winners.matches(held(100, "4", "5")), "$5 share, $500 holding");
+        assertFalse(winners.matches(held(1, "11", "12")), "$12 share");
+    }
+
+    private static ThresholdSellRule capped(ThresholdSellRule.Side side, ThresholdSellRule.ValueBasis basis, String cap) {
+        return new ThresholdSellRule(side, MORE_THAN, PERCENT, BigDecimal.ZERO,
+                new ThresholdSellRule.ValueLimit(basis, new BigDecimal(cap)));
+    }
+
     private static ThresholdSellRule rule(ThresholdSellRule.Side side, ThresholdSellRule.Comparison comparison,
                                           ThresholdSellRule.Unit unit, String value) {
         return new ThresholdSellRule(side, comparison, unit, new BigDecimal(value));

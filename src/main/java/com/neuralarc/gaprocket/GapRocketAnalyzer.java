@@ -1,5 +1,7 @@
 package com.neuralarc.gaprocket;
 
+import com.neuralarc.analytics.PlannedEntryPrice;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -74,10 +76,12 @@ public final class GapRocketAnalyzer {
                 targetPrice, GapRocketStatus.RECOMMENDED, cfg.mode(), Instant.now(clock));
     }
 
+    /**
+     * A limit buy must never sit above the market, so a premarket high above the current price (a stale
+     * or already-failed breakout level) is not an entry: the plan aims a little under the current price.
+     */
     private BigDecimal plannedEntryPrice(GapRocketCandidate c) {
-        BigDecimal current = c.currentPrice() == null ? BigDecimal.ZERO : c.currentPrice();
-        BigDecimal high = c.premarketHigh() == null ? BigDecimal.ZERO : c.premarketHigh();
-        return current.max(high).setScale(2, RoundingMode.HALF_UP);
+        return PlannedEntryPrice.baseBuy(c.currentPrice(), c.todayOpen(), c.premarketLow());
     }
 
     private boolean passesTrend(GapRocketCandidate c, GapRocketConfig.MarketTrendFilter filter) {

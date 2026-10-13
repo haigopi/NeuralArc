@@ -3,6 +3,7 @@ package com.neuralarc.diphunter;
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.api.AlpacaMarketDataException;
 import com.neuralarc.analytics.RecentLow;
+import com.neuralarc.analytics.TodaySession;
 import com.neuralarc.model.MarketBar;
 import com.neuralarc.util.IntradayVolumeSupport;
 import com.neuralarc.util.Monetary;
@@ -101,6 +102,7 @@ public final class DipHunterLiveScanner {
                 ? intradayHigh.subtract(intradayLow).multiply(BigDecimal.valueOf(100)).divide(current, 2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
         BigDecimal weekLow = RecentLow.weekLow(history, intradayLow);
+        MarketBar todayDaily = todayDailyBar(dailyBars, today);
         return Optional.of(new DipHunterCandidate(
                 symbol,
                 symbol,
@@ -118,8 +120,14 @@ public final class DipHunterLiveScanner {
                 intradayReversal,
                 intradayRangePercent,
                 Monetary.round(current),
-                Monetary.round(weekLow)
+                Monetary.round(weekLow),
+                Monetary.round(TodaySession.open(todayDaily, intradayBars)),
+                Monetary.round(TodaySession.low(todayDaily, intradayBars))
         ));
+    }
+
+    private MarketBar todayDailyBar(List<MarketBar> bars, LocalDate today) {
+        return bars == null ? null : bars.stream().filter(bar -> barDate(bar).isEqual(today)).findFirst().orElse(null);
     }
 
     private List<MarketBar> priorDailyBars(List<MarketBar> bars, LocalDate today) {

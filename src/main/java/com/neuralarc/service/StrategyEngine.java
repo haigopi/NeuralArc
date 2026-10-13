@@ -37,6 +37,7 @@ public class StrategyEngine {
     private final TradeEmailNotificationService emailNotificationService;
     private final ExpiredEntryOrderResubmitter expiredEntryOrderResubmitter;
     private final BaseBuyPriceGuard baseBuyPriceGuard = new BaseBuyPriceGuard();
+    private final SharedPositionCap sharedPositionCap;
     private WorkspaceCodeResolver workspaceCodeResolver = WorkspaceCodeResolver.unassigned();
     private final StopLossAutoCorrector stopLossAutoCorrector;
 
@@ -109,6 +110,7 @@ public class StrategyEngine {
         this.emailNotificationService = emailNotificationService;
         this.expiredEntryOrderResubmitter = new ExpiredEntryOrderResubmitter(orderRepository, alpacaClient);
         this.stopLossAutoCorrector = new StopLossAutoCorrector(strategyRepository, stateMachine);
+        this.sharedPositionCap = new SharedPositionCap(strategyRepository, orderRepository);
         this.exitOrderCanceller = new ExitOrderCanceller(alpacaClient, orderRepository);
         this.profitControlEvaluator = new StrategyProfitControlEvaluator(
                 strategyRepository,
@@ -215,7 +217,23 @@ public class StrategyEngine {
             orders = orderRepository.findByStrategyId(strategy.id());
         }
 
-        if (position.isPresent() && position.get().exists()) {
+        // Exits sell this entry's own shares: the broker's position is every entry in the symbol netted.
+        position = sharedPositionCap.cap(strategy, position, orders);
+        boolean awaitingEntryFill = StrategyStageSupport.awaitingFirstEntryFill(orders);
+        if (awaitingEntryFill) {
+            // Whether or not the symbol has a broker position, none of this entry's own orders has filled,
+            // so it holds nothing to protect. A state left over from when it was wrongly moved to stop-loss
+            // monitoring is put right on every poll, including once the other entry's position is gone.
+            revertToPendingEntryState(strategy, orders);
+        }
+        if (awaitingEntryFill && position.isPresent() && position.get().exists()) {
+            // The broker holds shares in this symbol, but not from this entry. Monitoring a stop loss here
+            // would sit on, and could sell, another entry's shares.
+            logRule(strategy, "STOP_LOSS", "SKIPPED",
+                    "Entry order has not filled; the broker position in " + strategy.symbol() + " is not this entry's", outcomes);
+            logRule(strategy, "PROFIT_CONTROLS", "SKIPPED",
+                    "Entry order has not filled; the broker position in " + strategy.symbol() + " is not this entry's", outcomes);
+        } else if (position.isPresent() && position.get().exists()) {
             if (shouldActivateStopLossMonitoring(strategy, orders)) {
                 stateMachine.transition(strategy, StrategyLifecycleState.STOP_LOSS_ACTIVE,
                         StrategyEventType.STOP_LOSS_ACTIVATED,
@@ -1089,6 +1107,31 @@ public class StrategyEngine {
                 .filter(order -> order.stage() == stage)
                 .count();
         return StrategyService.buildIdempotentClientOrderId(strategy, stage, workspaceCodeResolver, attempt);
+    }
+
+    /**
+     * Puts a strategy back to its working-entry state when it was moved past it without an entry fill
+     * of its own, which is how a row showed "Stop loss active (no shares held)" for an order still working.
+     */
+    private void revertToPendingEntryState(Strategy strategy, List<StrategyOrder> orders) {
+        StrategyLifecycleState state = strategy.currentState();
+        if (state == null || !(state == StrategyLifecycleState.STOP_LOSS_ACTIVE
+                || state == StrategyLifecycleState.PROFIT_HOLD_ACTIVE
+                || state == StrategyLifecycleState.BASE_BUY_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_1_FILLED
+                || state == StrategyLifecycleState.BUY_LIMIT_2_FILLED)) {
+            return;
+        }
+        orders.stream()
+                .filter(order -> StrategyStageSupport.isEntryStage(order.stage()) && order.isPending())
+                .max(Comparator.comparing(StrategyOrder::submittedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .ifPresent(pending -> {
+                    stateMachine.transition(strategy, lifecycleStateForOrder(strategy, pending, pending.status()),
+                            StrategyEventType.ORDER_STATUS_UPDATED,
+                            "Entry order " + pending.stage() + " is still working; no shares of this entry are held yet",
+                            "{\"clientOrderId\":\"" + pending.clientOrderId() + "\"}");
+                    strategyRepository.save(strategy);
+                });
     }
 
     private boolean shouldActivateStopLossMonitoring(Strategy strategy, List<StrategyOrder> orders) {

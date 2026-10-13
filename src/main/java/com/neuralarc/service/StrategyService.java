@@ -36,6 +36,7 @@ public class StrategyService {
 
     private final StrategyRepository strategyRepository;
     private final StrategyOrderRepository orderRepository;
+    private final SharedPositionCap sharedPositionCap;
     private final StrategyExecutionEventRepository eventRepository;
     private final AlpacaClient alpacaClient;
     private final StrategyValidator validator;
@@ -108,6 +109,7 @@ public class StrategyService {
     ) {
         this.strategyRepository = strategyRepository;
         this.orderRepository = orderRepository;
+        this.sharedPositionCap = new SharedPositionCap(strategyRepository, orderRepository);
         this.eventRepository = eventRepository;
         this.alpacaClient = alpacaClient;
         this.validator = validator;
@@ -903,7 +905,8 @@ public class StrategyService {
         BigDecimal latestPrice = position.get().marketPrice() != null && position.get().marketPrice().compareTo(BigDecimal.ZERO) > 0
                 ? position.get().marketPrice()
                 : alpacaClient.getLatestPrice(strategy.symbol());
-        int quantity = position.get().quantity().setScale(0, java.math.RoundingMode.DOWN).intValue();
+        int quantity = sharedPositionCap.cap(strategy, position.get().quantity(), orderRepository.findByStrategyId(strategy.id()))
+                .setScale(0, java.math.RoundingMode.DOWN).intValue();
         if (quantity <= 0) {
             return StrategyCreationResult.failed("No open quantity to close");
         }
@@ -987,7 +990,8 @@ public class StrategyService {
         if (position.isEmpty() || !position.get().exists()) {
             return StrategyCreationResult.failed("No open position to place a sell trigger");
         }
-        int quantity = strategy.targetSellQuantity(position.get().quantity())
+        int quantity = strategy.targetSellQuantity(
+                        sharedPositionCap.cap(strategy, position.get().quantity(), orderRepository.findByStrategyId(strategy.id())))
                 .setScale(0, java.math.RoundingMode.DOWN)
                 .intValue();
         if (quantity <= 0) {

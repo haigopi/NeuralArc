@@ -14,8 +14,23 @@ public record SwingCandidate(
         boolean aboveMa20, boolean aboveMa50, boolean aboveMa200, boolean ma50AboveMa200,
         BigDecimal supportProximityPercent, BigDecimal atr,
         /** Lowest price actually traded in the last week — the floor for a patient entry. */
-        BigDecimal weekLow
+        BigDecimal weekLow,
+        BigDecimal todayOpen, BigDecimal todayLow
 ) {
+    /** A candidate whose today's open and low are not known; the entry is then measured from the current price. */
+    public SwingCandidate(
+            String symbol, String companyName, BigDecimal currentPrice, BigDecimal recentHigh, BigDecimal pullbackPercent,
+            BigDecimal previousClose, BigDecimal dayChangePercent, long averageVolume, BigDecimal relativeVolume,
+            BigDecimal movingAverage20, BigDecimal movingAverage50, BigDecimal movingAverage200,
+            boolean aboveMa20, boolean aboveMa50, boolean aboveMa200, boolean ma50AboveMa200,
+            BigDecimal supportProximityPercent, BigDecimal atr, BigDecimal weekLow
+    ) {
+        this(symbol, companyName, currentPrice, recentHigh, pullbackPercent, previousClose, dayChangePercent,
+                averageVolume, relativeVolume, movingAverage20, movingAverage50, movingAverage200,
+                aboveMa20, aboveMa50, aboveMa200, ma50AboveMa200, supportProximityPercent, atr, weekLow,
+                BigDecimal.ZERO, BigDecimal.ZERO);
+    }
+
     /** A candidate whose week's low is not known; the entry then aims only under the market. */
     public SwingCandidate(
             String symbol, String companyName, BigDecimal currentPrice, BigDecimal recentHigh, BigDecimal pullbackPercent,

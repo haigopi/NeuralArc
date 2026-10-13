@@ -766,10 +766,10 @@ class PortfolioActionsSupportTest {
 
     @Test
     void coloredPendingBuyActionsMatchOnlyTheirDisplayedOrbColor() {
-        ManagedStrategy amber = managed("AAPL", StrategyStatus.CREATED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
-        amber.strategy.setLatestOrderStatus("ORB_RECOMMENDED");
-        amber.strategy.setBaseBuyLimitPrice(new BigDecimal("101.00"));
-        setCachedLastPrice(amber, "100.00");
+        ManagedStrategy red = managed("AAPL", StrategyStatus.CREATED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        red.strategy.setLatestOrderStatus("ORB_RECOMMENDED");
+        red.strategy.setBaseBuyLimitPrice(new BigDecimal("101.00"));
+        setCachedLastPrice(red, "100.00");
         ManagedStrategy green = managed("MSFT", StrategyStatus.CREATED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
         green.strategy.setLatestOrderStatus("ORB_ARMED");
         green.strategy.setBaseBuyLimitPrice(new BigDecimal("99.00"));
@@ -779,7 +779,7 @@ class PortfolioActionsSupportTest {
         equal.strategy.setBaseBuyLimitPrice(new BigDecimal("100.00"));
         setCachedLastPrice(equal, "100.00");
 
-        List<ManagedStrategy> rows = List.of(amber, green, equal);
+        List<ManagedStrategy> rows = List.of(red, green, equal);
 
         assertEquals(List.of("AAPL"), support.filterTargets(rows,
                         PortfolioActionsSupport.BulkAction.CANCEL_AMBER_PENDING_BUYS).stream()

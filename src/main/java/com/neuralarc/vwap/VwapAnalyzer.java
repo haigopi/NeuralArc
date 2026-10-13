@@ -119,7 +119,7 @@ public final class VwapAnalyzer {
      * price the plan never chose. The week's low is the floor, so the order can still fill.
      */
     private BigDecimal plannedEntryPrice(VwapCandidate c) {
-        return PlannedEntryPrice.atOrBelowMarket(c.currentPrice(), c.weekLow(), PlannedEntryPrice.DEFAULT_DISCOUNT_PERCENT);
+        return PlannedEntryPrice.baseBuy(c.currentPrice(), c.todayOpen(), c.todayLow());
     }
 
     private boolean passesTrend(VwapCandidate c, VwapConfig.TrendFilter filter) {

@@ -1,5 +1,6 @@
 package com.neuralarc.gaprocket;
 
+import com.neuralarc.analytics.TodaySession;
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.api.AlpacaMarketDataException;
 import com.neuralarc.model.MarketBar;
@@ -152,7 +153,8 @@ public final class GapRocketLiveScanner {
                 qqqGreen,
                 spreadPercent,
                 volume.compareTo(BigDecimal.ZERO) > 0,
-                Monetary.round(current)
+                Monetary.round(current),
+                Monetary.round(TodaySession.open(todayDailyBar(dailyBars, today), intradayBars))
         ));
     }
 
@@ -211,6 +213,10 @@ public final class GapRocketLiveScanner {
         List<BigDecimal> volumes = bars.stream().filter(bar -> !barDate(bar).isEqual(today)).map(MarketBar::volume).toList();
         if (volumes.isEmpty()) return BigDecimal.ZERO;
         return volumes.stream().reduce(BigDecimal.ZERO, BigDecimal::add).divide(new BigDecimal(volumes.size()), 2, RoundingMode.HALF_UP);
+    }
+
+    private MarketBar todayDailyBar(List<MarketBar> bars, LocalDate today) {
+        return bars == null ? null : bars.stream().filter(bar -> barDate(bar).isEqual(today)).findFirst().orElse(null);
     }
 
     private boolean valid(BigDecimal value) {

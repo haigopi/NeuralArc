@@ -135,9 +135,9 @@ class DipHunterAnalyzerTest {
         DipHunterAnalyzer analyzer = new DipHunterAnalyzer(FIXED, null);
         DipHunterRecommendation rec = analyzer.analyze(List.of(strong("NVDA")),
                 DipHunterConfig.defaults(StrategyMode.PAPER)).getFirst();
-        assertEquals(new BigDecimal("99.75"), rec.plannedEntryPrice());   // 0.25% under the market
-        assertEquals(new BigDecimal("94.76"), rec.stopLossPrice());   // 5% stop
-        assertEquals(new BigDecimal("109.73"), rec.takeProfitPrice()); // 10% target
+        assertEquals(new BigDecimal("92.00"), rec.plannedEntryPrice());   // 8% under the market
+        assertEquals(new BigDecimal("87.40"), rec.stopLossPrice());   // 5% stop
+        assertEquals(new BigDecimal("101.20"), rec.takeProfitPrice()); // 10% target
         assertEquals(DipHunterStatus.RECOMMENDED, rec.status());
     }
 
@@ -154,7 +154,7 @@ class DipHunterAnalyzerTest {
 
         assertTrue(rec.plannedEntryPrice().compareTo(awkwardPrice.currentPrice()) <= 0,
                 "planned " + rec.plannedEntryPrice() + " must not sit above the market");
-        assertEquals(new BigDecimal("215.15"), rec.plannedEntryPrice());
+        assertEquals(new BigDecimal("198.43"), rec.plannedEntryPrice());
     }
 
     private DipHunterCandidate strong(String symbol) {
@@ -186,5 +186,20 @@ class DipHunterAnalyzerTest {
                 new BigDecimal("1.2"), null, DipHunterConfig.TrendFilter.ABOVE_MA_20_OR_50,
                 DipHunterConfig.BounceConfirmation.INTRADAY_REVERSAL, new BigDecimal("5"), new BigDecimal("10"),
                 10, DipHunterConfig.ExecutionFrequency.MANUAL, StrategyMode.PAPER);
+    }
+
+    @Test
+    void plannedEntryIsEightPercentUnderTheLowestOfOpenLowAndCurrent() {
+        DipHunterCandidate c = strong("NVDA");
+        DipHunterCandidate withSession = new DipHunterCandidate(c.symbol(), c.companyName(), c.pullbackPercent(),
+                c.dayChangePercent(), c.averageVolume(), c.relativeVolume(), c.currentPrice(), c.previousClose(),
+                c.recentHigh(), c.movingAverage20(), c.movingAverage50(), c.aboveMa20(), c.aboveMa50(),
+                c.intradayReversal(), c.intradayRangePercent(), c.vwap(), c.weekLow(),
+                new BigDecimal("98"), new BigDecimal("90"));
+
+        DipHunterRecommendation rec = new DipHunterAnalyzer(FIXED, null).analyze(List.of(withSession),
+                DipHunterConfig.defaults(StrategyMode.PAPER)).getFirst();
+
+        assertEquals(new BigDecimal("82.80"), rec.plannedEntryPrice());   // 8% under today's low of 90
     }
 }

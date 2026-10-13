@@ -30,17 +30,17 @@ class OrbAnalyzerTest {
         assertEquals(1, recommendations.size());
         OrbRecommendation rec = recommendations.getFirst();
         assertEquals("NVDA", rec.symbol());
-        assertEquals(new BigDecimal("96.19"), rec.plannedEntry());
+        assertEquals(new BigDecimal("93.15"), rec.plannedEntry());
         // Range-low (99.00) sits above the discounted entry (96.19); clamped to riskPercent (1%) below
         // entry instead, floored to the cent so rounding cannot narrow the gap.
-        assertEquals(new BigDecimal("95.22"), rec.stop());
-        assertEquals(new BigDecimal("99.08"), rec.target());
+        assertEquals(new BigDecimal("92.21"), rec.stop());
+        assertEquals(new BigDecimal("95.94"), rec.target());
         assertTrue(rec.score() > 0);
         assertEquals(OrbStatus.RANGE_CAPTURED, rec.status());
     }
 
     @Test
-    void plannedEntryCapsAtFivePercentBelowLowerOfOpenOrCurrentPrice() {
+    void plannedEntryIsAtLeastEightPercentBelowTheCurrentPrice() {
         OrbAnalyzer analyzer = new OrbAnalyzer(Clock.fixed(Instant.parse("2026-06-15T14:00:00Z"), ZoneOffset.UTC), null);
         OrbConfig config = OrbConfig.defaults(StrategyMode.PAPER);
         OpeningRangeSnapshot snapshot = new OpeningRangeSnapshot("aapl", Instant.parse("2026-06-15T13:30:00Z"),
@@ -53,7 +53,7 @@ class OrbAnalyzerTest {
                 config);
 
         assertEquals(1, recommendations.size());
-        assertEquals(new BigDecimal("93.10"), recommendations.getFirst().plannedEntry());
+        assertEquals(new BigDecimal("90.16"), recommendations.getFirst().plannedEntry());
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.neuralarc.service;
 
+import com.neuralarc.analytics.PlannedEntryPrice;
 import com.neuralarc.api.AlpacaClient;
 import com.neuralarc.model.MarketBar;
 import com.neuralarc.model.StrategyConfig;
@@ -51,24 +52,20 @@ final class BaseBuyPriceGuard {
         BigDecimal yesterdayLow = previousDailyBar == null ? BigDecimal.ZERO : Monetary.round(previousDailyBar.low());
         BigDecimal weakestObserved = weakestPositive(latestPrice, previousClose, yesterdayLow);
         if (!positive(weakestObserved) || weakestObserved.compareTo(basePrice) > 0) {
-            return new GuardedPrice(basePrice, "Market indicators are above base buy limit; keeping original price");
+            BigDecimal underMarket = PlannedEntryPrice.belowMarket(basePrice, latestPrice);
+            return underMarket.compareTo(basePrice) == 0
+                    ? new GuardedPrice(basePrice, "Market indicators are above base buy limit; keeping original price")
+                    : new GuardedPrice(underMarket, "Base buy limit kept at least " + PlannedEntryPrice.MIN_BASE_BUY_DISCOUNT_PERCENT.toPlainString()
+                            + "% under the market: $" + basePrice.toPlainString() + " -> $" + underMarket.toPlainString());
         }
 
         BigDecimal effectiveReductionPercent = normalizeReductionPercent(reductionPercent);
         BigDecimal reducedFromOriginal = reduce(basePrice, effectiveReductionPercent);
         BigDecimal reducedFromWeakest = reduce(weakestObserved, effectiveReductionPercent);
-        BigDecimal guarded = belowCurrentPrice(Monetary.round(reducedFromOriginal.min(reducedFromWeakest)), latestPrice);
+        BigDecimal guarded = PlannedEntryPrice.belowMarket(
+                Monetary.round(reducedFromOriginal.min(reducedFromWeakest)), latestPrice);
         return new GuardedPrice(guarded, "Market indicators weakened; reduced base buy limit from $"
                 + basePrice.toPlainString() + " to $" + guarded.toPlainString());
-    }
-
-    private BigDecimal belowCurrentPrice(BigDecimal value, BigDecimal latestPrice) {
-        BigDecimal rounded = Monetary.round(value);
-        if (!positive(latestPrice) || rounded.compareTo(latestPrice) < 0) {
-            return rounded;
-        }
-        BigDecimal oneCentBelow = Monetary.round(latestPrice.subtract(new BigDecimal("0.01")));
-        return oneCentBelow.compareTo(BigDecimal.ZERO) > 0 ? oneCentBelow : rounded;
     }
 
     private List<MarketBar> safeDailyBars(AlpacaClient client, String symbol) {

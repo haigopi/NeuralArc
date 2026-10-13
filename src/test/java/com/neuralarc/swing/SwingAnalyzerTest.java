@@ -124,13 +124,13 @@ class SwingAnalyzerTest {
         SwingAnalyzer analyzer = new SwingAnalyzer(FIXED, null);
         SwingRecommendation rec = analyzer.analyze(List.of(strong("NVDA")),
                 SwingConfig.defaults(StrategyMode.PAPER)).getFirst();
-        assertEquals(new BigDecimal("99.75"), rec.plannedEntryPrice());   // 0.25% under the market
-        assertEquals(new BigDecimal("93.76"), rec.stopLossPrice());   // 6% stop, floored to the cent
+        assertEquals(new BigDecimal("92.00"), rec.plannedEntryPrice());   // 8% under the market
+        assertEquals(new BigDecimal("86.48"), rec.stopLossPrice());   // 6% stop, floored to the cent
         // The 110 recent high is below the operator's 12% target, so the plan aims at the target it
         // was configured for rather than at a reward smaller than its own stop.
-        assertEquals(new BigDecimal("111.72"), rec.targetPrice());
-        assertEquals(new BigDecimal("12.00"), rec.targetProfitPercent());
-        assertEquals(new BigDecimal("2.00"), rec.rewardRiskRatio());  // reward 12 / risk 6
+        assertEquals(new BigDecimal("110.00"), rec.targetPrice());
+        assertEquals(new BigDecimal("19.57"), rec.targetProfitPercent());
+        assertEquals(new BigDecimal("3.26"), rec.rewardRiskRatio());  // reward 12 / risk 6
         assertEquals(SwingStatus.RECOMMENDED, rec.status());
     }
 
@@ -147,8 +147,8 @@ class SwingAnalyzerTest {
 
         SwingRecommendation rec = new SwingAnalyzer(FIXED, null).analyze(List.of(lowPriced), tightStop).getFirst();
 
-        assertEquals(new BigDecimal("5.48"), rec.plannedEntryPrice());
-        assertEquals(new BigDecimal("5.38"), rec.stopLossPrice());
+        assertEquals(new BigDecimal("5.06"), rec.plannedEntryPrice());
+        assertEquals(new BigDecimal("4.96"), rec.stopLossPrice());
         assertTrue(rec.plannedEntryPrice().subtract(rec.stopLossPrice())
                 .compareTo(new BigDecimal("0.10")) >= 0, "the stop must clear the entry by at least a dime");
     }
@@ -176,7 +176,7 @@ class SwingAnalyzerTest {
                 new BigDecimal("98"), new BigDecimal("96"), new BigDecimal("80"), true, true, true, true,
                 new BigDecimal("4.17"), new BigDecimal("3.0"));
         SwingRecommendation rec = analyzer.analyze(List.of(freshHigh), SwingConfig.defaults(StrategyMode.PAPER)).getFirst();
-        assertEquals(new BigDecimal("111.72"), rec.targetPrice());   // 99.75 * (1 + 12%)
+        assertEquals(new BigDecimal("103.04"), rec.targetPrice());   // 99.75 * (1 + 12%)
     }
 
     @Test
@@ -193,7 +193,7 @@ class SwingAnalyzerTest {
 
         assertTrue(rec.plannedEntryPrice().compareTo(awkwardPrice.currentPrice()) <= 0,
                 "planned " + rec.plannedEntryPrice() + " must not sit above the market " + awkwardPrice.currentPrice());
-        assertEquals(new BigDecimal("215.15"), rec.plannedEntryPrice());
+        assertEquals(new BigDecimal("198.43"), rec.plannedEntryPrice());
     }
 
     @Test
@@ -208,7 +208,7 @@ class SwingAnalyzerTest {
 
         SwingRecommendation rec = analyzer.analyze(List.of(shallowWeek), SwingConfig.defaults(StrategyMode.PAPER)).getFirst();
 
-        assertEquals(new BigDecimal("99.90"), rec.plannedEntryPrice());
+        assertEquals(new BigDecimal("92.00"), rec.plannedEntryPrice());
     }
 
     private SwingCandidate strong(String symbol) {
@@ -248,5 +248,20 @@ class SwingAnalyzerTest {
                 new BigDecimal("0.8"), null, SwingConfig.TrendFilter.ABOVE_MA_50_AND_200,
                 new BigDecimal("6"), new BigDecimal("12"), 10, SwingConfig.ExecutionFrequency.MANUAL,
                 StrategyMode.PAPER);
+    }
+
+    @Test
+    void plannedEntryIsEightPercentUnderTheLowestOfOpenLowAndCurrent() {
+        SwingCandidate c = strong("NVDA");
+        SwingCandidate withSession = new SwingCandidate(c.symbol(), c.companyName(), c.currentPrice(), c.recentHigh(),
+                c.pullbackPercent(), c.previousClose(), c.dayChangePercent(), c.averageVolume(), c.relativeVolume(),
+                c.movingAverage20(), c.movingAverage50(), c.movingAverage200(), c.aboveMa20(), c.aboveMa50(),
+                c.aboveMa200(), c.ma50AboveMa200(), c.supportProximityPercent(), c.atr(), c.weekLow(),
+                new BigDecimal("98"), new BigDecimal("90"));
+
+        SwingRecommendation rec = new SwingAnalyzer(FIXED, null).analyze(List.of(withSession),
+                SwingConfig.defaults(StrategyMode.PAPER)).getFirst();
+
+        assertEquals(new BigDecimal("82.80"), rec.plannedEntryPrice());   // 8% under today's low of 90
     }
 }

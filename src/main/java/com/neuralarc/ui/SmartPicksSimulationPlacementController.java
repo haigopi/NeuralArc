@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.analytics.PlannedEntryPrice;
 import com.neuralarc.model.SmartPicksSimulationSelection;
 import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
@@ -157,7 +158,7 @@ public class SmartPicksSimulationPlacementController {
             gateway.log("[Smart Picks] Adjusted base limit buy for " + selection.stock().symbol()
                     + " from $" + recommendedBase.toPlainString()
                     + " to $" + adjusted.toPlainString()
-                    + " (1% below current $" + current.toPlainString() + ").");
+                    + " (at least 8% below current $" + current.toPlainString() + ").");
         }
         return adjusted;
     }
@@ -166,10 +167,8 @@ public class SmartPicksSimulationPlacementController {
         if (proposedBasePrice == null) {
             return BigDecimal.ZERO;
         }
-        if (currentPrice != null
-                && currentPrice.compareTo(BigDecimal.ZERO) > 0
-                && proposedBasePrice.compareTo(currentPrice) >= 0) {
-            return Monetary.round(currentPrice.multiply(new BigDecimal("0.99")));
+        if (currentPrice != null && currentPrice.compareTo(BigDecimal.ZERO) > 0) {
+            return PlannedEntryPrice.belowMarket(proposedBasePrice, currentPrice);
         }
         return proposedBasePrice;
     }

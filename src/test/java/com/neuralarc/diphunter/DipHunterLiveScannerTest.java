@@ -34,6 +34,8 @@ class DipHunterLiveScannerTest {
         assertTrue(c.aboveMa50(), "current 100 should be above the ~95 MA50");
         assertTrue(c.intradayReversal(), "current 100 is well above the intraday low of 99");
         assertTrue(c.currentPrice().compareTo(BigDecimal.ZERO) > 0);
+        assertEquals(new BigDecimal("100.00"), c.todayOpen());
+        assertEquals(new BigDecimal("99.00"), c.todayLow());
         assertTrue(c.relativeVolume().compareTo(BigDecimal.ZERO) > 0);
     }
 

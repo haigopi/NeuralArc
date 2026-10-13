@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.analytics.PlannedEntryPrice;
 import com.neuralarc.analytics.AnalyticsEvent;
 import com.neuralarc.analytics.AnalyticsPublisher;
 import com.neuralarc.analytics.AnalyticsQueue;
@@ -264,8 +265,8 @@ public class TradingFrame extends JFrame {
   private static final Color LIVE_STATUS_BG = new Color(44, 30, 32);
   private static final Color UPDATE_FLASH_BG = new Color(185, 112, 0);
   private static final Color UPDATE_FLASH_BORDER = new Color(255, 184, 65);
-  private static final Color CAPTURE_ACTIVE_BG = new Color(210, 52, 38);
-  private static final Color CAPTURE_ACTIVE_BG_ALT = new Color(255, 136, 0);
+  private static final Color CAPTURE_ACTIVE_BG = LiquidationPulse.PRIMARY;
+  private static final Color CAPTURE_ACTIVE_BG_ALT = LiquidationPulse.ALTERNATE;
   private static final Color CAPTURE_ACTIVE_BORDER = new Color(255, 187, 74);
   private static final Color CAPTURE_ACTIVE_BORDER_ALT = new Color(255, 96, 80);
   private static final Color CAPTURE_INDICATOR_ACTIVE_TEXT = ThemeColors.color("NeuralArc.captureIndicatorActive", new Color(19, 102, 74));
@@ -498,7 +499,7 @@ public class TradingFrame extends JFrame {
         c.setBackground(TABLE_SELECTION_BG);
         c.setForeground(TABLE_SELECTION_FG);
       }
-      Color orbPendingBaseBuyForeground = orbPendingBaseBuyForeground(row);
+      Color orbPendingBaseBuyForeground = orbPendingBaseBuyForeground(row, c.getBackground());
       if (orbPendingBaseBuyForeground != null) {
         c.setForeground(orbPendingBaseBuyForeground);
       }
@@ -536,6 +537,8 @@ public class TradingFrame extends JFrame {
   private final JTabbedPane strategyTabs = new JTabbedPane();
   private final JTextField currentStrategiesSearchField = new JTextField(24);
   private final JTextField tradeHistorySearchField = new JTextField(24);
+  // Declared before the search panel below, whose initializer adds it (All Stocks tab only).
+  private final javax.swing.JCheckBox duplicatesOnlyCheckBox = new javax.swing.JCheckBox("Duplicates only");
   private final JRadioButton profitableSellsFilterButton = new JRadioButton("Profitable Sells");
   private final JRadioButton lossSellsFilterButton = new JRadioButton("Loss Sells");
   private final JRadioButton bothSellsFilterButton = new JRadioButton("Both", true);
@@ -1313,7 +1316,7 @@ public class TradingFrame extends JFrame {
             refreshStrategyTableContent();
             refreshPanels();
             updateStatusBar();
-            showPortfolioCaptureSummary(result, targetTriggered);
+            showPortfolioCaptureSummary(scope, result, targetTriggered);
           }
 
           @Override
@@ -2380,6 +2383,9 @@ public class TradingFrame extends JFrame {
     ));
 
     strategyTabs.setBorder(new EmptyBorder(0, 0, 0, 0));
+    // Tight tabs: a workspace per tab adds up, and the side padding is what made them wide.
+    strategyTabs.putClientProperty(com.formdev.flatlaf.FlatClientProperties.STYLE,
+        "tabInsets: 2,6,2,6; textIconGap: 4; minimumTabWidth: 0");
     // The coordinator owns the two base tabs (All Stocks + Trade History) and inserts a
     // dynamic tab per active strategy workspace between them, re-parenting the shared grid.
     JComponent strategiesGridWrapper = wrapGridWithSearch(currentStrategiesSearchPanel, createStrategiesGridCenter(strategyGrid));
@@ -2400,6 +2406,7 @@ public class TradingFrame extends JFrame {
         this::workspaceStrategiesHeadingText,
         this::tradeHistoryHeadingText
     );
+    strategyWorkspaceTabs.setRunningLiquidations(this::runningLiquidationTabs);
     refreshNewStrategyButtonPresentation();
     installWorkspaceTabContextMenu();
     wireGridSearchFields();
@@ -3565,6 +3572,23 @@ public class TradingFrame extends JFrame {
         .withPulse(active));
     applySelectedCapturePortfolioState();
     updateStopAllLiquidationsButton();
+    if (strategyWorkspaceTabs != null) {
+      strategyWorkspaceTabs.refreshRunningHighlight();
+    }
+  }
+
+  /** The tabs of the viewed mode that have a liquidation monitor running, so they can be coloured. */
+  private Set<String> runningLiquidationTabs() {
+    Set<String> tabs = new HashSet<>();
+    if (portfolioCaptureRuns == null) {
+      return tabs;
+    }
+    for (PortfolioCaptureRuns.Scope scope : portfolioCaptureRuns.activeScopes()) {
+      if (scope.mode() == selectedViewMode) {
+        tabs.add(scope.workspaceId() == null ? StrategyWorkspaceTabs.ALL_STOCKS : scope.workspaceId());
+      }
+    }
+    return tabs;
   }
 
   private void updateCapturePortfolioIndicator(PortfolioCaptureRuns.Scope scope) {
@@ -4013,7 +4037,7 @@ public class TradingFrame extends JFrame {
 
   private void startCapturePortfolioPulse() {
     if (capturePortfolioPulseTimer == null) {
-      capturePortfolioPulseTimer = new Timer(550, ignored -> {
+      capturePortfolioPulseTimer = new Timer(LiquidationPulse.INTERVAL_MILLIS, ignored -> {
         capturePortfolioPulseOn = !capturePortfolioPulseOn;
         capturePortfolioButton.setBackground(capturePortfolioPulseOn ? CAPTURE_ACTIVE_BG : CAPTURE_ACTIVE_BG_ALT);
         capturePortfolioButton.setBorder(BorderFactory.createCompoundBorder(
@@ -4042,16 +4066,22 @@ public class TradingFrame extends JFrame {
     capturePortfolioButton.putClientProperty(ButtonHoverPolicy.FLASHING_PROPERTY, Boolean.FALSE);
   }
 
-  private void showPortfolioCaptureSummary(PortfolioCaptureExecutionResult result, boolean targetTriggered) {
+  private void showPortfolioCaptureSummary(
+      PortfolioCaptureRuns.Scope scope, PortfolioCaptureExecutionResult result, boolean targetTriggered) {
+    String plainScopeLabel = scope.displayLabel(workspaceNameOrNull(scope.workspaceId()));
+    String scopeLabel = plainScopeLabel.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     if (targetTriggered) {
+      log("[Portfolio Liquidation] Target reached in workspace " + plainScopeLabel + ".");
       JOptionPane.showMessageDialog(this,
-          "Portfolio target reached. Liquidation executed successfully.",
+          "<html><body style='width:360px'>Portfolio target reached in workspace <b>" + scopeLabel
+              + "</b>.<br>Liquidation executed successfully.</body></html>",
           "Liquidate Portfolio",
           JOptionPane.INFORMATION_MESSAGE);
     }
     JOptionPane.showMessageDialog(this,
         "<html><body style='width:420px'>"
-            + "<b>Portfolio Liquidation Summary</b><br><br>"
+            + "<b>Portfolio Liquidation Summary</b><br>"
+            + "Workspace: " + scopeLabel + "<br><br>"
             + "Total Stocks Liquidated: " + result.capturedCount() + "<br>"
             + "Total Investment: $" + Monetary.round(result.totalInvestment()) + "<br>"
             + "Estimated Portfolio Value: $" + Monetary.round(result.estimatedPortfolioValue()) + "<br>"
@@ -4560,7 +4590,7 @@ public class TradingFrame extends JFrame {
       return false;
     }
     return OrbPendingBaseBuyRowStyler.priceDirection(entry.strategy, entry.cachedPosition())
-        == OrbPendingBaseBuyRowStyler.PriceDirection.AMBER_LOSER;
+        == OrbPendingBaseBuyRowStyler.PriceDirection.RED_ABOVE_MARKET;
   }
 
   private void previewLivePromotion(int viewRow) {
@@ -5353,7 +5383,7 @@ public class TradingFrame extends JFrame {
     return snapshot.tooltipText();
   }
 
-  private Color orbPendingBaseBuyForeground(int viewRow) {
+  private Color orbPendingBaseBuyForeground(int viewRow, Color background) {
     if (viewRow < 0) {
       return null;
     }
@@ -5362,7 +5392,7 @@ public class TradingFrame extends JFrame {
       return null;
     }
     ManagedStrategy entry = strategies.get(modelRow);
-    return OrbPendingBaseBuyRowStyler.foreground(entry.strategy, entry.cachedPosition());
+    return OrbPendingBaseBuyRowStyler.foreground(entry.strategy, entry.cachedPosition(), background);
   }
 
   private void scheduleStockPriceTooltipRefresh(ManagedStrategy entry) {
@@ -5511,6 +5541,7 @@ public class TradingFrame extends JFrame {
       MarketBar bar = bars.get(entry.strategy.symbol().trim().toUpperCase(Locale.ROOT));
       if (bar != null) {
         entry.setCachedDailyBar(bar);
+        readjustPendingBaseBuy(entry, entry.cachedPosition());
         // The grid already loads this bar for "Today's High"; the engine cannot see intraday peaks
         // between polls, so hand it the same number.
         if (bar != null) {
@@ -5566,6 +5597,18 @@ public class TradingFrame extends JFrame {
     }
   }
 
+  /** Lowers a waiting scanner row's base buy when the refreshed price has dropped under it. */
+  private void readjustPendingBaseBuy(ManagedStrategy entry, Position snapshot) {
+    Strategy pending = strategyRepository.findById(entry.strategy.id()).orElse(entry.strategy);
+    PendingBaseBuyReadjuster.plan(pending, snapshot, entry.cachedDailyBar()).ifPresent(adjustment -> {
+      pending.setBaseBuyLimitPrice(adjustment.to());
+      pending.setLastEvent(adjustment.event());
+      strategyRepository.save(pending);
+      entry.syncFrom(pending);
+      log("[" + pending.symbol() + "] " + adjustment.event());
+    });
+  }
+
   private void applyPositionSnapshots(Map<String, Position> snapshots) {
     if (snapshots == null || snapshots.isEmpty()) {
       return;
@@ -5578,6 +5621,7 @@ public class TradingFrame extends JFrame {
       }
       entry.setCachedPosition(snapshot);
       applyUntrackedShares(entry, snapshot);
+      readjustPendingBaseBuy(entry, snapshot);
       if (snapshot.getTotalShares() > 0 && healFailedStrategyFromExposure(entry.strategy, true, false, "filled")) {
         healedSymbols.add(entry.strategy.symbol());
         entry.syncFrom(strategyRepository.findById(entry.strategy.id()).orElse(entry.strategy));
@@ -7338,7 +7382,8 @@ public class TradingFrame extends JFrame {
           entry.strategy.latestOrderStatus(),
           entry.strategy.lastPolledAt(),
           entry.strategy.status(),
-          orders
+          orders,
+          workspaceNameOrNull(entry.strategy.workspaceId())
       ));
     }
     filledOrderRows.clear();
@@ -7755,6 +7800,14 @@ public class TradingFrame extends JFrame {
     searchField.setToolTipText(TooltipStyler.text("Type to filter rows by stock symbol."));
     searchControls.add(label);
     searchControls.add(searchField);
+    if (searchField == currentStrategiesSearchField) {
+      duplicatesOnlyCheckBox.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
+      duplicatesOnlyCheckBox.setOpaque(false);
+      duplicatesOnlyCheckBox.setFocusable(false);
+      duplicatesOnlyCheckBox.setToolTipText(TooltipStyler.text(
+          "Show only symbols that appear on more than one row, so repeated entries on the same stock stand out."));
+      searchControls.add(duplicatesOnlyCheckBox);
+    }
     panel.add(searchControls, BorderLayout.WEST);
     if (searchField == currentStrategiesSearchField) {
       capturePortfolioIndicator.setFont(BASE_FONT.deriveFont(Font.BOLD, 11f));
@@ -7806,16 +7859,17 @@ public class TradingFrame extends JFrame {
     // trade-history grid for their own screen and reading preference.
     setTableColumnWidth(0, 70, 52, 90);
     setTableColumnWidth(1, 108, 78, 150);
-    setTableColumnWidth(3, 132, 96, 168);
-    setTableColumnWidth(4, 64, 52, 78);
-    setTableColumnWidth(5, 98, 78, 130);
-    setTableColumnWidth(6, 50, 38, 62);
-    setTableColumnWidth(7, 64, 52, 76);
+    setTableColumnWidth(2, 110, 70, 170);
+    setTableColumnWidth(4, 132, 96, 168);
+    setTableColumnWidth(5, 64, 52, 78);
+    setTableColumnWidth(6, 98, 78, 130);
+    setTableColumnWidth(7, 50, 38, 62);
     setTableColumnWidth(8, 64, 52, 76);
-    setTableColumnWidth(10, 150, 108, 185);
+    setTableColumnWidth(9, 64, 52, 76);
+    setTableColumnWidth(11, 150, 108, 185);
     // Flexible text-heavy columns start wider and absorb remaining viewport width.
-    setFlexibleTableColumnWidth(2, 190, 130);
-    setFlexibleTableColumnWidth(9, 260, 190);
+    setFlexibleTableColumnWidth(3, 190, 130);
+    setFlexibleTableColumnWidth(10, 260, 190);
   }
 
   private void setTableColumnWidth(int columnIndex, int preferredWidth, int minWidth, int maxWidth) {
@@ -8612,6 +8666,7 @@ public class TradingFrame extends JFrame {
 
   private void wireGridSearchFields() {
     attachSearchListener(currentStrategiesSearchField, this::applyCurrentStrategiesRowFilter);
+    duplicatesOnlyCheckBox.addActionListener(event -> applyCurrentStrategiesRowFilter());
     attachSearchListener(tradeHistorySearchField, this::applyTradeHistoryRowFilter);
     tradeHistoryGroupByButton.addActionListener(event -> showTradeHistoryGroupByMenu());
     profitableSellsFilterButton.addActionListener(event -> refreshFilledOrdersTableData());
@@ -8667,6 +8722,15 @@ public class TradingFrame extends JFrame {
       return;
     }
     final String query = normalizeGridSearchQuery(currentStrategiesSearchField.getText());
+    // The checkbox belongs to All Stocks only: workspace tabs hide it and ignore it.
+    final boolean allStocksTab = selectedWorkspaceId == null;
+    duplicatesOnlyCheckBox.setVisible(allStocksTab);
+    final java.util.Set<String> duplicatedSymbols = allStocksTab && duplicatesOnlyCheckBox.isSelected()
+        ? DuplicateSymbolFilter.duplicated(strategies.stream()
+            .filter(this::includeInCurrentStrategiesTab)
+            .map(entry -> entry.strategy.symbol())
+            .toList())
+        : null;
     strategySorter.setRowFilter(new RowFilter<>() {
       @Override
       public boolean include(Entry<? extends StrategyGridTableModel, ? extends Integer> entry) {
@@ -8676,6 +8740,10 @@ public class TradingFrame extends JFrame {
         }
         ManagedStrategy managedStrategy = strategies.get(modelRow);
         if (!includeInCurrentStrategiesTab(managedStrategy)) {
+          return false;
+        }
+        if (duplicatedSymbols != null
+            && !DuplicateSymbolFilter.isDuplicate(duplicatedSymbols, managedStrategy.strategy.symbol())) {
           return false;
         }
         // Workspace tab: show only this workspace's strategies. All Stocks (null) shows all.
@@ -9454,9 +9522,10 @@ public class TradingFrame extends JFrame {
     BigDecimal todayLow = loadTodayLow(pending);
     BigDecimal adjustedLimit = PendingBaseBuyPlacementSupport.adjustedBaseBuyLimit(originalLimit, todayLow);
     BigDecimal cachedCurrentPrice = entry.cachedPosition() == null ? BigDecimal.ZERO : entry.cachedPosition().getLastPrice();
-    if (cachedCurrentPrice != null && cachedCurrentPrice.signum() > 0
-        && adjustedLimit.compareTo(cachedCurrentPrice) >= 0) {
-      adjustedLimit = Monetary.round(cachedCurrentPrice.multiply(new BigDecimal("0.99")));
+    if (cachedCurrentPrice != null && cachedCurrentPrice.signum() > 0) {
+      MarketBar dailyBar = entry.cachedDailyBar();
+      adjustedLimit = PlannedEntryPrice.belowMarket(adjustedLimit, cachedCurrentPrice,
+          dailyBar == null ? null : dailyBar.open(), dailyBar == null ? null : dailyBar.low());
     }
     if (adjustedLimit.compareTo(BigDecimal.ZERO) <= 0) {
       return StrategyService.StrategyCreationResult.failed("unable to calculate a valid adjusted base-buy limit");
@@ -10888,10 +10957,10 @@ public class TradingFrame extends JFrame {
 
   private String workspaceStrategiesHeadingText(StrategyWorkspace workspace) {
     if (workspace == null) {
-      return "Workspace [ 0 ]";
+      return "Workspace (0)";
     }
     long count = currentStrategiesStockCountInWorkspace(workspace.id());
-    return workspace.name() + " [ " + count + " ]";
+    return workspace.name() + " (" + count + ")";
   }
 
   private String tradeHistoryHeadingText() {

@@ -193,7 +193,7 @@ public final class NewsCatalystResolver {
         return new GapRocketCandidate(
                 c.symbol(), c.companyName(), c.gapPercent(), c.premarketVolume(), c.relativeVolume(),
                 c.currentPrice(), c.previousClose(), c.premarketHigh(), c.premarketLow(), type,
-                summary, c.spyGreen(), c.qqqGreen(), c.spreadPercent(), c.volumeStrong(), c.vwap());
+                summary, c.spyGreen(), c.qqqGreen(), c.spreadPercent(), c.volumeStrong(), c.vwap(), c.todayOpen());
     }
 
     private static boolean containsAny(String text, String... keywords) {

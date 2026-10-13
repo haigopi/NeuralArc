@@ -50,7 +50,7 @@ class ProfitShieldStrategyFactoryTest {
     void carriesThePlannedEntryStopAndTargetIntoTheStrategyRow() {
         Strategy strategy = new ProfitShieldStrategyFactory().toStrategy(recommendation(), "workspace-1", false, 30);
 
-        assertEquals(new BigDecimal("99.00"), strategy.baseBuyLimitPrice());
+        assertEquals(new BigDecimal("92.00"), strategy.baseBuyLimitPrice());
         assertEquals(new BigDecimal("96.03"), strategy.stopLossPrice());
         assertEquals(new BigDecimal("104.94"), strategy.targetSellPrice());
     }

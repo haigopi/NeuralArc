@@ -70,6 +70,21 @@ class ThresholdSellDialogTest {
     }
 
     @Test
+    void valueCapAndProfitOrLossFlowIntoTheRule() {
+        ThresholdSellDialog dialog = dialog();
+        dialog.chooseRule("profit or loss", "more than", 0, "%");
+        int everyone = dialog.model().matchCount();
+        dialog.chooseValueCap("position value", 10);
+
+        ThresholdSellRule rule = dialog.selection().rule();
+
+        assertEquals(ThresholdSellRule.Side.ANY, rule.side());
+        assertEquals(ThresholdSellRule.ValueBasis.POSITION_VALUE, rule.valueLimit().basis());
+        assertEquals(0, new java.math.BigDecimal("10").compareTo(rule.valueLimit().amount()));
+        org.junit.jupiter.api.Assertions.assertTrue(dialog.model().matchCount() <= everyone);
+    }
+
+    @Test
     void sellsLimitByDefault() {
         assertEquals(SellSubmissionType.LIMIT, dialog().selection().submissionType());
     }

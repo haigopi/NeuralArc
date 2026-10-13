@@ -59,18 +59,19 @@ class GapRocketAnalyzerTest {
     }
 
     @Test
-    void plannedEntryDoesNotFallBelowCurrentPriceWhenPremarketHighIsStale() {
+    void plannedEntryStaysBelowCurrentPriceEvenWhenPremarketHighIsAboveIt() {
         GapRocketAnalyzer analyzer = new GapRocketAnalyzer(Clock.fixed(Instant.parse("2026-06-13T13:45:15Z"), ZoneOffset.UTC), null);
         GapRocketCandidate staleHigh = new GapRocketCandidate("NVDA", "NVIDIA Corporation", new BigDecimal("7.2"),
                 5_200_000L, new BigDecimal("6.1"), new BigDecimal("205"), new BigDecimal("188.80"),
-                new BigDecimal("126"), new BigDecimal("124"), GapRocketConfig.CatalystType.EARNINGS,
+                new BigDecimal("216"), new BigDecimal("204"), GapRocketConfig.CatalystType.EARNINGS,
                 "Earnings beat", true, true, new BigDecimal("0.35"), true, new BigDecimal("200.80"));
 
         GapRocketRecommendation recommendation = analyzer.analyze(List.of(staleHigh), GapRocketConfig.defaults(StrategyMode.PAPER)).getFirst();
 
-        assertEquals(new BigDecimal("205.00"), recommendation.plannedEntryPrice());
-        assertEquals(new BigDecimal("194.75"), recommendation.stopLossPrice());
-        assertEquals(new BigDecimal("225.50"), recommendation.takeProfitPrice());
+        assertEquals(new BigDecimal("187.68"), recommendation.plannedEntryPrice());   // 8% under the session low of 204
+        assertTrue(recommendation.plannedEntryPrice().compareTo(new BigDecimal("205")) < 0);
+        assertEquals(new BigDecimal("178.30"), recommendation.stopLossPrice());
+        assertEquals(new BigDecimal("206.45"), recommendation.takeProfitPrice());
     }
 
     private GapRocketCandidate strong(String symbol) {
@@ -91,5 +92,19 @@ class GapRocketAnalyzerTest {
                 GapRocketConfig.EntryStyle.BREAKOUT_RETEST, GapRocketConfig.OpeningRangeDuration.FIFTEEN_MINUTES,
                 new BigDecimal("5"), new BigDecimal("10"), 10, GapRocketConfig.ExecutionFrequency.MANUAL,
                 StrategyMode.PAPER);
+    }
+
+    @Test
+    void plannedEntryIsEightPercentUnderTheLowestOfOpenLowAndCurrent() {
+        GapRocketAnalyzer analyzer = new GapRocketAnalyzer(Clock.systemUTC(), null);
+        GapRocketCandidate c = strong("TSLA");   // current 125, premarket low 118
+        GapRocketCandidate openedLower = new GapRocketCandidate(c.symbol(), c.companyName(), c.gapPercent(),
+                c.premarketVolume(), c.relativeVolume(), c.currentPrice(), c.previousClose(), c.premarketHigh(),
+                c.premarketLow(), c.catalystType(), c.catalystSummary(), c.spyGreen(), c.qqqGreen(),
+                c.spreadPercent(), c.volumeStrong(), c.vwap(), new BigDecimal("100"));
+
+        GapRocketRecommendation rec = analyzer.analyze(List.of(openedLower), GapRocketConfig.defaults(StrategyMode.PAPER)).getFirst();
+
+        assertEquals(new BigDecimal("92.00"), rec.plannedEntryPrice());   // 8% under the open of 100
     }
 }

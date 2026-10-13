@@ -18,7 +18,7 @@ public final class ProfitShieldStrategyFactory {
                                boolean executeRequested, int pollingSeconds) {
         StrategyConfig config = new StrategyConfig(
                 recommendation.symbol(),
-                PlannedEntryPrice.notAboveMarket(recommendation.plannedEntryPrice(), recommendation.currentPrice()),
+                PlannedEntryPrice.belowMarket(recommendation.plannedEntryPrice(), recommendation.currentPrice()),
                 1, true,
                 recommendation.stopLossPrice(), true, recommendation.targetPrice(), BigDecimal.ZERO, 0,
                 BigDecimal.ZERO, 0, false, false, BigDecimal.ZERO, Math.max(1, pollingSeconds),

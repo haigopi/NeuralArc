@@ -483,7 +483,7 @@ final class PortfolioActionsSupport {
         PLACE_AMBER_PENDING_BASE_BUYS("Place Limit Buy for Losing Pending Positions") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return pendingBuyDirection(entry) == OrbPendingBaseBuyRowStyler.PriceDirection.AMBER_LOSER;
+                return pendingBuyDirection(entry) == OrbPendingBaseBuyRowStyler.PriceDirection.RED_ABOVE_MARKET;
             }
 
             @Override
@@ -493,7 +493,7 @@ final class PortfolioActionsSupport {
 
             @Override
             String confirmDetail() {
-                return "Amber pending rows have a base-buy limit above the cached current stock price."
+                return "Red pending rows have a base-buy limit above the cached current stock price."
                         + "<br>Matching pending recommendations will submit their base buy limit order.";
             }
 
@@ -510,7 +510,7 @@ final class PortfolioActionsSupport {
         READJUST_AMBER_PENDING_BASE_BUYS("Readjust Losing Pending Base Buy Positions") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return pendingBuyDirection(entry) == OrbPendingBaseBuyRowStyler.PriceDirection.AMBER_LOSER;
+                return pendingBuyDirection(entry) == OrbPendingBaseBuyRowStyler.PriceDirection.RED_ABOVE_MARKET;
             }
 
             @Override
@@ -520,7 +520,7 @@ final class PortfolioActionsSupport {
 
             @Override
             String confirmDetail() {
-                return "Amber pending rows have a base-buy limit above the cached current stock price."
+                return "Red pending rows have a base-buy limit above the cached current stock price."
                         + "<br>Matching pending recommendations will be recalculated to a lower base-buy limit so they are ready for placement.";
             }
 
@@ -590,26 +590,26 @@ final class PortfolioActionsSupport {
                 return "Deleted";
             }
         },
-        CANCEL_AMBER_PENDING_BUYS("Cancel all Amber Pending Buys (Losers)") {
+        CANCEL_AMBER_PENDING_BUYS("Cancel all Red Pending Buys (Losers)") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return pendingBuyDirection(entry) == OrbPendingBaseBuyRowStyler.PriceDirection.AMBER_LOSER;
+                return pendingBuyDirection(entry) == OrbPendingBaseBuyRowStyler.PriceDirection.RED_ABOVE_MARKET;
             }
 
             @Override
             String confirmHeading(int count) {
-                return "Cancel " + count + " amber pending buy recommendation(s)?";
+                return "Cancel " + count + " red pending buy recommendation(s)?";
             }
 
             @Override
             String confirmDetail() {
-                return "Amber rows have a base-buy limit above the cached current stock price."
+                return "Red rows have a base-buy limit above the cached current stock price."
                         + "<br>Only unsubmitted pending recommendations are removed; broker orders and positions are not affected.";
             }
 
             @Override
             String emptyMessage() {
-                return "There are no amber pending buy recommendations to cancel.";
+                return "There are no red pending buy recommendations to cancel.";
             }
 
             @Override

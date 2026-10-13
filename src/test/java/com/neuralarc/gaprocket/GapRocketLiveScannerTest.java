@@ -33,6 +33,7 @@ class GapRocketLiveScannerTest {
         assertEquals(List.of("SPY", "QQQ", "AMD", "MSFT"), api.intradayRequests);
         assertEquals(List.of("AMD", "MSFT"), candidates.stream().map(GapRocketCandidate::symbol).toList());
         assertTrue(candidates.stream().allMatch(candidate -> candidate.currentPrice().compareTo(BigDecimal.ZERO) > 0));
+        assertTrue(candidates.stream().allMatch(candidate -> candidate.todayOpen().compareTo(new BigDecimal("108.00")) == 0));
     }
 
     @Test

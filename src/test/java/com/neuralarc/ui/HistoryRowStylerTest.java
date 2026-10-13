@@ -39,8 +39,8 @@ class HistoryRowStylerTest {
     void repeatedSymbolRowsBlankOutFollowingSymbols() {
         JTable table = new JTable(new DefaultTableModel(2, 11));
         List<HistoryTablePresenter.HistoryRow> rows = List.of(
-                new HistoryTablePresenter.HistoryRow("AAPL", "AAPL", "Paper", "Active", "Base Buy", "BUY", "Filled", "10", "100", "100", "-", "now", Instant.now(), 1, HistoryTablePresenter.HistoryRowStyle.BUY),
-                new HistoryTablePresenter.HistoryRow("AAPL", "AAPL", "Paper", "Active", "Target Sell", "SELL", "Filled", "10", "100", "110", "10", "now", Instant.now(), 0, HistoryTablePresenter.HistoryRowStyle.SELL_GAIN)
+                new HistoryTablePresenter.HistoryRow("AAPL", "AAPL", "Paper", "", "Active", "Base Buy", "BUY", "Filled", "10", "100", "100", "-", "now", Instant.now(), 1, HistoryTablePresenter.HistoryRowStyle.BUY),
+                new HistoryTablePresenter.HistoryRow("AAPL", "AAPL", "Paper", "", "Active", "Target Sell", "SELL", "Filled", "10", "100", "110", "10", "now", Instant.now(), 0, HistoryTablePresenter.HistoryRowStyle.SELL_GAIN)
         );
 
         HistoryRowStyler.CellStyle first = styler.style(table, 0, 0, false, rows.get(0), rows, palette, true);
@@ -57,8 +57,8 @@ class HistoryRowStylerTest {
         // made each row read as the symbol printed above it.
         JTable table = new JTable(new DefaultTableModel(2, 11));
         List<HistoryTablePresenter.HistoryRow> rows = List.of(
-                new HistoryTablePresenter.HistoryRow("AAPL", "2026-05-06", "Paper", "Completed", "Target Sell", "SELL", "Filled", "10", "100", "110", "10", "now", Instant.now(), 0, HistoryTablePresenter.HistoryRowStyle.SELL_GAIN),
-                new HistoryTablePresenter.HistoryRow("MSFT", "2026-05-06", "Paper", "Active", "Base Buy", "BUY", "Filled", "10", "200", "200", "-", "now", Instant.now(), 1, HistoryTablePresenter.HistoryRowStyle.BUY)
+                new HistoryTablePresenter.HistoryRow("AAPL", "2026-05-06", "Paper", "", "Completed", "Target Sell", "SELL", "Filled", "10", "100", "110", "10", "now", Instant.now(), 0, HistoryTablePresenter.HistoryRowStyle.SELL_GAIN),
+                new HistoryTablePresenter.HistoryRow("MSFT", "2026-05-06", "Paper", "", "Active", "Base Buy", "BUY", "Filled", "10", "200", "200", "-", "now", Instant.now(), 1, HistoryTablePresenter.HistoryRowStyle.BUY)
         );
 
         HistoryRowStyler.CellStyle first = styler.style(table, 0, 0, false, rows.get(0), rows, palette, false);
@@ -71,12 +71,12 @@ class HistoryRowStylerTest {
 
     @Test
     void subtotalStageCellIsBoldItalic() {
-        JTable table = new JTable(new DefaultTableModel(1, 11));
+        JTable table = new JTable(new DefaultTableModel(1, 12));
         List<HistoryTablePresenter.HistoryRow> rows = List.of(
-                new HistoryTablePresenter.HistoryRow("AAPL", "AAPL", "", "", "Subtotal", "", "", "", "", "", "10", "", null, 3, HistoryTablePresenter.HistoryRowStyle.SUBTOTAL)
+                new HistoryTablePresenter.HistoryRow("AAPL", "AAPL", "", "", "", "Subtotal", "", "", "", "", "", "10", "", null, 3, HistoryTablePresenter.HistoryRowStyle.SUBTOTAL)
         );
 
-        HistoryRowStyler.CellStyle subtotalStage = styler.style(table, 0, 3, false, rows.get(0), rows, palette, true);
+        HistoryRowStyler.CellStyle subtotalStage = styler.style(table, 0, 4, false, rows.get(0), rows, palette, true);
 
         assertTrue(subtotalStage.bold());
         assertTrue(subtotalStage.italic());
@@ -84,14 +84,14 @@ class HistoryRowStylerTest {
 
     @Test
     void numericHistoryColumnsAreRightAligned() {
-        JTable table = new JTable(new DefaultTableModel(1, 11));
+        JTable table = new JTable(new DefaultTableModel(1, 12));
         List<HistoryTablePresenter.HistoryRow> rows = List.of(
-                new HistoryTablePresenter.HistoryRow("AAPL", "AAPL", "Paper", "Active", "Target Sell", "SELL", "Filled", "10", "100", "110", "10", "now", Instant.now(), 0, HistoryTablePresenter.HistoryRowStyle.SELL_GAIN)
+                new HistoryTablePresenter.HistoryRow("AAPL", "AAPL", "Paper", "", "Active", "Target Sell", "SELL", "Filled", "10", "100", "110", "10", "now", Instant.now(), 0, HistoryTablePresenter.HistoryRowStyle.SELL_GAIN)
         );
 
-        assertEquals(RIGHT, styler.style(table, 0, 6, false, rows.getFirst(), rows, palette, true).horizontalAlignment());
         assertEquals(RIGHT, styler.style(table, 0, 7, false, rows.getFirst(), rows, palette, true).horizontalAlignment());
         assertEquals(RIGHT, styler.style(table, 0, 8, false, rows.getFirst(), rows, palette, true).horizontalAlignment());
         assertEquals(RIGHT, styler.style(table, 0, 9, false, rows.getFirst(), rows, palette, true).horizontalAlignment());
+        assertEquals(RIGHT, styler.style(table, 0, 10, false, rows.getFirst(), rows, palette, true).horizontalAlignment());
     }
 }

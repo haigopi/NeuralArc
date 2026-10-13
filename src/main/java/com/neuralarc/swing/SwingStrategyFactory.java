@@ -17,7 +17,7 @@ public final class SwingStrategyFactory {
     public Strategy toStrategy(SwingRecommendation recommendation, String workspaceId, boolean executeRequested, int pollingSeconds) {
         StrategyConfig config = new StrategyConfig(
                 recommendation.symbol(),
-                PlannedEntryPrice.notAboveMarket(recommendation.plannedEntryPrice(), recommendation.currentPrice()),
+                PlannedEntryPrice.belowMarket(recommendation.plannedEntryPrice(), recommendation.currentPrice()),
                 1,
                 true,
                 recommendation.stopLossPrice(),

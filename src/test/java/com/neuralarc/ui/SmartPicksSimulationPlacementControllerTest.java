@@ -213,7 +213,7 @@ class SmartPicksSimulationPlacementControllerTest {
         assertEquals(1, result.created());
         assertEquals(0, result.skipped());
         Strategy saved = repository.findAll().getFirst();
-        assertEquals(new BigDecimal("118.80"), saved.baseBuyLimitPrice());
+        assertEquals(new BigDecimal("110.40"), saved.baseBuyLimitPrice());
     }
 
     @Test
@@ -228,7 +228,7 @@ class SmartPicksSimulationPlacementControllerTest {
         assertEquals(1, result.created());
         assertEquals(0, result.skipped());
         Strategy saved = repository.findAll().getFirst();
-        assertEquals(new BigDecimal("118.80"), saved.baseBuyLimitPrice());
+        assertEquals(new BigDecimal("110.40"), saved.baseBuyLimitPrice());
     }
 
     @Test
@@ -248,7 +248,7 @@ class SmartPicksSimulationPlacementControllerTest {
         assertEquals(1, result.created());
         assertEquals(0, result.skipped());
         Strategy saved = repository.findAll().getFirst();
-        assertEquals(new BigDecimal("118.80"), saved.baseBuyLimitPrice());
+        assertEquals(new BigDecimal("110.40"), saved.baseBuyLimitPrice());
     }
 
     @Test
@@ -268,7 +268,7 @@ class SmartPicksSimulationPlacementControllerTest {
         assertEquals(1, result.created());
         assertEquals(0, result.skipped());
         Strategy saved = repository.findAll().getFirst();
-        assertEquals(new BigDecimal("119.79"), saved.baseBuyLimitPrice());
+        assertEquals(new BigDecimal("111.32"), saved.baseBuyLimitPrice());
     }
 
     @Test

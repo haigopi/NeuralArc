@@ -5,6 +5,7 @@ import com.neuralarc.model.Position;
 import com.neuralarc.model.ProfitControlMode;
 import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.StopLossType;
+import com.neuralarc.analytics.PlannedEntryPrice;
 import com.neuralarc.model.Strategy;
 import com.neuralarc.service.ProfitHoldExitPricing;
 import com.neuralarc.model.StrategyLifecycleState;
@@ -124,6 +125,20 @@ public final class StrategyTablePresenter {
         );
     }
 
+    /**
+     * The base buy a waiting recommendation would be placed at. The stored price was fixed when the
+     * scan ran; if the market has since dropped under it, the order is placed under the market, so the
+     * label never advertises a buy above the current price.
+     */
+    private static BigDecimal displayedBaseBuy(Strategy strategy, Position position) {
+        BigDecimal stored = strategy.baseBuyLimitPrice();
+        BigDecimal last = position == null ? null : position.getLastPrice();
+        if (last == null || last.signum() <= 0) {
+            return stored;
+        }
+        return PlannedEntryPrice.belowMarket(stored, last);
+    }
+
     public String displayStatusLabel(
             Strategy strategy,
             Position position,
@@ -211,7 +226,7 @@ public final class StrategyTablePresenter {
             return "";
         }
         if (StrategyRecommendationMarkers.isScannerRecommendationRow(strategy)) {
-            return "Base buy pending to place order @ $" + strategy.baseBuyLimitPrice().toPlainString();
+            return "Base buy pending to place order @ $" + displayedBaseBuy(strategy, position).toPlainString();
         }
         if ("QUEUED_FOR_OPEN".equalsIgnoreCase(strategy.latestOrderStatus())) {
             return "Queued For Open";
@@ -878,7 +893,7 @@ public final class StrategyTablePresenter {
                 }
                 case 4 -> displayPrice(position, lastSellPrice);
                 case 5 -> position.getTotalShares() != 0 ? position.marketValue().toPlainString() : "-";
-                case 6 -> displayPnl(position, realizedPnl);
+                case 6 -> displayPnl(position);
                 default -> "";
             };
         }
@@ -1109,14 +1124,13 @@ public final class StrategyTablePresenter {
         return "-";
     }
 
-    private String displayPnl(Position position, BigDecimal realizedPnl) {
-        if (position.getTotalShares() != 0) {
-            return position.unrealizedPnl().toPlainString();
-        }
-        if (realizedPnl != null && realizedPnl.compareTo(BigDecimal.ZERO) != 0) {
-            return realizedPnl.toPlainString();
-        }
-        return "-";
+    /**
+     * Open P&L while shares are held, blank otherwise. A stock with no shares and no average entry has
+     * no position to measure: a figure beside it is a past exit's realized result, which read as P&L on a
+     * stock the operator may since have re-entered or no longer owns. Realized results live in Trade History.
+     */
+    private String displayPnl(Position position) {
+        return position.getTotalShares() != 0 ? position.unrealizedPnl().toPlainString() : "-";
     }
 
     /**

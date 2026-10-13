@@ -48,7 +48,7 @@ class BaseBuyPriceGuardTest {
                 new BigDecimal("99.00")
         );
 
-        assertEquals(new BigDecimal("96.04"), result.price());
+        assertEquals(new BigDecimal("91.08"), result.price());
     }
 
     @Test
@@ -65,7 +65,7 @@ class BaseBuyPriceGuardTest {
                 new BigDecimal("100.00")
         );
 
-        assertEquals(new BigDecimal("98.00"), result.price());
+        assertEquals(new BigDecimal("92.00"), result.price());
     }
 
     @Test
@@ -82,7 +82,7 @@ class BaseBuyPriceGuardTest {
                 new BigDecimal("95.00")
         );
 
-        assertEquals(new BigDecimal("93.10"), result.price());
+        assertEquals(new BigDecimal("87.40"), result.price());
     }
 
     @Test
@@ -100,7 +100,7 @@ class BaseBuyPriceGuardTest {
                 new BigDecimal("5.00")
         );
 
-        assertEquals(new BigDecimal("93.10"), result.price());
+        assertEquals(new BigDecimal("91.08"), result.price());
     }
 
     private static MarketBar bar(String low, String close) {

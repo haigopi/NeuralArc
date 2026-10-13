@@ -7,9 +7,13 @@ import com.neuralarc.service.WorkspaceService;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
+import javax.swing.Timer;
 import java.awt.BorderLayout;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -27,6 +31,11 @@ import java.util.function.Supplier;
  * while tabs are being rebuilt.
  */
 final class StrategyWorkspaceTabs {
+    /** Stands for the All Stocks tab in the set of tabs with a liquidation running. */
+    static final String ALL_STOCKS = "";
+    /** Appended to the tooltip of a tab that carries the running dot, so the dot explains itself. */
+    static final String RUNNING_TOOLTIP = "A Liquidate Portfolio monitor is running in this workspace.";
+
     private final JTabbedPane tabs;
     private final JComponent gridComponent;
     private final WorkspaceService workspaceService;
@@ -39,6 +48,12 @@ final class StrategyWorkspaceTabs {
     // Parallel to the tab order: workspaceId for a workspace tab, null for All Stocks / Trade History.
     private final List<String> workspaceIdByTab = new ArrayList<>();
     private boolean rebuilding;
+    private Supplier<Set<String>> runningLiquidations = Set::of;
+    // One dot per running tab, all flipping together on one timer that exists only while a dot is shown.
+    private final Map<Integer, LiquidationPulse.DotIcon> dotsByTab = new HashMap<>();
+    private final Map<Integer, String> originalTooltips = new HashMap<>();
+    private boolean pulseAlternate;
+    private final Timer pulseTimer = new Timer(LiquidationPulse.INTERVAL_MILLIS, event -> flipPulse());
 
     StrategyWorkspaceTabs(
             JTabbedPane tabs,
@@ -72,9 +87,81 @@ final class StrategyWorkspaceTabs {
         rebuild();
     }
 
+    /**
+     * Which tabs have a liquidation running, as workspace ids ({@link #ALL_STOCKS} for the All Stocks tab).
+     * Only one tab is visible at a time, so a running liquidation in another workspace would otherwise go unseen.
+     */
+    void setRunningLiquidations(Supplier<Set<String>> runningLiquidations) {
+        this.runningLiquidations = runningLiquidations == null ? Set::of : runningLiquidations;
+        refreshRunningHighlight();
+    }
+
+    /**
+     * Marks the tabs that have a liquidation running with the same blinking dot as the Liquidate Portfolio
+     * button; call whenever the set changes or the selection moves. The selected tab is never marked: the
+     * operator is already looking at it and at its own liquidation button, so the dot only flags the runs
+     * hidden behind other tabs.
+     */
+    void refreshRunningHighlight() {
+        Set<String> running = runningLiquidations.get();
+        int selected = tabs.getSelectedIndex();
+        boolean anyDot = false;
+        for (int index = 0; index < historyTabIndex() && index < workspaceIdByTab.size(); index++) {
+            String workspaceId = workspaceIdByTab.get(index);
+            boolean isRunning = index != selected && running.contains(workspaceId == null ? ALL_STOCKS : workspaceId);
+            anyDot |= isRunning;
+            markTab(index, isRunning);
+        }
+        if (anyDot) {
+            if (!pulseTimer.isRunning()) {
+                pulseTimer.start();
+            }
+        } else {
+            pulseTimer.stop();
+        }
+    }
+
+    private void markTab(int index, boolean running) {
+        if (running && !dotsByTab.containsKey(index)) {
+            LiquidationPulse.DotIcon dot = new LiquidationPulse.DotIcon();
+            dot.setAlternate(pulseAlternate);
+            dotsByTab.put(index, dot);
+            tabs.setIconAt(index, dot);
+            String original = tabs.getToolTipTextAt(index);
+            originalTooltips.put(index, original);
+            tabs.setToolTipTextAt(index, original == null || original.isBlank()
+                    ? RUNNING_TOOLTIP : original + " " + RUNNING_TOOLTIP);
+        } else if (!running && dotsByTab.containsKey(index)) {
+            clearMark(index);
+        }
+    }
+
+    private void clearMark(int index) {
+        dotsByTab.remove(index);
+        if (index < tabs.getTabCount()) {
+            tabs.setIconAt(index, null);
+            tabs.setToolTipTextAt(index, originalTooltips.get(index));
+        }
+        originalTooltips.remove(index);
+    }
+
+    private void flipPulse() {
+        pulseAlternate = !pulseAlternate;
+        dotsByTab.values().forEach(dot -> dot.setAlternate(pulseAlternate));
+        tabs.repaint();
+    }
+
+    /** Whether the dots are blinking, for tests. */
+    boolean pulsing() {
+        return pulseTimer.isRunning();
+    }
+
     /** Rebuilds the workspace tabs for the active mode, preserving the current selection if possible. */
     void rebuild() {
         rebuilding = true;
+        for (Integer index : List.copyOf(dotsByTab.keySet())) {
+            clearMark(index);
+        }
         String previouslySelected = selectedWorkspaceId();
         try {
             // Remove existing workspace tabs (everything between All Stocks and the last Trade History tab).
@@ -101,6 +188,7 @@ final class StrategyWorkspaceTabs {
         } finally {
             rebuilding = false;
         }
+        refreshRunningHighlight();
         handleSelection();
     }
 
@@ -118,6 +206,7 @@ final class StrategyWorkspaceTabs {
             workspaceService.findById(workspaceId)
                     .ifPresent(workspace -> tabs.setTitleAt(tabIndex, tabTitle(workspace)));
         }
+        refreshRunningHighlight();
     }
 
     /**
@@ -196,6 +285,7 @@ final class StrategyWorkspaceTabs {
     }
 
     private void handleSelection() {
+        refreshRunningHighlight();
         int index = tabs.getSelectedIndex();
         if (index < 0 || index == historyTabIndex()) {
             return; // Trade History manages its own content; nothing to re-parent.

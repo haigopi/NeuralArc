@@ -243,6 +243,95 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void anUnfilledEntryDoesNotMonitorOrSellAStopLossOnAnotherEntrysBrokerPosition() {
+        // Two entries on one symbol: the broker position belongs to the other one. This entry's base buy
+        // is still working, so its stop loss must neither activate nor sell, and a row wrongly moved to
+        // STOP_LOSS_ACTIVE goes back to showing its working entry.
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setCurrentState(StrategyLifecycleState.STOP_LOSS_ACTIVE);
+        f.strategies.save(strategy);
+        f.addOrder(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY,
+                "ord-working", "client-working", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT,
+                new BigDecimal("8.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO,
+                StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        ));
+        f.alpaca.orderById.put("ord-working", new AlpacaOrderData("ord-working", "client-working", "AAPL", "buy",
+                "limit", new BigDecimal("8.00"), BigDecimal.ZERO, BigDecimal.ZERO, "new", "{}"));
+        f.alpaca.latestPrice = new BigDecimal("6.90");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("6.90"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.STOP_LOSS).isEmpty(),
+                "no stop-loss sell on shares this entry never bought");
+        assertEquals(StrategyLifecycleState.BASE_BUY_PLACED, f.strategies.findById(strategy.id()).orElseThrow().currentState());
+    }
+
+    @Test
+    void anUnfilledEntryLeftInStopLossActiveIsPutBackEvenWhenTheSymbolHasNoBrokerPosition() {
+        // The stale state outlives the other entry's position: shares are 0 everywhere, the base buy is
+        // still working, and the row must stop claiming a stop loss is active.
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setCurrentState(StrategyLifecycleState.STOP_LOSS_ACTIVE);
+        f.strategies.save(strategy);
+        f.addOrder(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY,
+                "ord-working", "client-working", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT,
+                new BigDecimal("8.00"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO,
+                StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"
+        ));
+        f.alpaca.orderById.put("ord-working", new AlpacaOrderData("ord-working", "client-working", "AAPL", "buy",
+                "limit", new BigDecimal("8.00"), BigDecimal.ZERO, BigDecimal.ZERO, "new", "{}"));
+        f.alpaca.latestPrice = new BigDecimal("7.50");
+        f.alpaca.position = Optional.empty();
+
+        f.service.pollStrategy(strategy.id());
+
+        assertEquals(StrategyLifecycleState.BASE_BUY_PLACED, f.strategies.findById(strategy.id()).orElseThrow().currentState());
+    }
+
+    @Test
+    void anExitSellsOnlyThisEntrysSharesWhenAnotherEntryInTheSymbolHoldsTheRest() {
+        // Two entries on AAPL (4 and 6 shares) share one broker position of 10. A stop loss on the first
+        // must sell its 4, not the netted 10, or the second entry has nothing left to sell.
+        Fixture f = new Fixture();
+        Strategy first = f.activeStrategy(false);
+        Strategy second = f.activeStrategy(false);
+        f.addOrder(f.filledOrder(first.id(), StrategyStage.BASE_BUY, 4, new BigDecimal("8.00")));
+        f.addOrder(f.filledOrder(second.id(), StrategyStage.BASE_BUY, 6, new BigDecimal("8.00")));
+        f.alpaca.latestPrice = new BigDecimal("6.90");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("6.90"), "{}"));
+
+        f.service.pollStrategy(first.id());
+
+        StrategyOrder stop = f.orders.findLatestByStrategyStage(first.id(), StrategyStage.STOP_LOSS).orElseThrow();
+        assertEquals(0, new BigDecimal("4").compareTo(stop.requestedQuantity()), "sold " + stop.requestedQuantity());
+    }
+
+    @Test
+    void anEntryAloneInItsSymbolStillSellsEverythingTheBrokerHolds() {
+        Fixture f = new Fixture();
+        Strategy only = f.activeStrategy(false);
+        f.addOrder(f.filledOrder(only.id(), StrategyStage.BASE_BUY, 4, new BigDecimal("8.00")));
+        f.alpaca.latestPrice = new BigDecimal("6.90");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("6.90"), "{}"));
+
+        f.service.pollStrategy(only.id());
+
+        StrategyOrder stop = f.orders.findLatestByStrategyStage(only.id(), StrategyStage.STOP_LOSS).orElseThrow();
+        assertEquals(0, BigDecimal.TEN.compareTo(stop.requestedQuantity()), "the 6 shares bought outside the app are sold too");
+    }
+
+    @Test
     void aStopLossAndTheMissingSellTriggerRepairNeverSellMoreThanIsHeld() {
         // Replays MRVL on Sept 1: one share, a sell-trigger strategy whose broker order had gone, and the
         // price through the stop. One poll placed a STOP_LOSS sell and then, from a stale order list,

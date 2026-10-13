@@ -29,6 +29,13 @@ class PortfolioCaptureRunsTest {
     private static final PortfolioCaptureRuns.Scope LIVE_ALL =
             new PortfolioCaptureRuns.Scope(StrategyMode.LIVE, null);
 
+    @Test
+    void displayLabelNamesTheWorkspaceAndMode() {
+        assertEquals("Growth · PAPER", PAPER_GROWTH.displayLabel("Growth"));
+        assertEquals("All Stocks · LIVE", LIVE_ALL.displayLabel(null));
+        assertEquals("All Stocks · PAPER", PAPER_PERSONAL.displayLabel("  "), "an unknown workspace name is not shown as blank");
+    }
+
     @TempDir
     Path tempDir;
 

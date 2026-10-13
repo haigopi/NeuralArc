@@ -1,6 +1,7 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.StrategyOrder;
+import com.neuralarc.service.OwnedShares;
 import com.neuralarc.model.StrategyOrderSide;
 import com.neuralarc.model.StrategyOrderStatus;
 
@@ -27,21 +28,7 @@ final class StrategyOrderFillSupport {
      * Used to divide a single broker position between several strategies on the same symbol.
      */
     static int netFilledShares(List<StrategyOrder> orders) {
-        if (orders == null || orders.isEmpty()) {
-            return 0;
-        }
-        BigDecimal net = BigDecimal.ZERO;
-        for (StrategyOrder order : orders) {
-            if (order == null || order.side() == null) {
-                continue;
-            }
-            if (!countsAsFilled(order)) {
-                continue;
-            }
-            BigDecimal quantity = resolvedFilledQuantity(order);
-            net = order.side() == StrategyOrderSide.BUY ? net.add(quantity) : net.subtract(quantity);
-        }
-        return Math.max(0, net.setScale(0, RoundingMode.DOWN).intValue());
+        return OwnedShares.net(orders);
     }
 
     /** Whether the order's fills count towards the strategy's shares: filled, or partly filled and still working. */

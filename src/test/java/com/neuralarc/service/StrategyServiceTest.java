@@ -1075,7 +1075,7 @@ class StrategyServiceTest {
 
         assertTrue(result.success(), result.error());
         StrategyOrder submitted = orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).orElseThrow();
-        assertEquals(new BigDecimal("10.42"), submitted.limitPrice());
+        assertEquals(new BigDecimal("9.77"), submitted.limitPrice());
         assertTrue(submitted.limitPrice().compareTo(alpaca.latestPrice) < 0);
     }
 

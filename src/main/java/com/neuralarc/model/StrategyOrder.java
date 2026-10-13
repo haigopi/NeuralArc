@@ -165,8 +165,14 @@ public class StrategyOrder {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * Replaces the stored broker response with a fresher one. Broker syncs hand back the order as the
+     * broker knows it, which has none of the {@code neuralarc*} keys this app stamped on at submit time
+     * (what sold the position, how, and its broker cost basis), so those are carried over: without them
+     * a filled portfolio-liquidation sell would be reported as a manual user sell.
+     */
     public void setRawResponseJson(String rawResponseJson) {
-        this.rawResponseJson = rawResponseJson == null ? "{}" : rawResponseJson;
+        this.rawResponseJson = OrderMetadata.carryOver(this.rawResponseJson, rawResponseJson);
         this.updatedAt = Instant.now();
     }
 

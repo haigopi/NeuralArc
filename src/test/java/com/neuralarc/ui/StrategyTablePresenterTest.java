@@ -421,11 +421,12 @@ class StrategyTablePresenterTest {
     }
 
     @Test
-    void valueAtUsesLastSellPriceAndRealizedPnlForClosedPosition() {
+    void valueAtUsesLastSellPriceButNoPnlForClosedPosition() {
         Position position = new Position("AAPL");
+        Strategy completed = completedStrategy();
 
         assertEquals("120.00", presenter.valueAt(
-                strategy(),
+                completed,
                 position,
                 new BigDecimal("120.00"),
                 new BigDecimal("200.00"),
@@ -433,8 +434,8 @@ class StrategyTablePresenterTest {
                 "Completed",
                 "Paper"
         ));
-        assertEquals("200.00", presenter.valueAt(
-                strategy(),
+        assertEquals("-", presenter.valueAt(
+                completed,
                 position,
                 new BigDecimal("120.00"),
                 new BigDecimal("200.00"),
@@ -514,11 +515,25 @@ class StrategyTablePresenterTest {
     }
 
     @Test
-    void valueAtShowsNegativeRealizedPnlForClosedPosition() {
+    void pnlIsBlankWhenNoSharesAreHeldWhateverTheStatus() {
+        Strategy cancelled = strategy();
+        cancelled.setStatus(StrategyStatus.PAUSED);
+        cancelled.setPauseReason(PauseReason.MANUAL_LIMIT_BUY_CANCELED);
+
+        assertEquals("-", presenter.valueAt(cancelled, new Position("AAPL"), new BigDecimal("120.00"),
+                new BigDecimal("16.64"), 6, "Cancelled by user. Waiting for manual restart.", "Paper"));
+        assertEquals("-", presenter.valueAt(strategy(), new Position("AAPL"), null,
+                new BigDecimal("16.64"), 6, "Active", "Paper"));
+        assertEquals("-", presenter.valueAt(completedStrategy(), new Position("AAPL"), new BigDecimal("120.00"),
+                new BigDecimal("16.64"), 6, "Completed", "Paper"), "a past exit's P&L is not shown beside a re-entry");
+    }
+
+    @Test
+    void valueAtShowsNoPnlForClosedPositionEvenWhenItLost() {
         Position position = new Position("AAPL");
 
-        assertEquals("-45.67", presenter.valueAt(
-                strategy(),
+        assertEquals("-", presenter.valueAt(
+                completedStrategy(),
                 position,
                 new BigDecimal("95.00"),
                 new BigDecimal("-45.67"),
@@ -993,6 +1008,21 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void pendingBaseBuyNeverShowsAbovetheCurrentPrice() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.CREATED);
+        strategy.setCurrentState(StrategyLifecycleState.CREATED);
+        strategy.setLatestOrderStatus("GAP_ROCKET_RECOMMENDED");
+        strategy.setBaseBuyLimitPrice(new BigDecimal("6.01"));
+        Position position = new Position(strategy.symbol());
+        position.setLastPrice(new BigDecimal("5.96"));
+
+        String label = presenter.displayStatusLabel(strategy, position, false, false, false);
+
+        assertEquals("Base buy pending to place order @ $5.48", label);
+    }
+
+    @Test
     void orbRecommendationShowsPendingBaseBuyStatus() {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.CREATED);
@@ -1121,6 +1151,12 @@ class StrategyTablePresenterTest {
         Object value = presenter.valueAt(strategy, new Position("AAPL"), BigDecimal.ZERO, BigDecimal.ZERO, 9, "");
 
         assertEquals("Earnings Hunter strategy", value);
+    }
+
+    private Strategy completedStrategy() {
+        Strategy completed = strategy();
+        completed.setStatus(StrategyStatus.COMPLETED);
+        return completed;
     }
 
     private Strategy strategy() {

@@ -9,6 +9,9 @@ import java.awt.Color;
 import java.util.List;
 
 public final class HistoryRowStyler {
+    /** The Stage column of the history grid; the subtotal label sits in it. */
+    private static final int STAGE_COLUMN = 4;
+
     /**
      * @param groupedBySymbol when true, a group is one symbol, so only its first row prints the
      *                        ticker and the rest inherit it. When the rows are grouped by date a
@@ -30,8 +33,8 @@ public final class HistoryRowStyler {
         Color background = isSelected ? palette.selectionBackground() : backgroundForRow(rowData, palette);
         Color foreground = isSelected ? palette.selectionForeground() : foregroundForRow(rowData, palette);
         boolean blankText = column == 0 && (subtotal || (groupedBySymbol && !firstInGroup));
-        boolean bold = (column == 0 && !subtotal && groupedBySymbol && firstInGroup) || (subtotal && column == 3);
-        boolean italic = subtotal && column == 3;
+        boolean bold = (column == 0 && !subtotal && groupedBySymbol && firstInGroup) || (subtotal && column == STAGE_COLUMN);
+        boolean italic = subtotal && column == STAGE_COLUMN;
         return new CellStyle(
                 background,
                 foreground,
@@ -90,7 +93,7 @@ public final class HistoryRowStyler {
     }
 
     private boolean isNumericColumn(int column) {
-        return column >= 6 && column <= 9;
+        return column >= 7 && column <= 10;
     }
 
     private Color backgroundForRow(HistoryTablePresenter.HistoryRow row, Palette palette) {

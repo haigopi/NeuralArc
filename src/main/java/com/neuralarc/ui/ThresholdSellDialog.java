@@ -8,6 +8,7 @@ import com.neuralarc.util.ThemeColors;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JDialog;
@@ -58,10 +59,13 @@ final class ThresholdSellDialog {
     private static final int VISIBLE_ROWS = 9;
     private static final int PROSE_WIDTH = 640;
 
-    private final JComboBox<String> side = new JComboBox<>(new String[] {"profit", "loss"});
+    private final JComboBox<String> side = new JComboBox<>(new String[] {"profit", "loss", "profit or loss"});
     private final JComboBox<String> comparison = new JComboBox<>(new String[] {"more than", "less than"});
     private final JSpinner valueSpinner = new JSpinner(new SpinnerNumberModel(5.0d, 0.0d, 1_000_000.0d, 0.5d));
     private final JComboBox<String> unit = new JComboBox<>(new String[] {"%", "$"});
+    private final JCheckBox valueCapEnabled = new JCheckBox("Only stocks with");
+    private final JComboBox<String> valueBasis = new JComboBox<>(new String[] {"position value", "share price"});
+    private final JSpinner valueCapSpinner = new JSpinner(new SpinnerNumberModel(10.0d, 0.0d, 1_000_000.0d, 1.0d));
     private final JRadioButton limitOrder = new JRadioButton("Patient – limit sell near the last price", true);
     private final JRadioButton marketOrder = new JRadioButton("Immediate – market sell now");
 
@@ -82,6 +86,9 @@ final class ThresholdSellDialog {
         orderType.add(limitOrder);
         orderType.add(marketOrder);
         valueSpinner.setPreferredSize(new Dimension(84, valueSpinner.getPreferredSize().height));
+        valueCapSpinner.setPreferredSize(new Dimension(84, valueCapSpinner.getPreferredSize().height));
+        valueBasis.setEnabled(false);
+        valueCapSpinner.setEnabled(false);
 
         model = new ThresholdSellTableModel(candidates, currentRule());
         root = new JPanel(new BorderLayout(0, 10));
@@ -100,6 +107,13 @@ final class ThresholdSellDialog {
         comparison.addActionListener(e -> ruleChanged());
         unit.addActionListener(e -> ruleChanged());
         valueSpinner.addChangeListener(e -> ruleChanged());
+        valueCapEnabled.addActionListener(e -> {
+            valueBasis.setEnabled(valueCapEnabled.isSelected());
+            valueCapSpinner.setEnabled(valueCapEnabled.isSelected());
+            ruleChanged();
+        });
+        valueBasis.addActionListener(e -> ruleChanged());
+        valueCapSpinner.addChangeListener(e -> ruleChanged());
         limitOrder.addActionListener(e -> refreshSummary());
         marketOrder.addActionListener(e -> refreshSummary());
         model.setOnChange(this::refreshSummary);
@@ -158,6 +172,16 @@ final class ThresholdSellDialog {
         valueSpinner.setValue(value);
     }
 
+    /** Turns on the "value under $N" cap; {@code basisName} is "position value" or "share price". */
+    void chooseValueCap(String basisName, double amount) {
+        valueCapEnabled.setSelected(true);
+        valueBasis.setEnabled(true);
+        valueCapSpinner.setEnabled(true);
+        valueBasis.setSelectedItem(basisName);
+        valueCapSpinner.setValue(amount);
+        ruleChanged();
+    }
+
     void chooseMarketOrder() {
         marketOrder.doClick();
     }
@@ -191,10 +215,22 @@ final class ThresholdSellDialog {
         sentence.add(unit);
         section.add(sentence, gbc);
         gbc.gridy++;
+        JPanel cap = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        cap.setOpaque(false);
+        valueCapEnabled.setFont(UI_FONT);
+        valueBasis.setFont(UI_FONT);
+        cap.add(valueCapEnabled);
+        cap.add(valueBasis);
+        cap.add(label("under $", UI_FONT, null));
+        cap.add(valueCapSpinner);
+        section.add(cap, gbc);
+        gbc.gridy++;
         gbc.insets = new Insets(4, 6, 0, 0);
         section.add(ruleSummary, gbc);
         gbc.gridy++;
         section.add(description("% is the gain or loss against what you paid; $ is the dollar P&L on the whole position. "
+                + "Use \"profit or loss\" with 0 to pick every position that is not at break-even. "
+                + "Tick \"Only stocks with\" to also require a small holding, e.g. position value under $10. "
                 + "The number is a size, so \"loss more than 5%\" means down by over 5%, and \"profit less than 5%\" means up, but by under 5%.",
                 PROSE_WIDTH), gbc);
         return section;
@@ -309,12 +345,23 @@ final class ThresholdSellDialog {
 
     private ThresholdSellRule currentRule() {
         return new ThresholdSellRule(
-                side.getSelectedIndex() == 1 ? ThresholdSellRule.Side.LOSS : ThresholdSellRule.Side.PROFIT,
+                switch (side.getSelectedIndex()) {
+                    case 1 -> ThresholdSellRule.Side.LOSS;
+                    case 2 -> ThresholdSellRule.Side.ANY;
+                    default -> ThresholdSellRule.Side.PROFIT;
+                },
                 comparison.getSelectedIndex() == 1
                         ? ThresholdSellRule.Comparison.LESS_THAN
                         : ThresholdSellRule.Comparison.MORE_THAN,
                 unit.getSelectedIndex() == 1 ? ThresholdSellRule.Unit.DOLLARS : ThresholdSellRule.Unit.PERCENT,
-                BigDecimal.valueOf(((Number) valueSpinner.getValue()).doubleValue()));
+                BigDecimal.valueOf(((Number) valueSpinner.getValue()).doubleValue()),
+                valueCapEnabled.isSelected()
+                        ? new ThresholdSellRule.ValueLimit(
+                                valueBasis.getSelectedIndex() == 1
+                                        ? ThresholdSellRule.ValueBasis.SHARE_PRICE
+                                        : ThresholdSellRule.ValueBasis.POSITION_VALUE,
+                                BigDecimal.valueOf(((Number) valueCapSpinner.getValue()).doubleValue()))
+                        : null);
     }
 
     private static String signed(BigDecimal value) {

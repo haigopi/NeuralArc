@@ -34,6 +34,8 @@ class VwapLiveScannerTest {
         assertTrue(c.discountPercent().compareTo(BigDecimal.ZERO) > 0, "price is below VWAP → positive discount");
         assertTrue(c.aboveMa50(), "current 100 should be above the ~95 MA50");
         assertTrue(c.relativeVolume().compareTo(BigDecimal.ZERO) > 0);
+        assertEquals(new BigDecimal("104.00"), c.todayOpen());
+        assertEquals(new BigDecimal("100.00"), c.todayLow());
     }
 
     @Test

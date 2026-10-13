@@ -1,5 +1,6 @@
 package com.neuralarc.orb;
 
+import com.neuralarc.analytics.PlannedEntryPrice;
 import com.neuralarc.analytics.ProtectiveStopPrice;
 
 import java.math.BigDecimal;
@@ -53,7 +54,9 @@ public final class OrbAnalyzer {
         if (previousSessionLow != null && previousSessionLow.compareTo(BigDecimal.ZERO) > 0) {
             candidateEntry = candidateEntry.min(previousSessionLow);
         }
-        BigDecimal entry = candidateEntry.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal entry = c == null || c.latestPrice() == null
+                ? candidateEntry.setScale(2, RoundingMode.HALF_UP)
+                : PlannedEntryPrice.belowMarket(candidateEntry, c.latestPrice(), c.regularSessionOpen());
         BigDecimal rawStop = switch (cfg.stopMode()) {
             case RANGE_LOW, ATR_ADJUSTED -> s.low();
             case MID_RANGE -> s.high().add(s.low()).divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
