@@ -1052,6 +1052,12 @@ public class TradingFrame extends JFrame {
       }
 
       @Override
+      public Optional<java.util.Set<CancelBuyOrdersSelection.Kind>> chooseCancelBuyOrders(
+          java.util.Map<CancelBuyOrdersSelection.Kind, Integer> counts) {
+        return CancelBuyOrdersDialog.show(TradingFrame.this, counts);
+      }
+
+      @Override
       public Optional<ThresholdSellSelection> chooseThresholdSell(List<ManagedStrategy> scope) {
         return TradingFrame.this.chooseThresholdSell(scope);
       }
@@ -7429,18 +7435,22 @@ public class TradingFrame extends JFrame {
     // Remove accidental duplicate in-memory entries first (same persisted strategy id).
     java.util.HashSet<String> seenIds = new java.util.HashSet<>();
     strategies.removeIf(entry -> !seenIds.add(entry.strategy.id()));
+    // Indexed lookups: with hundreds of rows a scan per stored strategy froze the EDT for seconds.
+    java.util.Map<String, ManagedStrategy> byId = new java.util.HashMap<>();
+    for (ManagedStrategy entry : strategies) {
+      byId.put(entry.strategy.id(), entry);
+    }
+    java.util.Set<String> storedIds = new java.util.HashSet<>();
     for (Strategy strategy : stored) {
-      ManagedStrategy existing = strategies.stream()
-          .filter(entry -> entry.strategy.id().equals(strategy.id()))
-          .findFirst()
-          .orElse(null);
+      storedIds.add(strategy.id());
+      ManagedStrategy existing = byId.get(strategy.id());
       if (existing == null) {
         strategies.add(new ManagedStrategy(strategy));
       } else {
         existing.syncFrom(strategy);
       }
     }
-    strategies.removeIf(entry -> stored.stream().noneMatch(strategy -> strategy.id().equals(entry.strategy.id())));
+    strategies.removeIf(entry -> !storedIds.contains(entry.strategy.id()));
     for (ManagedStrategy entry : strategies) {
       resetPollingCountdown(entry);
     }
@@ -9391,24 +9401,37 @@ public class TradingFrame extends JFrame {
     gapRocketPlaceOrdersButton.setEnabled(false);
     log("[Gap Rocket] Placing " + pending.size() + " pending limit buy order(s) in batches of "
         + BulkPlacementRunner.DEFAULT_BATCH_SIZE + ".");
+    BulkProgressHandle progressWindow = BulkProgressDialog.open(this, "Gap Rocket Orders", pending.size());
     new SwingWorker<BulkPlacementRunner.Progress, BulkPlacementRunner.Progress>() {
+      private final java.util.Set<String> failedSymbols = java.util.concurrent.ConcurrentHashMap.newKeySet();
+      private int reported;
+
       @Override
       protected BulkPlacementRunner.Progress doInBackground() {
         return new BulkPlacementRunner().run(
             pending,
-            strategy -> submitGapRocketPendingLimitBuy(service, strategy),
+            strategy -> {
+              boolean accepted = submitGapRocketPendingLimitBuy(service, strategy);
+              if (!accepted) {
+                failedSymbols.add(strategy.symbol());
+              }
+              return accepted;
+            },
             this::publish
         );
       }
 
       @Override
       protected void process(List<BulkPlacementRunner.Progress> updates) {
+        // Cheap on purpose: the grid is reloaded once at the end, not after every batch.
         BulkPlacementRunner.Progress latest = updates.getLast();
         setStatus("Placing Gap Rocket limit buys: " + latest.completed() + " of " + latest.total()
             + " submitted...", STATUS_WARN);
-        syncStrategiesFromRepository();
-        refreshStrategyTableData();
-        updateStatusBar();
+        for (; reported < latest.completed(); reported++) {
+          String symbol = pending.get(reported).symbol();
+          progressWindow.advance(symbol + (failedSymbols.contains(symbol) ? ": failed" : ""),
+              failedSymbols.contains(symbol) ? BulkProgress.Outcome.FAILED : BulkProgress.Outcome.DONE);
+        }
       }
 
       @Override
@@ -9419,15 +9442,21 @@ public class TradingFrame extends JFrame {
           progress = get();
         } catch (InterruptedException ex) {
           Thread.currentThread().interrupt();
+          progressWindow.abort("Interrupted");
           return;
         } catch (ExecutionException ex) {
           log("[Gap Rocket] Batch placement failed: " + ex.getCause().getMessage());
+          progressWindow.abort(ex.getCause().getMessage());
           JOptionPane.showMessageDialog(TradingFrame.this,
               "Failed to place Gap Rocket limit buys: " + ex.getCause().getMessage(),
               "Gap Rocket Orders",
               JOptionPane.ERROR_MESSAGE);
           return;
         }
+        List<String> placedSymbols = pending.stream().map(Strategy::symbol)
+            .filter(symbol -> !failedSymbols.contains(symbol)).toList();
+        progressWindow.finish(placedSymbols, List.of(),
+            failedSymbols.stream().map(symbol -> symbol + ": failed").toList());
         syncStrategiesFromRepository();
         refreshStrategyTableData();
         applyCurrentStrategiesRowFilter();

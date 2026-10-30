@@ -315,6 +315,71 @@ public class StrategyEngine {
         reconcile(strategy);
     }
 
+    /**
+     * Places a loss-level buy again with the strategy's current price and quantity, after an edit
+     * cancelled the one that was working. A held position only places these when polling sees the
+     * price reach the trigger, so without this an edit would leave the position with no working
+     * loss-level buy. Does nothing when the level is off, unconfigured, or already has an order.
+     */
+    public StrategyOrder replaceLossLevelBuy(Strategy strategy, StrategyStage stage) {
+        if (!strategy.lossBuyLevelsEnabled()) {
+            return null;
+        }
+        boolean first = stage == StrategyStage.BUY_LIMIT_1;
+        if (!first && stage != StrategyStage.BUY_LIMIT_2) {
+            return null;
+        }
+        int quantity = first ? strategy.buyLimit1Quantity() : strategy.buyLimit2Quantity();
+        BigDecimal price = first ? strategy.buyLimit1Price() : strategy.buyLimit2Price();
+        if (quantity <= 0 || price.compareTo(BigDecimal.ZERO) <= 0
+                || hasPendingOrFilledStage(orderRepository.findByStrategyId(strategy.id()), stage)) {
+            return null;
+        }
+        return submitBuyOrder(strategy, stage, quantity, price,
+                first ? StrategyLifecycleState.BUY_LIMIT_1_PLACED : StrategyLifecycleState.BUY_LIMIT_2_PLACED,
+                (first ? "Buy Limit 1" : "Buy Limit 2") + " re-placed with edited values", true);
+    }
+
+    /** A sell that was working when an edit cancelled it, so the edit can put it back. */
+    public record WorkingSell(StrategyStage stage, BigDecimal quantity, BigDecimal limitPrice, TimeInForce timeInForce) {
+    }
+
+    /**
+     * Places a sell again after an edit cancelled it. A target sell takes the edited target price and
+     * quantity; any other sell (a manual exit, a stop-loss sell) keeps the price it had, since the
+     * operator chose it. Sizes never exceed the shares actually held, and nothing is placed when the
+     * position is gone or a sell of that stage is already working.
+     */
+    public StrategyOrder replaceWorkingSell(Strategy strategy, WorkingSell previous) {
+        // Capped to this position's own shares: the symbol may also be held in another workspace.
+        Optional<AlpacaPositionData> position = sharedPositionCap.cap(strategy,
+                alpacaClient.getPosition(strategy.symbol()), orderRepository.findByStrategyId(strategy.id()));
+        if (position.isEmpty() || !position.get().exists() || position.get().quantity().signum() <= 0) {
+            return null;
+        }
+        boolean alreadyWorking = orderRepository.findByStrategyId(strategy.id()).stream()
+                .anyMatch(order -> order.stage() == previous.stage() && order.isPending()
+                        && order.side() == StrategyOrderSide.SELL);
+        if (alreadyWorking) {
+            return null;
+        }
+        BigDecimal held = position.get().quantity();
+        BigDecimal quantity = previous.quantity();
+        BigDecimal price = previous.limitPrice();
+        if (previous.stage() == StrategyStage.TARGET_SELL && strategy.targetSellEnabled()
+                && strategy.targetSellPrice().compareTo(BigDecimal.ZERO) > 0) {
+            price = strategy.targetSellPrice();
+            quantity = strategy.targetSellQuantity(held);
+        }
+        quantity = quantity.min(held);
+        if (quantity.signum() <= 0 || price == null || price.signum() <= 0) {
+            return null;
+        }
+        return submitSellOrder(strategy, previous.stage(), quantity, price, previous.timeInForce(),
+                StrategyLifecycleState.SELL_PLACED, previous.stage() + " sell re-placed after edit",
+                StrategyEventType.ORDER_SUBMITTED);
+    }
+
     public boolean canAutoRetryFailed(Strategy strategy) {
         return expiredEntryOrderResubmitter.canAutoRetryFailed(strategy);
     }

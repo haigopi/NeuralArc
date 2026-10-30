@@ -295,26 +295,30 @@ final class PortfolioActionsSupport {
                 return "Resumed";
             }
         },
-        CANCEL_PENDING_LIMIT_BUYS("Cancel All Pending Limit Buys") {
+        CANCEL_BUY_ORDERS("Cancel Buy Orders") {
             @Override
             boolean matches(ManagedStrategy entry) {
-                return PortfolioActionMatchers.hasCancelablePendingLimitBuy(entry);
+                for (CancelBuyOrdersSelection.Kind kind : CancelBuyOrdersSelection.Kind.values()) {
+                    if (kind.matcher().matches(entry)) {
+                        return true;
+                    }
+                }
+                return false;
             }
 
             @Override
             String confirmHeading(int count) {
-                return "Cancel pending limit buy orders for " + count + " cancelable strategy(ies)?";
+                return "Cancel buys for " + count + " strategy(ies)?";
             }
 
             @Override
             String confirmDetail() {
-                return "Only pending limit buy orders will be canceled. Open positions and sell orders are not closed."
-                        + "<br>Matching strategies will be paused and can be restarted with Place Limit Buy Again.";
+                return "Only the buys you ticked are cancelled. Open positions, sell orders and stop losses are not closed.";
             }
 
             @Override
             String emptyMessage() {
-                return "There are no strategies with cancelable pending limit buy orders.";
+                return "There are no buy orders or pending buy recommendations to cancel.";
             }
         },
         CHANGE_SHARES_AND_TIME_IN_FORCE("Change Shares & Time In Force") {

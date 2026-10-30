@@ -99,6 +99,12 @@ final class PortfolioActionsController {
             return Optional.empty();
         }
 
+        /** Which buy kinds to cancel, given a count per kind; empty when the operator backs out. */
+        default Optional<java.util.Set<CancelBuyOrdersSelection.Kind>> chooseCancelBuyOrders(
+                java.util.Map<CancelBuyOrdersSelection.Kind, Integer> counts) {
+            return Optional.empty();
+        }
+
         StrategyService.StrategyCreationResult buyMoreAtMarket(Strategy strategy, int quantity);
         StrategyService.StrategyCreationResult buyMoreAtLimit(Strategy strategy, int quantity, BigDecimal limitPrice, TimeInForce timeInForce);
         ManualPortfolioImportService.ImportResult importManualStocks(List<PortfolioStockImportDialog.ImportedStockDraft> drafts);
@@ -152,6 +158,7 @@ final class PortfolioActionsController {
      * runs' lines, which is untidy but harmless.
      */
     private volatile BulkProgressHandle activeProgress = BulkProgressHandle.NONE;
+    private volatile long batchPauseMillis = BulkPlacementRunner.DEFAULT_PAUSE_BETWEEN_BATCHES_MILLIS;
 
     PortfolioActionsController(Gateway gateway) {
         this.gateway = gateway;
@@ -203,17 +210,6 @@ final class PortfolioActionsController {
         gateway.actionCompleted("Portfolio Actions", "Menu opened.");
     }
 
-    void handleCancelAllPendingLimitBuys() {
-        PortfolioActionsSupport.BulkAction action = PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_BUYS;
-        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
-        if (!confirmBulkAction(action, targets)) {
-            return;
-        }
-
-        runBulkAction(action, targets, () -> cancelPendingLimitBuyTargets(targets));
-    }
-
-    /** Cancels only the entry buys, or only the loss-level buys, of the matching rows. */
     /**
      * Cancels every armed or working stop loss. Deliberately a separate action from the sell-order
      * cancels: this one removes protection rather than an order the operator placed, so it confirms
@@ -245,32 +241,92 @@ final class PortfolioActionsController {
         });
     }
 
-    void handleCancelStagedLimitBuys(PortfolioActionsSupport.BulkAction action) {
-        java.util.Set<com.neuralarc.model.StrategyStage> stages = action == PortfolioActionsSupport.BulkAction.CANCEL_LOSS_LEVEL_BUYS
-                ? StrategyService.LOSS_LEVEL_BUY_STAGES
-                : StrategyService.ENTRY_BUY_STAGES;
-        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
-        if (!confirmBulkAction(action, targets)) {
+    /**
+     * The one entry point for withdrawing buys: counts each kind, lets the operator tick what to
+     * cancel, then runs every chosen row through a single throttled run behind one progress window.
+     */
+    void handleCancelBuyOrders() {
+        java.util.Map<CancelBuyOrdersSelection.Kind, List<ManagedStrategy>> byKind = new java.util.EnumMap<>(CancelBuyOrdersSelection.Kind.class);
+        java.util.Map<CancelBuyOrdersSelection.Kind, Integer> counts = CancelBuyOrdersSelection.emptyCounts();
+        for (CancelBuyOrdersSelection.Kind kind : CancelBuyOrdersSelection.Kind.values()) {
+            List<ManagedStrategy> matching = support.filterTargets(strategiesFor(kind.matcher()), kind.matcher());
+            byKind.put(kind, matching);
+            counts.put(kind, matching.size());
+        }
+        String menuLabel = "Cancel Buy Orders";
+        gateway.actionStarted(menuLabel);
+        if (CancelBuyOrdersSelection.available(counts).isEmpty()) {
+            String message = "There are no buy orders or pending buy recommendations to cancel.";
+            gateway.actionSkipped(menuLabel, message);
+            gateway.showMessage(message, menuLabel, JOptionPane.INFORMATION_MESSAGE);
             return;
         }
-        runBulkAction(action, targets, () -> cancelStagedLimitBuyTargets(targets, stages));
+        Optional<java.util.Set<CancelBuyOrdersSelection.Kind>> chosen = gateway.chooseCancelBuyOrders(counts);
+        if (chosen.isEmpty()) {
+            gateway.actionCanceled(menuLabel);
+            return;
+        }
+        java.util.Set<CancelBuyOrdersSelection.Kind> kinds = CancelBuyOrdersSelection.effective(chosen.get(), counts);
+        if (kinds.isEmpty()) {
+            gateway.actionSkipped(menuLabel, "Nothing was selected.");
+            return;
+        }
+        java.util.Map<String, CancelBuyOrdersSelection.Kind> kindByStrategyId = new java.util.HashMap<>();
+        List<ManagedStrategy> targets = new ArrayList<>();
+        for (CancelBuyOrdersSelection.Kind kind : kinds) {
+            for (ManagedStrategy entry : byKind.get(kind)) {
+                if (kindByStrategyId.putIfAbsent(entry.strategy.id(), kind) == null) {
+                    targets.add(entry);
+                }
+            }
+        }
+        int choice = gateway.confirm("<html><body style='width:380px'><b>Cancel "
+                        + targets.size() + " buy(s)?</b><br><br>"
+                        + kinds.stream().map(kind -> kind.label() + ": " + counts.get(kind))
+                                .collect(java.util.stream.Collectors.joining("<br>"))
+                        + "<br><br>Cancelled broker buys pause their strategy; it can be restarted with"
+                        + " Place Limit Buy Again.</body></html>",
+                menuLabel, JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (choice != JOptionPane.YES_OPTION) {
+            gateway.actionCanceled(menuLabel);
+            return;
+        }
+        runBulkAction(PortfolioActionsSupport.BulkAction.CANCEL_BUY_ORDERS, targets,
+                () -> cancelBuyOrderTargets(targets, kindByStrategyId));
     }
 
-    PortfolioActionsSupport.BatchResult cancelStagedLimitBuyTargets(
-            List<ManagedStrategy> targets, java.util.Set<com.neuralarc.model.StrategyStage> stages) {
+    PortfolioActionsSupport.BatchResult cancelBuyOrderTargets(
+            List<ManagedStrategy> targets, java.util.Map<String, CancelBuyOrdersSelection.Kind> kindByStrategyId) {
         return runTargetsInParallel(targets, entry -> {
-            StrategyService modeAwareService = modeAwareService(entry);
-            if (modeAwareService == null) {
-                return missingBrokerService(entry);
+            CancelBuyOrdersSelection.Kind kind = kindByStrategyId.get(entry.strategy.id());
+            if (kind == null) {
+                return TargetResult.skipped(entry.strategy.symbol() + ": not selected");
             }
-            StrategyService.LimitBuyCancelResult result = modeAwareService.cancelPendingLimitBuys(entry.strategy.id(), stages);
-            if (!result.success()) {
-                return StrategyService.NO_PENDING_LIMIT_BUYS.equals(result.error())
-                        ? TargetResult.skipped(entry.strategy.symbol() + ": nothing of that kind was working")
+            if (!kind.touchesBroker()) {
+                gateway.log("[Cancel Buy Orders] deleting pending recommendation for " + entry.strategy.symbol() + ".");
+                StrategyService.ArchiveResult result = gateway.deletePendingBaseBuyStrategy(entry.strategy.id());
+                return result.success()
+                        ? TargetResult.success(entry.strategy.symbol())
                         : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
             }
-            return TargetResult.success(entry.strategy.symbol() + " (" + result.canceledCount() + ")");
+            return cancelStagedBuy(entry, kind == CancelBuyOrdersSelection.Kind.LOSS_LEVEL
+                    ? StrategyService.LOSS_LEVEL_BUY_STAGES
+                    : StrategyService.ENTRY_BUY_STAGES);
         });
+    }
+
+    private TargetResult cancelStagedBuy(ManagedStrategy entry, java.util.Set<com.neuralarc.model.StrategyStage> stages) {
+        StrategyService modeAwareService = modeAwareService(entry);
+        if (modeAwareService == null) {
+            return missingBrokerService(entry);
+        }
+        StrategyService.LimitBuyCancelResult result = modeAwareService.cancelPendingLimitBuys(entry.strategy.id(), stages);
+        if (!result.success()) {
+            return StrategyService.NO_PENDING_LIMIT_BUYS.equals(result.error())
+                    ? TargetResult.skipped(entry.strategy.symbol() + ": nothing of that kind was working")
+                    : TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
+        }
+        return TargetResult.success(entry.strategy.symbol() + " (" + result.canceledCount() + ")");
     }
 
     void handleCleanPendingAndCanceled() {
@@ -283,17 +339,6 @@ final class PortfolioActionsController {
         gateway.log(action.logPrefix() + " preparing to delete " + targets.size()
                 + " pending and cancelled row(s).");
         runBulkAction(action, targets, () -> deleteCleanableGridTargets(targets));
-    }
-
-    void handleCancelColoredPendingBuys(PortfolioActionsSupport.BulkAction action) {
-        List<ManagedStrategy> targets = support.filterTargets(strategiesFor(action), action);
-        if (!confirmBulkAction(action, targets)) {
-            return;
-        }
-
-        gateway.log(action.logPrefix() + " preparing to remove " + targets.size()
-                + " pending buy recommendation(s).");
-        runBulkAction(action, targets, () -> deletePendingBaseBuyTargets(targets, action.logPrefix()));
     }
 
     void handlePlacePendingBaseBuys() {
@@ -619,22 +664,6 @@ final class PortfolioActionsController {
         });
     }
 
-    PortfolioActionsSupport.BatchResult cancelPendingLimitBuyTargets(List<ManagedStrategy> targets) {
-        return runTargetsInParallel(targets, entry -> {
-            StrategyService modeAwareService = modeAwareService(entry);
-            if (modeAwareService == null) {
-                return missingBrokerService(entry);
-            }
-            StrategyService.LimitBuyCancelResult result = modeAwareService.cancelPendingLimitBuys(entry.strategy.id());
-            if (!result.success()) {
-                return TargetResult.failure(entry.strategy.symbol() + ": " + result.error());
-            }
-            return result.canceledCount() > 0
-                    ? TargetResult.success(entry.strategy.symbol() + " (" + result.canceledCount() + ")")
-                    : TargetResult.skipped(entry.strategy.symbol() + ": no pending limit buy orders were cancelable");
-        });
-    }
-
     PortfolioActionsSupport.BatchResult placePendingBaseBuyTargets(List<ManagedStrategy> targets) {
         return runTargetsInParallel(targets, entry -> {
             gateway.log("[Place Pending Base Buys] evaluating " + entry.strategy.symbol()
@@ -874,6 +903,9 @@ final class PortfolioActionsController {
                 if (completed < targets.size()) {
                     gateway.log("[Portfolio Actions] Processed " + completed + " of " + targets.size()
                             + " target(s); continuing with the next batch.");
+                    if (!pauseBetweenBatches()) {
+                        break;
+                    }
                 }
             }
             return new PortfolioActionsSupport.BatchResult(successes, failures, skipped);
@@ -887,6 +919,25 @@ final class PortfolioActionsController {
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    /** Gives the broker room to breathe between batches; false when the run was interrupted. */
+    private boolean pauseBetweenBatches() {
+        if (batchPauseMillis <= 0L) {
+            return !Thread.currentThread().isInterrupted();
+        }
+        try {
+            Thread.sleep(batchPauseMillis);
+            return true;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    /** Test seam: tests with many targets should not wait out the real pause. */
+    void setBatchPauseMillis(long millis) {
+        this.batchPauseMillis = Math.max(0L, millis);
     }
 
     private TargetResult runTarget(ManagedStrategy entry, TargetOperation operation) {

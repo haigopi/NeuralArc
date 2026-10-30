@@ -395,11 +395,90 @@ class PortfolioActionsControllerTest {
             this.result = result;
         }
 
+        private final List<java.util.Set<com.neuralarc.model.StrategyStage>> cancelledStages =
+                java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
         @Override
         public LimitBuyCancelResult cancelPendingLimitBuys(String strategyId) {
             cancelled.add(strategyId);
             return result;
         }
+
+        @Override
+        public LimitBuyCancelResult cancelPendingLimitBuys(String strategyId, java.util.Set<com.neuralarc.model.StrategyStage> stages) {
+            cancelled.add(strategyId);
+            cancelledStages.add(stages);
+            return result;
+        }
+    }
+
+    private static ManagedStrategy entryBuy(String symbol) {
+        ManagedStrategy entry = managed(symbol);
+        entry.strategy.setStatus(StrategyStatus.ACTIVE);
+        entry.strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_PLACED);
+        return entry;
+    }
+
+    @Test
+    void cancelBuyOrdersCancelsOnlyTheTickedKindsInOneRun() throws Exception {
+        CancelRecordingService service = new CancelRecordingService(StrategyService.LimitBuyCancelResult.success(1));
+        FakeGateway gateway = new FakeGateway(service);
+        gateway.current = List.of(entryBuy("AAPL"), entryBuy("MSFT"));
+        gateway.cancelBuyChoice = Optional.of(java.util.EnumSet.of(CancelBuyOrdersSelection.Kind.ENTRY));
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+        controller.setBatchPauseMillis(0L);
+
+        controller.handleCancelBuyOrders();
+
+        assertTrue(gateway.progress.awaitFinish());
+        assertEquals(2, gateway.progress.total, "one window for the whole run");
+        assertEquals(List.of("AAPL-id", "MSFT-id"), service.cancelled.stream().sorted().toList());
+        assertEquals(List.of(StrategyService.ENTRY_BUY_STAGES, StrategyService.ENTRY_BUY_STAGES), service.cancelledStages);
+        assertTrue(gateway.deletedPendingBaseBuyIds.isEmpty(), "recommendations were not ticked");
+    }
+
+    @Test
+    void cancelBuyOrdersDoesNothingWhenTheOperatorBacksOut() {
+        CancelRecordingService service = new CancelRecordingService(StrategyService.LimitBuyCancelResult.success(1));
+        FakeGateway gateway = new FakeGateway(service);
+        gateway.current = List.of(entryBuy("AAPL"));
+        gateway.cancelBuyChoice = Optional.empty();
+
+        new PortfolioActionsController(gateway).handleCancelBuyOrders();
+
+        assertTrue(service.cancelled.isEmpty());
+    }
+
+    @Test
+    void cancelBuyOrdersSaysSoWhenThereIsNothingToCancel() {
+        FakeGateway gateway = new FakeGateway(new CancelRecordingService(StrategyService.LimitBuyCancelResult.success(0)));
+        gateway.current = List.of(paused("AAPL"));
+
+        new PortfolioActionsController(gateway).handleCancelBuyOrders();
+
+        assertEquals(1, gateway.shownMessages.size());
+        assertTrue(gateway.shownMessages.get(0).contains("no buy orders"));
+    }
+
+    @Test
+    void cancelBuyOrderTargetsRoutesEachKindToItsOwnCancel() {
+        CancelRecordingService service = new CancelRecordingService(StrategyService.LimitBuyCancelResult.success(1));
+        FakeGateway gateway = new FakeGateway(service);
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+        controller.setBatchPauseMillis(0L);
+        java.util.Map<String, CancelBuyOrdersSelection.Kind> kinds = java.util.Map.of(
+                "AAPL-id", CancelBuyOrdersSelection.Kind.ENTRY,
+                "MSFT-id", CancelBuyOrdersSelection.Kind.LOSS_LEVEL,
+                "TSLA-id", CancelBuyOrdersSelection.Kind.RED_PENDING);
+
+        PortfolioActionsSupport.BatchResult result = controller.cancelBuyOrderTargets(
+                List.of(managed("AAPL"), managed("MSFT"), managed("TSLA")), kinds);
+
+        assertEquals(3, result.successes().size(), result.failures().toString());
+        assertEquals(List.of("AAPL-id", "MSFT-id"), service.cancelled.stream().sorted().toList());
+        assertTrue(service.cancelledStages.contains(StrategyService.ENTRY_BUY_STAGES));
+        assertTrue(service.cancelledStages.contains(StrategyService.LOSS_LEVEL_BUY_STAGES));
+        assertEquals(List.of("TSLA-id"), gateway.deletedPendingBaseBuyIds, "recommendations are deleted locally, not cancelled at the broker");
     }
 
     private static final class BlockingRepositionService extends StrategyService {
@@ -529,6 +608,45 @@ class PortfolioActionsControllerTest {
         assertEquals(List.of("AAPL", "MSFT", "TSLA"), gateway.progress.advanced);
         assertEquals(3, gateway.progress.successes.size());
         assertTrue(gateway.progress.failures.isEmpty());
+    }
+
+    @Test
+    void aThreeHundredFiftyStockRunIsPacedInBatchesAndReportsEveryStock() throws Exception {
+        FakeGateway gateway = new FakeGateway(new ResumeRecordingService());
+        List<ManagedStrategy> many = new java.util.ArrayList<>();
+        for (int index = 0; index < 350; index++) {
+            many.add(paused("S" + index));
+        }
+        gateway.current = many;
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+        controller.setBatchPauseMillis(1L);
+
+        controller.handleResumeAll();
+
+        assertTrue(gateway.progress.awaitFinish(), "a large run must still finish");
+        assertEquals(350, gateway.progress.total);
+        assertEquals(350, gateway.progress.advanced.size(), "every stock moves the bar");
+        assertEquals(350, gateway.progress.successes.size());
+        long batchLogs = gateway.logs.stream().filter(line -> line.contains("continuing with the next batch")).count();
+        assertEquals(69, batchLogs, "350 stocks in batches of 5 is 70 batches, 69 hand-offs");
+    }
+
+    @Test
+    void interruptingTheRunStopsItBetweenBatches() throws Exception {
+        FakeGateway gateway = new FakeGateway(new ResumeRecordingService());
+        List<ManagedStrategy> many = new java.util.ArrayList<>();
+        for (int index = 0; index < 20; index++) {
+            many.add(paused("S" + index));
+        }
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+        controller.setBatchPauseMillis(0L);
+        Thread.currentThread().interrupt();
+        try {
+            PortfolioActionsSupport.BatchResult result = controller.resumeTargets(many);
+            assertTrue(result.successes().size() < 20, "an interrupted run must not push on to the end");
+        } finally {
+            Thread.interrupted();
+        }
     }
 
     @Test
@@ -713,6 +831,7 @@ class PortfolioActionsControllerTest {
 
     private static final class FakeGateway implements PortfolioActionsController.Gateway {
         private final StrategyService service;
+        private final java.util.List<String> logs = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private final AtomicInteger activeSells = new AtomicInteger();
         private final AtomicInteger maxConcurrentSells = new AtomicInteger();
         private final CountDownLatch sellsEntered = new CountDownLatch(2);
@@ -726,6 +845,7 @@ class PortfolioActionsControllerTest {
         private final CountDownLatch sellTriggersEntered = new CountDownLatch(2);
         private final java.util.List<String> updatedStrategyIds = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private Optional<ThresholdSellSelection> thresholdChoice = Optional.empty();
+        private Optional<java.util.Set<CancelBuyOrdersSelection.Kind>> cancelBuyChoice = Optional.empty();
         private java.util.List<com.neuralarc.api.AlpacaOrderData> brokerHistory = java.util.List.of();
         private final java.util.List<com.neuralarc.model.StrategyOrder> savedOrders = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private Optional<List<BrokerFillReconciler.Proposal>> reconcileChoice = Optional.empty();
@@ -835,6 +955,10 @@ class PortfolioActionsControllerTest {
             reconcileOffered = proposals;
             return reconcileChoice.isPresent() ? Optional.of(proposals) : Optional.empty();
         }
+        @Override public Optional<java.util.Set<CancelBuyOrdersSelection.Kind>> chooseCancelBuyOrders(
+                java.util.Map<CancelBuyOrdersSelection.Kind, Integer> counts) {
+            return cancelBuyChoice;
+        }
         @Override public Optional<ThresholdSellSelection> chooseThresholdSell(List<ManagedStrategy> scope) {
             return thresholdChoice;
         }
@@ -906,7 +1030,7 @@ class PortfolioActionsControllerTest {
         @Override public void updateSelectedStrategy() { }
         @Override public void refreshPanels() { }
         @Override public void updateStatusBar() { }
-        @Override public void log(String message) { }
+        @Override public void log(String message) { logs.add(message); }
         @Override public void actionStarted(String actionName) { }
         @Override public void actionCompleted(String actionName, String detail) { }
         @Override public void actionSkipped(String actionName, String reason) { }

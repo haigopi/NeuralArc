@@ -74,7 +74,7 @@ public class HelpDialog extends JDialog {
             "- Portfolio Actions can sell profitable positions, all open positions, or losing positions after confirmation.\n" +
             "- Position All Sell Triggers places a GTC limit sell for each open position using that strategy's configured sell trigger price.\n" +
             "- Position all Sell Profit Threshold percentage converts active sell-trigger positions to profit-threshold mode using the trigger price as baseline and your chosen trailing pullback percent.\n" +
-            "- Cancel All Pending Limit Buys cancels pending limit buy orders without closing open positions or sell orders.\n" +
+            "- Cancel Buy Orders lets you pick which buys to cancel (entry buys with no shares, loss-level buys, red or green pending recommendations) without closing open positions or sell orders.\n" +
             "- Promote All to Live validates eligible paper strategies and creates live strategies using the same promotion rules as the row action (disabled while viewing Live mode).\n" +
             "- These actions use Alpaca and then refresh the grid and status values.\n\n" +
             "Review the confirmation dialog before submitting any sell action."

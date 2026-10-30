@@ -105,21 +105,12 @@ final class PortfolioActionsMenuBuilder {
                                 "icons/submit.svg",
                                 controller::handleReadjustLosingPendingBaseBuys)
                 )),
-                new PortfolioActionsMenu.Group("Cancel Buy Orders", "icons/close.svg", List.of(
-                        new PortfolioActionsMenu.Entry("Cancel Unfilled Entry Limit Buys",
-                                "Only positions you just added whose first limit buy has not filled; held positions and loss-level buys stay.",
+                new PortfolioActionsMenu.Group("Cancel Orders", "icons/close.svg", List.of(
+                        new PortfolioActionsMenu.Entry("Cancel Buy Orders…",
+                                "Pick which buys to cancel, with counts: entry buys with no shares, loss-level buys,"
+                                        + " and red or green pending recommendations.",
                                 "icons/close.svg",
-                                () -> controller.handleCancelStagedLimitBuys(PortfolioActionsSupport.BulkAction.CANCEL_UNFILLED_ENTRY_BUYS)),
-                        new PortfolioActionsMenu.Entry("Cancel Loss-Level Limit Buys",
-                                "Only the averaging-down buys below held positions; the shares and their stops stay.",
-                                "icons/close.svg",
-                                () -> controller.handleCancelStagedLimitBuys(PortfolioActionsSupport.BulkAction.CANCEL_LOSS_LEVEL_BUYS)),
-                        new PortfolioActionsMenu.Entry("Cancel All Pending Limit Buys",
-                                "Every working buy, entry and loss-level alike; those strategies pause and positions stay open.",
-                                "icons/close.svg",
-                                controller::handleCancelAllPendingLimitBuys)
-                )),
-                new PortfolioActionsMenu.Group("Cancel Other Orders", "icons/close.svg", List.of(
+                                controller::handleCancelBuyOrders),
                         new PortfolioActionsMenu.Entry("Cancel All Pending Limit Sells",
                                 "Cancel working sell orders; the positions stay open and keep evaluating rules.",
                                 "icons/close.svg",
@@ -128,15 +119,7 @@ final class PortfolioActionsMenuBuilder {
                                 "Switch off stop-loss monitoring and cancel any stop-loss sell working at the broker."
                                         + " Positions stay open with no automatic downside protection.",
                                 "icons/kill-switch.svg",
-                                controller::handleCancelAllStopLosses),
-                        new PortfolioActionsMenu.Entry("Cancel all Red Pending Buys (Losers)",
-                                "Drop red recommendations that were never submitted to the broker.",
-                                "icons/delete.svg",
-                                () -> controller.handleCancelColoredPendingBuys(PortfolioActionsSupport.BulkAction.CANCEL_AMBER_PENDING_BUYS)),
-                        new PortfolioActionsMenu.Entry("Cancel all Green Pending Buys (Gainer)",
-                                "Drop green recommendations that were never submitted to the broker.",
-                                "icons/delete.svg",
-                                () -> controller.handleCancelColoredPendingBuys(PortfolioActionsSupport.BulkAction.CANCEL_GREEN_PENDING_BUYS))
+                                controller::handleCancelAllStopLosses)
                 )),
                 new PortfolioActionsMenu.Group("Clean Up Grids", "icons/delete.svg", List.of(
                         new PortfolioActionsMenu.Entry("Remove All Closed Positions",

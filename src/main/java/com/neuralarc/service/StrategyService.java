@@ -206,13 +206,18 @@ public class StrategyService {
                 && strategyEngine.canAutoRetryFailed(persisted);
         boolean resubmitEditedStrategy = resubmitClosedStrategy || resubmitManualCancelStrategy;
         boolean canceledOpenEntryOrders = false;
+        // Remembered before the cancel: a held position places loss-level buys only when polling sees
+        // the price reach the trigger, so the working ones must be put back here with the new values.
+        List<StrategyStage> workingLossLevelStages = refreshActiveOrders
+                ? workingLossLevelStages(persisted)
+                : List.of();
+        List<StrategyEngine.WorkingSell> workingSells = refreshActiveOrders
+                ? workingSells(persisted)
+                : List.of();
         if (refreshActiveOrders) {
             // For active strategies, cancel any currently open Alpaca orders before applying
             // edited pricing/quantity so new orders are created from updated settings.
-            canceledOpenEntryOrders = cancelPendingRemoteOrders(persisted);
-            if (!persisted.symbol().equalsIgnoreCase(strategy.symbol())) {
-                canceledOpenEntryOrders |= cancelPendingRemoteOrders(strategy);
-            }
+            canceledOpenEntryOrders = cancelOwnRemoteOrders(persisted);
         }
 
         strategy.clearLastError();
@@ -236,6 +241,10 @@ public class StrategyService {
                 cancelPendingLocalEntryOrders(strategy);
                 strategyEngine.submitBaseBuy(strategy, false);
             } else {
+                if (canceledOpenEntryOrders) {
+                    workingLossLevelStages.forEach(stage -> strategyEngine.replaceLossLevelBuy(strategy, stage));
+                    workingSells.forEach(sell -> strategyEngine.replaceWorkingSell(strategy, sell));
+                }
                 strategyEngine.resumeStrategy(strategy);
             }
         }
@@ -244,6 +253,29 @@ public class StrategyService {
         }
 
         return Optional.of(strategy);
+    }
+
+    /** The sells working before an edit cancels them, with what they would need to be placed again. */
+    private List<StrategyEngine.WorkingSell> workingSells(Strategy strategy) {
+        return orderRepository.findByStrategyId(strategy.id()).stream()
+                .filter(StrategyOrder::isPending)
+                .filter(order -> order.side() == StrategyOrderSide.SELL)
+                .map(order -> new StrategyEngine.WorkingSell(
+                        order.stage(),
+                        order.requestedQuantity().subtract(order.filledQuantity()),
+                        order.limitPrice(),
+                        order.timeInForce()))
+                .toList();
+    }
+
+    private List<StrategyStage> workingLossLevelStages(Strategy strategy) {
+        return orderRepository.findByStrategyId(strategy.id()).stream()
+                .filter(StrategyOrder::isPending)
+                .filter(order -> order.side() == StrategyOrderSide.BUY)
+                .map(StrategyOrder::stage)
+                .filter(stage -> stage == StrategyStage.BUY_LIMIT_1 || stage == StrategyStage.BUY_LIMIT_2)
+                .distinct()
+                .toList();
     }
 
     /**
@@ -1128,31 +1160,67 @@ public class StrategyService {
     }
 
     /** @return true when at least one open broker order was canceled. */
-    private boolean cancelPendingRemoteOrders(Strategy strategy) {
-        List<com.neuralarc.api.AlpacaOrderData> openOrders = alpacaClient.getOpenOrders(strategy.symbol());
-        if (openOrders.isEmpty()) {
-            return false;
+    /**
+     * Cancels the open broker orders that belong to this one position. Matching is by this strategy's
+     * own order records, never by symbol: the same symbol can be held in several workspaces, and an
+     * edit to one must not cancel the others' orders.
+     */
+    private boolean cancelOwnRemoteOrders(Strategy strategy) {
+        List<StrategyOrder> own = orderRepository.findByStrategyId(strategy.id());
+        java.util.Set<String> ownBrokerIds = new java.util.HashSet<>();
+        java.util.Set<String> ownClientIds = new java.util.HashSet<>();
+        for (StrategyOrder order : own) {
+            if (order.alpacaOrderId() != null && !order.alpacaOrderId().isBlank()) {
+                ownBrokerIds.add(order.alpacaOrderId());
+            }
+            if (order.clientOrderId() != null && !order.clientOrderId().isBlank()) {
+                ownClientIds.add(order.clientOrderId());
+            }
         }
         boolean canceledAny = false;
-        for (com.neuralarc.api.AlpacaOrderData order : openOrders) {
-            if (alpacaClient.cancelOrder(order.orderId())) {
-                canceledAny = true;
-                orderRepository.findByStrategyId(strategy.id()).stream()
-                        .filter(localOrder -> localOrder.isPending())
-                        .filter(localOrder -> order.orderId().equals(localOrder.alpacaOrderId())
-                                || order.clientOrderId().equals(localOrder.clientOrderId()))
-                        .forEach(localOrder -> {
-                            localOrder.setStatus(StrategyOrderStatus.CANCELED);
-                            localOrder.setRawResponseJson(order.rawJson());
-                            orderRepository.save(localOrder);
-                        });
+        boolean wholeSymbol = ownsEverythingOnSymbol(strategy, own);
+        for (com.neuralarc.api.AlpacaOrderData open : alpacaClient.getOpenOrders(strategy.symbol())) {
+            if (!wholeSymbol && !ownBrokerIds.contains(open.orderId()) && !ownClientIds.contains(open.clientOrderId())) {
+                continue;
+            }
+            if (!alpacaClient.cancelOrder(open.orderId())) {
+                continue;
+            }
+            canceledAny = true;
+            for (StrategyOrder local : own) {
+                if (local.isPending() && (open.orderId().equals(local.alpacaOrderId())
+                        || open.clientOrderId().equals(local.clientOrderId()))) {
+                    local.setStatus(StrategyOrderStatus.CANCELED);
+                    local.setRawResponseJson(open.rawJson());
+                    orderRepository.save(local);
+                }
             }
         }
         if (canceledAny) {
             stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.ORDER_STATUS_UPDATED,
-                    "Open Alpaca orders canceled for strategy " + strategy.symbol(), "{}");
+                    "Open Alpaca orders canceled for this position " + strategy.symbol(), "{}");
         }
         return canceledAny;
+    }
+
+    private boolean cancelPendingRemoteOrders(Strategy strategy) {
+        return cancelOwnRemoteOrders(strategy);
+    }
+
+    /**
+     * A position the app has no order records for, and that shares its symbol with no other position,
+     * is a broker-only holding (an import): its orders can only be found by symbol, and nobody else's
+     * can be caught by that.
+     */
+    private boolean ownsEverythingOnSymbol(Strategy strategy, List<StrategyOrder> own) {
+        if (!own.isEmpty()) {
+            return false;
+        }
+        return strategyRepository.findAll().stream()
+                .noneMatch(other -> !other.id().equals(strategy.id())
+                        && other.mode() == strategy.mode()
+                        && other.symbol().equalsIgnoreCase(strategy.symbol())
+                        && other.status() != StrategyStatus.ARCHIVED);
     }
 
     private Strategy buildRemoteStrategy(

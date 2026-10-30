@@ -829,6 +829,208 @@ class StrategyServiceTest {
     }
 
     @Test
+    void updateHeldPositionReplacesTheWorkingLossLevelBuyWithTheEditedValues() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("7.50"), "{}"));
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BUY_LIMIT_1_PLACED);
+        strategies.save(strategy);
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY, "ord-base", "client-base", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("8.00"), new BigDecimal("8.00"),
+                new BigDecimal("10"), new BigDecimal("10"), BigDecimal.ZERO, StrategyOrderStatus.FILLED,
+                Instant.now(), Instant.now(), Instant.now(), "{}"));
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BUY_LIMIT_1, "ord-l1", "client-l1", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("6.00"), BigDecimal.ZERO,
+                new BigDecimal("5"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"));
+        alpaca.openOrders.add(new AlpacaOrderData("ord-l1", "client-l1", "AAPL", "buy", "limit",
+                new BigDecimal("6.00"), BigDecimal.ZERO, BigDecimal.ZERO, "accepted", "{\"qty\":\"5\"}"));
+
+        Strategy updated = strategyWithId(strategy.id(), "AAPL", 10, new BigDecimal("8.00"));
+        updated.setStatus(StrategyStatus.ACTIVE);
+        updated.setCurrentState(StrategyLifecycleState.BUY_LIMIT_1_PLACED);
+        updated.setBuyLimit1Price(new BigDecimal("6.50"));
+        updated.setBuyLimit1Quantity(4);
+
+        Optional<Strategy> result = service.updateStrategy(updated);
+
+        assertTrue(result.isPresent());
+        assertTrue(alpaca.canceledOrderIds.contains("ord-l1"));
+        assertEquals(1, alpaca.submittedOrders.size(), "the loss-level buy must be put back, not left to a later trigger");
+        assertEquals(new BigDecimal("6.50"), alpaca.submittedOrders.getFirst().limitPrice());
+        assertTrue(alpaca.submittedOrders.getFirst().rawJson().contains("\"qty\":\"4\""));
+        assertEquals(StrategyOrderStatus.CANCELED, orders.findByClientOrderId("client-l1").orElseThrow().status());
+        assertEquals(StrategyOrderStatus.SUBMITTED,
+                orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).orElseThrow().status());
+    }
+
+    private StrategyOrder workingSell(Strategy strategy, StrategyStage stage, String price, String suffix) {
+        return new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), stage, "ord-" + suffix, "client-" + suffix, "AAPL",
+                StrategyOrderSide.SELL, StrategyOrderType.LIMIT, new BigDecimal(price), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}");
+    }
+
+    private StrategyService heldPositionWithSell(
+            InMemoryStrategyRepository strategies, InMemoryOrderRepository orders, FakeAlpacaClient alpaca,
+            Strategy strategy, StrategyStage stage, String price) {
+        alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("8.50"), "{}"));
+        alpaca.latestPrice = new BigDecimal("8.50");
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        strategies.save(strategy);
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY, "ord-base", "client-base", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("8.00"), new BigDecimal("8.00"),
+                new BigDecimal("10"), new BigDecimal("10"), BigDecimal.ZERO, StrategyOrderStatus.FILLED,
+                Instant.now(), Instant.now(), Instant.now(), "{}"));
+        orders.save(workingSell(strategy, stage, price, "sell"));
+        alpaca.openOrders.add(new AlpacaOrderData("ord-sell", "client-sell", "AAPL", "sell", "limit",
+                new BigDecimal(price), BigDecimal.ZERO, BigDecimal.ZERO, "accepted", "{\"qty\":\"10\"}"));
+        return service(strategies, orders, new InMemoryEventRepository(), alpaca);
+    }
+
+    @Test
+    void updateHeldPositionReplacesTheWorkingTargetSellAtTheEditedTarget() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        StrategyService service = heldPositionWithSell(strategies, orders, alpaca, strategy, StrategyStage.TARGET_SELL, "10.00");
+
+        Strategy updated = strategyWithId(strategy.id(), "AAPL", 10, new BigDecimal("8.00"));
+        updated.setStatus(StrategyStatus.ACTIVE);
+        updated.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        updated.setTargetSellEnabled(true);
+        updated.setTargetSellPrice(new BigDecimal("11.00"));
+
+        assertTrue(service.updateStrategy(updated).isPresent());
+
+        assertTrue(alpaca.canceledOrderIds.contains("ord-sell"));
+        List<AlpacaOrderData> sells = alpaca.submittedOrders.stream().filter(order -> "sell".equals(order.side())).toList();
+        assertEquals(1, sells.size(), "the cancelled sell must come back, once");
+        assertEquals(new BigDecimal("11.00"), sells.getFirst().limitPrice());
+        assertEquals(StrategyOrderStatus.CANCELED, orders.findByClientOrderId("client-sell").orElseThrow().status());
+    }
+
+    @Test
+    void updateCancelsOnlyThisPositionsOrdersNotOtherWorkspacesInTheSameSymbol() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        StrategyService service = heldPositionWithSell(strategies, orders, alpaca, strategy, StrategyStage.TARGET_SELL, "10.00");
+        // Another workspace's working sell on the same symbol: no record under this strategy.
+        alpaca.openOrders.add(new AlpacaOrderData("ord-other", "client-other-workspace", "AAPL", "sell", "limit",
+                new BigDecimal("12.00"), BigDecimal.ZERO, BigDecimal.ZERO, "accepted", "{\"qty\":\"5\"}"));
+
+        Strategy updated = strategyWithId(strategy.id(), "AAPL", 10, new BigDecimal("8.00"));
+        updated.setStatus(StrategyStatus.ACTIVE);
+        updated.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        updated.setTargetSellEnabled(true);
+        updated.setTargetSellPrice(new BigDecimal("11.00"));
+
+        assertTrue(service.updateStrategy(updated).isPresent());
+
+        assertTrue(alpaca.canceledOrderIds.contains("ord-sell"));
+        assertFalse(alpaca.canceledOrderIds.contains("ord-other"), "another workspace's order must be left alone");
+    }
+
+    @Test
+    void pauseCancelsOnlyThisPositionsOrdersNotOtherWorkspacesInTheSameSymbol() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        StrategyService service = heldPositionWithSell(strategies, orders, alpaca, strategy, StrategyStage.TARGET_SELL, "10.00");
+        alpaca.openOrders.add(new AlpacaOrderData("ord-other", "client-other-workspace", "AAPL", "sell", "limit",
+                new BigDecimal("12.00"), BigDecimal.ZERO, BigDecimal.ZERO, "accepted", "{\"qty\":\"5\"}"));
+
+        service.pause(strategy.id());
+
+        assertTrue(alpaca.canceledOrderIds.contains("ord-sell"));
+        assertFalse(alpaca.canceledOrderIds.contains("ord-other"), "another workspace's order must be left alone");
+    }
+
+    @Test
+    void deleteOfABrokerOnlyPositionStillCancelsItsOrdersBySymbol() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, new InMemoryEventRepository(), alpaca);
+        Strategy imported = baseStrategy("NIO", 5, new BigDecimal("6.21"));
+        imported.setStatus(StrategyStatus.ACTIVE);
+        strategies.save(imported);
+        alpaca.openOrders.add(new AlpacaOrderData("ord-remote", "client-remote", "NIO", "buy", "limit",
+                new BigDecimal("6.21"), BigDecimal.ZERO, BigDecimal.ZERO, "accepted", "{\"qty\":\"5\"}"));
+
+        service.delete(imported.id());
+
+        assertTrue(alpaca.canceledOrderIds.contains("ord-remote"),
+                "no records and no other position on the symbol: the symbol's orders are this one's");
+    }
+
+    @Test
+    void updateHeldPositionPutsAManualSellBackAtItsOwnPrice() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        StrategyService service = heldPositionWithSell(strategies, orders, alpaca, strategy, StrategyStage.MANUAL_EXIT, "9.25");
+
+        Strategy updated = strategyWithId(strategy.id(), "AAPL", 10, new BigDecimal("8.00"));
+        updated.setStatus(StrategyStatus.ACTIVE);
+        updated.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        updated.setTargetSellPrice(new BigDecimal("11.00"));
+
+        assertTrue(service.updateStrategy(updated).isPresent());
+
+        List<AlpacaOrderData> sells = alpaca.submittedOrders.stream().filter(order -> "sell".equals(order.side())).toList();
+        assertEquals(1, sells.size());
+        assertEquals(new BigDecimal("9.25"), sells.getFirst().limitPrice(), "an operator's own sell price is not rewritten by a target edit");
+    }
+
+    @Test
+    void updateHeldPositionWithNoWorkingLossLevelBuyPlacesNothingNew() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("7.90"), "{}"));
+        alpaca.latestPrice = new BigDecimal("7.90");
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategies.save(strategy);
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY, "ord-base", "client-base", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("8.00"), new BigDecimal("8.00"),
+                new BigDecimal("10"), new BigDecimal("10"), BigDecimal.ZERO, StrategyOrderStatus.FILLED,
+                Instant.now(), Instant.now(), Instant.now(), "{}"));
+
+        Strategy updated = strategyWithId(strategy.id(), "AAPL", 10, new BigDecimal("8.00"));
+        updated.setStatus(StrategyStatus.ACTIVE);
+        updated.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        updated.setBuyLimit1Price(new BigDecimal("6.50"));
+
+        service.updateStrategy(updated);
+
+        assertTrue(alpaca.submittedOrders.stream().noneMatch(order -> "buy".equals(order.side())),
+                "price is above the trigger; polling places the level when it is reached");
+    }
+
+    @Test
     void updateActiveStrategyDuringMarketCloseKeepsManualMarketClosedOverride() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();

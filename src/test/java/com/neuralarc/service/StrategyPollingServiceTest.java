@@ -1429,8 +1429,13 @@ class StrategyPollingServiceTest {
 
         f.service.pollDueStrategies();
 
+        // The poll saves the filled order first and moves the strategy to COMPLETED a moment later on
+        // its own thread, so wait for both rather than reading the strategy as soon as the order shows.
         f.awaitTrue(() -> f.orders.findByAlpacaOrderId("ord-sell")
                         .map(order -> order.status() == StrategyOrderStatus.FILLED)
+                        .orElse(false)
+                        && f.strategies.findById(strategy.id())
+                        .map(current -> current.currentState() == StrategyLifecycleState.COMPLETED)
                         .orElse(false),
                 "Pending sell should reconcile from broker at configured polling interval");
         Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();

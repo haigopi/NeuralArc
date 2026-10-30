@@ -307,46 +307,20 @@ class PortfolioActionsSupportTest {
     }
 
     @Test
-    void cancelPendingLimitBuysTargetsOnlyCancelablePendingBuyStrategies() {
-        ManagedStrategy cancelableBaseBuy = managed(
-                "AAPL",
-                StrategyStatus.ACTIVE,
-                StrategyLifecycleState.BASE_BUY_PLACED,
-                0,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO
-        );
-        ManagedStrategy cancelableLimit1 = managed(
-                "MSFT",
-                StrategyStatus.ACTIVE,
-                StrategyLifecycleState.BUY_LIMIT_1_PARTIALLY_FILLED,
-                0,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO
-        );
-        ManagedStrategy notCancelableSellPlaced = managed(
-                "TSLA",
-                StrategyStatus.ACTIVE,
-                StrategyLifecycleState.SELL_PLACED,
-                0,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO
-        );
-        ManagedStrategy paused = managed(
-                "NVDA",
-                StrategyStatus.PAUSED,
-                StrategyLifecycleState.BASE_BUY_PLACED,
-                0,
-                BigDecimal.ZERO,
-                BigDecimal.ZERO
-        );
+    void cancelBuyOrdersTargetsEntryAndLossLevelBuysButNotSellsOrPaused() {
+        ManagedStrategy entryBuy = managed("AAPL", StrategyStatus.ACTIVE,
+                StrategyLifecycleState.BASE_BUY_PLACED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        ManagedStrategy lossLevelBuy = managed("MSFT", StrategyStatus.ACTIVE,
+                StrategyLifecycleState.BUY_LIMIT_1_PLACED, 10, new BigDecimal("100"), new BigDecimal("90"));
+        ManagedStrategy sellPlaced = managed("TSLA", StrategyStatus.ACTIVE,
+                StrategyLifecycleState.SELL_PLACED, 10, new BigDecimal("100"), new BigDecimal("110"));
+        ManagedStrategy paused = managed("NVDA", StrategyStatus.PAUSED,
+                StrategyLifecycleState.BASE_BUY_PLACED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
 
         List<ManagedStrategy> targets = support.filterTargets(
-                List.of(cancelableBaseBuy, cancelableLimit1, notCancelableSellPlaced, paused),
-                PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_BUYS
-        );
+                List.of(entryBuy, lossLevelBuy, sellPlaced, paused),
+                PortfolioActionsSupport.BulkAction.CANCEL_BUY_ORDERS);
 
-        assertEquals(2, targets.size());
         assertEquals(List.of("AAPL", "MSFT"), targets.stream().map(entry -> entry.strategy.symbol()).toList());
     }
 
@@ -625,12 +599,12 @@ class PortfolioActionsSupportTest {
     @Test
     void bulkActionConfirmationUsesSpecificDescription() {
         String message = support.buildConfirmationMessage(
-                PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_BUYS,
+                PortfolioActionsSupport.BulkAction.CANCEL_BUY_ORDERS,
                 List.of(managed("AAPL", StrategyStatus.ACTIVE, 0, BigDecimal.ZERO, BigDecimal.ZERO))
         );
 
-        assertTrue(message.contains("Cancel pending limit buy orders"));
-        assertTrue(message.contains("Open positions and sell orders are not closed"));
+        assertTrue(message.contains("Cancel buys for"));
+        assertTrue(message.contains("Open positions, sell orders and stop losses are not closed"));
     }
 
     @Test
@@ -807,7 +781,7 @@ class PortfolioActionsSupportTest {
     @Test
     void resultMessageIncludesSkippedSectionWhenPresent() {
         String message = support.buildResultMessage(
-                PortfolioActionsSupport.BulkAction.CANCEL_PENDING_LIMIT_BUYS,
+                PortfolioActionsSupport.BulkAction.CANCEL_BUY_ORDERS,
                 new PortfolioActionsSupport.BatchResult(
                         List.of("AAPL (1)"),
                         List.of(),
