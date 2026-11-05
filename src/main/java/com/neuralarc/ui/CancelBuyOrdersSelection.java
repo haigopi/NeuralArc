@@ -10,22 +10,25 @@ import java.util.Set;
  * turning an operator's ticks into the set of rows to act on.
  *
  * <p>The four kinds never overlap on one row: an entry buy has no shares yet, a loss-level buy sits
- * under a held position, and red/green recommendations were never sent to the broker.
+ * under a held position, and losing, gaining and no-price recommendations were never sent to the broker.
  */
 final class CancelBuyOrdersSelection {
     enum Kind {
-        ENTRY("Entry limit buys with no shares yet",
-                "First limit buy still waiting; those strategies pause.",
+        ENTRY("Unfilled entry buys (no shares yet)",
+                "The first limit buy is still working at the broker; those strategies pause.",
                 PortfolioActionsSupport.BulkAction.CANCEL_UNFILLED_ENTRY_BUYS),
-        LOSS_LEVEL("Loss-level (averaging-down) buys",
-                "Extra buys below held positions; the shares and their stops stay.",
+        LOSS_LEVEL("Averaging-down buys (positions you hold)",
+                "Extra buys working below a held position; the shares and their stops stay.",
                 PortfolioActionsSupport.BulkAction.CANCEL_LOSS_LEVEL_BUYS),
-        RED_PENDING("Red pending recommendations",
-                "Never sent to the broker; limit is above the current price.",
+        LOSING_PENDING("Pending buys not yet placed: losing",
+                "Never sent to the broker; the limit is above the current price.",
                 PortfolioActionsSupport.BulkAction.CANCEL_AMBER_PENDING_BUYS),
-        GREEN_PENDING("Green pending recommendations",
-                "Never sent to the broker; limit is below the current price.",
-                PortfolioActionsSupport.BulkAction.CANCEL_GREEN_PENDING_BUYS);
+        GAINING_PENDING("Pending buys not yet placed: gaining",
+                "Never sent to the broker; the limit is below the current price.",
+                PortfolioActionsSupport.BulkAction.CANCEL_GREEN_PENDING_BUYS),
+        OTHER_PENDING("Pending buys not yet placed: no price yet",
+                "Never sent to the broker; the current price is unavailable or equals the limit.",
+                PortfolioActionsSupport.BulkAction.CANCEL_OTHER_PENDING_BUYS);
 
         private final String label;
         private final String description;
@@ -49,7 +52,7 @@ final class CancelBuyOrdersSelection {
             return matcher;
         }
 
-        /** Entry and loss-level buys are broker orders; the coloured kinds are local rows only. */
+        /** Entry and loss-level buys are broker orders; the pending kinds are local rows only. */
         boolean touchesBroker() {
             return this == ENTRY || this == LOSS_LEVEL;
         }

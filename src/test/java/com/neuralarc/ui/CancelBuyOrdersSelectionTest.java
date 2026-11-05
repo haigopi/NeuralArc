@@ -14,11 +14,11 @@ class CancelBuyOrdersSelectionTest {
     private static final Map<CancelBuyOrdersSelection.Kind, Integer> COUNTS = Map.of(
             CancelBuyOrdersSelection.Kind.ENTRY, 3,
             CancelBuyOrdersSelection.Kind.LOSS_LEVEL, 0,
-            CancelBuyOrdersSelection.Kind.RED_PENDING, 2);
+            CancelBuyOrdersSelection.Kind.LOSING_PENDING, 2);
 
     @Test
     void onlyKindsWithRowsAreAvailable() {
-        assertEquals(EnumSet.of(CancelBuyOrdersSelection.Kind.ENTRY, CancelBuyOrdersSelection.Kind.RED_PENDING),
+        assertEquals(EnumSet.of(CancelBuyOrdersSelection.Kind.ENTRY, CancelBuyOrdersSelection.Kind.LOSING_PENDING),
                 CancelBuyOrdersSelection.available(COUNTS));
         assertTrue(CancelBuyOrdersSelection.available(Map.of()).isEmpty());
         assertTrue(CancelBuyOrdersSelection.available(null).isEmpty());
@@ -36,14 +36,15 @@ class CancelBuyOrdersSelectionTest {
     @Test
     void totalAddsOnlyTheChosenKinds() {
         assertEquals(5, CancelBuyOrdersSelection.total(
-                EnumSet.of(CancelBuyOrdersSelection.Kind.ENTRY, CancelBuyOrdersSelection.Kind.RED_PENDING), COUNTS));
+                EnumSet.of(CancelBuyOrdersSelection.Kind.ENTRY, CancelBuyOrdersSelection.Kind.LOSING_PENDING), COUNTS));
     }
 
     @Test
     void onlyEntryAndLossLevelBuysTouchTheBroker() {
         assertTrue(CancelBuyOrdersSelection.Kind.ENTRY.touchesBroker());
         assertTrue(CancelBuyOrdersSelection.Kind.LOSS_LEVEL.touchesBroker());
-        assertFalse(CancelBuyOrdersSelection.Kind.RED_PENDING.touchesBroker());
-        assertFalse(CancelBuyOrdersSelection.Kind.GREEN_PENDING.touchesBroker());
+        assertFalse(CancelBuyOrdersSelection.Kind.LOSING_PENDING.touchesBroker());
+        assertFalse(CancelBuyOrdersSelection.Kind.GAINING_PENDING.touchesBroker());
+        assertFalse(CancelBuyOrdersSelection.Kind.OTHER_PENDING.touchesBroker());
     }
 }

@@ -753,8 +753,16 @@ class PortfolioActionsSupportTest {
         equal.strategy.setBaseBuyLimitPrice(new BigDecimal("100.00"));
         setCachedLastPrice(equal, "100.00");
 
-        List<ManagedStrategy> rows = List.of(red, green, equal);
+        ManagedStrategy noPrice = managed("AMD", StrategyStatus.CREATED, 0, BigDecimal.ZERO, BigDecimal.ZERO);
+        noPrice.strategy.setLatestOrderStatus("ORB_RECOMMENDED");
+        noPrice.strategy.setBaseBuyLimitPrice(new BigDecimal("50.00"));
 
+        List<ManagedStrategy> rows = List.of(red, green, equal, noPrice);
+
+        assertEquals(List.of("NVDA", "AMD"), support.filterTargets(rows,
+                        PortfolioActionsSupport.BulkAction.CANCEL_OTHER_PENDING_BUYS).stream()
+                .map(entry -> entry.strategy.symbol()).toList(),
+                "pending rows with no red/green colour must still be cancellable");
         assertEquals(List.of("AAPL"), support.filterTargets(rows,
                         PortfolioActionsSupport.BulkAction.CANCEL_AMBER_PENDING_BUYS).stream()
                 .map(entry -> entry.strategy.symbol()).toList());

@@ -34,6 +34,9 @@ final class CancelBuyOrdersDialog {
         Map<CancelBuyOrdersSelection.Kind, JCheckBox> boxes = new java.util.EnumMap<>(CancelBuyOrdersSelection.Kind.class);
         for (CancelBuyOrdersSelection.Kind kind : CancelBuyOrdersSelection.Kind.values()) {
             int count = counts.getOrDefault(kind, 0);
+            if (kind == CancelBuyOrdersSelection.Kind.OTHER_PENDING && count == 0) {
+                continue;
+            }
             JCheckBox box = new JCheckBox(kind.label() + " (" + count + ")", count > 0);
             box.setEnabled(count > 0);
             box.setToolTipText(kind.description());
@@ -46,6 +49,23 @@ final class CancelBuyOrdersDialog {
             panel.add(detail);
             boxes.put(kind, box);
         }
+
+        JLabel total = new JLabel();
+        total.setFont(FontLoader.ui(Font.BOLD, 12f));
+        total.setAlignmentX(Component.LEFT_ALIGNMENT);
+        Runnable refreshTotal = () -> {
+            int selected = 0;
+            for (Map.Entry<CancelBuyOrdersSelection.Kind, JCheckBox> entry : boxes.entrySet()) {
+                if (entry.getValue().isSelected()) {
+                    selected += counts.getOrDefault(entry.getKey(), 0);
+                }
+            }
+            total.setText(selected + " buy(s) selected");
+        };
+        boxes.values().forEach(box -> box.addActionListener(event -> refreshTotal.run()));
+        refreshTotal.run();
+        panel.add(javax.swing.Box.createVerticalStrut(12));
+        panel.add(total);
 
         int choice = JOptionPane.showConfirmDialog(parent, panel, "Cancel Buy Orders",
                 JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);

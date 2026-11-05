@@ -594,7 +594,7 @@ final class PortfolioActionsSupport {
                 return "Deleted";
             }
         },
-        CANCEL_AMBER_PENDING_BUYS("Cancel all Red Pending Buys (Losers)") {
+        CANCEL_AMBER_PENDING_BUYS("Cancel Losing Pending Buys") {
             @Override
             boolean matches(ManagedStrategy entry) {
                 return pendingBuyDirection(entry) == OrbPendingBaseBuyRowStyler.PriceDirection.RED_ABOVE_MARKET;
@@ -602,18 +602,18 @@ final class PortfolioActionsSupport {
 
             @Override
             String confirmHeading(int count) {
-                return "Cancel " + count + " red pending buy recommendation(s)?";
+                return "Cancel " + count + " losing pending buy recommendation(s)?";
             }
 
             @Override
             String confirmDetail() {
-                return "Red rows have a base-buy limit above the cached current stock price."
+                return "Losing rows have a base-buy limit above the cached current stock price."
                         + "<br>Only unsubmitted pending recommendations are removed; broker orders and positions are not affected.";
             }
 
             @Override
             String emptyMessage() {
-                return "There are no red pending buy recommendations to cancel.";
+                return "There are no losing pending buy recommendations to cancel.";
             }
 
             @Override
@@ -621,7 +621,7 @@ final class PortfolioActionsSupport {
                 return "Canceled";
             }
         },
-        CANCEL_GREEN_PENDING_BUYS("Cancel all Green Pending Buys (Gainer)") {
+        CANCEL_GREEN_PENDING_BUYS("Cancel Gaining Pending Buys") {
             @Override
             boolean matches(ManagedStrategy entry) {
                 return pendingBuyDirection(entry) == OrbPendingBaseBuyRowStyler.PriceDirection.GREEN_GAINER;
@@ -629,18 +629,51 @@ final class PortfolioActionsSupport {
 
             @Override
             String confirmHeading(int count) {
-                return "Cancel " + count + " green pending buy recommendation(s)?";
+                return "Cancel " + count + " gaining pending buy recommendation(s)?";
             }
 
             @Override
             String confirmDetail() {
-                return "Green rows have a base-buy limit below the cached current stock price."
+                return "Gaining rows have a base-buy limit below the cached current stock price."
                         + "<br>Only unsubmitted pending recommendations are removed; broker orders and positions are not affected.";
             }
 
             @Override
             String emptyMessage() {
-                return "There are no green pending buy recommendations to cancel.";
+                return "There are no gaining pending buy recommendations to cancel.";
+            }
+
+            @Override
+            String resultSuccessLabel() {
+                return "Canceled";
+            }
+        },
+        CANCEL_OTHER_PENDING_BUYS("Cancel Pending Buys With No Price Yet") {
+            @Override
+            boolean matches(ManagedStrategy entry) {
+                if (entry == null || entry.strategy == null
+                        || !PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(entry.strategy)) {
+                    return false;
+                }
+                OrbPendingBaseBuyRowStyler.PriceDirection direction = pendingBuyDirection(entry);
+                return direction != OrbPendingBaseBuyRowStyler.PriceDirection.RED_ABOVE_MARKET
+                        && direction != OrbPendingBaseBuyRowStyler.PriceDirection.GREEN_GAINER;
+            }
+
+            @Override
+            String confirmHeading(int count) {
+                return "Cancel " + count + " pending buy recommendation(s) with no price yet?";
+            }
+
+            @Override
+            String confirmDetail() {
+                return "These rows have no losing or gaining label because the current price is unavailable or equals the limit."
+                        + "<br>Only unsubmitted pending recommendations are removed; broker orders and positions are not affected.";
+            }
+
+            @Override
+            String emptyMessage() {
+                return "There are no pending buy recommendations without a price to cancel.";
             }
 
             @Override

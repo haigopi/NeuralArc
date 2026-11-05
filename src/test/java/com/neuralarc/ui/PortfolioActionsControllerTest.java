@@ -469,7 +469,7 @@ class PortfolioActionsControllerTest {
         java.util.Map<String, CancelBuyOrdersSelection.Kind> kinds = java.util.Map.of(
                 "AAPL-id", CancelBuyOrdersSelection.Kind.ENTRY,
                 "MSFT-id", CancelBuyOrdersSelection.Kind.LOSS_LEVEL,
-                "TSLA-id", CancelBuyOrdersSelection.Kind.RED_PENDING);
+                "TSLA-id", CancelBuyOrdersSelection.Kind.LOSING_PENDING);
 
         PortfolioActionsSupport.BatchResult result = controller.cancelBuyOrderTargets(
                 List.of(managed("AAPL"), managed("MSFT"), managed("TSLA")), kinds);

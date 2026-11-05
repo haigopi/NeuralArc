@@ -74,7 +74,7 @@ public class HelpDialog extends JDialog {
             "- Portfolio Actions can sell profitable positions, all open positions, or losing positions after confirmation.\n" +
             "- Position All Sell Triggers places a GTC limit sell for each open position using that strategy's configured sell trigger price.\n" +
             "- Position all Sell Profit Threshold percentage converts active sell-trigger positions to profit-threshold mode using the trigger price as baseline and your chosen trailing pullback percent.\n" +
-            "- Cancel Buy Orders lets you pick which buys to cancel (entry buys with no shares, loss-level buys, red or green pending recommendations) without closing open positions or sell orders.\n" +
+            "- Cancel Buy Orders lets you pick which buys to cancel (entry buys with no shares, loss-level buys, pending buys not yet placed: losing, gaining or no price yet) without closing open positions or sell orders.\n" +
             "- Promote All to Live validates eligible paper strategies and creates live strategies using the same promotion rules as the row action (disabled while viewing Live mode).\n" +
             "- These actions use Alpaca and then refresh the grid and status values.\n\n" +
             "Review the confirmation dialog before submitting any sell action."
@@ -144,7 +144,7 @@ public class HelpDialog extends JDialog {
             "- Readjust Losing Pending Base Buy Positions lowers amber pending base-buy limits so those rows are ready for placement.\n" +
             "- Place Limit Buy for Gaining Pending Positions targets green pending rows where the planned base buy is below the cached current price.\n" +
             "- Clean Pending and Cancelled Rows deletes both kinds of idle row in one sweep: recommendations that never placed a base buy, and rows you cancelled that are waiting for a manual restart. A row holding shares, or with a working broker order, is never included, and no broker order is cancelled and nothing is sold.\n" +
-            "- Cancel amber/green pending buys removes only the matching unsubmitted pending recommendations.\n\n" +
+            "- Cancel Buy Orders can also remove losing, gaining or no-price pending buys, and removes only the matching unsubmitted pending recommendations.\n\n" +
             "If a row already placed a broker order, use the pending order cancel actions instead of cleanup."
         },
         {

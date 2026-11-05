@@ -108,7 +108,7 @@ final class PortfolioActionsMenuBuilder {
                 new PortfolioActionsMenu.Group("Cancel Orders", "icons/close.svg", List.of(
                         new PortfolioActionsMenu.Entry("Cancel Buy Orders…",
                                 "Pick which buys to cancel, with counts: entry buys with no shares, loss-level buys,"
-                                        + " and red or green pending recommendations.",
+                                        + " and pending buys not yet placed (losing, gaining or no price yet).",
                                 "icons/close.svg",
                                 controller::handleCancelBuyOrders),
                         new PortfolioActionsMenu.Entry("Cancel All Pending Limit Sells",
