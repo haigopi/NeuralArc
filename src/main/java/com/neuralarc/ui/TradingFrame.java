@@ -6124,8 +6124,16 @@ public class TradingFrame extends JFrame {
       userActionLog.failed("Add New Stock Strategy", creationResult.error());
       return;
     }
+    // The price the broker was actually sent, which a guard may have moved from the one asked for.
+    BigDecimal sentPrice = strategyOrderRepository.findByStrategyId(strategy.id()).stream()
+        .filter(order -> order.stage() == com.neuralarc.model.StrategyStage.BASE_BUY)
+        .max(java.util.Comparator.comparing(StrategyOrder::submittedAt, java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())))
+        .map(StrategyOrder::limitPrice)
+        .orElse(strategy.baseBuyLimitPrice());
     log("[" + config.symbol() + "] Initial order submitted. rule=BASE_BUY, price=$"
-        + strategy.baseBuyLimitPrice().toPlainString()
+        + sentPrice.toPlainString()
+        + (sentPrice.compareTo(strategy.baseBuyLimitPrice()) == 0
+            ? "" : " (asked $" + strategy.baseBuyLimitPrice().toPlainString() + ", adjusted by the base buy guard)")
         + ", clientOrderId=" + creationResult.clientOrderId());
     userActionLog.completed("Add New Stock Strategy", config.symbol() + " " + selectedModeLabel() + " initial limit buy submitted.");
     JOptionPane.showMessageDialog(

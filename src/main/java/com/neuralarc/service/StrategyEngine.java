@@ -282,7 +282,8 @@ public class StrategyEngine {
                 strategy.symbol(),
                 strategy.baseBuyLimitPrice(),
                 currentPrice,
-                strategy.baseBuyRepostReductionPercent()
+                strategy.baseBuyRepostReductionPercent(),
+                StrategyEntrySource.isManuallyAdded(strategy)
         );
         if (!guardedPrice.reason().isBlank()) {
             logPoll(strategy, "BASE_BUY_GUARD", "APPLIED", guardedPrice.reason());

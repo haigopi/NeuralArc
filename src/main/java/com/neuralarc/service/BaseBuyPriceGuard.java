@@ -36,6 +36,23 @@ final class BaseBuyPriceGuard {
             BigDecimal currentPrice,
             BigDecimal reductionPercent
     ) {
+        return guardedBaseBuyPrice(client, symbol, originalBasePrice, currentPrice, reductionPercent, false);
+    }
+
+    /**
+     * @param operatorChosenPrice true when the operator typed the price. The forced minimum gap under the
+     *        market exists to pull the app's own planned entries back from the market, so it is not applied
+     *        to a chosen price that already sits below the market and every indicator. Once the market has
+     *        weakened to or through the chosen limit, the weakness reduction and its gap apply as before.
+     */
+    GuardedPrice guardedBaseBuyPrice(
+            AlpacaClient client,
+            String symbol,
+            BigDecimal originalBasePrice,
+            BigDecimal currentPrice,
+            BigDecimal reductionPercent,
+            boolean operatorChosenPrice
+    ) {
         BigDecimal basePrice = Monetary.round(originalBasePrice);
         if (basePrice.compareTo(BigDecimal.ZERO) <= 0) {
             return new GuardedPrice(basePrice, "Base buy price is not positive");
@@ -52,6 +69,9 @@ final class BaseBuyPriceGuard {
         BigDecimal yesterdayLow = previousDailyBar == null ? BigDecimal.ZERO : Monetary.round(previousDailyBar.low());
         BigDecimal weakestObserved = weakestPositive(latestPrice, previousClose, yesterdayLow);
         if (!positive(weakestObserved) || weakestObserved.compareTo(basePrice) > 0) {
+            if (operatorChosenPrice) {
+                return new GuardedPrice(basePrice, "");
+            }
             BigDecimal underMarket = PlannedEntryPrice.belowMarket(basePrice, latestPrice);
             return underMarket.compareTo(basePrice) == 0
                     ? new GuardedPrice(basePrice, "Market indicators are above base buy limit; keeping original price")

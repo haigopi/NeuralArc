@@ -35,6 +35,48 @@ class BaseBuyPriceGuardTest {
     }
 
     @Test
+    void plannedPriceCloserThanEightPercentToTheMarketIsPulledBack() {
+        FakeAlpacaClient client = new FakeAlpacaClient(
+                new BigDecimal("186.91"),
+                List.of(bar("185.00", "187.00"))
+        );
+
+        BaseBuyPriceGuard.GuardedPrice result = guard.guardedBaseBuyPrice(
+                client, "NVDA", new BigDecimal("184.00"), new BigDecimal("186.91"));
+
+        assertEquals(new BigDecimal("171.95"), result.price());
+    }
+
+    @Test
+    void aPriceTheOperatorChoseIsNotPulledBackToTheMinimumGap() {
+        FakeAlpacaClient client = new FakeAlpacaClient(
+                new BigDecimal("186.91"),
+                List.of(bar("185.00", "187.00"))
+        );
+
+        BaseBuyPriceGuard.GuardedPrice result = guard.guardedBaseBuyPrice(
+                client, "NVDA", new BigDecimal("184.00"), new BigDecimal("186.91"),
+                BaseBuyPriceGuard.DEFAULT_WEAKNESS_REDUCTION_PERCENT, true);
+
+        assertEquals(new BigDecimal("184.00"), result.price());
+        assertEquals("", result.reason(), "nothing was changed, so nothing is logged as an adjustment");
+    }
+
+    @Test
+    void aChosenPriceThatTheMarketHasWeakenedThroughIsStillReduced() {
+        FakeAlpacaClient client = new FakeAlpacaClient(
+                new BigDecimal("99.00"),
+                List.of(bar("98.00", "101.00"))
+        );
+
+        BaseBuyPriceGuard.GuardedPrice result = guard.guardedBaseBuyPrice(
+                client, "AAPL", new BigDecimal("100.00"), new BigDecimal("99.00"),
+                BaseBuyPriceGuard.DEFAULT_WEAKNESS_REDUCTION_PERCENT, true);
+
+        assertEquals(new BigDecimal("91.08"), result.price());
+    }
+
+    @Test
     void reducesBasePriceWhenIndicatorsWeakenBelowLimit() {
         FakeAlpacaClient client = new FakeAlpacaClient(
                 new BigDecimal("99.00"),

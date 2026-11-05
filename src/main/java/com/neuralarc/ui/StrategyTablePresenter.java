@@ -7,6 +7,7 @@ import com.neuralarc.model.ProfitHoldType;
 import com.neuralarc.model.StopLossType;
 import com.neuralarc.analytics.PlannedEntryPrice;
 import com.neuralarc.model.Strategy;
+import com.neuralarc.model.StrategyEntrySource;
 import com.neuralarc.service.ProfitHoldExitPricing;
 import com.neuralarc.model.StrategyLifecycleState;
 import com.neuralarc.model.StrategyStatus;
@@ -963,13 +964,13 @@ public final class StrategyTablePresenter {
         if (name.contains("history_reentry")) {
             return "Re-entry from History";
         }
-        if (isSmartPicksSource(combined)) {
+        if (StrategyEntrySource.isSmartPicks(combined)) {
             return smartPicksEntrySource(strategy, name, combined);
         }
-        if (isBrokerSyncedSource(combined)) {
+        if (StrategyEntrySource.isBrokerSynced(combined)) {
             return "Broker Synced";
         }
-        if (isPromotedLiveSource(combined)) {
+        if (StrategyEntrySource.isPromotedLive(combined)) {
             return "Promoted Live";
         }
         return "Manually Added";
@@ -977,14 +978,6 @@ public final class StrategyTablePresenter {
 
     private String normalizedText(String value) {
         return value == null ? "" : value.toLowerCase();
-    }
-
-    private boolean isSmartPicksSource(String combined) {
-        return combined.contains("smart_picks")
-                || combined.contains("smart picks")
-                // Legacy strategies persisted before the Smart Picks rename.
-                || combined.contains("i_am_feeling_lucky")
-                || combined.contains("i am feeling lucky");
     }
 
     /**
@@ -1022,20 +1015,6 @@ public final class StrategyTablePresenter {
             return "Picks [Reviewed]";
         }
         return "Picks";
-    }
-
-    private boolean isBrokerSyncedSource(String combined) {
-        return combined.contains("remote strategy")
-                || combined.contains("synced from alpaca")
-                || combined.contains("remote alpaca")
-                || combined.contains("remote state")
-                || combined.contains("broker direct");
-    }
-
-    private boolean isPromotedLiveSource(String combined) {
-        return combined.contains("promoted live")
-                || combined.contains("promotion to live")
-                || combined.contains("after live promotion");
     }
 
     private String exitSource(Strategy strategy, BigDecimal realizedPnl) {

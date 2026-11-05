@@ -1,25 +1,14 @@
 package com.neuralarc.ui;
 
 import com.neuralarc.model.Strategy;
+import com.neuralarc.model.StrategyEntrySource;
 
 final class StrategyRecommendationMarkers {
     private StrategyRecommendationMarkers() {
     }
 
     static boolean isScannerRecommendationRow(Strategy strategy) {
-        if (strategy == null || strategy.latestOrderStatus() == null) {
-            return false;
-        }
-        String status = strategy.latestOrderStatus().trim().toUpperCase(java.util.Locale.ROOT);
-        return status.startsWith("GAP_ROCKET_")
-                || status.startsWith("ORB_")
-                || status.startsWith("DIP_HUNTER_")
-                || status.startsWith("VWAP_")
-                || status.startsWith("SWING_")
-                || status.startsWith("RANGE_RIDER_")
-                || status.startsWith("EARNINGS_HUNTER_")
-                || status.startsWith("PROFIT_SHIELD_")
-                || isManualImportedPendingRow(strategy, status);
+        return StrategyEntrySource.isScannerRecommendation(strategy);
     }
 
     static String sourceLabel(Strategy strategy) {
@@ -51,17 +40,9 @@ final class StrategyRecommendationMarkers {
         if (status.startsWith("PROFIT_SHIELD_")) {
             return "Profit Shield strategy";
         }
-        if (isManualImportedPendingRow(strategy, status)) {
+        if (StrategyEntrySource.isManualImportedPendingRow(strategy)) {
             return "Manual addition";
         }
         return "";
-    }
-
-    private static boolean isManualImportedPendingRow(Strategy strategy, String normalizedStatus) {
-        if (!"PAPER_PENDING".equals(normalizedStatus) && !"LIVE_PENDING".equals(normalizedStatus)) {
-            return false;
-        }
-        String name = strategy.name();
-        return name != null && name.startsWith("MANUAL_ADDITION:");
     }
 }
