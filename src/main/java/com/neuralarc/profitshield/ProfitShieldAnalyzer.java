@@ -1,5 +1,6 @@
 package com.neuralarc.profitshield;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.analytics.ProtectiveStopPrice;
 
 import java.math.BigDecimal;
@@ -31,6 +32,13 @@ public final class ProfitShieldAnalyzer {
 
     private final Clock clock;
     private final Consumer<String> decisionLog;
+    private ScannerEntryPricing entryPricing = ScannerEntryPricing.unchanged();
+
+    /** Applies the operator's entry-level setting to every entry this analyzer plans. */
+    public ProfitShieldAnalyzer withEntryPricing(ScannerEntryPricing pricing) {
+        this.entryPricing = pricing == null ? ScannerEntryPricing.unchanged() : pricing;
+        return this;
+    }
 
     public ProfitShieldAnalyzer(Clock clock, Consumer<String> decisionLog) {
         this.clock = clock == null ? Clock.systemUTC() : clock;
@@ -102,6 +110,10 @@ public final class ProfitShieldAnalyzer {
     }
 
     private BigDecimal plannedEntryPrice(ProfitShieldCandidate c, ProfitShieldConfig cfg) {
+        return entryPricing.entry(c.symbol(), ownEntryPrice(c, cfg), c.currentPrice(), null, null);
+    }
+
+    private BigDecimal ownEntryPrice(ProfitShieldCandidate c, ProfitShieldConfig cfg) {
         BigDecimal current = c.currentPrice() == null ? BigDecimal.ZERO : c.currentPrice();
         if (current.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);

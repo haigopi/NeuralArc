@@ -1,5 +1,6 @@
 package com.neuralarc.earningshunter;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.analytics.ProtectiveStopPrice;
 
 import java.math.BigDecimal;
@@ -15,6 +16,13 @@ public final class EarningsHunterAnalyzer {
     public static final int MINIMUM_RECOMMENDATION_SCORE = 55;
     private final Clock clock;
     private final Consumer<String> decisionLog;
+    private ScannerEntryPricing entryPricing = ScannerEntryPricing.unchanged();
+
+    /** Applies the operator's entry-level setting to every entry this analyzer plans. */
+    public EarningsHunterAnalyzer withEntryPricing(ScannerEntryPricing pricing) {
+        this.entryPricing = pricing == null ? ScannerEntryPricing.unchanged() : pricing;
+        return this;
+    }
 
     public EarningsHunterAnalyzer(Clock clock, Consumer<String> decisionLog) {
         this.clock = clock == null ? Clock.systemUTC() : clock;
@@ -63,6 +71,10 @@ public final class EarningsHunterAnalyzer {
     }
 
     private BigDecimal plannedEntryPrice(EarningsHunterCandidate c, EarningsHunterConfig cfg) {
+        return entryPricing.entry(c.symbol(), ownEntryPrice(c, cfg), c.currentPrice(), null, null);
+    }
+
+    private BigDecimal ownEntryPrice(EarningsHunterCandidate c, EarningsHunterConfig cfg) {
         BigDecimal current = c.currentPrice() == null ? BigDecimal.ZERO : c.currentPrice();
         BigDecimal discount = cfg.entryDiscountPercent().movePointLeft(2);
         BigDecimal discountEntry = current.multiply(BigDecimal.ONE.subtract(discount));

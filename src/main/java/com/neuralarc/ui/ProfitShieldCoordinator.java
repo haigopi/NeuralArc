@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.service.MarketHistoryEntryPricing;
 import com.neuralarc.api.HttpAlpacaMarketDataApi;
 import com.neuralarc.db.AppDatabase;
 import com.neuralarc.db.SqliteProfitShieldScheduleRepository;
@@ -246,7 +247,9 @@ final class ProfitShieldCoordinator {
                 ProfitShieldLiveScanner scanner = new ProfitShieldLiveScanner(
                         new HttpAlpacaMarketDataApi(ui.runtimeApiKey(), ui.runtimeApiSecret()),
                         Clock.systemDefaultZone(), ui::log);
-                ProfitShieldAnalyzer analyzer = new ProfitShieldAnalyzer(Clock.systemUTC(), ui::log);
+                ProfitShieldAnalyzer analyzer = new ProfitShieldAnalyzer(Clock.systemUTC(), ui::log)
+                        .withEntryPricing(MarketHistoryEntryPricing.forScan(
+                                new HttpAlpacaMarketDataApi(ui.runtimeApiKey(), ui.runtimeApiSecret()), ui::log));
                 List<ProfitShieldCandidate> scanned = scanner.candidates(symbols, config);
                 List<ProfitShieldRecommendation> recommendations = analyzer.analyze(scanned, config);
                 SwingUtilities.invokeLater(() ->

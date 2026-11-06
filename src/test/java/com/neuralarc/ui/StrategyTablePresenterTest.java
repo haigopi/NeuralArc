@@ -1019,7 +1019,7 @@ class StrategyTablePresenterTest {
 
         String label = presenter.displayStatusLabel(strategy, position, false, false, false);
 
-        assertEquals("Base buy pending to place order @ $5.48", label);
+        assertEquals("Base buy pending to place order @ $5.96", label);
     }
 
     @Test

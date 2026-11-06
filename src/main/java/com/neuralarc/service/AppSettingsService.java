@@ -9,10 +9,12 @@ import com.neuralarc.model.BrokerType;
 import com.neuralarc.model.TimeInForce;
 import com.neuralarc.model.PortfolioEmailSettings;
 import com.neuralarc.model.PreOpenRepositionSettings;
+import com.neuralarc.model.ScannerEntrySettings;
 import com.neuralarc.security.CredentialManager;
 import com.neuralarc.util.AppMetadata;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -74,6 +76,9 @@ public class AppSettingsService {
   private static final String KEY_PREOPEN_REPOSITION_ENABLED = "preOpenReposition.enabled";
   private static final String KEY_PREOPEN_REPOSITION_MINUTES = "preOpenReposition.minutesBeforeOpen";
   private static final String KEY_PREOPEN_REPOSITION_DAY_ONLY = "preOpenReposition.dayOrdersOnly";
+  private static final String KEY_SCANNER_ENTRY_MODE = "scannerEntry.mode";
+  private static final String KEY_SCANNER_ENTRY_ANCHOR = "scannerEntry.anchor";
+  private static final String KEY_SCANNER_ENTRY_PERCENT = "scannerEntry.percentAboveLow";
   private static final String KEY_AGENT_ENABLED = "agent.enabled";
   private static final String KEY_AGENT_API_KEY = "agent.anthropic.apiKey";
   private static final String KEY_AGENT_MODEL = "agent.anthropic.model";
@@ -254,6 +259,36 @@ public class AppSettingsService {
       writeSetting(KEY_PREOPEN_REPOSITION_DAY_ONLY, String.valueOf(safe.dayOrdersOnly()), false);
     } catch (SQLException ex) {
       throw new IOException("Failed to persist pre-open reposition settings", ex);
+    }
+  }
+
+  /** How far down scanner entries are placed. Applies to every scanner. */
+  public ScannerEntrySettings loadScannerEntrySettings() {
+    ScannerEntrySettings defaults = ScannerEntrySettings.defaults();
+    BigDecimal percent = defaults.percentAboveLow();
+    try {
+      String stored = readSetting(KEY_SCANNER_ENTRY_PERCENT, false);
+      if (stored != null && !stored.isBlank()) {
+        percent = new BigDecimal(stored.trim());
+      }
+    } catch (NumberFormatException ignored) {
+      // keep the default
+    }
+    return new ScannerEntrySettings(
+        ScannerEntrySettings.parseMode(readSetting(KEY_SCANNER_ENTRY_MODE, false), defaults.mode()),
+        ScannerEntrySettings.parseAnchor(readSetting(KEY_SCANNER_ENTRY_ANCHOR, false), defaults.anchor()),
+        percent
+    );
+  }
+
+  public void saveScannerEntrySettings(ScannerEntrySettings settings) throws IOException {
+    ScannerEntrySettings safe = settings == null ? ScannerEntrySettings.defaults() : settings;
+    try {
+      writeSetting(KEY_SCANNER_ENTRY_MODE, safe.mode().name(), false);
+      writeSetting(KEY_SCANNER_ENTRY_ANCHOR, safe.anchor().name(), false);
+      writeSetting(KEY_SCANNER_ENTRY_PERCENT, safe.percentAboveLow().toPlainString(), false);
+    } catch (SQLException ex) {
+      throw new IOException("Failed to persist scanner entry settings", ex);
     }
   }
 

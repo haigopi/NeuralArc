@@ -1,5 +1,6 @@
 package com.neuralarc.earningshunter;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.model.NewsArticle;
 import com.neuralarc.model.StrategyMode;
 import org.junit.jupiter.api.Test;
@@ -81,5 +82,22 @@ class EarningsHunterAnalyzerTest {
 
     private static NewsArticle article(String headline, String summary) {
         return new NewsArticle(headline, summary, "benzinga", "https://example.com", Instant.now(FIXED), List.of("NVDA"));
+    }
+
+    @Test
+    void theEntryLevelSettingLowersThePlannedEntry() {
+        EarningsHunterCandidate candidate = new EarningsHunterCandidate("NVDA", "NVDA",
+                new BigDecimal("100.00"), new BigDecimal("96.00"), new BigDecimal("4.17"),
+                1_000_000L, new BigDecimal("1.50"), new BigDecimal("90.00"), new BigDecimal("82.00"),
+                new BigDecimal("75.00"), new BigDecimal("85.00"),
+                List.of(article("Company reports Q2 earnings beat", "Revenue above guidance")), Instant.now(FIXED));
+        EarningsHunterConfig cfg = EarningsHunterConfig.defaults(StrategyMode.PAPER);
+        BigDecimal plain = new EarningsHunterAnalyzer(FIXED, null).analyze(List.of(candidate), cfg).getFirst().plannedEntryPrice();
+
+        BigDecimal configured = new EarningsHunterAnalyzer(FIXED, null)
+                .withEntryPricing((symbol, own, current, open, low) -> own.subtract(BigDecimal.ONE))
+                .analyze(List.of(candidate), cfg).getFirst().plannedEntryPrice();
+
+        assertEquals(plain.subtract(BigDecimal.ONE), configured);
     }
 }

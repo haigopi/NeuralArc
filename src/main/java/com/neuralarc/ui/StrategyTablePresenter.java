@@ -134,7 +134,7 @@ public final class StrategyTablePresenter {
     private static BigDecimal displayedBaseBuy(Strategy strategy, Position position) {
         BigDecimal stored = strategy.baseBuyLimitPrice();
         BigDecimal last = position == null ? null : position.getLastPrice();
-        if (last == null || last.signum() <= 0) {
+        if (last == null || last.signum() <= 0 || StrategyEntrySource.isManuallyAdded(strategy)) {
             return stored;
         }
         return PlannedEntryPrice.belowMarket(stored, last);

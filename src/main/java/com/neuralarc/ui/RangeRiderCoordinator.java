@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.service.MarketHistoryEntryPricing;
 import com.neuralarc.api.HttpAlpacaMarketDataApi;
 import com.neuralarc.db.AppDatabase;
 import com.neuralarc.db.SqliteRangeRiderScheduleRepository;
@@ -252,7 +253,9 @@ final class RangeRiderCoordinator {
                 RangeRiderLiveScanner scanner = new RangeRiderLiveScanner(
                         new HttpAlpacaMarketDataApi(ui.runtimeApiKey(), ui.runtimeApiSecret()),
                         Clock.systemDefaultZone(), ui::log);
-                RangeRiderAnalyzer analyzer = new RangeRiderAnalyzer(Clock.systemUTC(), ui::log);
+                RangeRiderAnalyzer analyzer = new RangeRiderAnalyzer(Clock.systemUTC(), ui::log)
+                        .withEntryPricing(MarketHistoryEntryPricing.forScan(
+                                new HttpAlpacaMarketDataApi(ui.runtimeApiKey(), ui.runtimeApiSecret()), ui::log));
                 List<RangeRiderCandidate> scanned = scanner.candidates(symbols, config.lookbackSessions());
                 List<RangeRiderRecommendation> recommendations = analyzer.analyze(scanned, config);
                 SwingUtilities.invokeLater(() ->

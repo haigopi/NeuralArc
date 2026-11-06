@@ -40,10 +40,10 @@ final class BaseBuyPriceGuard {
     }
 
     /**
-     * @param operatorChosenPrice true when the operator typed the price. The forced minimum gap under the
-     *        market exists to pull the app's own planned entries back from the market, so it is not applied
-     *        to a chosen price that already sits below the market and every indicator. Once the market has
-     *        weakened to or through the chosen limit, the weakness reduction and its gap apply as before.
+     * @param operatorChosenPrice true when the operator typed the price. A typed price at or below the
+     *        market is placed exactly as typed. One above the market would fill at once at whatever the
+     *        market asks, so it is corrected to the current price, or to the last week's low when that is
+     *        lower, and the correction is reported so it is visible.
      */
     GuardedPrice guardedBaseBuyPrice(
             AlpacaClient client,
@@ -60,6 +60,9 @@ final class BaseBuyPriceGuard {
 
         BigDecimal latestPrice = positive(currentPrice) ? Monetary.round(currentPrice) : safeLatestPrice(client, symbol);
         List<MarketBar> bars = safeDailyBars(client, symbol);
+        if (operatorChosenPrice) {
+            return operatorChosen(basePrice, latestPrice, weekLow(bars));
+        }
         MarketBar previousDailyBar = bars.stream()
                 .filter(bar -> positive(bar.close()) || positive(bar.low()))
                 .max(Comparator.comparing(MarketBar::timestamp, Comparator.nullsLast(String::compareTo)))
@@ -69,14 +72,11 @@ final class BaseBuyPriceGuard {
         BigDecimal yesterdayLow = previousDailyBar == null ? BigDecimal.ZERO : Monetary.round(previousDailyBar.low());
         BigDecimal weakestObserved = weakestPositive(latestPrice, previousClose, yesterdayLow);
         if (!positive(weakestObserved) || weakestObserved.compareTo(basePrice) > 0) {
-            if (operatorChosenPrice) {
-                return new GuardedPrice(basePrice, "");
-            }
             BigDecimal underMarket = PlannedEntryPrice.belowMarket(basePrice, latestPrice);
             return underMarket.compareTo(basePrice) == 0
                     ? new GuardedPrice(basePrice, "Market indicators are above base buy limit; keeping original price")
-                    : new GuardedPrice(underMarket, "Base buy limit kept at least " + PlannedEntryPrice.MIN_BASE_BUY_DISCOUNT_PERCENT.toPlainString()
-                            + "% under the market: $" + basePrice.toPlainString() + " -> $" + underMarket.toPlainString());
+                    : new GuardedPrice(underMarket, "Base buy limit kept under the market: $"
+                            + basePrice.toPlainString() + " -> $" + underMarket.toPlainString());
         }
 
         BigDecimal effectiveReductionPercent = normalizeReductionPercent(reductionPercent);
@@ -86,6 +86,28 @@ final class BaseBuyPriceGuard {
                 Monetary.round(reducedFromOriginal.min(reducedFromWeakest)), latestPrice);
         return new GuardedPrice(guarded, "Market indicators weakened; reduced base buy limit from $"
                 + basePrice.toPlainString() + " to $" + guarded.toPlainString());
+    }
+
+    private GuardedPrice operatorChosen(BigDecimal basePrice, BigDecimal latestPrice, BigDecimal weekLow) {
+        if (!positive(latestPrice) || basePrice.compareTo(latestPrice) <= 0) {
+            return new GuardedPrice(basePrice, "");
+        }
+        boolean weekLowApplies = positive(weekLow) && weekLow.compareTo(latestPrice) < 0;
+        BigDecimal corrected = Monetary.round(weekLowApplies ? weekLow : latestPrice);
+        return new GuardedPrice(corrected, "WARNING: manual base buy limit $" + basePrice.toPlainString()
+                + " was above the market $" + latestPrice.toPlainString() + " and would have filled at once; placed at $"
+                + corrected.toPlainString() + (weekLowApplies ? " (last week's low)." : " (current price)."));
+    }
+
+    private BigDecimal weekLow(List<MarketBar> bars) {
+        BigDecimal lowest = BigDecimal.ZERO;
+        for (MarketBar bar : bars) {
+            BigDecimal low = bar.low();
+            if (positive(low) && (!positive(lowest) || low.compareTo(lowest) < 0)) {
+                lowest = low;
+            }
+        }
+        return Monetary.round(lowest);
     }
 
     private List<MarketBar> safeDailyBars(AlpacaClient client, String symbol) {

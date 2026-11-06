@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.service.MarketHistoryEntryPricing;
 import com.neuralarc.api.HttpAlpacaMarketDataApi;
 import com.neuralarc.api.AlpacaMarketDataApi;
 import com.neuralarc.api.AlpacaMarketDataException;
@@ -256,6 +257,7 @@ final class OrbCoordinator {
                         .map(candidate -> capture(candidate, sessionDate, safeConfig, captureService))
                         .toList();
                 List<OrbRecommendation> recommendations = new OrbAnalyzer(Clock.systemUTC(), ui::log)
+                        .withEntryPricing(MarketHistoryEntryPricing.forScan(marketDataApi, ui::log))
                         .analyze(snapshots, candidates, safeConfig);
                 SwingUtilities.invokeLater(() -> applyRecommendations(workspaceId, safeConfig, armRequested, interactive, recommendations));
             } finally {

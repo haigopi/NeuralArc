@@ -1,5 +1,6 @@
 package com.neuralarc.profitshield;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.model.StrategyMode;
 import org.junit.jupiter.api.Test;
 
@@ -193,5 +194,21 @@ class ProfitShieldAnalyzerTest {
     void returnsNothingWithoutCandidates() {
         assertTrue(analyzer().analyze(List.of(), defaults()).isEmpty());
         assertTrue(analyzer().analyze(null, defaults()).isEmpty());
+    }
+
+    @Test
+    void theEntryLevelSettingLowersThePlannedEntry() {
+        BigDecimal plain = new ProfitShieldAnalyzer(FIXED, ignored -> { }).analyze(List.of(resilient("MSFT")), defaults()).getFirst().plannedEntryPrice();
+        java.util.List<String> seen = new java.util.ArrayList<>();
+        ScannerEntryPricing deeper = (symbol, own, current, open, low) -> {
+            seen.add(symbol);
+            return own.subtract(BigDecimal.ONE);
+        };
+
+        BigDecimal configured = new ProfitShieldAnalyzer(FIXED, ignored -> { }).withEntryPricing(deeper)
+                .analyze(List.of(resilient("MSFT")), defaults()).getFirst().plannedEntryPrice();
+
+        assertEquals(plain.subtract(BigDecimal.ONE), configured);
+        assertTrue(!seen.isEmpty() && seen.stream().allMatch(s -> s != null && !s.isBlank()));
     }
 }

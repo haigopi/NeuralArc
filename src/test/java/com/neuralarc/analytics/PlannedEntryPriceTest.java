@@ -73,32 +73,34 @@ class PlannedEntryPriceTest {
         // BMBL: a 6.01 trigger while the stock trades at 5.96.
         BigDecimal planned = PlannedEntryPrice.belowMarket(new BigDecimal("6.01"), new BigDecimal("5.96"));
 
-        assertEquals(new BigDecimal("5.48"), planned);
-        assertTrue(planned.compareTo(new BigDecimal("5.96")) < 0);
+        assertEquals(new BigDecimal("5.96"), planned);
+        assertTrue(planned.compareTo(new BigDecimal("5.96")) <= 0);
     }
 
     @Test
     void belowMarketKeepsAPlanThatIsAlreadyLower() {
-        assertEquals(new BigDecimal("5.48"),
+        assertEquals(new BigDecimal("5.50"),
                 PlannedEntryPrice.belowMarket(new BigDecimal("5.50"), new BigDecimal("5.96")));
     }
 
     @Test
-    void belowMarketNeverEqualsTheMarket() {
-        assertTrue(PlannedEntryPrice.belowMarket(new BigDecimal("100"), new BigDecimal("100"))
-                .compareTo(new BigDecimal("100")) < 0);
+    void belowMarketNeverGoesAboveTheMarket() {
+        assertEquals(new BigDecimal("100.00"),
+                PlannedEntryPrice.belowMarket(new BigDecimal("100"), new BigDecimal("100")));
+        assertEquals(new BigDecimal("100.00"),
+                PlannedEntryPrice.belowMarket(new BigDecimal("130"), new BigDecimal("100")));
     }
 
     @Test
     void belowMarketMeasuresFromTheLowestReference() {
-        // open 5.98, low 5.95, current 5.96 -> 8% under 5.95
-        assertEquals(new BigDecimal("5.47"), PlannedEntryPrice.belowMarket(
+        // open 5.98, low 5.95, current 5.96 -> measured from 5.95
+        assertEquals(new BigDecimal("5.95"), PlannedEntryPrice.belowMarket(
                 new BigDecimal("6.01"), new BigDecimal("5.98"), new BigDecimal("5.95"), new BigDecimal("5.96")));
     }
 
     @Test
     void belowMarketIgnoresMissingReferences() {
-        assertEquals(new BigDecimal("5.48"), PlannedEntryPrice.belowMarket(
+        assertEquals(new BigDecimal("5.96"), PlannedEntryPrice.belowMarket(
                 new BigDecimal("6.01"), null, BigDecimal.ZERO, new BigDecimal("5.96")));
         assertEquals(new BigDecimal("6.01"), PlannedEntryPrice.belowMarket(new BigDecimal("6.01"), (BigDecimal) null));
     }

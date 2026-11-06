@@ -1250,7 +1250,7 @@ class StrategyServiceTest {
     }
 
     @Test
-    void repositionExpiredBaseBuyHonorsRepostReductionAgainstCurrentPrice() {
+    void repositionExpiredManualBaseBuyKeepsTheTypedPriceWhenItIsNotAboveTheMarket() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
         InMemoryEventRepository events = new InMemoryEventRepository();
@@ -1277,8 +1277,8 @@ class StrategyServiceTest {
 
         assertTrue(result.success(), result.error());
         StrategyOrder submitted = orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).orElseThrow();
-        assertEquals(new BigDecimal("9.77"), submitted.limitPrice());
-        assertTrue(submitted.limitPrice().compareTo(alpaca.latestPrice) < 0);
+        assertEquals(new BigDecimal("10.63"), submitted.limitPrice());
+        assertTrue(submitted.limitPrice().compareTo(alpaca.latestPrice) <= 0);
     }
 
     @Test

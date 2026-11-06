@@ -158,7 +158,7 @@ public class SmartPicksSimulationPlacementController {
             gateway.log("[Smart Picks] Adjusted base limit buy for " + selection.stock().symbol()
                     + " from $" + recommendedBase.toPlainString()
                     + " to $" + adjusted.toPlainString()
-                    + " (at least 8% below current $" + current.toPlainString() + ").");
+                    + " (not above current $" + current.toPlainString() + ").");
         }
         return adjusted;
     }

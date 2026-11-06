@@ -1,5 +1,6 @@
 package com.neuralarc.rangerider;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.analytics.ProtectiveStopPrice;
 
 import java.math.BigDecimal;
@@ -41,6 +42,13 @@ public final class RangeRiderAnalyzer {
 
     private final Clock clock;
     private final Consumer<String> decisionLog;
+    private ScannerEntryPricing entryPricing = ScannerEntryPricing.unchanged();
+
+    /** Applies the operator's entry-level setting to every entry this analyzer plans. */
+    public RangeRiderAnalyzer withEntryPricing(ScannerEntryPricing pricing) {
+        this.entryPricing = pricing == null ? ScannerEntryPricing.unchanged() : pricing;
+        return this;
+    }
 
     public RangeRiderAnalyzer(Clock clock, Consumer<String> decisionLog) {
         this.clock = clock == null ? Clock.systemUTC() : clock;
@@ -102,8 +110,9 @@ public final class RangeRiderAnalyzer {
 
     /** The planned buy for the next session, anchored to the last completed close. */
     public BigDecimal plannedEntryPrice(RangeRiderCandidate c, RangeRiderConfig cfg) {
-        return c.referencePrice().multiply(BigDecimal.ONE.subtract(entryFraction(c, cfg)))
+        BigDecimal own = c.referencePrice().multiply(BigDecimal.ONE.subtract(entryFraction(c, cfg)))
                 .setScale(2, RoundingMode.HALF_UP);
+        return entryPricing.entry(c.symbol(), own, c.referencePrice(), null, null);
     }
 
     /** The planned same-day sell, anchored to the same reference price. */

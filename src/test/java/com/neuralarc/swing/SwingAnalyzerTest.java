@@ -1,5 +1,6 @@
 package com.neuralarc.swing;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.model.StrategyMode;
 import org.junit.jupiter.api.Test;
 
@@ -124,13 +125,13 @@ class SwingAnalyzerTest {
         SwingAnalyzer analyzer = new SwingAnalyzer(FIXED, null);
         SwingRecommendation rec = analyzer.analyze(List.of(strong("NVDA")),
                 SwingConfig.defaults(StrategyMode.PAPER)).getFirst();
-        assertEquals(new BigDecimal("92.00"), rec.plannedEntryPrice());   // 8% under the market
-        assertEquals(new BigDecimal("86.48"), rec.stopLossPrice());   // 6% stop, floored to the cent
+        assertEquals(new BigDecimal("100.00"), rec.plannedEntryPrice());   // at the market
+        assertEquals(new BigDecimal("94.00"), rec.stopLossPrice());   // 6% stop, floored to the cent
         // The 110 recent high is below the operator's 12% target, so the plan aims at the target it
         // was configured for rather than at a reward smaller than its own stop.
-        assertEquals(new BigDecimal("110.00"), rec.targetPrice());
-        assertEquals(new BigDecimal("19.57"), rec.targetProfitPercent());
-        assertEquals(new BigDecimal("3.26"), rec.rewardRiskRatio());  // reward 12 / risk 6
+        assertEquals(new BigDecimal("112.00"), rec.targetPrice());
+        assertEquals(new BigDecimal("12.00"), rec.targetProfitPercent());
+        assertEquals(new BigDecimal("2.00"), rec.rewardRiskRatio());  // reward 12 / risk 6
         assertEquals(SwingStatus.RECOMMENDED, rec.status());
     }
 
@@ -147,8 +148,8 @@ class SwingAnalyzerTest {
 
         SwingRecommendation rec = new SwingAnalyzer(FIXED, null).analyze(List.of(lowPriced), tightStop).getFirst();
 
-        assertEquals(new BigDecimal("5.06"), rec.plannedEntryPrice());
-        assertEquals(new BigDecimal("4.96"), rec.stopLossPrice());
+        assertEquals(new BigDecimal("5.50"), rec.plannedEntryPrice());
+        assertEquals(new BigDecimal("5.40"), rec.stopLossPrice());
         assertTrue(rec.plannedEntryPrice().subtract(rec.stopLossPrice())
                 .compareTo(new BigDecimal("0.10")) >= 0, "the stop must clear the entry by at least a dime");
     }
@@ -176,7 +177,7 @@ class SwingAnalyzerTest {
                 new BigDecimal("98"), new BigDecimal("96"), new BigDecimal("80"), true, true, true, true,
                 new BigDecimal("4.17"), new BigDecimal("3.0"));
         SwingRecommendation rec = analyzer.analyze(List.of(freshHigh), SwingConfig.defaults(StrategyMode.PAPER)).getFirst();
-        assertEquals(new BigDecimal("103.04"), rec.targetPrice());   // 99.75 * (1 + 12%)
+        assertEquals(new BigDecimal("112.00"), rec.targetPrice());   // 99.75 * (1 + 12%)
     }
 
     @Test
@@ -193,7 +194,7 @@ class SwingAnalyzerTest {
 
         assertTrue(rec.plannedEntryPrice().compareTo(awkwardPrice.currentPrice()) <= 0,
                 "planned " + rec.plannedEntryPrice() + " must not sit above the market " + awkwardPrice.currentPrice());
-        assertEquals(new BigDecimal("198.43"), rec.plannedEntryPrice());
+        assertEquals(new BigDecimal("215.69"), rec.plannedEntryPrice());
     }
 
     @Test
@@ -208,7 +209,7 @@ class SwingAnalyzerTest {
 
         SwingRecommendation rec = analyzer.analyze(List.of(shallowWeek), SwingConfig.defaults(StrategyMode.PAPER)).getFirst();
 
-        assertEquals(new BigDecimal("92.00"), rec.plannedEntryPrice());
+        assertEquals(new BigDecimal("100.00"), rec.plannedEntryPrice());
     }
 
     private SwingCandidate strong(String symbol) {
@@ -251,7 +252,7 @@ class SwingAnalyzerTest {
     }
 
     @Test
-    void plannedEntryIsEightPercentUnderTheLowestOfOpenLowAndCurrent() {
+    void plannedEntryIsTheLowestOfOpenLowAndCurrent() {
         SwingCandidate c = strong("NVDA");
         SwingCandidate withSession = new SwingCandidate(c.symbol(), c.companyName(), c.currentPrice(), c.recentHigh(),
                 c.pullbackPercent(), c.previousClose(), c.dayChangePercent(), c.averageVolume(), c.relativeVolume(),
@@ -262,6 +263,22 @@ class SwingAnalyzerTest {
         SwingRecommendation rec = new SwingAnalyzer(FIXED, null).analyze(List.of(withSession),
                 SwingConfig.defaults(StrategyMode.PAPER)).getFirst();
 
-        assertEquals(new BigDecimal("82.80"), rec.plannedEntryPrice());   // 8% under today's low of 90
+        assertEquals(new BigDecimal("90.00"), rec.plannedEntryPrice());   // at today's low of 90
+    }
+
+    @Test
+    void theEntryLevelSettingLowersThePlannedEntry() {
+        BigDecimal plain = new SwingAnalyzer(FIXED, null).analyze(List.of(strong("NVDA")), SwingConfig.defaults(StrategyMode.PAPER)).getFirst().plannedEntryPrice();
+        java.util.List<String> seen = new java.util.ArrayList<>();
+        ScannerEntryPricing deeper = (symbol, own, current, open, low) -> {
+            seen.add(symbol);
+            return own.subtract(BigDecimal.ONE);
+        };
+
+        BigDecimal configured = new SwingAnalyzer(FIXED, null).withEntryPricing(deeper)
+                .analyze(List.of(strong("NVDA")), SwingConfig.defaults(StrategyMode.PAPER)).getFirst().plannedEntryPrice();
+
+        assertEquals(plain.subtract(BigDecimal.ONE), configured);
+        assertTrue(!seen.isEmpty() && seen.stream().allMatch(s -> s != null && !s.isBlank()));
     }
 }

@@ -1,5 +1,6 @@
 package com.neuralarc.rangerider;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.model.StrategyMode;
 import org.junit.jupiter.api.Test;
 
@@ -342,5 +343,17 @@ class RangeRiderAnalyzerTest {
     private static BigDecimal mean(List<BigDecimal> values) {
         return values.stream().reduce(BigDecimal.ZERO, BigDecimal::add)
                 .divide(BigDecimal.valueOf(values.size()), 6, RoundingMode.HALF_UP);
+    }
+
+    @Test
+    void theEntryLevelSettingLowersThePlannedEntry() {
+        RangeRiderConfig cfg = RangeRiderConfig.defaults(StrategyMode.PAPER);
+        RangeRiderCandidate c = steadyRange("NVDA", 15, "98", "102", "100", 4_000_000L, "100.00");
+
+        BigDecimal configured = new RangeRiderAnalyzer(FIXED, null)
+                .withEntryPricing((symbol, own, current, open, low) -> own.subtract(BigDecimal.ONE))
+                .plannedEntryPrice(c, cfg);
+
+        assertEquals(new BigDecimal("98.00"), configured);
     }
 }

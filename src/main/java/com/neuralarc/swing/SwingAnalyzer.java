@@ -1,5 +1,6 @@
 package com.neuralarc.swing;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.analytics.PlannedEntryPrice;
 import com.neuralarc.analytics.ProtectiveStopPrice;
 import com.neuralarc.util.SetupScore;
@@ -34,6 +35,13 @@ public final class SwingAnalyzer {
 
     private final Clock clock;
     private final Consumer<String> decisionLog;
+    private ScannerEntryPricing entryPricing = ScannerEntryPricing.unchanged();
+
+    /** Applies the operator's entry-level setting to every entry this analyzer plans. */
+    public SwingAnalyzer withEntryPricing(ScannerEntryPricing pricing) {
+        this.entryPricing = pricing == null ? ScannerEntryPricing.unchanged() : pricing;
+        return this;
+    }
 
     public SwingAnalyzer(Clock clock, Consumer<String> decisionLog) {
         this.clock = clock == null ? Clock.systemUTC() : clock;
@@ -107,7 +115,8 @@ public final class SwingAnalyzer {
      * price the plan never chose. The week's low is the floor, so the order can still fill.
      */
     private BigDecimal plannedEntryPrice(SwingCandidate c) {
-        return PlannedEntryPrice.baseBuy(c.currentPrice(), c.todayOpen(), c.todayLow());
+        return entryPricing.entry(c.symbol(), PlannedEntryPrice.baseBuy(c.currentPrice(), c.todayOpen(), c.todayLow()),
+                c.currentPrice(), c.todayOpen(), c.todayLow());
     }
 
     /**

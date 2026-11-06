@@ -1,5 +1,6 @@
 package com.neuralarc.gaprocket;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.model.StrategyMode;
 import org.junit.jupiter.api.Test;
 
@@ -68,10 +69,10 @@ class GapRocketAnalyzerTest {
 
         GapRocketRecommendation recommendation = analyzer.analyze(List.of(staleHigh), GapRocketConfig.defaults(StrategyMode.PAPER)).getFirst();
 
-        assertEquals(new BigDecimal("187.68"), recommendation.plannedEntryPrice());   // 8% under the session low of 204
+        assertEquals(new BigDecimal("204.00"), recommendation.plannedEntryPrice());   // at the session low of 204
         assertTrue(recommendation.plannedEntryPrice().compareTo(new BigDecimal("205")) < 0);
-        assertEquals(new BigDecimal("178.30"), recommendation.stopLossPrice());
-        assertEquals(new BigDecimal("206.45"), recommendation.takeProfitPrice());
+        assertEquals(new BigDecimal("193.80"), recommendation.stopLossPrice());
+        assertEquals(new BigDecimal("224.40"), recommendation.takeProfitPrice());
     }
 
     private GapRocketCandidate strong(String symbol) {
@@ -95,7 +96,7 @@ class GapRocketAnalyzerTest {
     }
 
     @Test
-    void plannedEntryIsEightPercentUnderTheLowestOfOpenLowAndCurrent() {
+    void plannedEntryIsTheLowestOfOpenLowAndCurrent() {
         GapRocketAnalyzer analyzer = new GapRocketAnalyzer(Clock.systemUTC(), null);
         GapRocketCandidate c = strong("TSLA");   // current 125, premarket low 118
         GapRocketCandidate openedLower = new GapRocketCandidate(c.symbol(), c.companyName(), c.gapPercent(),
@@ -105,6 +106,22 @@ class GapRocketAnalyzerTest {
 
         GapRocketRecommendation rec = analyzer.analyze(List.of(openedLower), GapRocketConfig.defaults(StrategyMode.PAPER)).getFirst();
 
-        assertEquals(new BigDecimal("92.00"), rec.plannedEntryPrice());   // 8% under the open of 100
+        assertEquals(new BigDecimal("100.00"), rec.plannedEntryPrice());   // at the open of 100
+    }
+
+    @Test
+    void theEntryLevelSettingLowersThePlannedEntry() {
+        BigDecimal plain = new GapRocketAnalyzer(Clock.systemUTC(), null).analyze(List.of(strong("TSLA")), GapRocketConfig.defaults(StrategyMode.PAPER)).getFirst().plannedEntryPrice();
+        java.util.List<String> seen = new java.util.ArrayList<>();
+        ScannerEntryPricing deeper = (symbol, own, current, open, low) -> {
+            seen.add(symbol);
+            return own.subtract(BigDecimal.ONE);
+        };
+
+        BigDecimal configured = new GapRocketAnalyzer(Clock.systemUTC(), null).withEntryPricing(deeper)
+                .analyze(List.of(strong("TSLA")), GapRocketConfig.defaults(StrategyMode.PAPER)).getFirst().plannedEntryPrice();
+
+        assertEquals(plain.subtract(BigDecimal.ONE), configured);
+        assertTrue(!seen.isEmpty() && seen.stream().allMatch(s -> s != null && !s.isBlank()));
     }
 }

@@ -4803,6 +4803,7 @@ public class TradingFrame extends JFrame {
     }
     portfolioEmailScheduler.setSettings(settingsDialog.portfolioEmailSettings());
     applyPreOpenRepositionSettings();
+    applyScannerEntrySettings();
     // Only a change of account, mode or broker needs a new session. Reconnecting for an email time
     // or a polling interval costs a stream restart and a full resync, and during market hours that
     // is a gap in the one thing that must not have gaps.
@@ -7976,6 +7977,11 @@ public class TradingFrame extends JFrame {
         mode, strategyOrderRepository::findByStrategyId, heldSymbols());
   }
 
+  /** Makes the saved scanner entry-level setting the one every scanner uses from now on. */
+  private void applyScannerEntrySettings() {
+    com.neuralarc.service.MarketHistoryEntryPricing.useSettings(appSettingsService.loadScannerEntrySettings());
+  }
+
   /** Applies the saved pre-open reposition settings and starts its ticker. */
   private void applyPreOpenRepositionSettings() {
     preOpenRepositionService.setSettings(appSettingsService.loadPreOpenRepositionSettings());
@@ -9752,6 +9758,7 @@ public class TradingFrame extends JFrame {
     smartPicksWorkspaceCoordinator.start();
     applyHistoryReentrySchedule();
     applyPreOpenRepositionSettings();
+    applyScannerEntrySettings();
     orbCoordinator.start();
     dipHunterCoordinator.start();
     vwapCoordinator.start();

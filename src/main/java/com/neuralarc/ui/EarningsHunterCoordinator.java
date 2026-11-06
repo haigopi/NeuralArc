@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.service.MarketHistoryEntryPricing;
 import com.neuralarc.api.HttpAlpacaMarketDataApi;
 import com.neuralarc.db.SqliteScanHistoryRepository;
 import com.neuralarc.db.SqliteStrategyRepository;
@@ -98,7 +99,9 @@ final class EarningsHunterCoordinator {
                         new HttpAlpacaMarketDataApi(ui.runtimeApiKey(), ui.runtimeApiSecret()),
                         new HttpAlpacaNewsClient(ui.runtimeApiKey(), ui.runtimeApiSecret()),
                         Clock.systemDefaultZone(), ui::log);
-                EarningsHunterAnalyzer analyzer = new EarningsHunterAnalyzer(Clock.systemUTC(), ui::log);
+                EarningsHunterAnalyzer analyzer = new EarningsHunterAnalyzer(Clock.systemUTC(), ui::log)
+                        .withEntryPricing(MarketHistoryEntryPricing.forScan(
+                                new HttpAlpacaMarketDataApi(ui.runtimeApiKey(), ui.runtimeApiSecret()), ui::log));
                 List<EarningsHunterCandidate> scanned = scanner.candidates(symbols, config);
                 List<EarningsHunterRecommendation> recommendations = analyzer.analyze(scanned, config);
                 SwingUtilities.invokeLater(() -> applyRecommendations(workspaceId, config, executeRequested,

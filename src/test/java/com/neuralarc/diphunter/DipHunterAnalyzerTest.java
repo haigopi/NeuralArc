@@ -1,5 +1,6 @@
 package com.neuralarc.diphunter;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.model.StrategyMode;
 import org.junit.jupiter.api.Test;
 
@@ -135,9 +136,9 @@ class DipHunterAnalyzerTest {
         DipHunterAnalyzer analyzer = new DipHunterAnalyzer(FIXED, null);
         DipHunterRecommendation rec = analyzer.analyze(List.of(strong("NVDA")),
                 DipHunterConfig.defaults(StrategyMode.PAPER)).getFirst();
-        assertEquals(new BigDecimal("92.00"), rec.plannedEntryPrice());   // 8% under the market
-        assertEquals(new BigDecimal("87.40"), rec.stopLossPrice());   // 5% stop
-        assertEquals(new BigDecimal("101.20"), rec.takeProfitPrice()); // 10% target
+        assertEquals(new BigDecimal("100.00"), rec.plannedEntryPrice());   // at the market
+        assertEquals(new BigDecimal("95.00"), rec.stopLossPrice());   // 5% stop
+        assertEquals(new BigDecimal("110.00"), rec.takeProfitPrice()); // 10% target
         assertEquals(DipHunterStatus.RECOMMENDED, rec.status());
     }
 
@@ -154,7 +155,7 @@ class DipHunterAnalyzerTest {
 
         assertTrue(rec.plannedEntryPrice().compareTo(awkwardPrice.currentPrice()) <= 0,
                 "planned " + rec.plannedEntryPrice() + " must not sit above the market");
-        assertEquals(new BigDecimal("198.43"), rec.plannedEntryPrice());
+        assertEquals(new BigDecimal("215.69"), rec.plannedEntryPrice());
     }
 
     private DipHunterCandidate strong(String symbol) {
@@ -189,7 +190,7 @@ class DipHunterAnalyzerTest {
     }
 
     @Test
-    void plannedEntryIsEightPercentUnderTheLowestOfOpenLowAndCurrent() {
+    void plannedEntryIsTheLowestOfOpenLowAndCurrent() {
         DipHunterCandidate c = strong("NVDA");
         DipHunterCandidate withSession = new DipHunterCandidate(c.symbol(), c.companyName(), c.pullbackPercent(),
                 c.dayChangePercent(), c.averageVolume(), c.relativeVolume(), c.currentPrice(), c.previousClose(),
@@ -200,6 +201,22 @@ class DipHunterAnalyzerTest {
         DipHunterRecommendation rec = new DipHunterAnalyzer(FIXED, null).analyze(List.of(withSession),
                 DipHunterConfig.defaults(StrategyMode.PAPER)).getFirst();
 
-        assertEquals(new BigDecimal("82.80"), rec.plannedEntryPrice());   // 8% under today's low of 90
+        assertEquals(new BigDecimal("90.00"), rec.plannedEntryPrice());   // at today's low of 90
+    }
+
+    @Test
+    void theEntryLevelSettingLowersThePlannedEntry() {
+        BigDecimal plain = new DipHunterAnalyzer(FIXED, null).analyze(List.of(strong("NVDA")), DipHunterConfig.defaults(StrategyMode.PAPER)).getFirst().plannedEntryPrice();
+        java.util.List<String> seen = new java.util.ArrayList<>();
+        ScannerEntryPricing deeper = (symbol, own, current, open, low) -> {
+            seen.add(symbol);
+            return own.subtract(BigDecimal.ONE);
+        };
+
+        BigDecimal configured = new DipHunterAnalyzer(FIXED, null).withEntryPricing(deeper)
+                .analyze(List.of(strong("NVDA")), DipHunterConfig.defaults(StrategyMode.PAPER)).getFirst().plannedEntryPrice();
+
+        assertEquals(plain.subtract(BigDecimal.ONE), configured);
+        assertTrue(!seen.isEmpty() && seen.stream().allMatch(s -> s != null && !s.isBlank()));
     }
 }

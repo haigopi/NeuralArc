@@ -1,5 +1,6 @@
 package com.neuralarc.orb;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.model.StrategyMode;
 import org.junit.jupiter.api.Test;
 
@@ -30,17 +31,17 @@ class OrbAnalyzerTest {
         assertEquals(1, recommendations.size());
         OrbRecommendation rec = recommendations.getFirst();
         assertEquals("NVDA", rec.symbol());
-        assertEquals(new BigDecimal("93.15"), rec.plannedEntry());
+        assertEquals(new BigDecimal("96.18"), rec.plannedEntry());
         // Range-low (99.00) sits above the discounted entry (96.19); clamped to riskPercent (1%) below
         // entry instead, floored to the cent so rounding cannot narrow the gap.
-        assertEquals(new BigDecimal("92.21"), rec.stop());
-        assertEquals(new BigDecimal("95.94"), rec.target());
+        assertEquals(new BigDecimal("95.21"), rec.stop());
+        assertEquals(new BigDecimal("99.07"), rec.target());
         assertTrue(rec.score() > 0);
         assertEquals(OrbStatus.RANGE_CAPTURED, rec.status());
     }
 
     @Test
-    void plannedEntryIsAtLeastEightPercentBelowTheCurrentPrice() {
+    void plannedEntryIsNotAboveTheCurrentPrice() {
         OrbAnalyzer analyzer = new OrbAnalyzer(Clock.fixed(Instant.parse("2026-06-15T14:00:00Z"), ZoneOffset.UTC), null);
         OrbConfig config = OrbConfig.defaults(StrategyMode.PAPER);
         OpeningRangeSnapshot snapshot = new OpeningRangeSnapshot("aapl", Instant.parse("2026-06-15T13:30:00Z"),
@@ -53,7 +54,7 @@ class OrbAnalyzerTest {
                 config);
 
         assertEquals(1, recommendations.size());
-        assertEquals(new BigDecimal("90.16"), recommendations.getFirst().plannedEntry());
+        assertEquals(new BigDecimal("93.10"), recommendations.getFirst().plannedEntry());
     }
 
     @Test
@@ -133,5 +134,23 @@ class OrbAnalyzerTest {
 
         assertTrue(analyzer.analyze(List.of(incomplete), List.of(), OrbConfig.defaults(null)).isEmpty());
         assertTrue(log.getFirst().contains("missing opening-range bars"));
+    }
+
+    @Test
+    void theEntryLevelSettingLowersThePlannedEntry() {
+        Clock clock = Clock.fixed(Instant.parse("2026-06-15T14:00:00Z"), ZoneOffset.UTC);
+        OpeningRangeSnapshot snapshot = new OpeningRangeSnapshot("nvda", Instant.parse("2026-06-15T13:30:00Z"),
+                Instant.parse("2026-06-15T13:45:00Z"), new BigDecimal("101.00"), new BigDecimal("99.00"),
+                new BigDecimal("500000"), 15, true, "");
+        List<OrbCandidate> candidates = List.of(new OrbCandidate("NVDA", new BigDecimal("101.25"), null,
+                new BigDecimal("3.0"), null, new BigDecimal("0.20"), "manual"));
+        OrbConfig config = OrbConfig.defaults(StrategyMode.PAPER);
+        BigDecimal plain = new OrbAnalyzer(clock, null).analyze(List.of(snapshot), candidates, config).getFirst().plannedEntry();
+
+        BigDecimal configured = new OrbAnalyzer(clock, null)
+                .withEntryPricing((symbol, own, current, open, low) -> own.subtract(BigDecimal.ONE))
+                .analyze(List.of(snapshot), candidates, config).getFirst().plannedEntry();
+
+        assertEquals(plain.subtract(BigDecimal.ONE), configured);
     }
 }

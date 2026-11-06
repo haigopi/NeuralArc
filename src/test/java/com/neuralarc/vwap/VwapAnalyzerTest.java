@@ -1,5 +1,6 @@
 package com.neuralarc.vwap;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.model.StrategyMode;
 import org.junit.jupiter.api.Test;
 
@@ -88,10 +89,10 @@ class VwapAnalyzerTest {
         VwapAnalyzer analyzer = new VwapAnalyzer(FIXED, null);
         VwapRecommendation rec = analyzer.analyze(List.of(strong("NVDA")),
                 VwapConfig.defaults(StrategyMode.PAPER)).getFirst();
-        assertEquals(new BigDecimal("92.00"), rec.plannedEntryPrice());   // 8% under the market
-        assertEquals(new BigDecimal("88.32"), rec.stopLossPrice());   // 4% stop
+        assertEquals(new BigDecimal("100.00"), rec.plannedEntryPrice());   // at the market
+        assertEquals(new BigDecimal("96.00"), rec.stopLossPrice());   // 4% stop
         assertEquals(new BigDecimal("101.20"), rec.targetPrice());    // target = VWAP
-        assertEquals(new BigDecimal("10.00"), rec.reversionUpsidePercent());
+        assertEquals(new BigDecimal("1.20"), rec.reversionUpsidePercent());
         assertEquals(VwapStatus.RECOMMENDED, rec.status());
     }
 
@@ -145,7 +146,7 @@ class VwapAnalyzerTest {
 
         assertTrue(rec.plannedEntryPrice().compareTo(awkwardPrice.currentPrice()) <= 0,
                 "planned " + rec.plannedEntryPrice() + " must not sit above the market");
-        assertEquals(new BigDecimal("198.43"), rec.plannedEntryPrice());
+        assertEquals(new BigDecimal("215.69"), rec.plannedEntryPrice());
     }
 
     private VwapCandidate strong(String symbol) {
@@ -170,7 +171,7 @@ class VwapAnalyzerTest {
     }
 
     @Test
-    void plannedEntryIsEightPercentUnderTheLowestOfOpenLowAndCurrent() {
+    void plannedEntryIsTheLowestOfOpenLowAndCurrent() {
         VwapCandidate c = strong("NVDA");
         VwapCandidate withSession = new VwapCandidate(c.symbol(), c.companyName(), c.currentPrice(), c.vwap(),
                 c.discountPercent(), c.previousClose(), c.dayChangePercent(), c.averageVolume(), c.relativeVolume(),
@@ -180,6 +181,22 @@ class VwapAnalyzerTest {
         VwapRecommendation rec = new VwapAnalyzer(FIXED, null).analyze(List.of(withSession),
                 VwapConfig.defaults(StrategyMode.PAPER)).getFirst();
 
-        assertEquals(new BigDecimal("82.80"), rec.plannedEntryPrice());   // 8% under today's low of 90
+        assertEquals(new BigDecimal("90.00"), rec.plannedEntryPrice());   // at today's low of 90
+    }
+
+    @Test
+    void theEntryLevelSettingLowersThePlannedEntry() {
+        BigDecimal plain = new VwapAnalyzer(FIXED, null).analyze(List.of(strong("NVDA")), VwapConfig.defaults(StrategyMode.PAPER)).getFirst().plannedEntryPrice();
+        java.util.List<String> seen = new java.util.ArrayList<>();
+        ScannerEntryPricing deeper = (symbol, own, current, open, low) -> {
+            seen.add(symbol);
+            return own.subtract(BigDecimal.ONE);
+        };
+
+        BigDecimal configured = new VwapAnalyzer(FIXED, null).withEntryPricing(deeper)
+                .analyze(List.of(strong("NVDA")), VwapConfig.defaults(StrategyMode.PAPER)).getFirst().plannedEntryPrice();
+
+        assertEquals(plain.subtract(BigDecimal.ONE), configured);
+        assertTrue(!seen.isEmpty() && seen.stream().allMatch(s -> s != null && !s.isBlank()));
     }
 }

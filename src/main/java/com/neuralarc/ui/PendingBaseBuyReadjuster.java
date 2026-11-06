@@ -4,6 +4,7 @@ import com.neuralarc.analytics.PlannedEntryPrice;
 import com.neuralarc.model.MarketBar;
 import com.neuralarc.model.Position;
 import com.neuralarc.model.Strategy;
+import com.neuralarc.model.StrategyEntrySource;
 import com.neuralarc.util.Monetary;
 
 import java.math.BigDecimal;
@@ -14,10 +15,10 @@ import java.util.Optional;
  *
  * <p>The base buy is fixed when a scan runs, but the price keeps moving. When it drops under a waiting
  * row's base buy, that row would be placed above the market. Each refresh therefore lowers such a row
- * to at least {@link PlannedEntryPrice#MIN_BASE_BUY_DISCOUNT_PERCENT} under the lowest of today's open,
- * today's low and the cached price. It only
+ * to the lowest of today's open, today's low and the cached price. It only
  * ever lowers: a price that recovers never raises a base buy, and no broker call is involved, so a row
- * already placed at the broker is left alone. Manually added rows are held to the same rule.
+ * already placed at the broker is left alone. Manually added rows are never touched: the price the
+ * operator typed is kept as entered, and corrected only when the order is placed.
  */
 final class PendingBaseBuyReadjuster {
     private PendingBaseBuyReadjuster() {
@@ -27,8 +28,7 @@ final class PendingBaseBuyReadjuster {
         String event() {
             return "Pending base buy readjusted from $" + from.toPlainString() + " to $" + to.toPlainString()
                     + " (lowest of today's open, low and current price is $" + reference.toPlainString()
-                    + "; base buy kept at least " + PlannedEntryPrice.MIN_BASE_BUY_DISCOUNT_PERCENT.toPlainString()
-                    + "% under it).";
+                    + "; base buy kept at or below it).";
         }
     }
 
@@ -38,7 +38,8 @@ final class PendingBaseBuyReadjuster {
      * @return the lowered base buy when {@code strategy} waits above its allowed level, else empty
      */
     static Optional<Adjustment> plan(Strategy strategy, Position position, MarketBar dailyBar) {
-        if (strategy == null || position == null || !PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(strategy)) {
+        if (strategy == null || position == null || !PendingBaseBuyPlacementSupport.isPendingBaseBuyPlacement(strategy)
+                || StrategyEntrySource.isManuallyAdded(strategy)) {
             return Optional.empty();
         }
         BigDecimal current = Monetary.round(position.getLastPrice());

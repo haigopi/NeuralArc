@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.service.MarketHistoryEntryPricing;
 import com.neuralarc.api.HttpAlpacaMarketDataApi;
 import com.neuralarc.db.AppDatabase;
 import com.neuralarc.db.SqliteDipHunterScheduleRepository;
@@ -250,7 +251,9 @@ final class DipHunterCoordinator {
                 DipHunterLiveScanner scanner = new DipHunterLiveScanner(
                         new HttpAlpacaMarketDataApi(ui.runtimeApiKey(), ui.runtimeApiSecret()),
                         Clock.systemDefaultZone(), ui::log);
-                DipHunterAnalyzer analyzer = new DipHunterAnalyzer(Clock.systemUTC(), ui::log);
+                DipHunterAnalyzer analyzer = new DipHunterAnalyzer(Clock.systemUTC(), ui::log)
+                        .withEntryPricing(MarketHistoryEntryPricing.forScan(
+                                new HttpAlpacaMarketDataApi(ui.runtimeApiKey(), ui.runtimeApiSecret()), ui::log));
                 List<DipHunterCandidate> scanned = scanner.candidates(symbols);
                 List<DipHunterRecommendation> recommendations = analyzer.analyze(scanned, config);
                 SwingUtilities.invokeLater(() ->

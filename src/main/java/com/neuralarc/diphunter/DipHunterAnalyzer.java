@@ -1,5 +1,6 @@
 package com.neuralarc.diphunter;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.analytics.PlannedEntryPrice;
 import com.neuralarc.analytics.ProtectiveStopPrice;
 import com.neuralarc.util.SetupScore;
@@ -36,6 +37,13 @@ public final class DipHunterAnalyzer {
     private static final BigDecimal ORDERLY_RANGE_PERCENT = new BigDecimal("6");
     private final Clock clock;
     private final Consumer<String> decisionLog;
+    private ScannerEntryPricing entryPricing = ScannerEntryPricing.unchanged();
+
+    /** Applies the operator's entry-level setting to every entry this analyzer plans. */
+    public DipHunterAnalyzer withEntryPricing(ScannerEntryPricing pricing) {
+        this.entryPricing = pricing == null ? ScannerEntryPricing.unchanged() : pricing;
+        return this;
+    }
 
     public DipHunterAnalyzer(Clock clock, Consumer<String> decisionLog) {
         this.clock = clock == null ? Clock.systemUTC() : clock;
@@ -119,7 +127,8 @@ public final class DipHunterAnalyzer {
      * plan never chose. The week's low is the floor, so the order can still fill.
      */
     private BigDecimal plannedEntryPrice(DipHunterCandidate c) {
-        return PlannedEntryPrice.baseBuy(c.currentPrice(), c.todayOpen(), c.todayLow());
+        return entryPricing.entry(c.symbol(), PlannedEntryPrice.baseBuy(c.currentPrice(), c.todayOpen(), c.todayLow()),
+                c.currentPrice(), c.todayOpen(), c.todayLow());
     }
 
     private boolean passesTrend(DipHunterCandidate c, DipHunterConfig.TrendFilter filter) {

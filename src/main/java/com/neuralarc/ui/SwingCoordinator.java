@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.service.MarketHistoryEntryPricing;
 import com.neuralarc.api.HttpAlpacaMarketDataApi;
 import com.neuralarc.db.AppDatabase;
 import com.neuralarc.db.SqliteScanHistoryRepository;
@@ -255,7 +256,9 @@ final class SwingCoordinator {
                 SwingLiveScanner scanner = new SwingLiveScanner(
                         new HttpAlpacaMarketDataApi(ui.runtimeApiKey(), ui.runtimeApiSecret()),
                         Clock.systemDefaultZone(), ui::log);
-                SwingAnalyzer analyzer = new SwingAnalyzer(Clock.systemUTC(), ui::log);
+                SwingAnalyzer analyzer = new SwingAnalyzer(Clock.systemUTC(), ui::log)
+                        .withEntryPricing(MarketHistoryEntryPricing.forScan(
+                                new HttpAlpacaMarketDataApi(ui.runtimeApiKey(), ui.runtimeApiSecret()), ui::log));
                 List<SwingCandidate> scanned = scanner.candidates(symbols);
                 List<SwingRecommendation> recommendations = analyzer.analyze(scanned, config);
                 SwingUtilities.invokeLater(() ->

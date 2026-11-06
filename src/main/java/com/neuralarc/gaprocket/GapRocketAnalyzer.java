@@ -1,5 +1,6 @@
 package com.neuralarc.gaprocket;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.analytics.PlannedEntryPrice;
 
 import java.math.BigDecimal;
@@ -15,6 +16,13 @@ public final class GapRocketAnalyzer {
     public static final int MINIMUM_RECOMMENDATION_SCORE = 65;
     private final Clock clock;
     private final Consumer<String> decisionLog;
+    private ScannerEntryPricing entryPricing = ScannerEntryPricing.unchanged();
+
+    /** Applies the operator's entry-level setting to every entry this analyzer plans. */
+    public GapRocketAnalyzer withEntryPricing(ScannerEntryPricing pricing) {
+        this.entryPricing = pricing == null ? ScannerEntryPricing.unchanged() : pricing;
+        return this;
+    }
 
     public GapRocketAnalyzer(Clock clock, Consumer<String> decisionLog) {
         this.clock = clock == null ? Clock.systemUTC() : clock;
@@ -81,7 +89,8 @@ public final class GapRocketAnalyzer {
      * or already-failed breakout level) is not an entry: the plan aims a little under the current price.
      */
     private BigDecimal plannedEntryPrice(GapRocketCandidate c) {
-        return PlannedEntryPrice.baseBuy(c.currentPrice(), c.todayOpen(), c.premarketLow());
+        return entryPricing.entry(c.symbol(), PlannedEntryPrice.baseBuy(c.currentPrice(), c.todayOpen(), c.premarketLow()),
+                c.currentPrice(), c.todayOpen(), c.premarketLow());
     }
 
     private boolean passesTrend(GapRocketCandidate c, GapRocketConfig.MarketTrendFilter filter) {

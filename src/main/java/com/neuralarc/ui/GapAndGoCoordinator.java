@@ -1,5 +1,6 @@
 package com.neuralarc.ui;
 
+import com.neuralarc.service.MarketHistoryEntryPricing;
 import com.neuralarc.api.HttpAlpacaMarketDataApi;
 import com.neuralarc.db.AppDatabase;
 import com.neuralarc.db.SqliteGapAndGoScheduleRepository;
@@ -273,7 +274,9 @@ final class GapAndGoCoordinator {
                 GapRocketLiveScanner scanner = new GapRocketLiveScanner(
                         new HttpAlpacaMarketDataApi(ui.runtimeApiKey(), ui.runtimeApiSecret()),
                         Clock.systemDefaultZone(), ui::log);
-                GapRocketAnalyzer analyzer = new GapRocketAnalyzer(Clock.systemUTC(), ui::log);
+                GapRocketAnalyzer analyzer = new GapRocketAnalyzer(Clock.systemUTC(), ui::log)
+                        .withEntryPricing(MarketHistoryEntryPricing.forScan(
+                                new HttpAlpacaMarketDataApi(ui.runtimeApiKey(), ui.runtimeApiSecret()), ui::log));
                 List<GapRocketCandidate> scanned = scanner.candidates(symbols);
                 if (!interactive && ScheduledScanRetryPolicy.mostlyUnmeasurable(
                         scanner.lastUnmeasurableCount(), symbols.size())

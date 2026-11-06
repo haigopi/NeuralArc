@@ -1,5 +1,6 @@
 package com.neuralarc.orb;
 
+import com.neuralarc.analytics.ScannerEntryPricing;
 import com.neuralarc.analytics.PlannedEntryPrice;
 import com.neuralarc.analytics.ProtectiveStopPrice;
 
@@ -17,6 +18,13 @@ import java.util.stream.Collectors;
 public final class OrbAnalyzer {
     private final Clock clock;
     private final Consumer<String> decisionLog;
+    private ScannerEntryPricing entryPricing = ScannerEntryPricing.unchanged();
+
+    /** Applies the operator's entry-level setting to every entry this analyzer plans. */
+    public OrbAnalyzer withEntryPricing(ScannerEntryPricing pricing) {
+        this.entryPricing = pricing == null ? ScannerEntryPricing.unchanged() : pricing;
+        return this;
+    }
 
     public OrbAnalyzer(Clock clock, Consumer<String> decisionLog) {
         this.clock = clock == null ? Clock.systemUTC() : clock;
@@ -56,7 +64,8 @@ public final class OrbAnalyzer {
         }
         BigDecimal entry = c == null || c.latestPrice() == null
                 ? candidateEntry.setScale(2, RoundingMode.HALF_UP)
-                : PlannedEntryPrice.belowMarket(candidateEntry, c.latestPrice(), c.regularSessionOpen());
+                : entryPricing.entry(c.symbol(), PlannedEntryPrice.belowMarket(candidateEntry, c.latestPrice(), c.regularSessionOpen()),
+                        c.latestPrice(), c.regularSessionOpen(), null);
         BigDecimal rawStop = switch (cfg.stopMode()) {
             case RANGE_LOW, ATR_ADJUSTED -> s.low();
             case MID_RANGE -> s.high().add(s.low()).divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);

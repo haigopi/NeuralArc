@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BaseBuyPriceGuardTest {
     private final BaseBuyPriceGuard guard = new BaseBuyPriceGuard();
@@ -35,7 +36,7 @@ class BaseBuyPriceGuardTest {
     }
 
     @Test
-    void plannedPriceCloserThanEightPercentToTheMarketIsPulledBack() {
+    void aPlannedPriceBelowTheMarketIsKeptAsIs() {
         FakeAlpacaClient client = new FakeAlpacaClient(
                 new BigDecimal("186.91"),
                 List.of(bar("185.00", "187.00"))
@@ -44,11 +45,11 @@ class BaseBuyPriceGuardTest {
         BaseBuyPriceGuard.GuardedPrice result = guard.guardedBaseBuyPrice(
                 client, "NVDA", new BigDecimal("184.00"), new BigDecimal("186.91"));
 
-        assertEquals(new BigDecimal("171.95"), result.price());
+        assertEquals(new BigDecimal("184.00"), result.price());
     }
 
     @Test
-    void aPriceTheOperatorChoseIsNotPulledBackToTheMinimumGap() {
+    void aPriceTheOperatorChoseBelowTheMarketIsPlacedAsTyped() {
         FakeAlpacaClient client = new FakeAlpacaClient(
                 new BigDecimal("186.91"),
                 List.of(bar("185.00", "187.00"))
@@ -63,17 +64,60 @@ class BaseBuyPriceGuardTest {
     }
 
     @Test
-    void aChosenPriceThatTheMarketHasWeakenedThroughIsStillReduced() {
+    void aChosenPriceIsNotReducedEvenWhenYesterdayWasWeaker() {
         FakeAlpacaClient client = new FakeAlpacaClient(
                 new BigDecimal("99.00"),
                 List.of(bar("98.00", "101.00"))
         );
 
         BaseBuyPriceGuard.GuardedPrice result = guard.guardedBaseBuyPrice(
-                client, "AAPL", new BigDecimal("100.00"), new BigDecimal("99.00"),
+                client, "AAPL", new BigDecimal("90.00"), new BigDecimal("99.00"),
                 BaseBuyPriceGuard.DEFAULT_WEAKNESS_REDUCTION_PERCENT, true);
 
-        assertEquals(new BigDecimal("91.08"), result.price());
+        assertEquals(new BigDecimal("90.00"), result.price());
+        assertEquals("", result.reason());
+    }
+
+    @Test
+    void aChosenPriceAboveTheMarketIsCorrectedToTheCurrentPrice() {
+        FakeAlpacaClient client = new FakeAlpacaClient(
+                new BigDecimal("99.00"),
+                List.of(bar("99.00", "101.00"))
+        );
+
+        BaseBuyPriceGuard.GuardedPrice result = guard.guardedBaseBuyPrice(
+                client, "AAPL", new BigDecimal("105.00"), new BigDecimal("99.00"),
+                BaseBuyPriceGuard.DEFAULT_WEAKNESS_REDUCTION_PERCENT, true);
+
+        assertEquals(new BigDecimal("99.00"), result.price(), "the week's low is not under the market, so the market price is used");
+        assertTrue(result.reason().startsWith("WARNING"), result.reason());
+        assertTrue(result.reason().contains("$105.00") && result.reason().contains("current price"), result.reason());
+    }
+
+    @Test
+    void aChosenPriceAboveTheMarketUsesTheLastWeeksLowWhenItIsLower() {
+        FakeAlpacaClient client = new FakeAlpacaClient(
+                new BigDecimal("99.00"),
+                List.of(bar("97.50", "101.00"), bar("96.25", "98.00"))
+        );
+
+        BaseBuyPriceGuard.GuardedPrice result = guard.guardedBaseBuyPrice(
+                client, "AAPL", new BigDecimal("105.00"), new BigDecimal("99.00"),
+                BaseBuyPriceGuard.DEFAULT_WEAKNESS_REDUCTION_PERCENT, true);
+
+        assertEquals(new BigDecimal("96.25"), result.price());
+        assertTrue(result.reason().contains("last week's low"), result.reason());
+    }
+
+    @Test
+    void aChosenPriceAboveTheMarketWithNoBarsFallsBackToTheCurrentPrice() {
+        FakeAlpacaClient client = new FakeAlpacaClient(new BigDecimal("99.00"), List.of());
+
+        BaseBuyPriceGuard.GuardedPrice result = guard.guardedBaseBuyPrice(
+                client, "AAPL", new BigDecimal("105.00"), new BigDecimal("99.00"),
+                BaseBuyPriceGuard.DEFAULT_WEAKNESS_REDUCTION_PERCENT, true);
+
+        assertEquals(new BigDecimal("99.00"), result.price());
     }
 
     @Test
@@ -90,7 +134,7 @@ class BaseBuyPriceGuardTest {
                 new BigDecimal("99.00")
         );
 
-        assertEquals(new BigDecimal("91.08"), result.price());
+        assertEquals(new BigDecimal("96.04"), result.price());
     }
 
     @Test
@@ -107,7 +151,7 @@ class BaseBuyPriceGuardTest {
                 new BigDecimal("100.00")
         );
 
-        assertEquals(new BigDecimal("92.00"), result.price());
+        assertEquals(new BigDecimal("98.00"), result.price());
     }
 
     @Test
@@ -124,7 +168,7 @@ class BaseBuyPriceGuardTest {
                 new BigDecimal("95.00")
         );
 
-        assertEquals(new BigDecimal("87.40"), result.price());
+        assertEquals(new BigDecimal("93.10"), result.price());
     }
 
     @Test
@@ -142,7 +186,7 @@ class BaseBuyPriceGuardTest {
                 new BigDecimal("5.00")
         );
 
-        assertEquals(new BigDecimal("91.08"), result.price());
+        assertEquals(new BigDecimal("93.10"), result.price());
     }
 
     private static MarketBar bar(String low, String close) {
