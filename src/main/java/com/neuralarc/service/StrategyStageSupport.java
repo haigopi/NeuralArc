@@ -1,9 +1,13 @@
 package com.neuralarc.service;
 
+import com.neuralarc.model.Strategy;
 import com.neuralarc.model.StrategyOrder;
 import com.neuralarc.model.StrategyOrderStatus;
 import com.neuralarc.model.StrategyStage;
 
+import com.neuralarc.util.Monetary;
+
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -56,6 +60,27 @@ final class StrategyStageSupport {
 
     static boolean isStageFilled(List<StrategyOrder> orders, StrategyStage stage) {
         return orders.stream().anyMatch(order -> order.stage() == stage && order.status() == StrategyOrderStatus.FILLED);
+    }
+
+    /**
+     * Whether a loss-buy level has been bought at the values it has <em>now</em>. A level whose price or
+     * quantity was edited after it filled is armed again: the filled order bought the old level, and
+     * counting it would leave the edited level silently inert while the row claimed it was active.
+     */
+    static boolean isLossLevelFilled(Strategy strategy, List<StrategyOrder> orders, StrategyStage stage) {
+        BigDecimal price = stage == StrategyStage.BUY_LIMIT_1 ? strategy.buyLimit1Price() : strategy.buyLimit2Price();
+        int quantity = stage == StrategyStage.BUY_LIMIT_1 ? strategy.buyLimit1Quantity() : strategy.buyLimit2Quantity();
+        return orders.stream().anyMatch(order -> order.stage() == stage
+                && order.status() == StrategyOrderStatus.FILLED
+                && order.limitPrice() != null && price != null
+                && Monetary.round(order.limitPrice()).compareTo(Monetary.round(price)) == 0
+                && order.requestedQuantity() != null
+                && order.requestedQuantity().compareTo(BigDecimal.valueOf(quantity)) == 0);
+    }
+
+    static boolean hasPendingOrFilledLossLevel(Strategy strategy, List<StrategyOrder> orders, StrategyStage stage) {
+        return orders.stream().anyMatch(order -> order.stage() == stage && order.isPending())
+                || isLossLevelFilled(strategy, orders, stage);
     }
 
     static String ruleNameForStage(StrategyStage stage) {

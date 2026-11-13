@@ -2287,6 +2287,42 @@ class StrategyServiceTest {
         }
     }
 
+    @Test
+    void savingEditedLossBuyLevelsOnAFullyAveragedPositionShowsTheLevelsAsActiveAgain() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("GOOG", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BUY_LIMIT_2_FILLED);
+        strategy.setLossBuyLevelsEnabled(true);
+        strategies.save(strategy);
+        for (Object[] fill : new Object[][]{
+                {StrategyStage.BASE_BUY, "8.00", 10},
+                {StrategyStage.BUY_LIMIT_1, "6.00", 5},
+                {StrategyStage.BUY_LIMIT_2, "5.00", 5}}) {
+            orders.save(new StrategyOrder(UUID.randomUUID().toString(), strategy.id(), (StrategyStage) fill[0],
+                    "o-" + fill[0], "c-" + fill[0], "GOOG", StrategyOrderSide.BUY, StrategyOrderType.LIMIT,
+                    new BigDecimal((String) fill[1]), BigDecimal.ZERO, BigDecimal.valueOf((int) fill[2]),
+                    BigDecimal.valueOf((int) fill[2]), new BigDecimal((String) fill[1]),
+                    StrategyOrderStatus.FILLED, Instant.now(), Instant.now(), null, "{}"));
+        }
+
+        Strategy updated = strategyWithId(strategy.id(), "GOOG", 10, new BigDecimal("8.00"));
+        updated.setStatus(StrategyStatus.ACTIVE);
+        updated.setCurrentState(StrategyLifecycleState.BUY_LIMIT_2_FILLED);
+        updated.setLossBuyLevelsEnabled(true);
+        updated.setBuyLimit1Price(new BigDecimal("7.50"));
+        updated.setBuyLimit2Price(new BigDecimal("6.50"));
+
+        assertTrue(service.updateStrategy(updated).isPresent());
+
+        assertEquals(StrategyLifecycleState.BASE_BUY_FILLED, strategies.findById(strategy.id()).orElseThrow().currentState());
+    }
+
     private Strategy baseStrategy(String symbol, int qty, BigDecimal price) {
         return strategyWithId(UUID.randomUUID().toString(), symbol, qty, price);
     }

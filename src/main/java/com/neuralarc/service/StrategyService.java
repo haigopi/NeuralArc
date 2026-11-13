@@ -231,6 +231,11 @@ public class StrategyService {
         }
         strategyRepository.save(strategy);
         stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.STRATEGY_UPDATED, "Strategy updated", "{}");
+        if (strategy.status() == StrategyStatus.ACTIVE) {
+            LossBuyLevelRearm.stateAfterEdit(strategy, orderRepository.findByStrategyId(strategy.id()))
+                    .ifPresent(rearmed -> stateMachine.transition(strategy, rearmed, StrategyEventType.STRATEGY_UPDATED,
+                            "Loss buy levels edited; waiting for the new levels", "{}"));
+        }
 
         if (refreshActiveOrders && strategy.status() == StrategyStatus.ACTIVE) {
             if (canceledOpenEntryOrders && shouldRepostEntryAfterEdit(strategy)) {

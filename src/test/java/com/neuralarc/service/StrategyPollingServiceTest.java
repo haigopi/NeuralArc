@@ -357,6 +357,28 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void aLossBuyLevelEditedAfterItFilledBuysAgainAtTheNewPrice() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setAutomatedStopLossEnabled(false);
+        strategy.setCurrentState(StrategyLifecycleState.BUY_LIMIT_2_FILLED);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BUY_LIMIT_1, 5, new BigDecimal("6.00")));
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BUY_LIMIT_2, 5, new BigDecimal("5.00")));
+        strategy.setBuyLimit1Price(new BigDecimal("7.50"));
+        f.strategies.save(strategy);
+        f.alpaca.latestPrice = new BigDecimal("7.40");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("20"), new BigDecimal("6.50"), new BigDecimal("7.40"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+
+        long working = f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == StrategyStage.BUY_LIMIT_1 && order.isPending())
+                .count();
+        assertEquals(1, working, "the edited level is armed again");
+    }
+
+    @Test
     void aSellTriggerRestsALimitSellAtTheTriggerPriceBeforeThePriceReachesIt() {
         // AIFU: the trigger was $10.45 and the price touched it between polls, so nothing sold.
         // The limit sell must already be working at the broker while the price is still below.

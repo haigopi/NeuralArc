@@ -333,7 +333,7 @@ public class StrategyEngine {
         int quantity = first ? strategy.buyLimit1Quantity() : strategy.buyLimit2Quantity();
         BigDecimal price = first ? strategy.buyLimit1Price() : strategy.buyLimit2Price();
         if (quantity <= 0 || price.compareTo(BigDecimal.ZERO) <= 0
-                || hasPendingOrFilledStage(orderRepository.findByStrategyId(strategy.id()), stage)) {
+                || StrategyStageSupport.hasPendingOrFilledLossLevel(strategy, orderRepository.findByStrategyId(strategy.id()), stage)) {
             return null;
         }
         return submitBuyOrder(strategy, stage, quantity, price,
@@ -455,15 +455,15 @@ public class StrategyEngine {
         if (StrategyStageSupport.isStageFilled(orders, StrategyStage.BASE_BUY)
                 && strategy.lossBuyLevelsEnabled()
                 && strategy.buyLimit1Quantity() > 0
-                && !StrategyStageSupport.isStageFilled(orders, StrategyStage.BUY_LIMIT_1)) {
+                && !StrategyStageSupport.isLossLevelFilled(strategy, orders, StrategyStage.BUY_LIMIT_1)) {
             submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_1, strategy.buyLimit1Quantity(), strategy.buyLimit1Price(),
                     StrategyLifecycleState.BUY_LIMIT_1_PLACED, "Buy Limit 1 recreated after missing Alpaca order", true);
             return true;
         }
-        if (StrategyStageSupport.isStageFilled(orders, StrategyStage.BUY_LIMIT_1)
+        if (StrategyStageSupport.isLossLevelFilled(strategy, orders, StrategyStage.BUY_LIMIT_1)
                 && strategy.lossBuyLevelsEnabled()
                 && strategy.buyLimit2Quantity() > 0
-                && !StrategyStageSupport.isStageFilled(orders, StrategyStage.BUY_LIMIT_2)) {
+                && !StrategyStageSupport.isLossLevelFilled(strategy, orders, StrategyStage.BUY_LIMIT_2)) {
             submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_2, strategy.buyLimit2Quantity(), strategy.buyLimit2Price(),
                     StrategyLifecycleState.BUY_LIMIT_2_PLACED, "Buy Limit 2 recreated after missing Alpaca order", true);
             return true;
@@ -490,7 +490,7 @@ public class StrategyEngine {
             logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Base buy not fully filled", outcomes);
             return;
         }
-        if (hasPendingOrFilledStage(orders, StrategyStage.BUY_LIMIT_1)) {
+        if (StrategyStageSupport.hasPendingOrFilledLossLevel(strategy, orders, StrategyStage.BUY_LIMIT_1)) {
             logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Existing pending or filled order already present", outcomes);
             return;
         }
@@ -517,11 +517,11 @@ public class StrategyEngine {
                             + " > triggerPrice=" + strategy.buyLimit2Price().toPlainString(), outcomes);
             return;
         }
-        if (!StrategyStageSupport.isStageFilled(orders, StrategyStage.BUY_LIMIT_1)) {
+        if (!StrategyStageSupport.isLossLevelFilled(strategy, orders, StrategyStage.BUY_LIMIT_1)) {
             logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Buy Limit 1 not fully filled", outcomes);
             return;
         }
-        if (hasPendingOrFilledStage(orders, StrategyStage.BUY_LIMIT_2)) {
+        if (StrategyStageSupport.hasPendingOrFilledLossLevel(strategy, orders, StrategyStage.BUY_LIMIT_2)) {
             logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Existing pending or filled order already present", outcomes);
             return;
         }
