@@ -357,6 +357,49 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void aSellTriggerRestsALimitSellAtTheTriggerPriceBeforeThePriceReachesIt() {
+        // AIFU: the trigger was $10.45 and the price touched it between polls, so nothing sold.
+        // The limit sell must already be working at the broker while the price is still below.
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setProfitControlMode(ProfitControlMode.SELL_TRIGGER);
+        strategy.setTargetSellEnabled(true);
+        strategy.setTargetSellPrice(new BigDecimal("10.45"));
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 1, new BigDecimal("8.00")));
+        f.alpaca.latestPrice = new BigDecimal("9.16");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", BigDecimal.ONE, new BigDecimal("8.00"), new BigDecimal("9.16"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+
+        StrategyOrder resting = f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.TARGET_SELL).orElseThrow();
+        assertEquals(0, new BigDecimal("10.45").compareTo(resting.limitPrice()), "limit " + resting.limitPrice());
+        assertEquals(StrategyOrderSide.SELL, resting.side());
+        assertTrue(resting.isPending());
+    }
+
+    @Test
+    void aRestingSellTriggerIsNotPlacedTwiceOnLaterPolls() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setProfitControlMode(ProfitControlMode.SELL_TRIGGER);
+        strategy.setTargetSellEnabled(true);
+        strategy.setTargetSellPrice(new BigDecimal("10.45"));
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 1, new BigDecimal("8.00")));
+        f.alpaca.latestPrice = new BigDecimal("9.16");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", BigDecimal.ONE, new BigDecimal("8.00"), new BigDecimal("9.16"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+        f.service.pollStrategy(strategy.id());
+
+        long sells = f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.side() == StrategyOrderSide.SELL && order.isPending())
+                .count();
+        assertEquals(1, sells, "one working sell, not one per poll");
+    }
+
+    @Test
     void aStopLossCancelsTheRestingTargetSellBeforeSelling() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);

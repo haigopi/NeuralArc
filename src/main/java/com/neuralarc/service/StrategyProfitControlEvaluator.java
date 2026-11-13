@@ -115,9 +115,20 @@ final class StrategyProfitControlEvaluator {
             return;
         }
         if (latestPrice.compareTo(strategy.targetSellPrice()) < 0) {
-            logRule(strategy, "SELL_TRIGGER", "NOT_SATISFIED",
-                    "latestPrice=" + latestPrice.toPlainString()
-                            + " < triggerPrice=" + strategy.targetSellPrice().toPlainString(), outcomes);
+            // Rest the limit sell at the broker now: waiting for a poll to see the cross misses
+            // any spike between polls (and anything while the app is busy or offline).
+            if (!hasNoDuplicateSellOrder(strategy, orders)) {
+                logRule(strategy, "SELL_TRIGGER", "BLOCKED", "Duplicate sell order detected; skipping", outcomes);
+                return;
+            }
+            logRule(strategy, "SELL_TRIGGER", "PLACED",
+                    "Resting limit sell " + expectedQuantity.toPlainString() + " @ $"
+                            + strategy.targetSellPrice().toPlainString() + " (latestPrice="
+                            + latestPrice.toPlainString() + "); it fills at the broker even between polls", outcomes);
+            sellOrderSubmitter.submit(strategy, StrategyStage.TARGET_SELL, expectedQuantity,
+                    strategy.targetSellPrice(), strategy.timeInForce(), StrategyLifecycleState.SELL_PLACED,
+                    "Sell trigger resting limit order submitted at $" + strategy.targetSellPrice().toPlainString(),
+                    StrategyEventType.ORDER_SUBMITTED);
             return;
         }
 
