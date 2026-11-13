@@ -358,6 +358,10 @@ public class StrategyEngine {
         if (position.isEmpty() || !position.get().exists() || position.get().quantity().signum() <= 0) {
             return null;
         }
+        if (!exitStageStillConfigured(strategy, previous.stage())) {
+            // The edit turned this exit off (e.g. to Manual only); putting it back would resurrect it.
+            return null;
+        }
         boolean alreadyWorking = orderRepository.findByStrategyId(strategy.id()).stream()
                 .anyMatch(order -> order.stage() == previous.stage() && order.isPending()
                         && order.side() == StrategyOrderSide.SELL);
@@ -379,6 +383,18 @@ public class StrategyEngine {
         return submitSellOrder(strategy, previous.stage(), quantity, price, previous.timeInForce(),
                 StrategyLifecycleState.SELL_PLACED, previous.stage() + " sell re-placed after edit",
                 StrategyEventType.ORDER_SUBMITTED);
+    }
+
+    /** Whether the strategy as now configured still calls for a sell of this stage. */
+    private static boolean exitStageStillConfigured(Strategy strategy, StrategyStage stage) {
+        ProfitControlMode mode = strategy.profitControlMode();
+        return switch (stage) {
+            case TARGET_SELL -> strategy.targetSellEnabled()
+                    && (mode == null || mode == ProfitControlMode.NONE || mode == ProfitControlMode.SELL_TRIGGER
+                    || mode == ProfitControlMode.PROFIT_HOLD);
+            case PROFIT_EXIT -> mode == ProfitControlMode.PROFIT_HOLD && strategy.profitHoldEnabled();
+            default -> true;
+        };
     }
 
     public boolean canAutoRetryFailed(Strategy strategy) {
@@ -472,65 +488,70 @@ public class StrategyEngine {
     }
 
     private void maybeSubmitBuyLimit1(Strategy strategy, BigDecimal latestPrice, List<StrategyOrder> orders, List<RuleOutcome> outcomes) {
-        if (!strategy.lossBuyLevelsEnabled()) {
-            logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Loss buy levels disabled", outcomes);
-            return;
-        }
-        if (strategy.buyLimit1Quantity() <= 0 || strategy.buyLimit1Price().compareTo(BigDecimal.ZERO) <= 0) {
-            logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Not configured", outcomes);
-            return;
-        }
-        if (latestPrice.compareTo(strategy.buyLimit1Price()) > 0) {
-            logRule(strategy, "BUY_LIMIT_1", "NOT_SATISFIED",
-                    "latestPrice=" + latestPrice.toPlainString()
-                            + " > triggerPrice=" + strategy.buyLimit1Price().toPlainString(), outcomes);
-            return;
-        }
-        if (!StrategyStageSupport.isStageFilled(orders, StrategyStage.BASE_BUY)) {
-            logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Base buy not fully filled", outcomes);
-            return;
-        }
-        if (StrategyStageSupport.hasPendingOrFilledLossLevel(strategy, orders, StrategyStage.BUY_LIMIT_1)) {
-            logRule(strategy, "BUY_LIMIT_1", "SKIPPED", "Existing pending or filled order already present", outcomes);
-            return;
-        }
-        logRule(strategy, "BUY_LIMIT_1", "SATISFIED",
-                "latestPrice=" + latestPrice.toPlainString()
-                        + " <= triggerPrice=" + strategy.buyLimit1Price().toPlainString()
-                        + ", quantity=" + strategy.buyLimit1Quantity(), outcomes);
-        submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_1, strategy.buyLimit1Quantity(), strategy.buyLimit1Price(),
-                StrategyLifecycleState.BUY_LIMIT_1_PLACED, "Buy Limit 1 submitted", true);
+        maybeSubmitLossLevel(strategy, StrategyStage.BUY_LIMIT_1, latestPrice, orders, outcomes);
     }
 
     private void maybeSubmitBuyLimit2(Strategy strategy, BigDecimal latestPrice, List<StrategyOrder> orders, List<RuleOutcome> outcomes) {
+        maybeSubmitLossLevel(strategy, StrategyStage.BUY_LIMIT_2, latestPrice, orders, outcomes);
+    }
+
+    /**
+     * Keeps the next loss-buy level working at the broker. While the price is still above the level the
+     * limit buy rests at the level price, so a dip between polls fills it instead of being missed; once
+     * the price is at or below the level the same limit is placed as before. Only the next level rests:
+     * level 2 waits for level 1 to fill.
+     */
+    private void maybeSubmitLossLevel(Strategy strategy, StrategyStage stage, BigDecimal latestPrice,
+                                      List<StrategyOrder> orders, List<RuleOutcome> outcomes) {
+        boolean first = stage == StrategyStage.BUY_LIMIT_1;
+        String rule = stage.name();
+        String label = first ? "Buy Limit 1" : "Buy Limit 2";
+        int quantity = first ? strategy.buyLimit1Quantity() : strategy.buyLimit2Quantity();
+        BigDecimal price = first ? strategy.buyLimit1Price() : strategy.buyLimit2Price();
         if (!strategy.lossBuyLevelsEnabled()) {
-            logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Loss buy levels disabled", outcomes);
+            logRule(strategy, rule, "SKIPPED", "Loss buy levels disabled", outcomes);
             return;
         }
-        if (strategy.buyLimit2Quantity() <= 0 || strategy.buyLimit2Price().compareTo(BigDecimal.ZERO) <= 0) {
-            logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Not configured", outcomes);
+        if (quantity <= 0 || price.compareTo(BigDecimal.ZERO) <= 0) {
+            logRule(strategy, rule, "SKIPPED", "Not configured", outcomes);
             return;
         }
-        if (latestPrice.compareTo(strategy.buyLimit2Price()) > 0) {
-            logRule(strategy, "BUY_LIMIT_2", "NOT_SATISFIED",
-                    "latestPrice=" + latestPrice.toPlainString()
-                            + " > triggerPrice=" + strategy.buyLimit2Price().toPlainString(), outcomes);
+        boolean prerequisiteFilled = first
+                ? StrategyStageSupport.isStageFilled(orders, StrategyStage.BASE_BUY)
+                : StrategyStageSupport.isLossLevelFilled(strategy, orders, StrategyStage.BUY_LIMIT_1);
+        if (!prerequisiteFilled) {
+            logRule(strategy, rule, "SKIPPED", first ? "Base buy not fully filled" : "Buy Limit 1 not fully filled", outcomes);
             return;
         }
-        if (!StrategyStageSupport.isLossLevelFilled(strategy, orders, StrategyStage.BUY_LIMIT_1)) {
-            logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Buy Limit 1 not fully filled", outcomes);
+        if (StrategyStageSupport.hasPendingOrFilledLossLevel(strategy, orders, stage)) {
+            logRule(strategy, rule, "SKIPPED", "Existing pending or filled order already present", outcomes);
             return;
         }
-        if (StrategyStageSupport.hasPendingOrFilledLossLevel(strategy, orders, StrategyStage.BUY_LIMIT_2)) {
-            logRule(strategy, "BUY_LIMIT_2", "SKIPPED", "Existing pending or filled order already present", outcomes);
+        StrategyLifecycleState placed = first
+                ? StrategyLifecycleState.BUY_LIMIT_1_PLACED
+                : StrategyLifecycleState.BUY_LIMIT_2_PLACED;
+        if (latestPrice.compareTo(price) > 0) {
+            if (latestFilledExitOrder(orders).isPresent()) {
+                logRule(strategy, rule, "SKIPPED", "Position already exited", outcomes);
+                return;
+            }
+            StrategyBuyRiskProjector.RiskProjection projection = projectedRisk(
+                    strategy, orders, BigDecimal.valueOf(quantity), price);
+            if (!projection.allowed()) {
+                logRule(strategy, rule, "BLOCKED", "Not resting " + label + ": " + projection.reason(), outcomes);
+                return;
+            }
+            logRule(strategy, rule, "PLACED",
+                    "Resting limit buy " + quantity + " @ $" + price.toPlainString() + " (latestPrice="
+                            + latestPrice.toPlainString() + "); it fills at the broker even between polls", outcomes);
+            submitBuyOrder(strategy, stage, quantity, price, placed,
+                    label + " resting at $" + price.toPlainString(), true);
             return;
         }
-        logRule(strategy, "BUY_LIMIT_2", "SATISFIED",
-                "latestPrice=" + latestPrice.toPlainString()
-                        + " <= triggerPrice=" + strategy.buyLimit2Price().toPlainString()
-                        + ", quantity=" + strategy.buyLimit2Quantity(), outcomes);
-        submitBuyOrder(strategy, StrategyStage.BUY_LIMIT_2, strategy.buyLimit2Quantity(), strategy.buyLimit2Price(),
-                StrategyLifecycleState.BUY_LIMIT_2_PLACED, "Buy Limit 2 submitted", true);
+        logRule(strategy, rule, "SATISFIED",
+                "latestPrice=" + latestPrice.toPlainString() + " <= triggerPrice=" + price.toPlainString()
+                        + ", quantity=" + quantity, outcomes);
+        submitBuyOrder(strategy, stage, quantity, price, placed, label + " submitted", true);
     }
 
     private void evaluateManagedStopLoss(Strategy strategy, AlpacaPositionData position, BigDecimal latestPrice, List<StrategyOrder> orders, List<RuleOutcome> outcomes) {

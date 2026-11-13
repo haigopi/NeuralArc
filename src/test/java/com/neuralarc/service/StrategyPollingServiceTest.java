@@ -379,6 +379,29 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void theNextLossBuyLevelRestsAtItsPriceAndTheOneAfterWaitsForIt() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setAutomatedStopLossEnabled(false);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        f.alpaca.latestPrice = new BigDecimal("7.90");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", BigDecimal.TEN, new BigDecimal("8.00"), new BigDecimal("7.90"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+        f.service.pollStrategy(strategy.id());
+
+        StrategyOrder level1 = f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).orElseThrow();
+        assertEquals(0, new BigDecimal("6.00").compareTo(level1.limitPrice()));
+        assertTrue(level1.isPending());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_2).isEmpty(),
+                "level 2 waits for level 1 to fill");
+        assertEquals(1, f.orders.findByStrategyId(strategy.id()).stream()
+                .filter(order -> order.stage() == StrategyStage.BUY_LIMIT_1).count(), "not re-placed every poll");
+    }
+
+    @Test
     void aSellTriggerRestsALimitSellAtTheTriggerPriceBeforeThePriceReachesIt() {
         // AIFU: the trigger was $10.45 and the price touched it between polls, so nothing sold.
         // The limit sell must already be working at the broker while the price is still below.

@@ -299,6 +299,15 @@ public final class StrategyTablePresenter {
                 && hasOpenPosition(position)
                 && pendingLimitBuy != null
                 && pendingLimitSell != null) {
+            // Both orders are working: lead with the side the trend points at. Under the average cost the
+            // next move is the loss buy; at or above it, the sell.
+            BigDecimal last = position.getLastPrice();
+            BigDecimal average = position.getAverageCost();
+            if (!pendingLimitBuy.manualBuy() && last != null && average != null && last.signum() > 0 && average.signum() > 0) {
+                return prependHeldPosition(position, last.compareTo(average) < 0
+                        ? combinedPendingBuyLabel(pendingLimitBuy)
+                        : limitSellPendingLabel(pendingLimitSell));
+            }
             return prependHeldPosition(
                     position,
                     limitSellPendingLabel(pendingLimitSell) + " + " + combinedPendingBuyLabel(pendingLimitBuy)

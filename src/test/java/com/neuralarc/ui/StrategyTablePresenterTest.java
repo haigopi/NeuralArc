@@ -994,6 +994,33 @@ class StrategyTablePresenterTest {
     }
 
 
+    private String labelWithBothOrdersPending(String lastPrice) {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        Position position = new Position("AAPL");
+        position.applyBuy(8, new BigDecimal("100.00"));
+        position.setLastPrice(new BigDecimal(lastPrice));
+        return presenter.displayStatusLabel(
+                strategy, position, false, false, false, false, BigDecimal.ZERO, BigDecimal.ZERO,
+                new StrategyTablePresenter.PendingOrderSummary(new BigDecimal("90.00"), new BigDecimal("5")),
+                new StrategyTablePresenter.PendingOrderSummary(new BigDecimal("120.00"), new BigDecimal("8")));
+    }
+
+    @Test
+    void positionBelowAverageCostLeadsWithTheNextLossBuy() {
+        String label = labelWithBothOrdersPending("95.00");
+        assertTrue(label.contains("@ $90.00/5"), label);
+        assertFalse(label.contains("Limit Sell"), label);
+    }
+
+    @Test
+    void positionAboveAverageCostLeadsWithTheNextSell() {
+        String label = labelWithBothOrdersPending("105.00");
+        assertTrue(label.contains("Limit Sell Pending - @ $120.00/8"), label);
+        assertFalse(label.contains("$90.00"), label);
+    }
+
     @Test
     void gapRocketRecommendationShowsPendingBaseBuyStatus() {
         Strategy strategy = strategy();

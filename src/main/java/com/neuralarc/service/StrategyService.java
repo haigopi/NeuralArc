@@ -231,11 +231,6 @@ public class StrategyService {
         }
         strategyRepository.save(strategy);
         stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.STRATEGY_UPDATED, "Strategy updated", "{}");
-        if (strategy.status() == StrategyStatus.ACTIVE) {
-            LossBuyLevelRearm.stateAfterEdit(strategy, orderRepository.findByStrategyId(strategy.id()))
-                    .ifPresent(rearmed -> stateMachine.transition(strategy, rearmed, StrategyEventType.STRATEGY_UPDATED,
-                            "Loss buy levels edited; waiting for the new levels", "{}"));
-        }
 
         if (refreshActiveOrders && strategy.status() == StrategyStatus.ACTIVE) {
             if (canceledOpenEntryOrders && shouldRepostEntryAfterEdit(strategy)) {
@@ -256,8 +251,33 @@ public class StrategyService {
         if (resubmitEditedStrategy) {
             strategyEngine.submitBaseBuy(strategy, false);
         }
+        realignStateAfterEdit(strategy);
 
         return Optional.of(strategy);
+    }
+
+    /**
+     * Makes the lifecycle state describe the edited strategy rather than the one it replaced: a sell
+     * state with no sell left (the edit switched the exit off) falls back to what was bought, and a
+     * loss-buy level moved after it filled waits again.
+     */
+    private void realignStateAfterEdit(Strategy strategy) {
+        if (strategy.status() != StrategyStatus.ACTIVE) {
+            return;
+        }
+        List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
+        boolean sellWorking = orders.stream()
+                .anyMatch(order -> order.side() == StrategyOrderSide.SELL && order.isPending());
+        if (strategy.currentState() == StrategyLifecycleState.SELL_PLACED && !sellWorking
+                && StrategyStageSupport.isStageFilled(orders, StrategyStage.BASE_BUY)
+                && orders.stream().noneMatch(order -> order.side() == StrategyOrderSide.SELL
+                && order.status() == StrategyOrderStatus.FILLED)) {
+            stateMachine.transition(strategy, latestFilledBuyState(orders), StrategyEventType.STRATEGY_UPDATED,
+                    "Sell order removed by the edit; back to monitoring the position", "{}");
+        }
+        LossBuyLevelRearm.stateAfterEdit(strategy, orders)
+                .ifPresent(rearmed -> stateMachine.transition(strategy, rearmed, StrategyEventType.STRATEGY_UPDATED,
+                        "Loss buy levels edited; waiting for the new levels", "{}"));
     }
 
     /** The sells working before an edit cancels them, with what they would need to be placed again. */

@@ -1000,7 +1000,7 @@ class StrategyServiceTest {
     }
 
     @Test
-    void updateHeldPositionWithNoWorkingLossLevelBuyPlacesNothingNew() {
+    void updateHeldPositionRestsTheNextLossLevelBuyAtItsPrice() {
         InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
         InMemoryOrderRepository orders = new InMemoryOrderRepository();
         InMemoryEventRepository events = new InMemoryEventRepository();
@@ -1026,8 +1026,9 @@ class StrategyServiceTest {
 
         service.updateStrategy(updated);
 
-        assertTrue(alpaca.submittedOrders.stream().noneMatch(order -> "buy".equals(order.side())),
-                "price is above the trigger; polling places the level when it is reached");
+        List<AlpacaOrderData> buys = alpaca.submittedOrders.stream().filter(order -> "buy".equals(order.side())).toList();
+        assertEquals(1, buys.size(), "the next level rests at the broker before the price reaches it");
+        assertEquals(0, new BigDecimal("6.50").compareTo(buys.get(0).limitPrice()));
     }
 
     @Test
@@ -2321,6 +2322,50 @@ class StrategyServiceTest {
         assertTrue(service.updateStrategy(updated).isPresent());
 
         assertEquals(StrategyLifecycleState.BASE_BUY_FILLED, strategies.findById(strategy.id()).orElseThrow().currentState());
+    }
+
+    @Test
+    void switchingToManualOnlyDoesNotPutTheCancelledSellBackAndClearsTheSellState() {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        InMemoryEventRepository events = new InMemoryEventRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("7.50"), "{}"));
+        alpaca.latestPrice = new BigDecimal("7.50");
+        StrategyService service = service(strategies, orders, events, alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        strategy.setProfitControlMode(ProfitControlMode.SELL_TRIGGER);
+        strategy.setTargetSellEnabled(true);
+        strategy.setTargetSellPrice(new BigDecimal("231.03"));
+        strategies.save(strategy);
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY, "ord-base", "client-base", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("8.00"), new BigDecimal("8.00"),
+                new BigDecimal("10"), new BigDecimal("10"), BigDecimal.ZERO, StrategyOrderStatus.FILLED,
+                Instant.now(), Instant.now(), Instant.now(), "{}"));
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.TARGET_SELL, "ord-sell", "client-sell", "AAPL",
+                StrategyOrderSide.SELL, StrategyOrderType.LIMIT, new BigDecimal("231.03"), BigDecimal.ZERO,
+                new BigDecimal("10"), BigDecimal.ZERO, BigDecimal.ZERO, StrategyOrderStatus.SUBMITTED,
+                Instant.now(), Instant.now(), null, "{}"));
+        alpaca.openOrders.add(new AlpacaOrderData("ord-sell", "client-sell", "AAPL", "sell", "limit",
+                new BigDecimal("231.03"), BigDecimal.ZERO, BigDecimal.ZERO, "accepted", "{\"qty\":\"10\"}"));
+
+        Strategy updated = strategyWithId(strategy.id(), "AAPL", 10, new BigDecimal("8.00"));
+        updated.setStatus(StrategyStatus.ACTIVE);
+        updated.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        updated.setProfitControlMode(ProfitControlMode.NONE);
+        updated.setTargetSellEnabled(false);
+
+        assertTrue(service.updateStrategy(updated).isPresent());
+
+        assertTrue(alpaca.canceledOrderIds.contains("ord-sell"));
+        assertTrue(alpaca.submittedOrders.stream().noneMatch(order -> "sell".equals(order.side())),
+                "Manual only: the old sell must not come back");
+        assertNotEquals(StrategyLifecycleState.SELL_PLACED, strategies.findById(strategy.id()).orElseThrow().currentState());
     }
 
     private Strategy baseStrategy(String symbol, int qty, BigDecimal price) {
