@@ -16,6 +16,7 @@ import com.neuralarc.model.StrategyStage;
 import com.neuralarc.model.StrategyMode;
 import com.neuralarc.model.StrategyStatus;
 import com.neuralarc.util.BrokerOrderStatusUtil;
+import com.neuralarc.service.RemoteSyncAdoption;
 import com.neuralarc.service.StrategyExecutionEventRepository;
 import com.neuralarc.service.StrategyRepository;
 import com.neuralarc.service.StrategyOrderRepository;
@@ -185,24 +186,46 @@ final class PortfolioRefreshController {
             return 0;
         }
         int deleted = 0;
+        List<String> untradableSymbols = new ArrayList<>();
         for (Strategy strategy : stored) {
             if (strategy == null || strategy.id() == null || strategy.id().isBlank()) {
                 continue;
             }
             List<StrategyOrder> orders = orderRepository.findByStrategyId(strategy.id());
-            if (!isNeverVisibleStaleStrategy(strategy, orders)) {
+            boolean untradable = isUntradableEmptyRow(strategy, orders);
+            if (!untradable && !isNeverVisibleStaleStrategy(strategy, orders)) {
                 continue;
             }
             orderRepository.deleteByStrategyId(strategy.id());
             eventRepository.deleteByStrategyId(strategy.id());
             strategyRepository.deleteById(strategy.id());
             deleted++;
+            if (untradable) {
+                untradableSymbols.add(strategy.symbol());
+            }
         }
-        if (deleted > 0) {
-            gateway.log("[Portfolio Refresh] Deleted " + deleted
+        int ordinary = deleted - untradableSymbols.size();
+        if (ordinary > 0) {
+            gateway.log("[Portfolio Refresh] Deleted " + ordinary
                     + " stale strategy record(s) that are never shown in current or history grids.");
         }
+        if (!untradableSymbols.isEmpty()) {
+            gateway.log("[Portfolio Refresh] Removed " + untradableSymbols.size()
+                    + " row(s) for symbols that are not tradable tickers (" + String.join(", ", untradableSymbols)
+                    + "). The broker position, if any, is untouched and still appears in reconciliation.");
+        }
         return deleted;
+    }
+
+    /**
+     * A row for a corporate-action or derivative identifier (a CVR such as 825CVR012) that never
+     * traded: adopted from a broker position before such symbols were filtered out, and with nothing
+     * of its own to lose. A row with any order history is left for the operator.
+     */
+    private boolean isUntradableEmptyRow(Strategy strategy, List<StrategyOrder> orders) {
+        return !RemoteSyncAdoption.isOrdinaryTicker(strategy.symbol())
+                && strategy.symbol() != null && !strategy.symbol().isBlank()
+                && (orders == null || orders.isEmpty());
     }
 
     private boolean isNeverVisibleStaleStrategy(Strategy strategy, List<StrategyOrder> orders) {

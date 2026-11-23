@@ -209,6 +209,36 @@ class PortfolioRefreshControllerTest {
         assertEquals(List.of("AAPL"), gateway.client.lastLatestPriceSymbols);
     }
 
+    @Test
+    void refreshRemovesAnEmptyRowForANonTickerSymbolButKeepsOnesWithOrders() throws Exception {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        strategies.save(activePendingStrategy());
+        Strategy cvr = activePendingStrategy();
+        cvr.setSymbol("825CVR012");
+        cvr.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategies.save(cvr);
+        Strategy traded = activePendingStrategy();
+        traded.setSymbol("037833100");
+        traded.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategies.save(traded);
+        orders.save(order(traded.id(), "ord-traded"));
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        FakeGateway gateway = new FakeGateway(new FakeAlpacaClient());
+        PortfolioRefreshController controller = new PortfolioRefreshController(
+                strategies, orders, new InMemoryEventRepository(), executor, gateway);
+
+        controller.refresh(true);
+
+        assertTrue(gateway.finished.await(5, TimeUnit.SECONDS));
+        executor.shutdownNow();
+        List<String> symbols = strategies.findAll().stream().map(Strategy::symbol).toList();
+        assertTrue(symbols.contains("AAPL"));
+        assertTrue(symbols.contains("037833100"), "a row with order history is left for the operator");
+        assertTrue(!symbols.contains("825CVR012"));
+        assertTrue(gateway.logs.stream().anyMatch(log -> log.contains("825CVR012")));
+    }
+
     private Strategy activePendingStrategy() {
         return new Strategy(
                 UUID.randomUUID().toString(),

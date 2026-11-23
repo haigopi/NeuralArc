@@ -15,7 +15,7 @@ import java.util.Set;
  *
  * <p>Pure so the rule can be tested without a database or a broker.
  */
-final class RemoteSyncAdoption {
+public final class RemoteSyncAdoption {
     private RemoteSyncAdoption() {
     }
 
@@ -39,7 +39,7 @@ final class RemoteSyncAdoption {
      * identifier carries a digit, which no equity ticker does; share classes use {@code .} or
      * {@code -} (BRK.B). The position still shows in the broker reconciliation report.
      */
-    static boolean isOrdinaryTicker(String symbol) {
+    public static boolean isOrdinaryTicker(String symbol) {
         return symbol != null && symbol.matches("[A-Za-z]+([.\\-][A-Za-z]+)?");
     }
 
