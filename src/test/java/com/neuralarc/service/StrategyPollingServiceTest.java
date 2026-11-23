@@ -402,6 +402,26 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void aLossBuyLevelTheRiskLimitsRefuseSaysWhyOnTheStrategy() {
+        Fixture f = new Fixture();
+        Strategy strategy = f.activeStrategy(false);
+        strategy.setAutomatedStopLossEnabled(false);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategy.setMaxCapitalAllowed(new BigDecimal("80.00"));
+        f.strategies.save(strategy);
+        f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
+        f.alpaca.latestPrice = new BigDecimal("7.90");
+        f.alpaca.position = Optional.of(new AlpacaPositionData("AAPL", BigDecimal.TEN, new BigDecimal("8.00"), new BigDecimal("7.90"), "{}"));
+
+        f.service.pollStrategy(strategy.id());
+
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).isEmpty());
+        String error = f.strategies.findById(strategy.id()).orElseThrow().lastError();
+        assertTrue(error != null && error.startsWith(Strategy.LOSS_BUY_BLOCKED_PREFIX), "error: " + error);
+        assertTrue(error.contains("maxCapitalAllowed"), error);
+    }
+
+    @Test
     void aSellTriggerRestsALimitSellAtTheTriggerPriceBeforeThePriceReachesIt() {
         // AIFU: the trigger was $10.45 and the price touched it between polls, so nothing sold.
         // The limit sell must already be working at the broker while the price is still below.

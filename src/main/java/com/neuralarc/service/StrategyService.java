@@ -206,11 +206,6 @@ public class StrategyService {
                 && strategyEngine.canAutoRetryFailed(persisted);
         boolean resubmitEditedStrategy = resubmitClosedStrategy || resubmitManualCancelStrategy;
         boolean canceledOpenEntryOrders = false;
-        // Remembered before the cancel: a held position places loss-level buys only when polling sees
-        // the price reach the trigger, so the working ones must be put back here with the new values.
-        List<StrategyStage> workingLossLevelStages = refreshActiveOrders
-                ? workingLossLevelStages(persisted)
-                : List.of();
         List<StrategyEngine.WorkingSell> workingSells = refreshActiveOrders
                 ? workingSells(persisted)
                 : List.of();
@@ -242,9 +237,12 @@ public class StrategyService {
                 strategyEngine.submitBaseBuy(strategy, false);
             } else {
                 if (canceledOpenEntryOrders) {
-                    workingLossLevelStages.forEach(stage -> strategyEngine.replaceLossLevelBuy(strategy, stage));
                     workingSells.forEach(sell -> strategyEngine.replaceWorkingSell(strategy, sell));
                 }
+                // The edit cancelled every working order, so the next loss-buy level goes back out now with
+                // the edited values rather than waiting for a poll; a held position always has one working.
+                LossBuyLevelRearm.nextLevelToRest(strategy, orderRepository.findByStrategyId(strategy.id()))
+                        .ifPresent(stage -> strategyEngine.replaceLossLevelBuy(strategy, stage));
                 strategyEngine.resumeStrategy(strategy);
             }
         }
@@ -290,16 +288,6 @@ public class StrategyService {
                         order.requestedQuantity().subtract(order.filledQuantity()),
                         order.limitPrice(),
                         order.timeInForce()))
-                .toList();
-    }
-
-    private List<StrategyStage> workingLossLevelStages(Strategy strategy) {
-        return orderRepository.findByStrategyId(strategy.id()).stream()
-                .filter(StrategyOrder::isPending)
-                .filter(order -> order.side() == StrategyOrderSide.BUY)
-                .map(StrategyOrder::stage)
-                .filter(stage -> stage == StrategyStage.BUY_LIMIT_1 || stage == StrategyStage.BUY_LIMIT_2)
-                .distinct()
                 .toList();
     }
 
@@ -885,6 +873,11 @@ public class StrategyService {
         List<Strategy> created = new java.util.ArrayList<>();
         for (String symbol : remoteSymbols) {
             if (localSymbols.contains(symbol)) {
+                continue;
+            }
+            if (!RemoteSyncAdoption.isOrdinaryTicker(symbol)) {
+                LOGGER.info("Not adopting " + symbol + ": it is not an ordinary tradable ticker (for example a"
+                        + " contingent value right or option contract), so a strategy row could never trade it.");
                 continue;
             }
             if (RemoteSyncAdoption.skipSuppressed(symbol, suppressedSymbols, positionsBySymbol.get(symbol))) {

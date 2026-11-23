@@ -1022,6 +1022,18 @@ class StrategyTablePresenterTest {
     }
 
     @Test
+    void aRefusedLossBuyLevelIsExplainedNextToTheSellStatus() {
+        Strategy strategy = strategy();
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.SELL_PLACED);
+        strategy.setLastError(Strategy.LOSS_BUY_BLOCKED_PREFIX + "Buy Limit 1 - Projected capital exceeds maxCapitalAllowed");
+
+        String label = presenter.displayStatusLabel(strategy, false, false, false);
+
+        assertTrue(label.contains("Loss buy not resting: Buy Limit 1 - Projected capital exceeds maxCapitalAllowed"), label);
+    }
+
+    @Test
     void gapRocketRecommendationShowsPendingBaseBuyStatus() {
         Strategy strategy = strategy();
         strategy.setStatus(StrategyStatus.CREATED);

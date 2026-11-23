@@ -49,6 +49,19 @@ class StrategyServiceRemoteSyncTest {
     }
 
     @Test
+    void aCorporateActionPositionIsNotAdoptedButOrdinaryOnesStillAre() {
+        // 825CVR012: a contingent value right the account holds but no strategy can trade.
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.allPositions = List.of(position("825CVR012", "2", "0.00"), position("RKLB", "2", "60.71"));
+
+        List<Strategy> created = liveService(strategies, alpaca).syncRemoteStrategies();
+
+        assertEquals(List.of("RKLB"), created.stream().map(Strategy::symbol).toList());
+        assertEquals(1, strategies.findAll().size());
+    }
+
+    @Test
     void aPaperRowForTheSameSymbolDoesNotBlockAdoptingTheLivePosition() {
         // SMR: held live, but a paper strategy existed for the symbol, so the live stock stayed
         // untracked forever because the symbol looked "already local".

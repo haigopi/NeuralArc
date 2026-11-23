@@ -7,6 +7,9 @@ import java.time.Instant;
 import java.util.Objects;
 
 public class Strategy {
+    /** Prefix of the lastError set when the next loss-buy level could not be rested, so the status can say why. */
+    public static final String LOSS_BUY_BLOCKED_PREFIX = "Loss buy not resting: ";
+
     private final String id;
     private String name;
     private String symbol;

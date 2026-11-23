@@ -112,4 +112,18 @@ class LossBuyLevelRearmTest {
         assertFalse(StrategyStageSupport.isLossLevelFilled(strategy, orders, StrategyStage.BUY_LIMIT_1));
         assertTrue(StrategyStageSupport.isLossLevelFilled(strategy, orders, StrategyStage.BUY_LIMIT_2));
     }
+
+    @Test
+    void theNextLevelToRestIsLevelOneUntilItFillsThenLevelTwo() {
+        Strategy strategy = strategy(StrategyLifecycleState.BASE_BUY_FILLED);
+        List<StrategyOrder> base = List.of(filled(strategy, StrategyStage.BASE_BUY, 10, "300.00"));
+        assertEquals(Optional.of(StrategyStage.BUY_LIMIT_1), LossBuyLevelRearm.nextLevelToRest(strategy, base));
+
+        List<StrategyOrder> levelOne = List.of(base.get(0), filled(strategy, StrategyStage.BUY_LIMIT_1, 8, "280.00"));
+        assertEquals(Optional.of(StrategyStage.BUY_LIMIT_2), LossBuyLevelRearm.nextLevelToRest(strategy, levelOne));
+
+        assertEquals(Optional.empty(), LossBuyLevelRearm.nextLevelToRest(strategy, allFilled(strategy)));
+        strategy.setLossBuyLevelsEnabled(false);
+        assertEquals(Optional.empty(), LossBuyLevelRearm.nextLevelToRest(strategy, base));
+    }
 }

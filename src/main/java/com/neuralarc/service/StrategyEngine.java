@@ -495,6 +495,12 @@ public class StrategyEngine {
         maybeSubmitLossLevel(strategy, StrategyStage.BUY_LIMIT_2, latestPrice, orders, outcomes);
     }
 
+    private void clearLossBuyBlock(Strategy strategy) {
+        if (strategy.lastError() != null && strategy.lastError().startsWith(Strategy.LOSS_BUY_BLOCKED_PREFIX)) {
+            strategy.clearLastError();
+        }
+    }
+
     /**
      * Keeps the next loss-buy level working at the broker. While the price is still above the level the
      * limit buy rests at the level price, so a dip between polls fills it instead of being missed; once
@@ -524,6 +530,7 @@ public class StrategyEngine {
             return;
         }
         if (StrategyStageSupport.hasPendingOrFilledLossLevel(strategy, orders, stage)) {
+            clearLossBuyBlock(strategy);
             logRule(strategy, rule, "SKIPPED", "Existing pending or filled order already present", outcomes);
             return;
         }
@@ -539,11 +546,17 @@ public class StrategyEngine {
                     strategy, orders, BigDecimal.valueOf(quantity), price);
             if (!projection.allowed()) {
                 logRule(strategy, rule, "BLOCKED", "Not resting " + label + ": " + projection.reason(), outcomes);
+                String blocked = Strategy.LOSS_BUY_BLOCKED_PREFIX + label + " - " + projection.reason();
+                if (!blocked.equals(strategy.lastError())) {
+                    strategy.setLastError(blocked);
+                    strategyRepository.save(strategy);
+                }
                 return;
             }
             logRule(strategy, rule, "PLACED",
                     "Resting limit buy " + quantity + " @ $" + price.toPlainString() + " (latestPrice="
                             + latestPrice.toPlainString() + "); it fills at the broker even between polls", outcomes);
+            clearLossBuyBlock(strategy);
             submitBuyOrder(strategy, stage, quantity, price, placed,
                     label + " resting at $" + price.toPlainString(), true);
             return;

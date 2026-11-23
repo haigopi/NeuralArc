@@ -37,6 +37,22 @@ class RemoteSyncAdoptionTest {
         assertFalse(RemoteSyncAdoption.skipSuppressed("BOXL", Set.of(), null));
     }
 
+    @Test
+    void ordinaryTickersAreAdoptableIncludingShareClasses() {
+        assertTrue(RemoteSyncAdoption.isOrdinaryTicker("SSTI"));
+        assertTrue(RemoteSyncAdoption.isOrdinaryTicker("BRK.B"));
+        assertTrue(RemoteSyncAdoption.isOrdinaryTicker("BF-B"));
+    }
+
+    @Test
+    void corporateActionAndDerivativeIdentifiersAreNotTickers() {
+        assertFalse(RemoteSyncAdoption.isOrdinaryTicker("825CVR012"));
+        assertFalse(RemoteSyncAdoption.isOrdinaryTicker("AAPL261120C00200000"));
+        assertFalse(RemoteSyncAdoption.isOrdinaryTicker("037833100"));
+        assertFalse(RemoteSyncAdoption.isOrdinaryTicker(""));
+        assertFalse(RemoteSyncAdoption.isOrdinaryTicker(null));
+    }
+
     private static AlpacaPositionData held(String symbol, String quantity) {
         return new AlpacaPositionData(symbol, new BigDecimal(quantity), new BigDecimal("6.74"),
                 new BigDecimal("4.21"), "{}");

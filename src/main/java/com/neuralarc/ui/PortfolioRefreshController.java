@@ -149,6 +149,9 @@ final class PortfolioRefreshController {
             if (reconciledCount > 0) {
                 stored = strategyRepository.findAll();
             }
+            if (completeExternallyClosedStrategies(stored) > 0) {
+                stored = strategyRepository.findAll();
+            }
             List<Strategy> invalidStrategies = new ArrayList<>(findInvalidBrokerMissingStrategies(stored));
             appendOverClaimedDuplicates(invalidStrategies, stored, snapshots);
             List<Strategy> refreshedStored = stored;
@@ -436,6 +439,76 @@ final class PortfolioRefreshController {
                 + " duplicate row(s) whose symbol has a single broker position already accounted for by another row: "
                 + flagged.stream().map(Strategy::symbol).distinct().collect(Collectors.joining(", ")) + ".");
         invalid.addAll(flagged);
+    }
+
+    /**
+     * Completes rows that still hold shares on paper but whose symbol the broker no longer holds —
+     * the shares were sold outside the strategy, so no exit fill was ever recorded. Never throws into
+     * refresh: a broker hiccup must leave the rows as they are.
+     */
+    private int completeExternallyClosedStrategies(List<Strategy> stored) {
+        if (stored == null || stored.isEmpty() || gateway.brokerType() != BrokerType.ALPACA) {
+            return 0;
+        }
+        int closed = 0;
+        for (StrategyMode mode : StrategyMode.values()) {
+            if (!gateway.modeActive(mode)) {
+                continue;
+            }
+            try {
+                closed += completeExternallyClosedForMode(stored, mode);
+            } catch (Exception ex) {
+                gateway.log("[Portfolio Refresh] Could not check " + mode + " rows against the broker: " + ex.getMessage());
+            }
+        }
+        return closed;
+    }
+
+    private int completeExternallyClosedForMode(List<Strategy> stored, StrategyMode mode) {
+        List<Strategy> candidates = stored.stream()
+                .filter(strategy -> strategy != null && strategy.mode() == mode
+                        && strategy.status() == StrategyStatus.ACTIVE
+                        && strategy.currentState() != null)
+                .filter(strategy -> ExternallyClosedPositionReconciler.needsBrokerCheck(
+                        strategy, orderRepository.findByStrategyId(strategy.id()), Instant.now()))
+                .toList();
+        if (candidates.isEmpty()) {
+            return 0;
+        }
+        HttpAlpacaClient client = gateway.alpacaClientForMode(mode == StrategyMode.LIVE ? ApplicationMode.LIVE : ApplicationMode.PAPER);
+        if (client == null) {
+            return 0;
+        }
+        Set<String> held = new java.util.HashSet<>();
+        for (AlpacaPositionData position : client.getPositions()) {
+            if (position != null && position.hasExposure() && position.symbol() != null) {
+                held.add(position.symbol().toUpperCase(Locale.ROOT));
+            }
+        }
+        // The client reports a failed call as an empty list, so an empty answer proves nothing until
+        // another call to the same account succeeds.
+        if (held.isEmpty() && client.getAccountEquity().isEmpty()) {
+            return 0;
+        }
+        Set<String> openOrderSymbols = new java.util.HashSet<>();
+        for (AlpacaOrderData order : client.getOpenOrders()) {
+            if (order != null && order.symbol() != null) {
+                openOrderSymbols.add(order.symbol().toUpperCase(Locale.ROOT));
+            }
+        }
+        List<String> closedSymbols = new ArrayList<>();
+        for (Strategy strategy : candidates) {
+            if (ExternallyClosedPositionReconciler.reconcile(
+                    strategy, orderRepository.findByStrategyId(strategy.id()), held, openOrderSymbols, Instant.now())) {
+                strategyRepository.save(strategy);
+                closedSymbols.add(strategy.symbol());
+            }
+        }
+        if (!closedSymbols.isEmpty()) {
+            gateway.log("[Portfolio Refresh] Completed " + closedSymbols.size()
+                    + " row(s) whose shares the broker no longer holds: " + String.join(", ", closedSymbols));
+        }
+        return closedSymbols.size();
     }
 
     private int reconcileLeftoverLocalBrokerState(List<Strategy> stored, Map<String, Position> snapshots) {

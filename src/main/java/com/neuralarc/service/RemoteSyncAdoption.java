@@ -30,6 +30,19 @@ final class RemoteSyncAdoption {
         return !holdsShares(position);
     }
 
+    /**
+     * Whether a broker symbol is an ordinary ticker the strategy engine can trade.
+     *
+     * <p>Brokers also report corporate-action and derivative instruments as positions — a contingent
+     * value right such as {@code 825CVR012}, a CUSIP-style id, an option contract. They are held but
+     * not tradable here, so adopting one only creates a row whose orders can never work. Every such
+     * identifier carries a digit, which no equity ticker does; share classes use {@code .} or
+     * {@code -} (BRK.B). The position still shows in the broker reconciliation report.
+     */
+    static boolean isOrdinaryTicker(String symbol) {
+        return symbol != null && symbol.matches("[A-Za-z]+([.\\-][A-Za-z]+)?");
+    }
+
     private static boolean holdsShares(AlpacaPositionData position) {
         return position != null && position.exists();
     }

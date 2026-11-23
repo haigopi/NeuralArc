@@ -326,7 +326,7 @@ public final class StrategyTablePresenter {
             return monitoring + averagedInDescription(strategy, position)
                     + UntrackedShares.note(untrackedSharesResolver.applyAsInt(strategy));
         }
-        return lifecycle;
+        return lifecycle + lossBuyBlockedNote(strategy);
     }
 
     /**
@@ -348,6 +348,15 @@ public final class StrategyTablePresenter {
         }
         return " | Averaged in @ $" + Monetary.round(averageCost).toPlainString()
                 + " x" + position.getTotalShares();
+    }
+
+    /** Why the next loss-buy level is not working at the broker, when the engine had to refuse it. */
+    private static String lossBuyBlockedNote(Strategy strategy) {
+        String error = strategy.lastError();
+        return strategy.status() == StrategyStatus.ACTIVE && error != null
+                && error.startsWith(Strategy.LOSS_BUY_BLOCKED_PREFIX)
+                ? " | " + error.trim()
+                : "";
     }
 
     private String completedBookedStatusLabel(Strategy strategy, BigDecimal realizedPnl, BigDecimal lastSellPrice) {

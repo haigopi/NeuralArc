@@ -42,6 +42,23 @@ final class LossBuyLevelRearm {
         return target == state ? Optional.empty() : Optional.of(target);
     }
 
+    /** The one loss-buy level that should be working now: level 1 until it fills, then level 2. */
+    static Optional<StrategyStage> nextLevelToRest(Strategy strategy, List<StrategyOrder> orders) {
+        if (!strategy.lossBuyLevelsEnabled() || !StrategyStageSupport.isStageFilled(orders, StrategyStage.BASE_BUY)) {
+            return Optional.empty();
+        }
+        if (levelConfigured(strategy.buyLimit1Quantity(), strategy.buyLimit1Price())
+                && !StrategyStageSupport.isLossLevelFilled(strategy, orders, StrategyStage.BUY_LIMIT_1)) {
+            return Optional.of(StrategyStage.BUY_LIMIT_1);
+        }
+        if (levelConfigured(strategy.buyLimit1Quantity(), strategy.buyLimit1Price())
+                && levelConfigured(strategy.buyLimit2Quantity(), strategy.buyLimit2Price())
+                && !StrategyStageSupport.isLossLevelFilled(strategy, orders, StrategyStage.BUY_LIMIT_2)) {
+            return Optional.of(StrategyStage.BUY_LIMIT_2);
+        }
+        return Optional.empty();
+    }
+
     private static boolean levelConfigured(int quantity, java.math.BigDecimal price) {
         return quantity > 0 && price != null && price.signum() > 0;
     }
