@@ -333,36 +333,29 @@ public class HttpAlpacaClient implements AlpacaClient {
         if (normalizedSymbols.isEmpty()) {
             return Map.of();
         }
-        String endpoint = dataBaseUrl + "/v2/stocks/trades/latest?symbols="
-                + URLEncoder.encode(String.join(",", normalizedSymbols), StandardCharsets.UTF_8);
-        HttpRequest request = baseRequest(endpoint).GET().build();
-        Optional<String> body = executeBody(request);
-        if (body.isEmpty()) {
-            return Map.of();
-        }
-        try {
-            JSONObject json = new JSONObject(body.get());
-            JSONObject trades = json.optJSONObject("trades");
-            if (trades == null) {
-                return Map.of();
-            }
-            Map<String, BigDecimal> prices = new LinkedHashMap<>();
-            for (String symbol : normalizedSymbols) {
-                JSONObject trade = trades.optJSONObject(symbol);
-                if (trade == null) {
+        Map<String, BigDecimal> prices = new LinkedHashMap<>();
+        for (String body : fetchSymbolBatchBodies("/v2/stocks/trades/latest", List.copyOf(normalizedSymbols))) {
+            try {
+                JSONObject trades = new JSONObject(body).optJSONObject("trades");
+                if (trades == null) {
                     continue;
                 }
-                Object price = trade.opt("p");
-                BigDecimal parsed = parseMoney(price == null ? "0" : String.valueOf(price));
-                if (parsed.compareTo(BigDecimal.ZERO) > 0) {
-                    prices.put(symbol, parsed);
+                for (String symbol : normalizedSymbols) {
+                    JSONObject trade = trades.optJSONObject(symbol);
+                    if (trade == null) {
+                        continue;
+                    }
+                    Object price = trade.opt("p");
+                    BigDecimal parsed = parseMoney(price == null ? "0" : String.valueOf(price));
+                    if (parsed.compareTo(BigDecimal.ZERO) > 0) {
+                        prices.put(symbol, parsed);
+                    }
                 }
+            } catch (Exception ex) {
+                LOGGER.log(Level.WARNING, "Failed to parse batch latest prices", ex);
             }
-            return prices;
-        } catch (Exception ex) {
-            LOGGER.log(Level.WARNING, "Failed to parse batch latest prices", ex);
-            return Map.of();
         }
+        return prices;
     }
 
     @Override
@@ -379,44 +372,75 @@ public class HttpAlpacaClient implements AlpacaClient {
         if (normalizedSymbols.isEmpty()) {
             return Map.of();
         }
-        String endpoint = dataBaseUrl + "/v2/stocks/snapshots?symbols="
-                + URLEncoder.encode(String.join(",", normalizedSymbols), StandardCharsets.UTF_8);
-        HttpRequest request = baseRequest(endpoint).GET().build();
-        Optional<String> body = executeBody(request);
-        if (body.isEmpty()) {
-            return Map.of();
-        }
-        try {
-            JSONObject json = new JSONObject(body.get());
-            // Multi-symbol snapshots come back keyed by symbol at the top level; some responses
-            // nest them under "snapshots". Accept either shape.
-            JSONObject snapshots = json.optJSONObject("snapshots");
-            JSONObject source = snapshots != null ? snapshots : json;
-            Map<String, MarketBar> result = new LinkedHashMap<>();
-            for (String symbol : normalizedSymbols) {
-                JSONObject snapshot = source.optJSONObject(symbol);
-                if (snapshot == null) {
-                    continue;
+        Map<String, MarketBar> result = new LinkedHashMap<>();
+        for (String body : fetchSymbolBatchBodies("/v2/stocks/snapshots", List.copyOf(normalizedSymbols))) {
+            try {
+                JSONObject json = new JSONObject(body);
+                // Multi-symbol snapshots come back keyed by symbol at the top level; some responses
+                // nest them under "snapshots". Accept either shape.
+                JSONObject snapshots = json.optJSONObject("snapshots");
+                JSONObject source = snapshots != null ? snapshots : json;
+                for (String symbol : normalizedSymbols) {
+                    JSONObject snapshot = source.optJSONObject(symbol);
+                    if (snapshot == null) {
+                        continue;
+                    }
+                    JSONObject dailyBar = snapshot.optJSONObject("dailyBar");
+                    if (dailyBar == null) {
+                        continue;
+                    }
+                    result.put(symbol, new MarketBar(
+                            symbol,
+                            dailyBar.optString("t", ""),
+                            parseMoneyValue(dailyBar.opt("o")),
+                            parseMoneyValue(dailyBar.opt("h")),
+                            parseMoneyValue(dailyBar.opt("l")),
+                            parseMoneyValue(dailyBar.opt("c")),
+                            parseMoneyValue(dailyBar.opt("v"))
+                    ));
                 }
-                JSONObject dailyBar = snapshot.optJSONObject("dailyBar");
-                if (dailyBar == null) {
-                    continue;
-                }
-                result.put(symbol, new MarketBar(
-                        symbol,
-                        dailyBar.optString("t", ""),
-                        parseMoneyValue(dailyBar.opt("o")),
-                        parseMoneyValue(dailyBar.opt("h")),
-                        parseMoneyValue(dailyBar.opt("l")),
-                        parseMoneyValue(dailyBar.opt("c")),
-                        parseMoneyValue(dailyBar.opt("v"))
-                ));
+            } catch (Exception ex) {
+                LOGGER.log(Level.WARNING, "Failed to parse batch daily snapshots", ex);
             }
-            return result;
-        } catch (Exception ex) {
-            LOGGER.log(Level.WARNING, "Failed to parse batch daily snapshots", ex);
-            return Map.of();
         }
+        return result;
+    }
+
+    /** Symbols per market-data request: keeps the URL short and limits what one bad symbol can take down. */
+    private static final int BATCH_SYMBOL_LIMIT = 100;
+
+    /**
+     * Fetches a multi-symbol market-data endpoint in chunks. Alpaca answers 400 for the whole request when
+     * any one symbol is not a valid asset (a CVR or delisted identifier), which would blank the price and
+     * Open/Low/High columns for every row. A rejected chunk is therefore split to isolate the offender, so
+     * only that symbol goes without data. Network and server failures are not split: they would fail again.
+     */
+    private List<String> fetchSymbolBatchBodies(String path, List<String> symbols) {
+        List<String> bodies = new ArrayList<>();
+        for (int from = 0; from < symbols.size(); from += BATCH_SYMBOL_LIMIT) {
+            collectSymbolBatchBodies(path, symbols.subList(from, Math.min(symbols.size(), from + BATCH_SYMBOL_LIMIT)), bodies);
+        }
+        return bodies;
+    }
+
+    private void collectSymbolBatchBodies(String path, List<String> chunk, List<String> bodies) {
+        String endpoint = dataBaseUrl + path + "?symbols="
+                + URLEncoder.encode(String.join(",", chunk), StandardCharsets.UTF_8);
+        boolean[] rejected = {false};
+        Optional<String> body = executeBody(baseRequest(endpoint).GET().build(), rejected);
+        if (body.isPresent()) {
+            bodies.add(body.get());
+            return;
+        }
+        if (!rejected[0] || chunk.size() < 2) {
+            if (rejected[0]) {
+                LOGGER.warning("Alpaca rejected market-data symbol " + chunk.get(0) + "; skipping it.");
+            }
+            return;
+        }
+        int mid = chunk.size() / 2;
+        collectSymbolBatchBodies(path, chunk.subList(0, mid), bodies);
+        collectSymbolBatchBodies(path, chunk.subList(mid, chunk.size()), bodies);
     }
 
     @Override
@@ -613,12 +637,21 @@ public class HttpAlpacaClient implements AlpacaClient {
     }
 
     private Optional<String> executeBody(HttpRequest request) {
+        return executeBody(request, null);
+    }
+
+    /** @param clientRejected when non-null, element 0 is set true if the server answered with a 4xx status */
+    private Optional<String> executeBody(HttpRequest request, boolean[] clientRejected) {
         try {
             logRequest(request.method(), request.uri().toString(), null);
             HttpResponse<String> response = sendTracked(request);
             recordRequestId("executeBody", request.method(), request.uri().toString(), response);
             logResponse(request.method(), request.uri().toString(), response.statusCode(), response.body());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                if (clientRejected != null && response.statusCode() >= 400 && response.statusCode() < 500
+                        && response.statusCode() != 429) {
+                    clientRejected[0] = true;
+                }
                 return Optional.empty();
             }
             return Optional.ofNullable(response.body());

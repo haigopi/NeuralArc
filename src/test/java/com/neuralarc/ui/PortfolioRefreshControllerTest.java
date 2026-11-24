@@ -239,6 +239,32 @@ class PortfolioRefreshControllerTest {
         assertTrue(gateway.logs.stream().anyMatch(log -> log.contains("825CVR012")));
     }
 
+    @Test
+    void refreshRemovesANonTickerRowWhoseOnlyOrdersWereRejectedNeverFilled() throws Exception {
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        strategies.save(activePendingStrategy());
+        Strategy cvr = activePendingStrategy();
+        cvr.setSymbol("825CVR012");
+        cvr.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategies.save(cvr);
+        StrategyOrder rejected = order(cvr.id(), "ord-rejected");
+        orders.save(new StrategyOrder(rejected.id(), cvr.id(), StrategyStage.BASE_BUY, "ord-rejected", "client-x",
+                "825CVR012", StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("8.00"),
+                BigDecimal.ZERO, new BigDecimal("2"), BigDecimal.ZERO, BigDecimal.ZERO,
+                StrategyOrderStatus.FAILED, Instant.now(), Instant.now(), null, "{}"));
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        FakeGateway gateway = new FakeGateway(new FakeAlpacaClient());
+        PortfolioRefreshController controller = new PortfolioRefreshController(
+                strategies, orders, new InMemoryEventRepository(), executor, gateway);
+
+        controller.refresh(true);
+
+        assertTrue(gateway.finished.await(5, TimeUnit.SECONDS));
+        executor.shutdownNow();
+        assertTrue(strategies.findAll().stream().noneMatch(s -> "825CVR012".equals(s.symbol())));
+    }
+
     private Strategy activePendingStrategy() {
         return new Strategy(
                 UUID.randomUUID().toString(),

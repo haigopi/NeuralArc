@@ -872,6 +872,39 @@ class StrategyServiceTest {
                 orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).orElseThrow().status());
     }
 
+    @Test
+    void savingALossLevelBeyondTheCapsStillPlacesItImmediately() {
+        // NBIS: the edit saved, but the caps silently refused the new level, so nothing reached the broker.
+        InMemoryStrategyRepository strategies = new InMemoryStrategyRepository();
+        InMemoryOrderRepository orders = new InMemoryOrderRepository();
+        FakeAlpacaClient alpaca = new FakeAlpacaClient();
+        alpaca.position = Optional.of(new AlpacaPositionData("AAPL", new BigDecimal("10"), new BigDecimal("8.00"), new BigDecimal("9.00"), "{}"));
+        StrategyService service = service(strategies, orders, new InMemoryEventRepository(), alpaca);
+
+        Strategy strategy = baseStrategy("AAPL", 10, new BigDecimal("8.00"));
+        strategy.setStatus(StrategyStatus.ACTIVE);
+        strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        strategies.save(strategy);
+        orders.save(new StrategyOrder(
+                UUID.randomUUID().toString(), strategy.id(), StrategyStage.BASE_BUY, "ord-base", "client-base", "AAPL",
+                StrategyOrderSide.BUY, StrategyOrderType.LIMIT, new BigDecimal("8.00"), new BigDecimal("8.00"),
+                new BigDecimal("10"), new BigDecimal("10"), BigDecimal.ZERO, StrategyOrderStatus.FILLED,
+                Instant.now(), Instant.now(), Instant.now(), "{}"));
+
+        Strategy updated = strategyWithId(strategy.id(), "AAPL", 10, new BigDecimal("8.00"));
+        updated.setStatus(StrategyStatus.ACTIVE);
+        updated.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
+        updated.setLossBuyLevelsEnabled(true);
+        updated.setMaxTotalQuantity(10);
+        updated.setMaxCapitalAllowed(new BigDecimal("80.00"));
+        updated.setBuyLimit1Price(new BigDecimal("6.50"));
+        updated.setBuyLimit1Quantity(50);
+
+        assertTrue(service.updateStrategy(updated).isPresent(), "loss levels never make a saved configuration invalid");
+        assertEquals(1, alpaca.submittedOrders.size());
+        assertTrue(alpaca.submittedOrders.getFirst().rawJson().contains("\"qty\":\"50\""));
+    }
+
     private StrategyOrder workingSell(Strategy strategy, StrategyStage stage, String price, String suffix) {
         return new StrategyOrder(
                 UUID.randomUUID().toString(), strategy.id(), stage, "ord-" + suffix, "client-" + suffix, "AAPL",
@@ -2321,7 +2354,10 @@ class StrategyServiceTest {
 
         assertTrue(service.updateStrategy(updated).isPresent());
 
-        assertEquals(StrategyLifecycleState.BASE_BUY_FILLED, strategies.findById(strategy.id()).orElseThrow().currentState());
+        // The edit takes effect at once: level 1 goes out at its edited price instead of waiting for a poll.
+        assertEquals(StrategyLifecycleState.BUY_LIMIT_1_PLACED, strategies.findById(strategy.id()).orElseThrow().currentState());
+        assertEquals(1, alpaca.submittedOrders.size());
+        assertEquals(new BigDecimal("7.50"), alpaca.submittedOrders.getFirst().limitPrice());
     }
 
     @Test

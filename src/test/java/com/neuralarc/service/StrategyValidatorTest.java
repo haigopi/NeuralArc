@@ -50,6 +50,31 @@ class StrategyValidatorTest {
         assertTrue(errors.contains("Profit activation threshold must be positive"));
     }
 
+    @Test
+    void lossBuyLevelsAreNotHeldToTheQuantityOrCapitalCaps() {
+        Strategy strategy = validStrategy();
+        strategy.setLossBuyLevelsEnabled(true);
+        strategy.setBuyLimit1Price(new BigDecimal("9.00"));
+        strategy.setBuyLimit1Quantity(500);
+        strategy.setBuyLimit2Price(new BigDecimal("8.00"));
+        strategy.setBuyLimit2Quantity(500);
+
+        List<String> errors = new StrategyValidator().validate(strategy);
+
+        assertTrue(errors.isEmpty(), () -> "Unexpected validation errors: " + errors);
+    }
+
+    @Test
+    void theHiddenCapsNeverInvalidateAConfiguration() {
+        Strategy strategy = validStrategy();
+        strategy.setMaxTotalQuantity(5);
+        strategy.setMaxCapitalAllowed(new BigDecimal("50.00"));
+
+        List<String> errors = new StrategyValidator().validate(strategy);
+
+        assertTrue(errors.isEmpty(), () -> "Unexpected validation errors: " + errors);
+    }
+
     private static Strategy validStrategy() {
         return new Strategy(
                 UUID.randomUUID().toString(),

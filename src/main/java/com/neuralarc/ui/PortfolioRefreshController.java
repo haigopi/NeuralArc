@@ -220,12 +220,21 @@ final class PortfolioRefreshController {
     /**
      * A row for a corporate-action or derivative identifier (a CVR such as 825CVR012) that never
      * traded: adopted from a broker position before such symbols were filtered out, and with nothing
-     * of its own to lose. A row with any order history is left for the operator.
+     * of its own to lose. Orders that were only ever rejected do not count as history; a row with a
+     * working or filled order is left for the operator.
      */
     private boolean isUntradableEmptyRow(Strategy strategy, List<StrategyOrder> orders) {
         return !RemoteSyncAdoption.isOrdinaryTicker(strategy.symbol())
                 && strategy.symbol() != null && !strategy.symbol().isBlank()
-                && (orders == null || orders.isEmpty());
+                && !hasPendingOrders(orders)
+                && !hasFillActivity(orders);
+    }
+
+    /** Any fill, partial or full: the row then really traded and is left for the operator. */
+    private boolean hasFillActivity(List<StrategyOrder> orders) {
+        return orders != null && orders.stream().anyMatch(order ->
+                order.status() == StrategyOrderStatus.FILLED
+                        || (order.filledQuantity() != null && order.filledQuantity().signum() > 0));
     }
 
     private boolean isNeverVisibleStaleStrategy(Strategy strategy, List<StrategyOrder> orders) {

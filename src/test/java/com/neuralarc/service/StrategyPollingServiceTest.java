@@ -155,8 +155,7 @@ class StrategyPollingServiceTest {
     }
 
     @Test
-    void aLossBuyBlockedByTheQuantityLimitDoesNotFailAStrategyThatHoldsShares() {
-        // Failing it would stop all polling — and with it the stop loss on the shares it still holds.
+    void aLossBuyLevelIsPlacedEvenWhenThePositionAlreadyFillsTheQuantityLimit() {
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
         strategy.setMaxTotalQuantity(10);
@@ -170,25 +169,28 @@ class StrategyPollingServiceTest {
         f.service.pollStrategy(strategy.id());
 
         Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
-        assertEquals(StrategyStatus.ACTIVE, updated.status(), "still managed");
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).isEmpty(),
-                "the extra buy is still refused");
-        assertEquals("Projected quantity exceeds maxTotalQuantity", updated.lastError());
+        assertEquals(StrategyStatus.ACTIVE, updated.status());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).orElseThrow().isPending(),
+                "the level buys the requested quantity regardless of maxTotalQuantity");
     }
 
     @Test
-    void aQuantityLimitWithNothingHeldOrWorkingStillFailsTheStrategy() {
-        // A strategy whose very first buy breaks its own limit is misconfigured; failing it is right.
+    void aBaseBuyIsPlacedEvenWhenTheHiddenCapsAreLowerThanItsQuantity() {
+        // The caps are no longer enforced: the operator asked for this quantity at this price.
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
         strategy.setMaxTotalQuantity(5);
+        strategy.setMaxCapitalAllowed(new BigDecimal("1.00"));
         strategy.setCurrentState(StrategyLifecycleState.QUEUED_FOR_OPEN);
         f.strategies.save(strategy);
         f.alpaca.position = Optional.empty();
 
         f.service.pollStrategy(strategy.id());
 
-        assertEquals(StrategyStatus.FAILED, f.strategies.findById(strategy.id()).orElseThrow().status());
+        assertTrue(f.strategies.findById(strategy.id()).orElseThrow().status() != StrategyStatus.FAILED,
+                "a low hidden cap must not fail the strategy");
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BASE_BUY).isPresent(),
+                "the base buy is placed for the requested quantity");
     }
 
     @Test
@@ -402,12 +404,15 @@ class StrategyPollingServiceTest {
     }
 
     @Test
-    void aLossBuyLevelTheRiskLimitsRefuseSaysWhyOnTheStrategy() {
+    void aLossBuyLevelIsPlacedEvenWhenItWouldExceedTheCapitalLimit() {
+        // NBIS: the caps refused every poll, so a dip through the level never bought. The operator's
+        // level is an instruction to buy that quantity at that price, whatever the caps say.
         Fixture f = new Fixture();
         Strategy strategy = f.activeStrategy(false);
         strategy.setAutomatedStopLossEnabled(false);
         strategy.setCurrentState(StrategyLifecycleState.BASE_BUY_FILLED);
         strategy.setMaxCapitalAllowed(new BigDecimal("80.00"));
+        strategy.setLastError(Strategy.LOSS_BUY_BLOCKED_PREFIX + "Buy Limit 1 - Projected capital exceeds maxCapitalAllowed");
         f.strategies.save(strategy);
         f.addOrder(f.filledOrder(strategy.id(), StrategyStage.BASE_BUY, 10, new BigDecimal("8.00")));
         f.alpaca.latestPrice = new BigDecimal("7.90");
@@ -415,10 +420,9 @@ class StrategyPollingServiceTest {
 
         f.service.pollStrategy(strategy.id());
 
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).isEmpty());
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).orElseThrow().isPending());
         String error = f.strategies.findById(strategy.id()).orElseThrow().lastError();
-        assertTrue(error != null && error.startsWith(Strategy.LOSS_BUY_BLOCKED_PREFIX), "error: " + error);
-        assertTrue(error.contains("maxCapitalAllowed"), error);
+        assertTrue(error == null || !error.startsWith(Strategy.LOSS_BUY_BLOCKED_PREFIX), "stale refusal cleared: " + error);
     }
 
     @Test
@@ -923,7 +927,7 @@ class StrategyPollingServiceTest {
     }
 
     @Test
-    void maxQuantityAndCapitalRiskControlsBlockBuy() {
+    void maxQuantityAndCapitalRiskControlsNoLongerBlockLossBuyLevels() {
         Fixture f = new Fixture();
         Strategy strategy = new Strategy(
                 UUID.randomUUID().toString(), "risk", "AAPL", StrategyMode.PAPER, StrategyStatus.ACTIVE,
@@ -943,12 +947,11 @@ class StrategyPollingServiceTest {
 
         f.service.pollStrategy(strategy.id());
 
-        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).isEmpty());
-        // The limits still block the buy, but the strategy holds 10 shares: it stays active so its stop loss
-        // keeps being watched, with the reason recorded instead of failing the whole strategy.
+        // 10 held + 5 more is over the 80.00 capital and 10 quantity caps, but the level is the operator's
+        // explicit instruction, so it is placed as configured and the strategy stays active.
+        assertTrue(f.orders.findLatestByStrategyStage(strategy.id(), StrategyStage.BUY_LIMIT_1).orElseThrow().isPending());
         Strategy updated = f.strategies.findById(strategy.id()).orElseThrow();
         assertEquals(StrategyStatus.ACTIVE, updated.status());
-        assertTrue(updated.lastError().startsWith("Projected"), updated.lastError());
     }
 
     @Test

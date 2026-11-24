@@ -36,20 +36,8 @@ public class StrategyValidator {
                 errors.add("Buy Limit 2 price must be positive");
             }
         }
-        if (strategy.maxTotalQuantity() <= 0) {
-            errors.add("Max total quantity must be positive");
-        }
-        if (strategy.maxCapitalAllowed().compareTo(Monetary.zero()) <= 0) {
-            errors.add("Max capital allowed must be positive");
-        }
         if (strategy.pollingIntervalSeconds() <= 0) {
             errors.add("Polling interval seconds must be positive");
-        }
-        if (strategy.configuredTotalQuantity() > strategy.maxTotalQuantity()) {
-            errors.add("Configured buy quantities exceed max total quantity");
-        }
-        if (strategy.estimatedTotalCapital().compareTo(strategy.maxCapitalAllowed()) > 0) {
-            errors.add("Configured buys exceed max capital allowed");
         }
         if (strategy.automatedStopLossEnabled()) {
             if (strategy.stopLossType() == StopLossType.FIXED_PRICE && strategy.stopLossPrice().compareTo(Monetary.zero()) <= 0) {

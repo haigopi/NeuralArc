@@ -20,7 +20,6 @@ import java.util.logging.Logger;
 
 import static com.neuralarc.service.BrokerRejectionMessageFormatter.failureMessage;
 import static com.neuralarc.service.BrokerRejectionMessageFormatter.isQueueableSessionRejection;
-import static com.neuralarc.service.StrategyBuyRiskProjector.projectedRisk;
 
 public class StrategyEngine {
     private static final Logger LOGGER = Logger.getLogger(StrategyEngine.class.getName());
@@ -502,7 +501,8 @@ public class StrategyEngine {
     }
 
     /**
-     * Keeps the next loss-buy level working at the broker. While the price is still above the level the
+     * Keeps the next loss-buy level working at the broker. The operator's levels are placed exactly as
+     * configured: they are not held to the max quantity / max capital limits, which only guard the base buy. While the price is still above the level the
      * limit buy rests at the level price, so a dip between polls fills it instead of being missed; once
      * the price is at or below the level the same limit is placed as before. Only the next level rests:
      * level 2 waits for level 1 to fill.
@@ -537,26 +537,16 @@ public class StrategyEngine {
         StrategyLifecycleState placed = first
                 ? StrategyLifecycleState.BUY_LIMIT_1_PLACED
                 : StrategyLifecycleState.BUY_LIMIT_2_PLACED;
+        // An older build recorded a refusal here; nothing refuses a loss-buy level now, so clear it.
+        clearLossBuyBlock(strategy);
         if (latestPrice.compareTo(price) > 0) {
             if (latestFilledExitOrder(orders).isPresent()) {
                 logRule(strategy, rule, "SKIPPED", "Position already exited", outcomes);
                 return;
             }
-            StrategyBuyRiskProjector.RiskProjection projection = projectedRisk(
-                    strategy, orders, BigDecimal.valueOf(quantity), price);
-            if (!projection.allowed()) {
-                logRule(strategy, rule, "BLOCKED", "Not resting " + label + ": " + projection.reason(), outcomes);
-                String blocked = Strategy.LOSS_BUY_BLOCKED_PREFIX + label + " - " + projection.reason();
-                if (!blocked.equals(strategy.lastError())) {
-                    strategy.setLastError(blocked);
-                    strategyRepository.save(strategy);
-                }
-                return;
-            }
             logRule(strategy, rule, "PLACED",
                     "Resting limit buy " + quantity + " @ $" + price.toPlainString() + " (latestPrice="
                             + latestPrice.toPlainString() + "); it fills at the broker even between polls", outcomes);
-            clearLossBuyBlock(strategy);
             submitBuyOrder(strategy, stage, quantity, price, placed,
                     label + " resting at $" + price.toPlainString(), true);
             return;
@@ -794,30 +784,6 @@ public class StrategyEngine {
         if (hasPendingStage(currentOrders, stage)) {
             LOGGER.info("[" + strategy.symbol() + "][" + stage + "] A " + stage
                     + " order is already working; not placing a duplicate.");
-            return null;
-        }
-        StrategyBuyRiskProjector.RiskProjection projection = projectedRisk(
-                strategy,
-                currentOrders,
-                BigDecimal.valueOf(quantity),
-                limitPrice
-        );
-        if (!projection.allowed()) {
-            strategy.setLastError(projection.reason());
-            if (hasLiveExposure(currentOrders)) {
-                // The limit only blocks this extra buy. Failing the strategy would abandon what it already has
-                // at the broker — a working buy, or shares whose stop loss must keep being watched — because
-                // nothing polls a failed strategy.
-                stateMachine.transition(strategy, strategy.currentState(), StrategyEventType.ORDER_STATUS_UPDATED,
-                        stage + " not placed: " + projection.reason() + "; the strategy keeps managing its "
-                                + "existing order or position.", "{}");
-            } else {
-                stateMachine.transition(strategy, StrategyLifecycleState.FAILED,
-                        StrategyEventType.STRATEGY_FAILED,
-                        projection.reason(),
-                        "{}");
-            }
-            strategyRepository.save(strategy);
             return null;
         }
         // Broker should be the source of truth for whether off-hours orders are accepted.
