@@ -68,6 +68,25 @@ final class PortfolioActionsController {
             return StrategyService.ArchiveResult.failed("Not supported");
         }
 
+        /** True when polling is paused for the viewed mode and workspace, directly or through All Stocks. */
+        default boolean pollingPausedForScope() {
+            return false;
+        }
+
+        /** True when the pause on the viewed workspace comes from All Stocks, so it can only be lifted there. */
+        default boolean pollingPausedThroughAllStocks() {
+            return false;
+        }
+
+        /** Pauses or resumes polling for every position in the viewed mode and workspace. */
+        default void setPollingPausedForScope(boolean paused) {
+        }
+
+        /** The viewed workspace's name, or "All Stocks", for messages. */
+        default String scopeDisplayName() {
+            return "this workspace";
+        }
+
         List<ManagedStrategy> strategies();
         List<ManagedStrategy> currentStrategies();
         List<ManagedStrategy> scopedStrategies();
@@ -511,6 +530,85 @@ final class PortfolioActionsController {
             return;
         }
         runBulkAction(action, targets, () -> positionSellProfitThresholdTargets(targets, trailingPercent.get()));
+    }
+
+    boolean pollingPaused() {
+        return gateway.pollingPausedForScope();
+    }
+
+    boolean pollingPausedThroughAllStocks() {
+        return gateway.pollingPausedThroughAllStocks();
+    }
+
+    String pollingScopeName() {
+        return gateway.scopeDisplayName();
+    }
+
+    /**
+     * Temporarily stops polling every position in the viewed workspace. Nothing about the positions
+     * changes, so it is confirmed rather than run behind a progress window: the cost of a pause is
+     * unwatched positions, and the operator should read that before agreeing.
+     */
+    void handlePausePolling() {
+        String label = "Pause Polling";
+        gateway.actionStarted(label);
+        String scope = gateway.scopeDisplayName();
+        if (gateway.pollingPausedForScope()) {
+            String reason = "Polling is already paused for " + scope + ".";
+            gateway.actionSkipped(label, reason);
+            gateway.showMessage(reason, label, JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        long watched = gateway.scopedStrategies().stream()
+                .filter(entry -> entry.strategy != null
+                        && entry.strategy.status() == com.neuralarc.model.StrategyStatus.ACTIVE)
+                .count();
+        if (watched == 0) {
+            String reason = "There are no active positions in " + scope + " to pause.";
+            gateway.actionSkipped(label, reason);
+            gateway.showMessage(reason, label, JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        int choice = gateway.confirm(
+                "<html><b>Pause polling for " + watched + " active position(s) in " + scope + "?</b><br><br>"
+                        + "While paused, this workspace's positions are not checked: no price, order-status,"
+                        + " stop-loss, sell-trigger or loss-buy evaluation, and no orders are placed for them.<br>"
+                        + "Orders already resting at the broker stay live and can still fill.<br><br>"
+                        + "Use Resume Polling to start again. Restarting the app also resumes polling.</html>",
+                label,
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE);
+        if (choice != JOptionPane.YES_OPTION) {
+            gateway.actionCanceled(label);
+            return;
+        }
+        gateway.setPollingPausedForScope(true);
+        gateway.log("[Portfolio Actions] Polling paused for " + scope + " (" + watched + " active position(s)).");
+        gateway.updateStatusBar();
+        gateway.actionCompleted(label, "Paused polling for " + scope + ".");
+    }
+
+    /** Lifts a pause made by {@link #handlePausePolling()}; the next poll cycle picks the positions up. */
+    void handleResumePolling() {
+        String label = "Resume Polling";
+        gateway.actionStarted(label);
+        String scope = gateway.scopeDisplayName();
+        if (!gateway.pollingPausedForScope()) {
+            String reason = "Polling is not paused for " + scope + ".";
+            gateway.actionSkipped(label, reason);
+            gateway.showMessage(reason, label, JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        if (gateway.pollingPausedThroughAllStocks()) {
+            String reason = "Polling for " + scope + " is paused from All Stocks. Resume it from the All Stocks tab.";
+            gateway.actionSkipped(label, reason);
+            gateway.showMessage(reason, label, JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        gateway.setPollingPausedForScope(false);
+        gateway.log("[Portfolio Actions] Polling resumed for " + scope + ".");
+        gateway.updateStatusBar();
+        gateway.actionCompleted(label, "Resumed polling for " + scope + ".");
     }
 
     void handleResumeAll() {

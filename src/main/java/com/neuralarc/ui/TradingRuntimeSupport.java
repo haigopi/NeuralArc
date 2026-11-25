@@ -32,6 +32,8 @@ public final class TradingRuntimeSupport {
     private final WorkspaceCodeResolver workspaceCodeResolver;
     private final TradingApiCreator tradingApiCreator;
     private final AlpacaClientCreator alpacaClientCreator;
+    private final com.neuralarc.service.PollingPauseRegistry pollingPauseRegistry =
+            new com.neuralarc.service.PollingPauseRegistry();
 
     public TradingRuntimeSupport(
             StrategyRepository strategyRepository,
@@ -141,7 +143,13 @@ public final class TradingRuntimeSupport {
         pollingService.setPollListener(pollListener);
         pollingService.setEmailNotificationListener(emailNotificationListener);
         pollingService.setWorkspaceCodeResolver(workspaceCodeResolver);
+        pollingService.setPollingPauseRegistry(pollingPauseRegistry);
         return new RuntimeServices(strategyService, pollingService);
+    }
+
+    /** The operator's per-workspace polling pauses, shared by every polling service this creates. */
+    public com.neuralarc.service.PollingPauseRegistry pollingPauseRegistry() {
+        return pollingPauseRegistry;
     }
 
     public StrategyService createStrategyService(HttpAlpacaClient runtimeClient, StrategyMode strategyMode) {

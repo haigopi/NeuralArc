@@ -65,6 +65,7 @@ public class StrategyPollingService {
     private volatile Boolean lastTradingSessionOpen;
     private volatile AppSettingsService.AppSettings lastLoadedSettings;
     private volatile PollListener pollListener = PollListener.NOOP;
+    private volatile PollingPauseRegistry pollingPauseRegistry = new PollingPauseRegistry();
     private volatile PollCycleSnapshot lastPollCycleSnapshot = new PollCycleSnapshot(false, false, 0, 0, 0, 0);
     private final Set<String> pendingMarketClosedAutoRepairedStrategyIds = Collections.synchronizedSet(new LinkedHashSet<>());
     private final Map<String, RepairCategory> strategyIdToRepairCategory = Collections.synchronizedMap(new LinkedHashMap<>());
@@ -221,6 +222,12 @@ public class StrategyPollingService {
                 recordMarketClosedAutoRepair(strategy.id(), RepairCategory.MANUAL_MARKET_CLOSED_OVERRIDE);
             }
             if (!isPollEligible(strategy)) {
+                continue;
+            }
+            if (pollingPauseRegistry.isPaused(strategy)) {
+                // The operator paused this workspace: nothing is polled, checked or placed for it until
+                // they resume. The strategy itself is untouched.
+                skippedNotDue++;
                 continue;
             }
             if (autoPauseForMarketClose && !sessionOpenForStrategy) {
@@ -656,6 +663,11 @@ public class StrategyPollingService {
                 position == null ? null : position.quantity(),
                 position == null ? null : position.avgEntryPrice()
         );
+    }
+
+    /** Shares the operator's workspace pauses with this service; a null registry means nothing is paused. */
+    public void setPollingPauseRegistry(PollingPauseRegistry registry) {
+        this.pollingPauseRegistry = registry == null ? new PollingPauseRegistry() : registry;
     }
 
     public void setPollListener(PollListener pollListener) {

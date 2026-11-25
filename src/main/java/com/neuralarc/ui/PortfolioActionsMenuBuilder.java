@@ -28,6 +28,29 @@ final class PortfolioActionsMenuBuilder {
                 "icons/add-stock-strategy.svg",
                 controller::handlePromoteAllToLive);
 
+        String scope = controller.pollingScopeName();
+        boolean pollingPaused = controller.pollingPaused();
+        PortfolioActionsMenu.Entry pausePolling = new PortfolioActionsMenu.Entry(
+                "Pause Polling",
+                "Temporarily stop checking and acting on every position in " + scope
+                        + ". Orders already at the broker stay live.",
+                "icons/kill-switch.svg",
+                controller::handlePausePolling);
+        PortfolioActionsMenu.Entry resumePolling = new PortfolioActionsMenu.Entry(
+                "Resume Polling",
+                "Start checking every position in " + scope + " again.",
+                "icons/submit.svg",
+                controller::handleResumePolling);
+        if (pollingPaused) {
+            pausePolling = pausePolling.disabledWith("Polling is already paused for " + scope + ".");
+            if (controller.pollingPausedThroughAllStocks()) {
+                resumePolling = resumePolling.disabledWith(
+                        "Polling is paused from All Stocks. Resume it from the All Stocks tab.");
+            }
+        } else {
+            resumePolling = resumePolling.disabledWith("Polling is not paused for " + scope + ".");
+        }
+
         return List.of(
                 new PortfolioActionsMenu.Group("Sell Positions", "icons/close.svg", List.of(
                         new PortfolioActionsMenu.Entry("Sell Profitable Positions",
@@ -170,6 +193,8 @@ final class PortfolioActionsMenuBuilder {
                                 controller::handleAskAnalyst)
                 )),
                 new PortfolioActionsMenu.Group("Lifecycle", "icons/submit.svg", List.of(
+                        pausePolling,
+                        resumePolling,
                         new PortfolioActionsMenu.Entry("Resume All",
                                 "Resume paused strategies so they monitor and execute again.",
                                 "icons/submit.svg",

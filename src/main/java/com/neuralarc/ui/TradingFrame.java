@@ -1174,6 +1174,33 @@ public class TradingFrame extends JFrame {
       }
 
       @Override
+      public boolean pollingPausedForScope() {
+        return TradingFrame.this.pollingPausedForViewedScope();
+      }
+
+      @Override
+      public boolean pollingPausedThroughAllStocks() {
+        return selectedWorkspaceId != null
+            && tradingRuntimeSupport.pollingPauseRegistry().isPaused(selectedViewMode, selectedWorkspaceId)
+            && !tradingRuntimeSupport.pollingPauseRegistry().isPausedDirectly(selectedViewMode, selectedWorkspaceId);
+      }
+
+      @Override
+      public void setPollingPausedForScope(boolean paused) {
+        if (paused) {
+          tradingRuntimeSupport.pollingPauseRegistry().pause(selectedViewMode, selectedWorkspaceId);
+        } else {
+          tradingRuntimeSupport.pollingPauseRegistry().resume(selectedViewMode, selectedWorkspaceId);
+        }
+      }
+
+      @Override
+      public String scopeDisplayName() {
+        String name = workspaceNameOrNull(selectedWorkspaceId);
+        return name == null ? "All Stocks" : name;
+      }
+
+      @Override
       public JMenuItem createMenuItem(String text, String iconPath, Runnable action) {
         return TradingFrame.this.createStatusMenuItem(text, iconPath, action);
       }
@@ -8897,6 +8924,7 @@ public class TradingFrame extends JFrame {
             inactive,
             pollSnapshot != null && pollSnapshot.cycleEvaluated(),
             pollSnapshot != null && pollSnapshot.marketClosedSuppressed(),
+            pollingPausedForViewedScope(),
             pollSnapshot == null ? 0 : pollSnapshot.due(),
             pollSnapshot == null ? 0 : pollSnapshot.skippedNotDue(),
             tradeHistoryStockCount(),
@@ -9009,6 +9037,8 @@ public class TradingFrame extends JFrame {
     refreshWorkspaceSummary();
     updateGapRocketScheduleBadge(gapAndGoCoordinator.currentSchedule());
     refreshStrategyWorkspaceEmptyState();
+    // The status bar says whether polling is paused for the workspace now in view.
+    updateStatusBar();
   }
 
   private void refreshStrategyWorkspaceEmptyState() {
@@ -9273,6 +9303,12 @@ public class TradingFrame extends JFrame {
           position.unrealizedPnl()));
     }
     return views;
+  }
+
+  /** Whether the operator has paused polling for the mode and workspace being viewed. */
+  private boolean pollingPausedForViewedScope() {
+    return tradingRuntimeSupport != null
+        && tradingRuntimeSupport.pollingPauseRegistry().isPaused(selectedViewMode, selectedWorkspaceId);
   }
 
   private String workspaceNameOrNull(String workspaceId) {

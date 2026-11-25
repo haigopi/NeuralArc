@@ -55,6 +55,25 @@ class StatusBarPresenterTest {
         assertEquals(true, vm.blink());
     }
 
+    @Test
+    void pollingPausedByTheOperatorIsShownAsAWarningAndOutranksMarketState() {
+        StatusBarPresenter.StatusBarViewModel model = new StatusBarPresenter().present(
+                new StatusBarPresenter.StatusBarState(1, 0, true, false, true, 0, 0, 5, false, true,
+                        "Market: Open", "tooltip", true, "Funds Available: $1", "CPU: 1%", "Memory: 1 MB"));
+
+        assertEquals("Paused by you", model.pollingText());
+        assertEquals(StatusBarPresenter.Tone.WARN, model.pollingTone());
+    }
+
+    @Test
+    void pollingIsNotShownAsPausedUnlessTheOperatorPausedIt() {
+        StatusBarPresenter.StatusBarViewModel model = new StatusBarPresenter().present(
+                new StatusBarPresenter.StatusBarState(1, 0, true, false, 0, 0, 5, false, true,
+                        "Market: Open", "tooltip", true, "Funds Available: $1", "CPU: 1%", "Memory: 1 MB"));
+
+        assertEquals("Active", model.pollingText());
+    }
+
     private static StatusBarPresenter.StatusBarState state(
             long running,
             long inactive,

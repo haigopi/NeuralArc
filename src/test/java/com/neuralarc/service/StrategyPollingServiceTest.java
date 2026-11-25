@@ -1028,6 +1028,50 @@ class StrategyPollingServiceTest {
     }
 
     @Test
+    void aPausedWorkspaceIsNotPolledAndOthersAre() throws Exception {
+        Fixture f = new Fixture();
+        PollingPauseRegistry registry = new PollingPauseRegistry();
+        f.service.setPollingPauseRegistry(registry);
+        Strategy paused = f.activeStrategy("AAPL", false);
+        paused.setWorkspaceId("ws-paused");
+        paused.setLastPolledAt(Instant.now().minusSeconds(60));
+        f.strategies.save(paused);
+        Strategy running = f.activeStrategy("MSFT", false);
+        running.setWorkspaceId("ws-running");
+        running.setLastPolledAt(Instant.now().minusSeconds(60));
+        f.strategies.save(running);
+        registry.pause(StrategyMode.PAPER, "ws-paused");
+
+        int due = f.service.pollDueStrategies();
+
+        assertEquals(1, due, "only the running workspace is dispatched");
+        f.awaitLastPolledAfter(running.id(), Instant.now().minusSeconds(30), "the running workspace keeps polling");
+        assertTrue(f.strategies.findById(paused.id()).orElseThrow().lastPolledAt()
+                .isBefore(Instant.now().minusSeconds(30)), "the paused workspace was never polled");
+        assertEquals(0, f.alpaca.openOrderCallsForSymbol("AAPL"));
+    }
+
+    @Test
+    void pausingAllStocksStopsEveryRowAndResumingPollsThemAgain() throws Exception {
+        Fixture f = new Fixture();
+        PollingPauseRegistry registry = new PollingPauseRegistry();
+        f.service.setPollingPauseRegistry(registry);
+        Strategy strategy = f.activeStrategy("AAPL", false);
+        strategy.setLastPolledAt(Instant.now().minusSeconds(60));
+        f.strategies.save(strategy);
+        registry.pause(StrategyMode.PAPER, null);
+
+        assertEquals(0, f.service.pollDueStrategies());
+        assertEquals(StrategyStatus.ACTIVE, f.strategies.findById(strategy.id()).orElseThrow().status(),
+                "pausing polling does not touch the strategy");
+
+        registry.resume(StrategyMode.PAPER, null);
+
+        assertEquals(1, f.service.pollDueStrategies());
+        f.awaitLastPolledAfter(strategy.id(), Instant.now().minusSeconds(30), "polling resumes");
+    }
+
+    @Test
     void pollDueStrategiesReturnsImmediatelyAndOtherStrategiesContinueWhileOnePollIsBlocked() throws Exception {
         Fixture f = new Fixture();
         Strategy blocked = f.activeStrategy("AAPL", false);

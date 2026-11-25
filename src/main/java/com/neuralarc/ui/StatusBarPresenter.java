@@ -6,7 +6,10 @@ public final class StatusBarPresenter {
     public StatusBarViewModel present(StatusBarState state) {
         String pollingText = "Ready";
         Tone pollingTone = Tone.DEFAULT;
-        if (state.pollCycleEvaluated()) {
+        if (state.pollingPausedByOperator()) {
+            pollingText = "Paused by you";
+            pollingTone = Tone.WARN;
+        } else if (state.pollCycleEvaluated()) {
             if (state.pollMarketClosedSuppressed()) {
                 pollingText = "Paused for market close";
                 pollingTone = Tone.MUTED;
@@ -87,6 +90,7 @@ public final class StatusBarPresenter {
             long inactiveStrategies,
             boolean pollCycleEvaluated,
             boolean pollMarketClosedSuppressed,
+            boolean pollingPausedByOperator,
             int pollDue,
             int pollSkippedNotDue,
             long historyRows,
@@ -99,6 +103,28 @@ public final class StatusBarPresenter {
             String cpuText,
             String memoryText
     ) {
+        /** The state before the operator could pause polling: never paused by them. */
+        public StatusBarState(
+                long runningStrategies,
+                long inactiveStrategies,
+                boolean pollCycleEvaluated,
+                boolean pollMarketClosedSuppressed,
+                int pollDue,
+                int pollSkippedNotDue,
+                long historyRows,
+                boolean connectionRetryPending,
+                boolean connectionOk,
+                String marketLabel,
+                String marketTooltip,
+                boolean marketOpenForUi,
+                String availableFundsText,
+                String cpuText,
+                String memoryText
+        ) {
+            this(runningStrategies, inactiveStrategies, pollCycleEvaluated, pollMarketClosedSuppressed, false,
+                    pollDue, pollSkippedNotDue, historyRows, connectionRetryPending, connectionOk, marketLabel,
+                    marketTooltip, marketOpenForUi, availableFundsText, cpuText, memoryText);
+        }
     }
 
     public record StatusBarViewModel(

@@ -257,6 +257,130 @@ class PortfolioActionsControllerTest {
         assertEquals("", first.strategy.latestAlpacaOrderId());
     }
 
+    @Test
+    void pausePollingAsksFirstAndThenPausesTheViewedWorkspace() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        gateway.scoped = List.of(managedWithStatus("AAPL", StrategyStatus.ACTIVE));
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handlePausePolling();
+
+        assertEquals(1, gateway.confirmCalls, "pausing leaves positions unwatched, so it is confirmed");
+        assertTrue(gateway.pollingPaused);
+        assertTrue(gateway.logs.stream().anyMatch(log -> log.contains("Polling paused for Swing")));
+    }
+
+    @Test
+    void pausePollingDoesNothingWhenTheOperatorDeclines() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        gateway.scoped = List.of(managedWithStatus("AAPL", StrategyStatus.ACTIVE));
+        gateway.confirmChoice = javax.swing.JOptionPane.NO_OPTION;
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handlePausePolling();
+
+        assertFalse(gateway.pollingPaused);
+    }
+
+    @Test
+    void pausePollingExplainsWhenThereIsNothingActiveToPause() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        gateway.scoped = List.of(managedWithStatus("AAPL", StrategyStatus.COMPLETED));
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handlePausePolling();
+
+        assertEquals(0, gateway.confirmCalls);
+        assertFalse(gateway.pollingPaused);
+        assertTrue(gateway.shownMessages.stream().anyMatch(m -> m.contains("no active positions")));
+    }
+
+    @Test
+    void pausePollingIsANoOpWhenAlreadyPaused() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        gateway.scoped = List.of(managedWithStatus("AAPL", StrategyStatus.ACTIVE));
+        gateway.pollingPaused = true;
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handlePausePolling();
+
+        assertEquals(0, gateway.confirmCalls);
+        assertTrue(gateway.shownMessages.stream().anyMatch(m -> m.contains("already paused")));
+    }
+
+    @Test
+    void resumePollingLiftsThePauseWithoutAsking() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        gateway.pollingPaused = true;
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handleResumePolling();
+
+        assertFalse(gateway.pollingPaused);
+        assertEquals(0, gateway.confirmCalls);
+        assertTrue(gateway.logs.stream().anyMatch(log -> log.contains("Polling resumed for Swing")));
+    }
+
+    @Test
+    void resumePollingOnAWorkspaceTellsYouWhenAllStocksHoldsThePause() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        gateway.pollingPaused = true;
+        gateway.pollingPausedThroughAllStocks = true;
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handleResumePolling();
+
+        assertTrue(gateway.pollingPaused, "the All Stocks pause is untouched");
+        assertTrue(gateway.shownMessages.stream().anyMatch(m -> m.contains("All Stocks")));
+    }
+
+    @Test
+    void resumePollingWhenNothingIsPausedSaysSo() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        controller.handleResumePolling();
+
+        assertTrue(gateway.shownMessages.stream().anyMatch(m -> m.contains("not paused")));
+    }
+
+    @Test
+    void theMenuOffersPauseWhenRunningAndResumeWhenPaused() {
+        FakeGateway gateway = new FakeGateway(new BlockingRepositionService());
+        PortfolioActionsController controller = new PortfolioActionsController(gateway);
+
+        PortfolioActionsMenu.Entry pause = lifecycleEntry(controller, "Pause Polling");
+        PortfolioActionsMenu.Entry resume = lifecycleEntry(controller, "Resume Polling");
+        assertTrue(pause.enabled());
+        assertFalse(resume.enabled());
+
+        gateway.pollingPaused = true;
+        pause = lifecycleEntry(controller, "Pause Polling");
+        resume = lifecycleEntry(controller, "Resume Polling");
+        assertFalse(pause.enabled());
+        assertTrue(resume.enabled());
+
+        gateway.pollingPausedThroughAllStocks = true;
+        resume = lifecycleEntry(controller, "Resume Polling");
+        assertFalse(resume.enabled(), "a workspace cannot lift an All Stocks pause");
+        assertTrue(resume.disabledTooltip().contains("All Stocks"));
+    }
+
+    private static PortfolioActionsMenu.Entry lifecycleEntry(PortfolioActionsController controller, String label) {
+        return controller.menuGroups().stream()
+                .filter(group -> group.title().equals("Lifecycle"))
+                .flatMap(group -> group.entries().stream())
+                .filter(entry -> entry.label().equals(label))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static ManagedStrategy managedWithStatus(String symbol, StrategyStatus status) {
+        ManagedStrategy entry = managed(symbol);
+        entry.strategy.setStatus(status);
+        return entry;
+    }
+
     private static ManagedStrategy managed(String symbol) {
         Strategy strategy = new Strategy(
                 symbol + "-id",
@@ -561,7 +685,7 @@ class PortfolioActionsControllerTest {
                 .toList();
 
         assertEquals(
-                List.of("Delete All Paper Mode Entries", "Promote All to Live"),
+                List.of("Delete All Paper Mode Entries", "Resume Polling", "Promote All to Live"),
                 disabled.stream().map(PortfolioActionsMenu.Entry::label).toList());
         disabled.forEach(entry -> assertFalse(entry.disabledTooltip().isBlank()));
     }
@@ -880,7 +1004,7 @@ class PortfolioActionsControllerTest {
             progress.total = total;
             return progress;
         }
-        @Override public List<ManagedStrategy> scopedStrategies() { return List.of(); }
+        @Override public List<ManagedStrategy> scopedStrategies() { return scoped; }
         @Override public StrategyService strategyService() { return service; }
         @Override public StrategyService strategyServiceForMode(StrategyMode mode) { return service; }
         @Override public StrategyMode selectedViewMode() { return selectedViewMode; }
@@ -1016,7 +1140,19 @@ class PortfolioActionsControllerTest {
         @Override public javax.swing.JMenu createSubMenu(String label, String iconPath) {
             return new javax.swing.JMenu(label);
         }
-        @Override public int confirm(Object message, String title, int optionType, int messageType) { return 0; }
+        private int confirmChoice = 0;
+        private int confirmCalls;
+        private boolean pollingPaused;
+        private boolean pollingPausedThroughAllStocks;
+        private List<ManagedStrategy> scoped = List.of();
+        @Override public int confirm(Object message, String title, int optionType, int messageType) {
+            confirmCalls++;
+            return confirmChoice;
+        }
+        @Override public boolean pollingPausedForScope() { return pollingPaused; }
+        @Override public boolean pollingPausedThroughAllStocks() { return pollingPausedThroughAllStocks; }
+        @Override public void setPollingPausedForScope(boolean paused) { pollingPaused = paused; }
+        @Override public String scopeDisplayName() { return "Swing"; }
         private final java.util.List<String> shownMessages =
                 java.util.Collections.synchronizedList(new java.util.ArrayList<>());
         private final java.util.List<String> toasts =
